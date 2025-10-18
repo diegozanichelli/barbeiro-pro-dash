@@ -46,7 +46,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [stats, setStats] = useState<MonthlyStats | null>(null);
   const [dailyTarget, setDailyTarget] = useState(0);
   const [dailyTargetGross, setDailyTargetGross] = useState(0);
-
+  const [missingLink, setMissingLink] = useState(false);
   useEffect(() => {
     fetchBarberData();
   }, [user]);
@@ -69,10 +69,17 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       .from("barbers")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!error && data) {
+    if (error) {
+      console.error("Erro ao buscar barbeiro:", error);
+    }
+
+    if (data) {
       setBarber(data);
+      setMissingLink(false);
+    } else {
+      setMissingLink(true);
     }
   };
 
@@ -160,10 +167,41 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     navigate("/auth");
   };
 
+  if (missingLink) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold bg-gradient-gold bg-clip-text text-transparent">
+                Vinculação pendente
+              </h1>
+              <Button variant="outline" onClick={handleSignOut}>Sair</Button>
+            </div>
+          </div>
+        </header>
+        <div className="container mx-auto px-4 py-6">
+          <Card className="bg-card border-border shadow-card-custom">
+            <CardHeader>
+              <CardTitle>Seu usuário não está vinculado a um barbeiro</CardTitle>
+              <CardDescription>
+                Peça ao gerente para associar sua conta a um cadastro de barbeiro e a uma unidade.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-muted-foreground">
+                Após a vinculação, o painel e o lançamento diário ficarão disponíveis aqui.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   if (!barber || !stats) {
     return <div>Carregando...</div>;
   }
-
   const progressPercentage = monthlyGoal
     ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
     : 0;
