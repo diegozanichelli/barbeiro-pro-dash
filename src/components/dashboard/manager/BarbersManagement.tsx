@@ -73,7 +73,10 @@ export default function BarbersManagement() {
         if (error) throw error;
         toast.success("Barbeiro atualizado!");
       } else {
-        // Chamar função de backend para criar usuário e vincular barbeiro sem trocar a sessão do gestor
+        // Garantir envio do JWT do gestor ao chamar a função
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+
         const { data, error } = await supabase.functions.invoke("create-barber", {
           body: {
             name: formData.name,
@@ -84,8 +87,13 @@ export default function BarbersManagement() {
             products_commission: Number(formData.products_commission),
             status: formData.status,
           },
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         });
-        if (error) throw error;
+        
+        if (error) {
+          const serverMsg = (error as any)?.context?.error || (error as any)?.message;
+          throw new Error(serverMsg || "Falha ao criar barbeiro");
+        }
         toast.success("Barbeiro criado com sucesso! Login: " + formData.email);
       }
 
