@@ -13,12 +13,21 @@ serve(async (req: Request) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-      return new Response(JSON.stringify({ error: "Missing environment configuration" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const missing = {
+        SUPABASE_URL: Boolean(supabaseUrl),
+        SUPABASE_ANON_KEY: Boolean(Deno.env.get("SUPABASE_ANON_KEY")),
+        SUPABASE_PUBLISHABLE_KEY: Boolean(Deno.env.get("SUPABASE_PUBLISHABLE_KEY")),
+        SUPABASE_SERVICE_ROLE_KEY: Boolean(serviceRoleKey),
+      };
+      return new Response(
+        JSON.stringify({ error: "Missing environment configuration", missing }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const authHeader = req.headers.get("Authorization");
