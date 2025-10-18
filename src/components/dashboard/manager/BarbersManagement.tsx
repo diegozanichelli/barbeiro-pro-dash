@@ -30,6 +30,8 @@ export default function BarbersManagement() {
     services_commission: "50",
     products_commission: "15",
     status: "active",
+    email: "",
+    password: "",
   });
 
   useEffect(() => {
@@ -71,13 +73,33 @@ export default function BarbersManagement() {
         if (error) throw error;
         toast.success("Barbeiro atualizado!");
       } else {
-        const { error } = await supabase.from("barbers").insert([barberData]);
-        if (error) throw error;
-        toast.success("Barbeiro criado!");
+        // Primeiro, criar o usuário no Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.name,
+              role: "barber",
+            },
+          },
+        });
+
+        if (authError) throw authError;
+        if (!authData.user) throw new Error("Erro ao criar usuário");
+
+        // Depois, criar o registro do barbeiro vinculado ao user_id
+        const { error: barberError } = await supabase.from("barbers").insert([{
+          ...barberData,
+          user_id: authData.user.id,
+        }]);
+        
+        if (barberError) throw barberError;
+        toast.success("Barbeiro criado com sucesso! Login: " + formData.email);
       }
 
       setDialogOpen(false);
-      setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", status: "active" });
+      setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", status: "active", email: "", password: "" });
       setEditingBarber(null);
       fetchBarbers();
     } catch (error: any) {
@@ -95,6 +117,8 @@ export default function BarbersManagement() {
       services_commission: String(barber.services_commission),
       products_commission: String(barber.products_commission),
       status: barber.status,
+      email: "",
+      password: "",
     });
     setDialogOpen(true);
   };
@@ -128,7 +152,7 @@ export default function BarbersManagement() {
               <Button
                 onClick={() => {
                   setEditingBarber(null);
-                  setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", status: "active" });
+                  setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", status: "active", email: "", password: "" });
                 }}
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -165,6 +189,36 @@ export default function BarbersManagement() {
                     </SelectContent>
                   </Select>
                 </div>
+                {!editingBarber && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email de Login</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="barbeiro@email.com"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        required={!editingBarber}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Senha Temporária</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="Mínimo 6 caracteres"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        required={!editingBarber}
+                        minLength={6}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        O barbeiro usará este email e senha para fazer login
+                      </p>
+                    </div>
+                  </>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="services_commission">Comissão Serviços (%)</Label>

@@ -18,7 +18,7 @@ export default function Auth() {
     email: "",
     password: "",
     fullName: "",
-    role: "barber" as "manager" | "barber",
+    role: "manager",
   });
 
   const [signInData, setSignInData] = useState({
@@ -162,23 +162,9 @@ export default function Auth() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-role">Tipo de Acesso</Label>
-                  <Select
-                    value={signUpData.role}
-                    onValueChange={(value: "manager" | "barber") =>
-                      setSignUpData({ ...signUpData, role: value })
-                    }
-                  >
-                    <SelectTrigger id="signup-role">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manager">Gestor</SelectItem>
-                      <SelectItem value="barber">Barbeiro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <p className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
+                  <strong>Nota:</strong> Apenas gestores podem se cadastrar. Os barbeiros serão criados pelo gestor no painel administrativo.
+                </p>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Criando conta..." : "Criar Conta"}
                 </Button>
