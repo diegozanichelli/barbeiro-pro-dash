@@ -73,28 +73,19 @@ export default function BarbersManagement() {
         if (error) throw error;
         toast.success("Barbeiro atualizado!");
       } else {
-        // Primeiro, criar o usuário no Supabase Auth
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-          options: {
-            data: {
-              full_name: formData.name,
-              role: "barber",
-            },
+        // Chamar função de backend para criar usuário e vincular barbeiro sem trocar a sessão do gestor
+        const { data, error } = await supabase.functions.invoke("create-barber", {
+          body: {
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+            unit_id: formData.unit_id,
+            services_commission: Number(formData.services_commission),
+            products_commission: Number(formData.products_commission),
+            status: formData.status,
           },
         });
-
-        if (authError) throw authError;
-        if (!authData.user) throw new Error("Erro ao criar usuário");
-
-        // Depois, criar o registro do barbeiro vinculado ao user_id
-        const { error: barberError } = await supabase.from("barbers").insert([{
-          ...barberData,
-          user_id: authData.user.id,
-        }]);
-        
-        if (barberError) throw barberError;
+        if (error) throw error;
         toast.success("Barbeiro criado com sucesso! Login: " + formData.email);
       }
 
