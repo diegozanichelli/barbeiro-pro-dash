@@ -87,16 +87,22 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     if (!barber) return;
 
     const now = new Date();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("monthly_goals")
       .select("*")
       .eq("barber_id", barber.id)
       .eq("month", now.getMonth() + 1)
       .eq("year", now.getFullYear())
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao buscar meta mensal:", error);
+    }
 
     if (data) {
       setMonthlyGoal(data);
+    } else {
+      setMonthlyGoal(null);
     }
   };
 
