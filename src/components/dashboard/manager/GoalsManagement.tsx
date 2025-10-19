@@ -26,20 +26,35 @@ export default function GoalsManagement() {
   }, [barbers, selectedMonth, selectedYear]);
 
   const fetchBarbers = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("barbers")
       .select("*")
       .eq("status", "active")
       .order("name");
+    
+    if (error) {
+      console.error("Erro ao buscar barbeiros:", error);
+      toast.error("Erro ao carregar barbeiros");
+      return;
+    }
+    
+    console.log("Barbeiros carregados:", data);
     if (data) setBarbers(data);
   };
 
   const fetchGoals = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("monthly_goals")
       .select("*")
       .eq("month", selectedMonth)
       .eq("year", selectedYear);
+
+    if (error) {
+      console.error("Erro ao buscar metas:", error);
+    }
+
+    console.log("Metas carregadas:", data);
+    console.log("Barbeiros disponíveis:", barbers);
 
     const goalsMap: Record<string, { target: string; days: string }> = {};
     
@@ -51,6 +66,7 @@ export default function GoalsManagement() {
       };
     });
 
+    console.log("Goals map criado:", goalsMap);
     setGoals(goalsMap);
   };
 
@@ -58,23 +74,46 @@ export default function GoalsManagement() {
     setLoading(true);
 
     try {
+      console.log("Salvando metas:", goals);
+      
       for (const barberId of Object.keys(goals)) {
         const goal = goals[barberId];
         
-        if (!goal.target || !goal.days) continue;
+        if (!goal.target || !goal.days) {
+          console.log(`Pulando barbeiro ${barberId} - meta incompleta`);
+          continue;
+        }
 
-        await supabase.from("monthly_goals").upsert({
+        const goalData = {
           barber_id: barberId,
           month: selectedMonth,
           year: selectedYear,
           target_commission: Number(goal.target),
           work_days: Number(goal.days),
-        });
+        };
+
+        console.log("Salvando meta:", goalData);
+
+        const { data, error } = await supabase
+          .from("monthly_goals")
+          .upsert(goalData, {
+            onConflict: "barber_id,month,year"
+          })
+          .select();
+
+        if (error) {
+          console.error("Erro ao salvar meta:", error);
+          throw error;
+        }
+
+        console.log("Meta salva com sucesso:", data);
       }
 
       toast.success("Metas salvas com sucesso!");
+      fetchGoals(); // Recarrega as metas após salvar
     } catch (error: any) {
-      toast.error(error.message);
+      console.error("Erro ao salvar metas:", error);
+      toast.error(error.message || "Erro ao salvar metas");
     } finally {
       setLoading(false);
     }
