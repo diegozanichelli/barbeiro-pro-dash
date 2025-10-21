@@ -244,32 +244,29 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           </TabsList>
 
           <TabsContent value="daily" className="space-y-6">
-            {/* Card de Foco Diário */}
+            {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
                 <CardTitle className="text-2xl flex items-center gap-2">
                   <Target className="w-6 h-6 text-primary" />
-                  SEU FOCO HOJE
+                  SUA META DE PRODUÇÃO (HOJE)
                 </CardTitle>
-                <CardDescription>O que você precisa fazer para bater sua meta</CardDescription>
+                <CardDescription>O faturamento que você precisa gerar hoje</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-center space-y-2">
-                  <p className="text-muted-foreground">Para bater sua meta, você precisa ganhar (comissão):</p>
                   <p className="text-5xl font-bold text-primary">
-                    R$ {dailyTarget.toFixed(2)}
-                  </p>
-                  <p className="text-sm text-muted-foreground">(COMISSÃO LÍQUIDA HOJE)</p>
-                </div>
-
-                <div className="border-t border-border pt-4 text-center space-y-2">
-                  <p className="text-muted-foreground">
-                    Isso significa que você precisa VENDER (produção bruta) aproximadamente:
-                  </p>
-                  <p className="text-3xl font-bold text-foreground">
                     ~ R$ {dailyTargetGross.toFixed(2)}*
                   </p>
-                  <p className="text-xs text-muted-foreground">(EM SERVIÇOS E PRODUTOS)</p>
+                  <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+                    (TOTAL EM VENDAS DE SERVIÇOS E PRODUTOS)
+                  </p>
+                </div>
+
+                <div className="border-t border-border pt-4 text-center">
+                  <p className="text-xs text-muted-foreground">
+                    *Ao bater essa meta de venda, você ganha sua meta de comissão diária de <span className="font-bold text-foreground">R$ {dailyTarget.toFixed(2)}</span>.
+                  </p>
                 </div>
               </CardContent>
             </Card>
