@@ -215,7 +215,7 @@ export default function Leaderboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RankingCard
-          title="O BICÃO DOS SERVIÇOS"
+          title="O BICHÃO DOS SERVIÇOS"
           icon={<TrendingUp className="w-5 h-5 text-success" />}
           data={servicesRanking}
         />
