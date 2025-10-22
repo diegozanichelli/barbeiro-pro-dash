@@ -46,7 +46,6 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [stats, setStats] = useState<MonthlyStats | null>(null);
   const [dailyTarget, setDailyTarget] = useState(0);
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
-  const [dailyTargetProducts, setDailyTargetProducts] = useState(0);
   const [missingLink, setMissingLink] = useState(false);
   useEffect(() => {
     fetchBarberData();
@@ -162,52 +161,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       const dailyCommission = remaining / daysLeft;
       setDailyTarget(dailyCommission);
 
-      // Buscar histórico do barbeiro para calcular o mix de comissão
-      const { data: historicalProductions } = await supabase
-        .from("daily_productions")
-        .select("commission_earned, services_total, products_total")
-        .eq("barber_id", barber.id)
-        .order("date", { ascending: false })
-        .limit(30); // Últimos 30 lançamentos
-
-      let servicesMix = 0.5; // Default 50%
-      let productsMix = 0.5; // Default 50%
-
-      if (historicalProductions && historicalProductions.length > 0) {
-        // Calcular comissão total de serviços e produtos
-        let totalServicesCommission = 0;
-        let totalProductsCommission = 0;
-
-        historicalProductions.forEach(prod => {
-          const servicesCommission = Number(prod.services_total) * (barber.services_commission / 100);
-          const productsCommission = Number(prod.products_total) * (barber.products_commission / 100);
-          
-          totalServicesCommission += servicesCommission;
-          totalProductsCommission += productsCommission;
-        });
-
-        const totalCommission = totalServicesCommission + totalProductsCommission;
-        
-        if (totalCommission > 0) {
-          servicesMix = totalServicesCommission / totalCommission;
-          productsMix = totalProductsCommission / totalCommission;
-        }
-      }
-
-      // Dividir a meta diária usando o mix histórico
-      const servicesCommissionTarget = dailyCommission * servicesMix;
-      const productsCommissionTarget = dailyCommission * productsMix;
-
-      // Converter para metas de venda bruta
+      // Calcular meta de serviços: 100% da meta diária convertida para venda de serviços
       const servicesTarget = barber.services_commission > 0 
-        ? servicesCommissionTarget / (barber.services_commission / 100)
-        : 0;
-      const productsTarget = barber.products_commission > 0
-        ? productsCommissionTarget / (barber.products_commission / 100)
+        ? dailyCommission / (barber.services_commission / 100)
         : 0;
 
       setDailyTargetServices(servicesTarget);
-      setDailyTargetProducts(productsTarget);
     }
   };
 
@@ -292,33 +251,22 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
               <CardHeader>
                 <CardTitle className="text-2xl flex items-center gap-2">
                   <Target className="w-6 h-6 text-primary" />
-                  SEU FOCO HOJE
+                  SEU FOCO HOJE É VENDER:
                 </CardTitle>
-                <CardDescription>
-                  Para bater sua meta de comissão de <span className="font-bold text-foreground">R$ {dailyTarget.toFixed(2)}</span>, seu foco de produção é:
-                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Card Serviços */}
-                  <div className="bg-card/50 border border-border rounded-lg p-6 text-center space-y-2">
-                    <p className="text-4xl font-bold text-primary">
-                      R$ {dailyTargetServices.toFixed(2)}
-                    </p>
-                    <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                      EM VENDAS DE SERVIÇOS
-                    </p>
-                  </div>
-
-                  {/* Card Produtos */}
-                  <div className="bg-card/50 border border-border rounded-lg p-6 text-center space-y-2">
-                    <p className="text-4xl font-bold text-success">
-                      R$ {dailyTargetProducts.toFixed(2)}
-                    </p>
-                    <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                      EM VENDAS DE PRODUTOS
-                    </p>
-                  </div>
+              <CardContent className="space-y-4">
+                <div className="text-center space-y-3">
+                  <p className="text-5xl font-bold text-primary">
+                    R$ {dailyTargetServices.toFixed(2)}
+                  </p>
+                  <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
+                    (EM SERVIÇOS)
+                  </p>
+                </div>
+                <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
+                  <p className="text-sm text-muted-foreground font-medium">
+                    💡 <span className="font-bold">LEMBRETE:</span> Vender PRODUTOS ajuda a bater esta meta mais rápido!
+                  </p>
                 </div>
               </CardContent>
             </Card>
