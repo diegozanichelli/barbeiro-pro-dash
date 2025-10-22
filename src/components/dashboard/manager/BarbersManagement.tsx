@@ -66,12 +66,38 @@ export default function BarbersManagement() {
       };
 
       if (editingBarber) {
+        // Atualizar dados do barbeiro na tabela barbers
         const { error } = await supabase
           .from("barbers")
           .update(barberData)
           .eq("id", editingBarber.id);
         if (error) throw error;
-        toast.success("Barbeiro atualizado!");
+
+        // Se houver email ou senha para atualizar, chamar a Edge Function
+        if (formData.email || formData.password) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData.session?.access_token;
+
+          const { data, error: updateAuthError } = await supabase.functions.invoke("update-barber-auth", {
+            body: {
+              barber_id: editingBarber.id,
+              email: formData.email || undefined,
+              password: formData.password || undefined,
+            },
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          });
+
+          if (updateAuthError) {
+            const serverMsg = (updateAuthError as any)?.context?.error || (updateAuthError as any)?.message;
+            throw new Error(serverMsg || "Falha ao atualizar dados de autenticação");
+          }
+
+          if (data?.success) {
+            toast.success("Barbeiro e dados de autenticação atualizados!");
+          }
+        } else {
+          toast.success("Barbeiro atualizado!");
+        }
       } else {
         // Garantir envio do JWT do gestor ao chamar a função
         const { data: sessionData } = await supabase.auth.getSession();
@@ -188,36 +214,44 @@ export default function BarbersManagement() {
                     </SelectContent>
                   </Select>
                 </div>
-                {!editingBarber && (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email de Login</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="barbeiro@email.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        required={!editingBarber}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Senha Temporária</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="Mínimo 6 caracteres"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        required={!editingBarber}
-                        minLength={6}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        O barbeiro usará este email e senha para fazer login
-                      </p>
-                    </div>
-                  </>
-                )}
+                <div className="space-y-2">
+                  <Label htmlFor="email">
+                    {editingBarber ? "Novo Email de Login (deixe em branco para não alterar)" : "Email de Login"}
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="barbeiro@email.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    required={!editingBarber}
+                  />
+                  {editingBarber && (
+                    <p className="text-xs text-muted-foreground">
+                      Preencha apenas se desejar alterar o email atual
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">
+                    {editingBarber ? "Nova Senha (deixe em branco para não alterar)" : "Senha Temporária"}
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Mínimo 6 caracteres"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required={!editingBarber}
+                    minLength={6}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {editingBarber 
+                      ? "Preencha apenas se desejar redefinir a senha do barbeiro"
+                      : "O barbeiro usará este email e senha para fazer login"
+                    }
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="services_commission">Comissão Serviços (%)</Label>
