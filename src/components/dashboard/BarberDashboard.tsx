@@ -11,6 +11,7 @@ import DailyProductionForm from "./barber/DailyProductionForm";
 import Leaderboard from "./Leaderboard";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { calculateRemainingWorkDays } from "@/lib/dateUtils";
 
 interface BarberDashboardProps {
   user: User;
@@ -155,10 +156,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     if (!monthlyGoal || !stats || !barber) return;
 
     const remaining = monthlyGoal.target_commission - stats.accumulated_commission;
-    const daysLeft = monthlyGoal.work_days - stats.days_worked;
+    
+    // Calcular dias úteis REAIS restantes no mês (do calendário)
+    const realDaysLeft = calculateRemainingWorkDays();
 
-    if (daysLeft > 0) {
-      const dailyCommission = remaining / daysLeft;
+    if (realDaysLeft > 0) {
+      const dailyCommission = remaining / realDaysLeft;
       setDailyTarget(dailyCommission);
 
       // Calcular meta de serviços: 100% da meta diária convertida para venda de serviços
@@ -214,7 +217,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
     : 0;
 
-  const daysLeft = monthlyGoal ? monthlyGoal.work_days - stats.days_worked : 0;
+  // Calcular dias úteis REAIS restantes no calendário
+  const daysLeft = calculateRemainingWorkDays();
 
   return (
     <div className="min-h-screen bg-background">
