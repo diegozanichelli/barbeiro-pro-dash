@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import DailyProductionForm from "./barber/DailyProductionForm";
 import Leaderboard from "./Leaderboard";
 import { format } from "date-fns";
@@ -42,6 +42,12 @@ interface MonthlyStats {
 
 export default function BarberDashboard({ user }: BarberDashboardProps) {
   const navigate = useNavigate();
+  const now = new Date();
+  
+  // Estado para o mês/ano selecionado (default: mês atual)
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  
   const [barber, setBarber] = useState<BarberData | null>(null);
   const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(null);
   const [stats, setStats] = useState<MonthlyStats | null>(null);
@@ -57,13 +63,13 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       fetchMonthlyGoal();
       fetchMonthlyStats();
     }
-  }, [barber]);
+  }, [barber, selectedMonth, selectedYear]); // Recarregar quando mês/ano mudar
 
   useEffect(() => {
     if (monthlyGoal && stats && barber) {
       calculateDailyTarget();
     }
-  }, [monthlyGoal, stats, barber]);
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear]);
 
   const fetchBarberData = async () => {
     const { data, error } = await supabase
@@ -87,13 +93,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const fetchMonthlyGoal = async () => {
     if (!barber) return;
 
-    const now = new Date();
     const { data, error } = await supabase
       .from("monthly_goals")
       .select("*")
       .eq("barber_id", barber.id)
-      .eq("month", now.getMonth() + 1)
-      .eq("year", now.getFullYear())
+      .eq("month", selectedMonth)
+      .eq("year", selectedYear)
       .maybeSingle();
 
     if (error) {
@@ -110,9 +115,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const fetchMonthlyStats = async () => {
     if (!barber) return;
 
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+    const lastDay = new Date(selectedYear, selectedMonth, 0);
 
     const { data: productions } = await supabase
       .from("daily_productions")
@@ -157,11 +161,33 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
     const remaining = monthlyGoal.target_commission - stats.accumulated_commission;
     
-    // Calcular dias úteis REAIS restantes no mês (do calendário)
-    const realDaysLeft = calculateRemainingWorkDays();
+    // Detectar o tipo de mês selecionado
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+    
+    const isCurrentMonth = selectedMonth === currentMonth && selectedYear === currentYear;
+    const isPastMonth = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth);
+    const isFutureMonth = selectedYear > currentYear || (selectedYear === currentYear && selectedMonth > currentMonth);
+    
+    let daysToUse = 0;
+    
+    if (isPastMonth) {
+      // Mês passado: zerar meta diária
+      setDailyTarget(0);
+      setDailyTargetServices(0);
+      return;
+    } else if (isCurrentMonth) {
+      // Mês atual: usar fórmula de urgência (dias no calendário - dia de hoje)
+      const selectedDate = new Date(selectedYear, selectedMonth - 1, today.getDate());
+      daysToUse = calculateRemainingWorkDays(selectedDate);
+    } else if (isFutureMonth) {
+      // Mês futuro: usar dias cadastrados na meta
+      daysToUse = monthlyGoal.work_days;
+    }
 
-    if (realDaysLeft > 0) {
-      const dailyCommission = remaining / realDaysLeft;
+    if (daysToUse > 0) {
+      const dailyCommission = remaining / daysToUse;
       setDailyTarget(dailyCommission);
 
       // Calcular meta de serviços: 100% da meta diária convertida para venda de serviços
@@ -176,6 +202,31 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
+  };
+
+  // Funções para navegação de mês
+  const handlePreviousMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedMonth(12);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedMonth(1);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  };
+
+  const handleCurrentMonth = () => {
+    const today = new Date();
+    setSelectedMonth(today.getMonth() + 1);
+    setSelectedYear(today.getFullYear());
   };
 
   if (missingLink) {
@@ -217,8 +268,17 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
     : 0;
 
-  // Calcular dias úteis REAIS restantes no calendário
-  const daysLeft = calculateRemainingWorkDays();
+  // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
+  const today = new Date();
+  const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
+  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays() : 0;
+
+  // Nome do mês em português
+  const monthNames = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+  ];
+  const selectedMonthName = monthNames[selectedMonth - 1];
 
   return (
     <div className="min-h-screen bg-background">
@@ -229,10 +289,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
               <h1 className="text-2xl font-bold bg-gradient-gold bg-clip-text text-transparent">
                 Olá, {barber.name}!
               </h1>
-              <p className="text-sm text-muted-foreground flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
-              </p>
+              {isCurrentMonth && (
+                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
+                </p>
+              )}
             </div>
             <Button variant="outline" onClick={handleSignOut}>
               <LogOut className="w-4 h-4 mr-2" />
@@ -250,28 +312,81 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           </TabsList>
 
           <TabsContent value="daily" className="space-y-6">
+            {/* Seletor de Mês/Ano */}
+            <Card className="bg-card border-border">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between gap-4">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handlePreviousMonth}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <div className="flex-1 text-center">
+                    <h2 className="text-2xl font-bold">
+                      {selectedMonthName} {selectedYear}
+                    </h2>
+                    {!isCurrentMonth && (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={handleCurrentMonth}
+                        className="text-primary"
+                      >
+                        Voltar para o mês atual
+                      </Button>
+                    )}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleNextMonth}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
                 <CardTitle className="text-2xl flex items-center gap-2">
                   <Target className="w-6 h-6 text-primary" />
-                  SEU FOCO HOJE É VENDER:
+                  {dailyTargetServices > 0 ? "SEU FOCO HOJE É VENDER:" : "META DIÁRIA"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="text-center space-y-3">
-                  <p className="text-5xl font-bold text-primary">
-                    R$ {dailyTargetServices.toFixed(2)}
-                  </p>
-                  <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
-                    (EM SERVIÇOS)
-                  </p>
-                </div>
-                <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
-                  <p className="text-sm text-muted-foreground font-medium">
-                    💡 <span className="font-bold">LEMBRETE:</span> Vender PRODUTOS ajuda a bater esta meta mais rápido!
-                  </p>
-                </div>
+                {dailyTargetServices > 0 ? (
+                  <>
+                    <div className="text-center space-y-3">
+                      <p className="text-5xl font-bold text-primary">
+                        R$ {dailyTargetServices.toFixed(2)}
+                      </p>
+                      <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
+                        (EM SERVIÇOS)
+                      </p>
+                    </div>
+                    <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
+                      <p className="text-sm text-muted-foreground font-medium">
+                        💡 <span className="font-bold">LEMBRETE:</span> Vender PRODUTOS ajuda a bater esta meta mais rápido!
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center space-y-3">
+                    <p className="text-3xl font-bold text-muted-foreground">
+                      N/A
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedMonth < today.getMonth() + 1 || selectedYear < today.getFullYear()
+                        ? "Este mês já passou"
+                        : "Aguardando dados"}
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
