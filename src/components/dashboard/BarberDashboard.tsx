@@ -470,7 +470,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 <CardDescription>{selectedMonthName} {selectedYear}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Total Vendas (Serviços)</p>
                     <p className="text-2xl font-bold text-success">R$ {stats.total_services.toFixed(2)}</p>
@@ -486,6 +486,14 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Ticket Médio</p>
                     <p className="text-2xl font-bold">R$ {stats.average_ticket.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Taxa de Venda (Serviços %)</p>
+                    <p className="text-2xl font-bold text-success">{stats.services_conversion.toFixed(1)}%</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Taxa de Venda (Produtos %)</p>
+                    <p className="text-2xl font-bold text-primary">{stats.products_conversion.toFixed(1)}%</p>
                   </div>
                 </div>
               </CardContent>
