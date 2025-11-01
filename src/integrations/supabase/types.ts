@@ -202,10 +202,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      is_manager: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
+      is_manager: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

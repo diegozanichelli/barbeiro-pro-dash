@@ -56,6 +56,28 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [missingLink, setMissingLink] = useState(false);
   useEffect(() => {
     fetchBarberData();
+
+    // Realtime listener para atualizar quando gerente alterar comissões
+    const channel = supabase
+      .channel('barbers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'barbers',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Comissão atualizada pelo gerente:', payload);
+          setBarber(payload.new as BarberData);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   useEffect(() => {
