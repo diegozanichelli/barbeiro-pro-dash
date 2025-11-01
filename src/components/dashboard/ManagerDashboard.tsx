@@ -4,12 +4,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut, BarChart3, Users, Target, Trophy, Building2 } from "lucide-react";
+import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp } from "lucide-react";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
 import GoalsManagement from "./manager/GoalsManagement";
 import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
+import BarberEvolution from "./manager/BarberEvolution";
 
 interface ManagerDashboardProps {
   user: User;
@@ -50,7 +51,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4" />
               Visão Geral
@@ -66,6 +67,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <TabsTrigger value="goals" className="gap-2">
               <Target className="w-4 h-4" />
               Metas
+            </TabsTrigger>
+            <TabsTrigger value="evolution" className="gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Evolução
             </TabsTrigger>
             <TabsTrigger value="leaderboard" className="gap-2">
               <Trophy className="w-4 h-4" />
@@ -87,6 +92,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="goals">
             <GoalsManagement />
+          </TabsContent>
+
+          <TabsContent value="evolution">
+            <BarberEvolution />
           </TabsContent>
 
           <TabsContent value="leaderboard">
