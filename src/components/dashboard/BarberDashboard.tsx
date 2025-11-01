@@ -200,9 +200,18 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       setDailyTargetServices(0);
       return;
     } else if (isCurrentMonth) {
-      // Mês atual: usar fórmula de urgência (dias no calendário - dia de hoje)
+      // Mês atual: calcular dias restantes baseados nos dias configurados
+      const workDaysConfigured = monthlyGoal.work_days;
+      const daysWorked = stats.days_worked;
+      const remainingWorkDaysFromGoal = workDaysConfigured - daysWorked;
+      
+      // Dias restantes no calendário (para urgência)
       const selectedDate = new Date(selectedYear, selectedMonth - 1, today.getDate());
-      daysToUse = calculateRemainingWorkDays(selectedDate);
+      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate);
+      
+      // Usar o MENOR entre dias configurados restantes e dias no calendário
+      // Isso cria urgência quando o tempo está acabando
+      daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
     } else if (isFutureMonth) {
       // Mês futuro: usar dias cadastrados na meta
       daysToUse = monthlyGoal.work_days;
