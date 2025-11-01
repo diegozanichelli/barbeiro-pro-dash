@@ -126,7 +126,7 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="servicesCount">Qtd. Serviços</Label>
+              <Label htmlFor="servicesCount">Qtd. Serviços Extras</Label>
               <Input
                 id="servicesCount"
                 type="number"
