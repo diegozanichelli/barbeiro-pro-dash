@@ -290,11 +290,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                     <span className="font-bold">R$ {monthlyGoal?.target_commission.toFixed(2)}</span>
                   </div>
                   <Progress value={progressPercentage} className="h-3" />
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-end text-sm">
                     <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
-                    <span className="text-muted-foreground">
-                      {stats.days_worked} de {monthlyGoal?.work_days} dias
-                    </span>
                   </div>
                 </div>
 
