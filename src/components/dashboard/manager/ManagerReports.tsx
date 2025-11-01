@@ -316,6 +316,121 @@ export default function ManagerReports() {
 
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
+          <CardTitle>Performance Individual dos Barbeiros</CardTitle>
+          <CardDescription>Receitas e métricas por barbeiro no período selecionado</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <Label>Data Inicial</Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="flex-1">
+              <Label>Data Final</Label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Barbeiro</TableHead>
+                  <TableHead className="text-right">Receita Serviços (R$)</TableHead>
+                  <TableHead className="text-right">Receita Produtos (R$)</TableHead>
+                  <TableHead className="text-right">Comissão Total (R$)</TableHead>
+                  <TableHead className="text-right">Ticket Médio (R$)</TableHead>
+                  <TableHead className="text-right">Clientes Atendidos</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(() => {
+                  // Agrupar produções por barbeiro
+                  const barberStats = new Map<string, {
+                    name: string;
+                    servicesTotal: number;
+                    productsTotal: number;
+                    commissionTotal: number;
+                    clientsTotal: number;
+                  }>();
+
+                  productions.forEach((production: any) => {
+                    const barberId = production.barber_id;
+                    const barberName = production.barbers?.name || "Barbeiro Desconhecido";
+                    
+                    if (!barberStats.has(barberId)) {
+                      barberStats.set(barberId, {
+                        name: barberName,
+                        servicesTotal: 0,
+                        productsTotal: 0,
+                        commissionTotal: 0,
+                        clientsTotal: 0,
+                      });
+                    }
+
+                    const stats = barberStats.get(barberId)!;
+                    stats.servicesTotal += Number(production.services_total);
+                    stats.productsTotal += Number(production.products_total);
+                    stats.commissionTotal += Number(production.commission_earned);
+                    stats.clientsTotal += Number(production.clients_count);
+                  });
+
+                  const barberArray = Array.from(barberStats.entries()).map(([id, stats]) => ({
+                    id,
+                    ...stats,
+                    averageTicket: stats.clientsTotal > 0 
+                      ? (stats.servicesTotal + stats.productsTotal) / stats.clientsTotal 
+                      : 0,
+                  }));
+
+                  // Ordenar por comissão total (decrescente)
+                  barberArray.sort((a, b) => b.commissionTotal - a.commissionTotal);
+
+                  if (barberArray.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                          Nenhum lançamento encontrado no período
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
+                  return barberArray.map((barber) => (
+                    <TableRow key={barber.id}>
+                      <TableCell className="font-medium">{barber.name}</TableCell>
+                      <TableCell className="text-right">
+                        R$ {barber.servicesTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        R$ {barber.productsTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-success">
+                        R$ {barber.commissionTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        R$ {barber.averageTicket.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">{barber.clientsTotal}</TableCell>
+                    </TableRow>
+                  ));
+                })()}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card border-border shadow-card-custom">
+        <CardHeader>
           <CardTitle>Lançamentos Diários</CardTitle>
           <CardDescription>Visualize, edite ou exclua lançamentos de produção</CardDescription>
         </CardHeader>

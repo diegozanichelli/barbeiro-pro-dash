@@ -150,19 +150,21 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     if (productions && productions.length > 0) {
       const totalCommission = productions.reduce((sum, p) => sum + Number(p.commission_earned), 0);
       const totalClients = productions.reduce((sum, p) => sum + Number(p.clients_count), 0);
-      const totalServices = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
-      const totalProducts = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
-      const totalRevenue = productions.reduce((sum, p) => sum + Number(p.services_total) + Number(p.products_total), 0);
+      const totalServicesCount = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
+      const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
+      const totalServicesRevenue = productions.reduce((sum, p) => sum + Number(p.services_total), 0);
+      const totalProductsRevenue = productions.reduce((sum, p) => sum + Number(p.products_total), 0);
+      const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
       setStats({
         accumulated_commission: totalCommission,
         days_worked: productions.length,
         total_clients: totalClients,
-        total_services: totalServices,
-        total_products: totalProducts,
+        total_services: totalServicesRevenue,
+        total_products: totalProductsRevenue,
         average_ticket: totalClients > 0 ? totalRevenue / totalClients : 0,
-        services_conversion: totalClients > 0 ? (totalServices / totalClients) * 100 : 0,
-        products_conversion: totalClients > 0 ? (totalProducts / totalClients) * 100 : 0,
+        services_conversion: totalClients > 0 ? (totalServicesCount / totalClients) * 100 : 0,
+        products_conversion: totalClients > 0 ? (totalProductsCount / totalClients) * 100 : 0,
       });
     } else {
       setStats({
@@ -465,25 +467,25 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                   <Users className="w-5 h-5 text-primary" />
                   SUAS MÉTRICAS DE EFICIÊNCIA
                 </CardTitle>
-                <CardDescription>Mês Atual</CardDescription>
+                <CardDescription>{selectedMonthName} {selectedYear}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Clientes Atendidos</p>
+                    <p className="text-sm text-muted-foreground">Total Vendas (Serviços)</p>
+                    <p className="text-2xl font-bold text-success">R$ {stats.total_services.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Vendas (Produtos)</p>
+                    <p className="text-2xl font-bold text-primary">R$ {stats.total_products.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Clientes Atendidos</p>
                     <p className="text-2xl font-bold">{stats.total_clients}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Ticket Médio</p>
                     <p className="text-2xl font-bold">R$ {stats.average_ticket.toFixed(2)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Taxa Serviços</p>
-                    <p className="text-2xl font-bold text-success">{stats.services_conversion.toFixed(0)}%</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Taxa Produtos</p>
-                    <p className="text-2xl font-bold text-primary">{stats.products_conversion.toFixed(0)}%</p>
                   </div>
                 </div>
               </CardContent>
