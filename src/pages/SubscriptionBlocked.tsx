@@ -37,6 +37,28 @@ export default function SubscriptionBlocked() {
     }
   };
 
+  const handleMigrateOrganization = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("migrate-organization", {
+        body: { 
+          oldManagerEmail: "cassiano.diego@gmail.com",
+          newManagerEmail: "diego_zanichelli@outlook.com",
+          newManagerPassword: "barbeiro123"
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success("Organização transferida com sucesso!");
+      console.log("Resultado da migração:", data);
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao transferir organização");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5 px-4">
       <Card className="w-full max-w-md text-center">
@@ -55,15 +77,25 @@ export default function SubscriptionBlocked() {
           </p>
           
           {userEmail === "cassiano.diego@gmail.com" && (
-            <Button
-              onClick={handleBootstrap}
-              disabled={loading}
-              className="w-full bg-gradient-gold"
-              variant="default"
-            >
-              <Shield className="w-4 h-4 mr-2" />
-              {loading ? "Ativando..." : "Ativar Super Admin"}
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={handleBootstrap}
+                disabled={loading}
+                className="w-full bg-gradient-gold"
+                variant="default"
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                {loading ? "Ativando..." : "Ativar Super Admin"}
+              </Button>
+              <Button
+                onClick={handleMigrateOrganization}
+                disabled={loading}
+                className="w-full"
+                variant="secondary"
+              >
+                {loading ? "Migrando..." : "Transferir Organização"}
+              </Button>
+            </div>
           )}
 
           <Button 
