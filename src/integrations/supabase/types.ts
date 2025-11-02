@@ -19,6 +19,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          organization_id: string | null
           products_commission: number
           services_commission: number
           status: string
@@ -30,6 +31,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          organization_id?: string | null
           products_commission?: number
           services_commission?: number
           status?: string
@@ -41,6 +43,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          organization_id?: string | null
           products_commission?: number
           services_commission?: number
           status?: string
@@ -49,6 +52,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "barbers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "barbers_unit_id_fkey"
             columns: ["unit_id"]
@@ -66,6 +76,7 @@ export type Database = {
           created_at: string
           date: string
           id: string
+          organization_id: string | null
           products_count: number
           products_total: number
           services_count: number
@@ -79,6 +90,7 @@ export type Database = {
           created_at?: string
           date: string
           id?: string
+          organization_id?: string | null
           products_count?: number
           products_total?: number
           services_count?: number
@@ -92,6 +104,7 @@ export type Database = {
           created_at?: string
           date?: string
           id?: string
+          organization_id?: string | null
           products_count?: number
           products_total?: number
           services_count?: number
@@ -106,6 +119,13 @@ export type Database = {
             referencedRelation: "barbers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "daily_productions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       monthly_goals: {
@@ -114,6 +134,7 @@ export type Database = {
           created_at: string
           id: string
           month: number
+          organization_id: string | null
           target_commission: number
           updated_at: string
           work_days: number
@@ -124,6 +145,7 @@ export type Database = {
           created_at?: string
           id?: string
           month: number
+          organization_id?: string | null
           target_commission: number
           updated_at?: string
           work_days: number
@@ -134,6 +156,7 @@ export type Database = {
           created_at?: string
           id?: string
           month?: number
+          organization_id?: string | null
           target_commission?: number
           updated_at?: string
           work_days?: number
@@ -147,28 +170,59 @@ export type Database = {
             referencedRelation: "barbers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "monthly_goals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          stripe_customer_id: string | null
+          subscription_status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          stripe_customer_id?: string | null
+          subscription_status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          stripe_customer_id?: string | null
+          subscription_status?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
           created_at: string
           full_name: string | null
           id: string
-          role: string
           updated_at: string
         }
         Insert: {
           created_at?: string
           full_name?: string | null
           id: string
-          role?: string
           updated_at?: string
         }
         Update: {
           created_at?: string
           full_name?: string | null
           id?: string
-          role?: string
           updated_at?: string
         }
         Relationships: []
@@ -178,6 +232,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          organization_id: string | null
           status: string
           updated_at: string
         }
@@ -185,6 +240,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          organization_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -192,20 +248,69 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          organization_id?: string | null
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "units_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id?: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_user_organization: { Args: { _user_id: string }; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       is_manager: { Args: never; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "super_admin" | "manager" | "barber"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -332,6 +437,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["super_admin", "manager", "barber"],
+    },
   },
 } as const

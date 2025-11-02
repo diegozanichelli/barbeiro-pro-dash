@@ -46,9 +46,9 @@ export default function Dashboard() {
   const fetchUserRole = async () => {
     try {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("user_roles")
         .select("role")
-        .eq("id", user!.id)
+        .eq("user_id", user!.id)
         .single();
 
       if (error) throw error;
@@ -70,7 +70,9 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      {userRole === "manager" ? (
+      {userRole === "super_admin" ? (
+        <div>Super Admin Dashboard - Coming Soon</div>
+      ) : userRole === "manager" ? (
         <ManagerDashboard user={user} />
       ) : (
         <BarberDashboard user={user} />
