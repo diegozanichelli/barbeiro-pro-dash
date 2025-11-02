@@ -39,6 +39,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     monthly_revenue: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     fetchOrganizations();
@@ -102,6 +103,46 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleMigrateOrganization = async () => {
+    if (user.email !== "cassiano.diego@gmail.com") {
+      toast({
+        title: "Não autorizado",
+        description: "Apenas cassiano.diego@gmail.com pode executar esta operação",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setMigrating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("migrate-organization", {
+        body: {
+          oldManagerEmail: "cassiano.diego@gmail.com",
+          newManagerEmail: "diego_zanichelli@outlook.com",
+          newManagerPassword: "barbeiro123",
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Migração concluída!",
+        description: `Novo gerente criado: diego_zanichelli@outlook.com (senha: barbeiro123)`,
+      });
+
+      fetchOrganizations();
+    } catch (error) {
+      console.error("Error migrating organization:", error);
+      toast({
+        title: "Erro na migração",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
@@ -145,10 +186,21 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                 <p className="text-sm text-muted-foreground">Gerenciamento de Organizações</p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
-            </Button>
+            <div className="flex gap-2">
+              {user.email === "cassiano.diego@gmail.com" && (
+                <Button 
+                  variant="default" 
+                  onClick={handleMigrateOrganization}
+                  disabled={migrating}
+                >
+                  {migrating ? "Migrando..." : "🔄 Transferir Organização"}
+                </Button>
+              )}
+              <Button variant="outline" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Sair
+              </Button>
+            </div>
           </div>
         </div>
       </header>
