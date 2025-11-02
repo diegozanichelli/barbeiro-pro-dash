@@ -1,1 +1,16 @@
 project_id = "pcszguaqnodzshekldgw"
+
+[functions.create-barber]
+verify_jwt = false
+
+[functions.update-barber-auth]
+verify_jwt = false
+
+[functions.create-organization-checkout]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.check-subscription-status]
+verify_jwt = true

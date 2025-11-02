@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
+import SuperAdminDashboard from "@/components/dashboard/SuperAdminDashboard";
 import ManagerDashboard from "@/components/dashboard/ManagerDashboard";
 import BarberDashboard from "@/components/dashboard/BarberDashboard";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 
 export default function Dashboard() {
@@ -69,14 +71,16 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {userRole === "super_admin" ? (
-        <div>Super Admin Dashboard - Coming Soon</div>
-      ) : userRole === "manager" ? (
-        <ManagerDashboard user={user} />
-      ) : (
-        <BarberDashboard user={user} />
-      )}
-    </div>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background">
+        {userRole === "super_admin" ? (
+          <SuperAdminDashboard user={user} />
+        ) : userRole === "manager" ? (
+          <ManagerDashboard user={user} />
+        ) : (
+          <BarberDashboard user={user} />
+        )}
+      </div>
+    </ProtectedRoute>
   );
 }

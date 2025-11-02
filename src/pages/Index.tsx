@@ -1,51 +1,82 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Scissors, TrendingUp, Target, Trophy } from "lucide-react";
+import { BarChart3, Target, Trophy, Building2 } from "lucide-react";
 
-const Index = () => {
+export default function Index() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
       <div className="max-w-4xl w-full text-center space-y-8">
-        <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 rounded-full bg-gradient-gold flex items-center justify-center shadow-gold">
-            <Scissors className="w-10 h-10 text-primary-foreground" />
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <div className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center">
+            <BarChart3 className="w-8 h-8 text-primary-foreground" />
           </div>
         </div>
         
         <h1 className="text-5xl md:text-6xl font-bold bg-gradient-gold bg-clip-text text-transparent">
-          Barber Performance
+          SGP-B
         </h1>
         
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Sistema completo de gestão de performance para barbearias. Acompanhe metas, comissões e rankings em tempo real.
+        <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
+          Sistema de Gestão de Performance para Barbearias
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-          <div className="p-6 rounded-lg bg-card border border-border">
+        <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+          Transforme sua barbearia com gestão profissional de metas, comissões e performance.
+          7 dias grátis para testar!
+        </p>
+
+        <div className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto mt-12">
+          <div className="p-6 rounded-lg border border-border bg-card/50 backdrop-blur-sm">
             <Target className="w-8 h-8 text-primary mx-auto mb-3" />
-            <h3 className="font-bold mb-2">Metas Inteligentes</h3>
-            <p className="text-sm text-muted-foreground">Cálculo automático de metas diárias</p>
+            <h3 className="font-semibold mb-2">Metas Inteligentes</h3>
+            <p className="text-sm text-muted-foreground">
+              Defina e acompanhe metas personalizadas para cada barbeiro
+            </p>
           </div>
-          <div className="p-6 rounded-lg bg-card border border-border">
-            <TrendingUp className="w-8 h-8 text-success mx-auto mb-3" />
-            <h3 className="font-bold mb-2">Dashboard Completo</h3>
-            <p className="text-sm text-muted-foreground">Métricas e análises em tempo real</p>
+          
+          <div className="p-6 rounded-lg border border-border bg-card/50 backdrop-blur-sm">
+            <BarChart3 className="w-8 h-8 text-primary mx-auto mb-3" />
+            <h3 className="font-semibold mb-2">Dashboard Completo</h3>
+            <p className="text-sm text-muted-foreground">
+              Visualize performance, comissões e receitas em tempo real
+            </p>
           </div>
-          <div className="p-6 rounded-lg bg-card border border-border">
+          
+          <div className="p-6 rounded-lg border border-border bg-card/50 backdrop-blur-sm">
             <Trophy className="w-8 h-8 text-primary mx-auto mb-3" />
-            <h3 className="font-bold mb-2">Gamificação</h3>
-            <p className="text-sm text-muted-foreground">Rankings e competições saudáveis</p>
+            <h3 className="font-semibold mb-2">Gamificação</h3>
+            <p className="text-sm text-muted-foreground">
+              Rankings e bônus aceleradores para motivar sua equipe
+            </p>
           </div>
         </div>
 
-        <Button size="lg" onClick={() => navigate("/auth")} className="mt-8">
-          Começar Agora
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-12">
+          <Button 
+            size="lg" 
+            onClick={() => navigate("/onboarding")}
+            className="text-lg px-8 py-6"
+          >
+            <Building2 className="mr-2 h-5 w-5" />
+            Começar Teste Grátis de 7 Dias
+          </Button>
+          
+          <Button 
+            size="lg" 
+            variant="outline"
+            onClick={() => navigate("/auth")}
+            className="text-lg px-8 py-6"
+          >
+            Já tenho uma conta
+          </Button>
+        </div>
+
+        <p className="text-sm text-muted-foreground mt-8">
+          Apenas R$ 99,00/mês após o período de teste • Cancele quando quiser
+        </p>
       </div>
     </div>
   );
-};
-
-export default Index;
+}

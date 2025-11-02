@@ -23,17 +23,41 @@ export default function UnitsManagement() {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<any | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     status: "active",
   });
 
   useEffect(() => {
-    fetchUnits();
+    fetchOrganizationId();
   }, []);
 
+  useEffect(() => {
+    if (organizationId) {
+      fetchUnits();
+    }
+  }, [organizationId]);
+
+  const fetchOrganizationId = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("user_roles")
+      .select("organization_id")
+      .eq("user_id", user.id)
+      .single();
+    
+    if (data) setOrganizationId(data.organization_id);
+  };
+
   const fetchUnits = async () => {
-    const { data } = await supabase.from("units").select("*").order("name");
+    const { data } = await supabase
+      .from("units")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("name");
     if (data) setUnits(data);
   };
 
@@ -50,7 +74,10 @@ export default function UnitsManagement() {
         if (error) throw error;
         toast.success("Unidade atualizada!");
       } else {
-        const { error } = await supabase.from("units").insert([formData]);
+        const { error } = await supabase.from("units").insert([{
+          ...formData,
+          organization_id: organizationId
+        }]);
         if (error) throw error;
         toast.success("Unidade criada!");
       }
