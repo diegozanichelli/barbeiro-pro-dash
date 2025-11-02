@@ -47,40 +47,86 @@ serve(async (req) => {
     if (!oldUser) throw new Error("Old manager not found");
     logStep("Old manager found", { userId: oldUser.id });
 
-    // Step 2: Find the organization
+    // Step 2: Find or create the organization
     logStep("Looking for organization");
-    const { data: barbers, error: barbersError } = await supabaseAdmin
-      .from("barbers")
-      .select("organization_id")
+    const { data: existingOrgs, error: orgsError } = await supabaseAdmin
+      .from("organizations")
+      .select("*")
       .limit(1);
 
-    if (barbersError) throw new Error(`Barbers query error: ${barbersError.message}`);
+    if (orgsError) throw new Error(`Organizations query error: ${orgsError.message}`);
     
-    let organizationId: string | null = null;
-    if (barbers && barbers.length > 0) {
-      organizationId = barbers[0].organization_id;
-    }
+    let organizationId: string;
+    
+    if (existingOrgs && existingOrgs.length > 0) {
+      // Organization exists
+      organizationId = existingOrgs[0].id;
+      logStep("Existing organization found", { organizationId });
+    } else {
+      // Create new organization
+      logStep("No organization found, creating new one");
+      const { data: newOrg, error: createOrgError } = await supabaseAdmin
+        .from("organizations")
+        .insert({
+          name: "Barbearia SGP-B",
+          subscription_status: "active"
+        })
+        .select()
+        .single();
 
-    if (!organizationId) {
-      // Try to find from user_roles history
-      const { data: oldRoles, error: rolesError } = await supabaseAdmin
-        .from("user_roles")
-        .select("organization_id")
-        .eq("user_id", oldUser.id)
-        .not("organization_id", "is", null)
-        .limit(1);
+      if (createOrgError) throw new Error(`Organization creation error: ${createOrgError.message}`);
+      if (!newOrg) throw new Error("Failed to create organization");
       
-      if (rolesError) throw new Error(`Roles query error: ${rolesError.message}`);
-      if (oldRoles && oldRoles.length > 0) {
-        organizationId = oldRoles[0].organization_id;
+      organizationId = newOrg.id;
+      logStep("New organization created", { organizationId });
+
+      // Link all existing barbers to this organization
+      logStep("Linking barbers to organization");
+      const { error: updateBarbersError } = await supabaseAdmin
+        .from("barbers")
+        .update({ organization_id: organizationId })
+        .is("organization_id", null);
+
+      if (updateBarbersError) {
+        logStep("Warning: Could not link barbers", { error: updateBarbersError.message });
+      }
+
+      // Link all existing units to this organization
+      logStep("Linking units to organization");
+      const { error: updateUnitsError } = await supabaseAdmin
+        .from("units")
+        .update({ organization_id: organizationId })
+        .is("organization_id", null);
+
+      if (updateUnitsError) {
+        logStep("Warning: Could not link units", { error: updateUnitsError.message });
+      }
+
+      // Link all existing daily_productions to this organization
+      logStep("Linking daily productions to organization");
+      const { error: updateProductionsError } = await supabaseAdmin
+        .from("daily_productions")
+        .update({ organization_id: organizationId })
+        .is("organization_id", null);
+
+      if (updateProductionsError) {
+        logStep("Warning: Could not link productions", { error: updateProductionsError.message });
+      }
+
+      // Link all existing monthly_goals to this organization
+      logStep("Linking monthly goals to organization");
+      const { error: updateGoalsError } = await supabaseAdmin
+        .from("monthly_goals")
+        .update({ organization_id: organizationId })
+        .is("organization_id", null);
+
+      if (updateGoalsError) {
+        logStep("Warning: Could not link goals", { error: updateGoalsError.message });
       }
     }
 
-    if (!organizationId) throw new Error("Organization not found");
-    logStep("Organization found", { organizationId });
-
-    // Step 3: Activate the organization
-    logStep("Activating organization");
+    // Step 3: Ensure organization is active
+    logStep("Ensuring organization is active");
     const { error: orgUpdateError } = await supabaseAdmin
       .from("organizations")
       .update({ subscription_status: "active" })
