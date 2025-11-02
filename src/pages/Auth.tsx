@@ -18,7 +18,6 @@ export default function Auth() {
     email: "",
     password: "",
     fullName: "",
-    role: "manager",
   });
 
   const [signInData, setSignInData] = useState({
@@ -35,17 +34,17 @@ export default function Auth() {
         email: signUpData.email,
         password: signUpData.password,
         options: {
+          emailRedirectTo: `${window.location.origin}/`,
           data: {
             full_name: signUpData.fullName,
-            role: signUpData.role,
           },
         },
       });
 
       if (error) throw error;
 
-      toast.success("Conta criada com sucesso!");
-      navigate("/dashboard");
+      toast.success("Conta criada! Redirecionando para checkout...");
+      navigate("/onboarding");
     } catch (error: any) {
       toast.error(error.message || "Erro ao criar conta");
     } finally {
