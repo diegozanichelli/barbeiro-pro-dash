@@ -43,18 +43,35 @@ serve(async (req) => {
     }
     logStep("User found", { userId: user.id });
 
-    // Upsert super_admin role
+    // Delete any existing super_admin role for this user, then insert
+    const { error: deleteError } = await supabaseAdmin
+      .from("user_roles")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("role", "super_admin");
+
+    if (deleteError) {
+      logStep("Error deleting existing role (may not exist)", { error: deleteError.message });
+    }
+
+    // Insert super_admin role
     const { error: roleError } = await supabaseAdmin
       .from("user_roles")
-      .upsert({
+      .insert({
         user_id: user.id,
         role: "super_admin",
         organization_id: null,
-      }, {
-        onConflict: "user_id,role"
       });
 
-    if (roleError) throw roleError;
+    if (roleError) {
+      logStep("Role insert error details", { 
+        message: roleError.message,
+        details: roleError.details,
+        hint: roleError.hint,
+        code: roleError.code 
+      });
+      throw roleError;
+    }
     logStep("Super admin role assigned");
 
     // Find and activate organization
@@ -81,8 +98,13 @@ serve(async (req) => {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logStep("ERROR", { message: errorMessage });
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    const errorDetails = error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    } : { raw: error };
+    logStep("ERROR", errorDetails);
+    return new Response(JSON.stringify({ error: errorMessage, details: errorDetails }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
