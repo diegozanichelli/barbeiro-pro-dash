@@ -34,8 +34,12 @@ serve(async (req) => {
     );
 
     // Find user by email
+    logStep("Listing users from auth.users");
     const { data: { users }, error: userError } = await supabaseAdmin.auth.admin.listUsers();
-    if (userError) throw userError;
+    if (userError) {
+      logStep("Error listing users", { error: userError.message });
+      throw new Error(`User list error: ${userError.message}`);
+    }
 
     const user = users.find(u => u.email === email);
     if (!user) {
@@ -43,56 +47,87 @@ serve(async (req) => {
     }
     logStep("User found", { userId: user.id });
 
-    // Delete any existing super_admin role for this user, then insert
-    const { error: deleteError } = await supabaseAdmin
+    // Check existing roles
+    logStep("Checking existing roles for user");
+    const { data: existingRoles, error: checkError } = await supabaseAdmin
       .from("user_roles")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("role", "super_admin");
+      .select("*")
+      .eq("user_id", user.id);
 
-    if (deleteError) {
-      logStep("Error deleting existing role (may not exist)", { error: deleteError.message });
+    if (checkError) {
+      logStep("Error checking existing roles", { 
+        message: checkError.message,
+        details: checkError.details,
+        hint: checkError.hint,
+        code: checkError.code 
+      });
+      throw new Error(`Check roles error: ${checkError.message}`);
     }
+    
+    logStep("Existing roles found", { roles: existingRoles });
 
-    // Insert super_admin role
-    const { error: roleError } = await supabaseAdmin
+    // Insert super_admin role (will fail if already exists, which is fine)
+    logStep("Attempting to insert super_admin role");
+    const { data: insertData, error: roleError } = await supabaseAdmin
       .from("user_roles")
       .insert({
         user_id: user.id,
         role: "super_admin",
         organization_id: null,
-      });
+      })
+      .select();
 
     if (roleError) {
-      logStep("Role insert error details", { 
-        message: roleError.message,
-        details: roleError.details,
-        hint: roleError.hint,
-        code: roleError.code 
-      });
-      throw roleError;
+      // If it's a duplicate error, that's OK - user already has super_admin
+      if (roleError.code === "23505") {
+        logStep("Super admin role already exists (duplicate key)");
+      } else {
+        logStep("Role insert error details", { 
+          message: roleError.message,
+          details: roleError.details,
+          hint: roleError.hint,
+          code: roleError.code 
+        });
+        throw new Error(`Role insert error: ${roleError.message} (code: ${roleError.code})`);
+      }
+    } else {
+      logStep("Super admin role assigned", { insertData });
     }
-    logStep("Super admin role assigned");
 
     // Find and activate organization
-    const { data: userRole } = await supabaseAdmin
+    logStep("Looking for organization to activate");
+    const { data: userRole, error: orgLookupError } = await supabaseAdmin
       .from("user_roles")
       .select("organization_id")
       .eq("user_id", user.id)
       .not("organization_id", "is", null)
-      .single();
+      .maybeSingle();
+
+    if (orgLookupError) {
+      logStep("Error looking up organization", { error: orgLookupError.message });
+      throw new Error(`Org lookup error: ${orgLookupError.message}`);
+    }
 
     if (userRole?.organization_id) {
+      logStep("Activating organization", { organizationId: userRole.organization_id });
       const { error: orgError } = await supabaseAdmin
         .from("organizations")
         .update({ subscription_status: "active" })
         .eq("id", userRole.organization_id);
 
-      if (orgError) throw orgError;
-      logStep("Organization activated", { organizationId: userRole.organization_id });
+      if (orgError) {
+        logStep("Error activating organization", { 
+          message: orgError.message,
+          details: orgError.details 
+        });
+        throw new Error(`Org activation error: ${orgError.message}`);
+      }
+      logStep("Organization activated successfully");
+    } else {
+      logStep("No organization found to activate");
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, userId: user.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
@@ -102,8 +137,8 @@ serve(async (req) => {
       message: error.message,
       stack: error.stack,
       name: error.name
-    } : { raw: error };
-    logStep("ERROR", errorDetails);
+    } : { raw: String(error) };
+    logStep("CAUGHT ERROR", errorDetails);
     return new Response(JSON.stringify({ error: errorMessage, details: errorDetails }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
