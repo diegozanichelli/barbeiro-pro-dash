@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.migrate-organization]
 verify_jwt = false
+
+[functions.complete-onboarding]
+verify_jwt = true
