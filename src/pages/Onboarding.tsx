@@ -25,7 +25,8 @@ export default function Onboarding() {
     setLoading(true);
 
     try {
-      // Step 1: Create user account
+      // Step 1: Try to create user account, or login if already exists
+      let userId: string;
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -37,13 +38,27 @@ export default function Onboarding() {
         }
       });
 
-      if (signUpError) throw signUpError;
+      // If user already exists, login instead
+      if (signUpError?.message === "User already registered") {
+        console.log("User already exists, logging in...");
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
 
-      if (!signUpData.user) {
+        if (signInError) throw signInError;
+        if (!signInData.user) throw new Error("Falha ao fazer login");
+        
+        userId = signInData.user.id;
+        console.log("User logged in successfully:", userId);
+      } else if (signUpError) {
+        throw signUpError;
+      } else if (!signUpData.user) {
         throw new Error("Falha ao criar usuário");
+      } else {
+        userId = signUpData.user.id;
+        console.log("User created successfully:", userId);
       }
-
-      console.log("User created successfully:", signUpData.user.id);
 
       // Step 2: Create Stripe checkout session
       const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
