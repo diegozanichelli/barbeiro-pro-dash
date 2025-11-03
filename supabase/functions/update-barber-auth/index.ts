@@ -8,9 +8,14 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log('=== Update Barber Auth - Início ===')
+    
     // Verificar autenticação
     const authHeader = req.headers.get('Authorization')
+    console.log('Auth header presente:', !!authHeader)
+    
     if (!authHeader) {
+      console.error('Sem header de autorização')
       return new Response(
         JSON.stringify({ error: 'Não autorizado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -48,22 +53,29 @@ Deno.serve(async (req) => {
 
     // Verificar se o usuário logado é gerente
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    console.log('User ID:', user?.id)
+    console.log('User error:', userError)
     
     if (userError || !user) {
+      console.error('Erro ao obter usuário:', userError)
       return new Response(
         JSON.stringify({ error: 'Usuário não autenticado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Verificar se o usuário é gerente
-    const { data: profile, error: profileError } = await supabaseClient
-      .from('profiles')
+    // Verificar se o usuário é gerente através da tabela user_roles
+    const { data: userRole, error: roleError } = await supabaseClient
+      .from('user_roles')
       .select('role')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single()
 
-    if (profileError || profile?.role !== 'manager') {
+    console.log('User role:', userRole?.role)
+    console.log('Role error:', roleError)
+
+    if (roleError || userRole?.role !== 'manager') {
+      console.error('Acesso negado - não é manager')
       return new Response(
         JSON.stringify({ error: 'Acesso negado. Apenas gerentes podem atualizar dados de autenticação.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -72,8 +84,12 @@ Deno.serve(async (req) => {
 
     // Obter dados da requisição
     const { barber_id, email, password } = await req.json()
+    console.log('Barber ID:', barber_id)
+    console.log('Email to update:', email ? 'presente' : 'ausente')
+    console.log('Password to update:', password ? 'presente' : 'ausente')
 
     if (!barber_id) {
+      console.error('Barber ID não fornecido')
       return new Response(
         JSON.stringify({ error: 'ID do barbeiro é obrigatório' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -87,7 +103,12 @@ Deno.serve(async (req) => {
       .eq('id', barber_id)
       .single()
 
+    console.log('Barber found:', !!barber)
+    console.log('Barber user_id:', barber?.user_id)
+    console.log('Barber error:', barberError)
+
     if (barberError || !barber?.user_id) {
+      console.error('Barbeiro não encontrado:', barberError)
       return new Response(
         JSON.stringify({ error: 'Barbeiro não encontrado ou sem usuário vinculado' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -114,6 +135,7 @@ Deno.serve(async (req) => {
     }
 
     // Atualizar dados de autenticação usando o Admin client
+    console.log('Chamando updateUserById com:', { user_id: barber.user_id, updateData })
     const { data: updatedUser, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       barber.user_id,
       updateData
@@ -127,6 +149,7 @@ Deno.serve(async (req) => {
       )
     }
 
+    console.log('Usuário atualizado com sucesso')
     return new Response(
       JSON.stringify({ 
         success: true, 

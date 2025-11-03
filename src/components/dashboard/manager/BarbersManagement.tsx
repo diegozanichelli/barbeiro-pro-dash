@@ -75,8 +75,13 @@ export default function BarbersManagement() {
 
         // Se houver email ou senha para atualizar, chamar a Edge Function
         if (formData.email || formData.password) {
+          console.log("Atualizando dados de autenticação...");
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData.session?.access_token;
+
+          if (!accessToken) {
+            throw new Error("Sessão expirada. Faça login novamente.");
+          }
 
           const { data, error: updateAuthError } = await supabase.functions.invoke("update-barber-auth", {
             body: {
@@ -84,16 +89,21 @@ export default function BarbersManagement() {
               email: formData.email || undefined,
               password: formData.password || undefined,
             },
-            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+            headers: { Authorization: `Bearer ${accessToken}` },
           });
 
+          console.log("Resposta da função:", { data, error: updateAuthError });
+
           if (updateAuthError) {
-            const serverMsg = (updateAuthError as any)?.context?.error || (updateAuthError as any)?.message;
-            throw new Error(serverMsg || "Falha ao atualizar dados de autenticação");
+            console.error("Erro da edge function:", updateAuthError);
+            const errorMsg = data?.error || updateAuthError.message || "Falha ao atualizar dados de autenticação";
+            throw new Error(errorMsg);
           }
 
           if (data?.success) {
             toast.success("Barbeiro e dados de autenticação atualizados!");
+          } else {
+            throw new Error(data?.error || "Falha ao atualizar dados de autenticação");
           }
         } else {
           toast.success("Barbeiro atualizado!");
