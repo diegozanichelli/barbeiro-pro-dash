@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,13 +10,14 @@ import { Loader2, Building2 } from "lucide-react";
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     organizationName: "",
-    fullName: "",
-    email: "",
-    password: "",
+    fullName: location.state?.fullName || "",
+    email: location.state?.email || "",
+    password: location.state?.password || "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,7 +30,7 @@ export default function Onboarding() {
         email: formData.email,
         password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
+          emailRedirectTo: `${window.location.origin}/onboarding-success`,
           data: {
             full_name: formData.fullName,
           }
@@ -39,8 +40,10 @@ export default function Onboarding() {
       if (signUpError) throw signUpError;
 
       if (!signUpData.user) {
-        throw new Error("Failed to create user");
+        throw new Error("Falha ao criar usuário");
       }
+
+      console.log("User created successfully:", signUpData.user.id);
 
       // Step 2: Create Stripe checkout session
       const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
@@ -52,11 +55,18 @@ export default function Onboarding() {
         }
       );
 
-      if (checkoutError) throw checkoutError;
+      if (checkoutError) {
+        console.error("Checkout error:", checkoutError);
+        throw checkoutError;
+      }
+
+      console.log("Checkout session created:", checkoutData);
 
       // Redirect to Stripe checkout
-      if (checkoutData.url) {
+      if (checkoutData?.url) {
         window.location.href = checkoutData.url;
+      } else {
+        throw new Error("URL de checkout não recebida");
       }
     } catch (error: any) {
       console.error("Onboarding error:", error);

@@ -27,29 +27,15 @@ export default function Auth() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.signUp({
-        email: signUpData.email,
+    
+    // Apenas redireciona para onboarding com os dados
+    navigate("/onboarding", { 
+      state: { 
+        email: signUpData.email, 
         password: signUpData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: {
-            full_name: signUpData.fullName,
-          },
-        },
-      });
-
-      if (error) throw error;
-
-      toast.success("Conta criada! Redirecionando para checkout...");
-      navigate("/onboarding");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao criar conta");
-    } finally {
-      setLoading(false);
-    }
+        fullName: signUpData.fullName 
+      } 
+    });
   };
 
   const handleSignIn = async (e: React.FormEvent) => {
