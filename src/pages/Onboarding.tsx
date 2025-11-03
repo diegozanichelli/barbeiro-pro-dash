@@ -63,9 +63,11 @@ export default function Onboarding() {
       console.log("Checkout session created:", checkoutData);
 
       // Redirect to Stripe checkout
-      if (checkoutData?.url) {
-        window.location.href = checkoutData.url;
+      if (checkoutData?.data?.url) {
+        console.log("Redirecting to Stripe:", checkoutData.data.url);
+        window.location.href = checkoutData.data.url;
       } else {
+        console.error("No URL in response:", checkoutData);
         throw new Error("URL de checkout não recebida");
       }
     } catch (error: any) {
