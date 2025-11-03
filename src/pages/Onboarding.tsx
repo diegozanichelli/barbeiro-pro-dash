@@ -60,6 +60,19 @@ export default function Onboarding() {
         console.log("User created successfully:", userId);
       }
 
+      // Ensure we have an active session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        console.log("No active session after sign up, attempting sign in...");
+        const { error: signInError2 } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+        if (signInError2) {
+          throw new Error("Não foi possível autenticar para criar o checkout. Verifique sua confirmação de e-mail.");
+        }
+      }
+
       // Step 2: Create Stripe checkout session
       const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
         "create-organization-checkout",
