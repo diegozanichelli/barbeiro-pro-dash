@@ -1,12 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { BarChart3, Target, Trophy, Building2 } from "lucide-react";
-
 export default function Index() {
   const navigate = useNavigate();
-
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
+  return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
       <div className="max-w-4xl w-full text-center space-y-8">
         <div className="flex items-center justify-center gap-3 mb-6">
           <div className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center">
@@ -14,9 +11,9 @@ export default function Index() {
           </div>
         </div>
         
-        <h1 className="text-5xl md:text-6xl font-bold bg-gradient-gold bg-clip-text text-transparent">
-          SGP-B
-        </h1>
+        <h1 className="text-5xl md:text-6xl font-bold bg-gradient-gold bg-clip-text text-transparent">Barber Performance
+
+      </h1>
         
         <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
           Sistema de Gestão de Performance para Barbearias
@@ -54,21 +51,12 @@ export default function Index() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-12">
-          <Button 
-            size="lg" 
-            onClick={() => navigate("/onboarding")}
-            className="text-lg px-8 py-6"
-          >
+          <Button size="lg" onClick={() => navigate("/onboarding")} className="text-lg px-8 py-6">
             <Building2 className="mr-2 h-5 w-5" />
             Começar Teste Grátis de 7 Dias
           </Button>
           
-          <Button 
-            size="lg" 
-            variant="outline"
-            onClick={() => navigate("/auth")}
-            className="text-lg px-8 py-6"
-          >
+          <Button size="lg" variant="outline" onClick={() => navigate("/auth")} className="text-lg px-8 py-6">
             Já tenho uma conta
           </Button>
         </div>
@@ -77,6 +65,5 @@ export default function Index() {
           Apenas R$ 99,00/mês após o período de teste • Cancele quando quiser
         </p>
       </div>
-    </div>
-  );
+    </div>;
 }
