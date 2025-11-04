@@ -305,6 +305,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_organization_rankings: {
+        Args: { p_end_date: string; p_start_date: string; p_unit_id?: string }
+        Returns: {
+          barber_id: string
+          barber_name: string
+          clients_count: number
+          commission_earned: number
+          products_total: number
+          services_basic_total: number
+          services_extra_total: number
+          services_total: number
+          unit_name: string
+        }[]
+      }
       get_user_organization: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

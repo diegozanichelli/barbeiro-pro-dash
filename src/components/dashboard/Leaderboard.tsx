@@ -60,62 +60,30 @@ export default function Leaderboard() {
   const fetchRankings = async () => {
     const { start, end } = getDateRange();
 
-    let query = supabase
-      .from("daily_productions")
-      .select(`
-        barber_id,
-        services_total,
-        services_basic_total,
-        services_extra_total,
-        products_total,
-        clients_count,
-        commission_earned,
-        barbers!inner(name, unit_id, units!inner(name))
-      `)
-      .gte("date", start)
-      .lte("date", end);
-
-    if (unitFilter !== "all") {
-      query = query.eq("barbers.unit_id", unitFilter);
-    }
-
-    const { data: productions } = await query;
-
-    if (!productions) return;
-
-    // Agregar dados por barbeiro
-    const barberStats = new Map<string, any>();
-
-    productions.forEach((p: any) => {
-      const barberId = p.barber_id;
-      if (!barberStats.has(barberId)) {
-        barberStats.set(barberId, {
-          barber_id: barberId,
-          barber_name: p.barbers.name,
-          unit_name: p.barbers.units.name,
-          services_total: 0,
-          services_extra_total: 0,
-          products_total: 0,
-          clients_count: 0,
-          commission_earned: 0,
-        });
-      }
-
-      const stats = barberStats.get(barberId);
-      
-      // Calcular total de serviços (retrocompatível)
-      const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
-        ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
-        : (Number(p.services_total) || 0);
-      
-      stats.services_total += servicesTotal;
-      stats.services_extra_total += Number(p.services_extra_total) || 0;
-      stats.products_total += Number(p.products_total);
-      stats.clients_count += Number(p.clients_count);
-      stats.commission_earned += Number(p.commission_earned);
+    // Use the security definer function to get rankings for all barbers in the organization
+    const { data: rankings, error } = await supabase.rpc("get_organization_rankings", {
+      p_start_date: start,
+      p_end_date: end,
+      p_unit_id: unitFilter === "all" ? null : unitFilter,
     });
 
-    const statsArray = Array.from(barberStats.values());
+    if (error) {
+      console.error("Error fetching rankings:", error);
+      return;
+    }
+
+    if (!rankings) return;
+
+    const statsArray = rankings.map((r: any) => ({
+      barber_id: r.barber_id,
+      barber_name: r.barber_name,
+      unit_name: r.unit_name,
+      services_total: Number(r.services_total) || 0,
+      services_extra_total: Number(r.services_extra_total) || 0,
+      products_total: Number(r.products_total) || 0,
+      clients_count: Number(r.clients_count) || 0,
+      commission_earned: Number(r.commission_earned) || 0,
+    }));
 
     // Ranking de Serviços
     const services = statsArray
