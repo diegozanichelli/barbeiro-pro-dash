@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parse } from "date-fns";
+import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 
 interface DailyProduction {
   id: string;
@@ -42,8 +44,10 @@ export default function ManagerReports() {
   const [productions, setProductions] = useState<DailyProduction[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), "yyyy-MM-dd"));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), "yyyy-MM-dd"));
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -59,19 +63,23 @@ export default function ManagerReports() {
   }, []);
 
   useEffect(() => {
-    fetchStats();
-    fetchProductions();
-  }, [startDate, endDate, selectedBarber]);
+    if (dateRange?.from && dateRange?.to) {
+      fetchStats();
+      fetchProductions();
+    }
+  }, [dateRange, selectedBarber]);
 
   const fetchStats = async () => {
+    if (!dateRange?.from || !dateRange?.to) return;
+    
     const now = new Date();
 
     // Buscar produções no período selecionado
     const { data: productions } = await supabase
       .from("daily_productions")
       .select("*")
-      .gte("date", startDate)
-      .lte("date", endDate);
+      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+      .lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
     // Buscar barbeiros ativos
     const { data: barbers } = await supabase
@@ -141,11 +149,13 @@ export default function ManagerReports() {
   };
 
   const fetchProductions = async () => {
+    if (!dateRange?.from || !dateRange?.to) return;
+    
     let query = supabase
       .from("daily_productions")
       .select("*, barbers(name)")
-      .gte("date", startDate)
-      .lte("date", endDate)
+      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+      .lte("date", format(dateRange.to, "yyyy-MM-dd"))
       .order("date", { ascending: false });
 
     if (selectedBarber !== "all") {
@@ -318,23 +328,9 @@ export default function ManagerReports() {
           <CardDescription>Receitas e métricas por barbeiro no período selecionado</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <Label>Data Inicial</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="flex-1">
-              <Label>Data Final</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+          <div>
+            <Label>Período</Label>
+            <DateRangePicker date={dateRange} onDateChange={setDateRange} />
           </div>
 
           <div className="border rounded-lg overflow-x-auto">
@@ -435,20 +431,8 @@ export default function ManagerReports() {
         <CardContent className="space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
-              <Label>Data Inicial</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="flex-1">
-              <Label>Data Final</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
+              <Label>Período</Label>
+              <DateRangePicker date={dateRange} onDateChange={setDateRange} />
             </div>
             <div className="flex-1">
               <Label>Barbeiro</Label>
