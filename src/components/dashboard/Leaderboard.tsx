@@ -18,6 +18,7 @@ export default function Leaderboard() {
   const [units, setUnits] = useState<any[]>([]);
   
   const [servicesRanking, setServicesRanking] = useState<RankingItem[]>([]);
+  const [servicesExtraRanking, setServicesExtraRanking] = useState<RankingItem[]>([]);
   const [productsRanking, setProductsRanking] = useState<RankingItem[]>([]);
   const [ticketRanking, setTicketRanking] = useState<RankingItem[]>([]);
   const [commissionRanking, setCommissionRanking] = useState<RankingItem[]>([]);
@@ -64,6 +65,8 @@ export default function Leaderboard() {
       .select(`
         barber_id,
         services_total,
+        services_basic_total,
+        services_extra_total,
         products_total,
         clients_count,
         commission_earned,
@@ -91,6 +94,7 @@ export default function Leaderboard() {
           barber_name: p.barbers.name,
           unit_name: p.barbers.units.name,
           services_total: 0,
+          services_extra_total: 0,
           products_total: 0,
           clients_count: 0,
           commission_earned: 0,
@@ -98,7 +102,14 @@ export default function Leaderboard() {
       }
 
       const stats = barberStats.get(barberId);
-      stats.services_total += Number(p.services_total);
+      
+      // Calcular total de serviços (retrocompatível)
+      const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
+        ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+        : (Number(p.services_total) || 0);
+      
+      stats.services_total += servicesTotal;
+      stats.services_extra_total += Number(p.services_extra_total) || 0;
       stats.products_total += Number(p.products_total);
       stats.clients_count += Number(p.clients_count);
       stats.commission_earned += Number(p.commission_earned);
@@ -112,6 +123,13 @@ export default function Leaderboard() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 3);
     setServicesRanking(services);
+
+    // Ranking de Serviços Extras
+    const servicesExtra = statsArray
+      .map((s) => ({ ...s, value: s.services_extra_total }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 3);
+    setServicesExtraRanking(servicesExtra);
 
     // Ranking de Produtos
     const products = statsArray
@@ -218,6 +236,11 @@ export default function Leaderboard() {
           title="O BICHÃO DOS SERVIÇOS"
           icon={<TrendingUp className="w-5 h-5 text-success" />}
           data={servicesRanking}
+        />
+        <RankingCard
+          title="REI DOS SERVIÇOS EXTRAS"
+          icon={<TrendingUp className="w-5 h-5 text-warning" />}
+          data={servicesExtraRanking}
         />
         <RankingCard
           title="REI DOS PRODUTOS"

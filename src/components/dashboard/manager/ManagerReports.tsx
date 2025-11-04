@@ -19,6 +19,8 @@ interface DailyProduction {
   date: string;
   barber_id: string;
   services_total: number;
+  services_basic_total?: number;
+  services_extra_total?: number;
   products_total: number;
   services_count: number;
   products_count: number;
@@ -339,6 +341,7 @@ export default function ManagerReports() {
                 <TableRow>
                   <TableHead>Barbeiro</TableHead>
                   <TableHead className="text-right">Receita Serviços (R$)</TableHead>
+                  <TableHead className="text-right">Receita Serviços Extras (R$)</TableHead>
                   <TableHead className="text-right">Receita Produtos (R$)</TableHead>
                   <TableHead className="text-right">Comissão Total (R$)</TableHead>
                   <TableHead className="text-right">Ticket Médio (R$)</TableHead>
@@ -351,6 +354,7 @@ export default function ManagerReports() {
                   const barberStats = new Map<string, {
                     name: string;
                     servicesTotal: number;
+                    servicesExtraTotal: number;
                     productsTotal: number;
                     commissionTotal: number;
                     clientsTotal: number;
@@ -364,6 +368,7 @@ export default function ManagerReports() {
                       barberStats.set(barberId, {
                         name: barberName,
                         servicesTotal: 0,
+                        servicesExtraTotal: 0,
                         productsTotal: 0,
                         commissionTotal: 0,
                         clientsTotal: 0,
@@ -371,7 +376,14 @@ export default function ManagerReports() {
                     }
 
                     const stats = barberStats.get(barberId)!;
-                    stats.servicesTotal += Number(production.services_total);
+                    
+                    // Calcular total de serviços (retrocompatível)
+                    const servicesTotal = (production.services_basic_total !== null || production.services_extra_total !== null)
+                      ? (Number(production.services_basic_total) || 0) + (Number(production.services_extra_total) || 0)
+                      : (Number(production.services_total) || 0);
+                    
+                    stats.servicesTotal += servicesTotal;
+                    stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
                     stats.productsTotal += Number(production.products_total);
                     stats.commissionTotal += Number(production.commission_earned);
                     stats.clientsTotal += Number(production.clients_count);
@@ -391,7 +403,7 @@ export default function ManagerReports() {
                   if (barberArray.length === 0) {
                     return (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
                           Nenhum lançamento encontrado no período
                         </TableCell>
                       </TableRow>
@@ -403,6 +415,9 @@ export default function ManagerReports() {
                       <TableCell className="font-medium">{barber.name}</TableCell>
                       <TableCell className="text-right">
                         R$ {barber.servicesTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        R$ {barber.servicesExtraTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {barber.productsTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}

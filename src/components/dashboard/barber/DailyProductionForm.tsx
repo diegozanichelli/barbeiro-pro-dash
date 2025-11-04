@@ -17,7 +17,8 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    servicesTotal: "",
+    servicesBasicTotal: "",
+    servicesExtraTotal: "",
     productsTotal: "",
     clientsCount: "",
     servicesCount: "",
@@ -48,7 +49,8 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
           date,
           barber_id: barberId,
           organization_id: barberData.organization_id,
-          services_total: Number(formData.servicesTotal) || 0,
+          services_basic_total: Number(formData.servicesBasicTotal) || 0,
+          services_extra_total: Number(formData.servicesExtraTotal) || 0,
           products_total: Number(formData.productsTotal) || 0,
           clients_count: Number(formData.clientsCount) || 0,
           services_count: Number(formData.servicesCount) || 0,
@@ -61,7 +63,8 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
 
       toast.success("Produção registrada com sucesso!");
       setFormData({
-        servicesTotal: "",
+        servicesBasicTotal: "",
+        servicesExtraTotal: "",
         productsTotal: "",
         clientsCount: "",
         servicesCount: "",
@@ -102,29 +105,42 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="servicesTotal">Total em Serviços (R$)</Label>
+              <Label htmlFor="servicesBasicTotal">Total em Serviços Básicos (R$)</Label>
               <Input
-                id="servicesTotal"
+                id="servicesBasicTotal"
                 type="number"
                 step="0.01"
                 placeholder="0.00"
-                value={formData.servicesTotal}
-                onChange={(e) => setFormData({ ...formData, servicesTotal: e.target.value })}
+                value={formData.servicesBasicTotal}
+                onChange={(e) => setFormData({ ...formData, servicesBasicTotal: e.target.value })}
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="productsTotal">Total em Produtos (R$)</Label>
+              <Label htmlFor="servicesExtraTotal">Total em Serviços Extras (R$)</Label>
               <Input
-                id="productsTotal"
+                id="servicesExtraTotal"
                 type="number"
                 step="0.01"
                 placeholder="0.00"
-                value={formData.productsTotal}
-                onChange={(e) => setFormData({ ...formData, productsTotal: e.target.value })}
+                value={formData.servicesExtraTotal}
+                onChange={(e) => setFormData({ ...formData, servicesExtraTotal: e.target.value })}
                 required
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="productsTotal">Total em Produtos (R$)</Label>
+            <Input
+              id="productsTotal"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={formData.productsTotal}
+              onChange={(e) => setFormData({ ...formData, productsTotal: e.target.value })}
+              required
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -79,7 +79,9 @@ export type Database = {
           organization_id: string | null
           products_count: number
           products_total: number
+          services_basic_total: number | null
           services_count: number
+          services_extra_total: number | null
           services_total: number
           updated_at: string
         }
@@ -93,7 +95,9 @@ export type Database = {
           organization_id?: string | null
           products_count?: number
           products_total?: number
+          services_basic_total?: number | null
           services_count?: number
+          services_extra_total?: number | null
           services_total?: number
           updated_at?: string
         }
@@ -107,7 +111,9 @@ export type Database = {
           organization_id?: string | null
           products_count?: number
           products_total?: number
+          services_basic_total?: number | null
           services_count?: number
+          services_extra_total?: number | null
           services_total?: number
           updated_at?: string
         }
