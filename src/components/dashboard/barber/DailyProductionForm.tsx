@@ -29,11 +29,25 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
     setLoading(true);
 
     try {
+      // Buscar organization_id do barbeiro
+      const { data: barberData } = await supabase
+        .from("barbers")
+        .select("organization_id")
+        .eq("id", barberId)
+        .single();
+
+      if (!barberData?.organization_id) {
+        toast.error("Erro: barbeiro sem organização vinculada");
+        setLoading(false);
+        return;
+      }
+
       const { error } = await supabase
         .from("daily_productions")
         .upsert({
           date,
           barber_id: barberId,
+          organization_id: barberData.organization_id,
           services_total: Number(formData.servicesTotal) || 0,
           products_total: Number(formData.productsTotal) || 0,
           clients_count: Number(formData.clientsCount) || 0,
