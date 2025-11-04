@@ -1,21 +1,24 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { maskId, generateCorrelationId, redactSensitive } from "./_shared/privacy.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
   apiVersion: "2025-08-27.basil",
 });
 
-const logStep = (step: string, details?: any) => {
-  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
-  console.log(`[STRIPE-WEBHOOK] ${step}${detailsStr}`);
+const logStep = (correlationId: string, step: string, details?: any) => {
+  const safeDetails = details ? redactSensitive(details) : undefined;
+  const detailsStr = safeDetails ? ` - ${JSON.stringify(safeDetails)}` : '';
+  console.log(`[${correlationId}] ${step}${detailsStr}`);
 };
 
 serve(async (req) => {
+  const correlationId = generateCorrelationId();
   const signature = req.headers.get("stripe-signature");
   
   if (!signature) {
-    logStep("No signature found");
+    logStep(correlationId, "No signature found");
     return new Response("No signature", { status: 400 });
   }
 
@@ -24,12 +27,12 @@ serve(async (req) => {
     const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
     
     if (!webhookSecret) {
-      logStep("No webhook secret configured");
+      logStep(correlationId, "No webhook secret configured");
       return new Response("Webhook secret not configured", { status: 500 });
     }
 
     const event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
-    logStep("Event received", { type: event.type, id: event.id });
+    logStep(correlationId, "Event received", { type: event.type, id: maskId(event.id) });
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -40,14 +43,14 @@ serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        logStep("Checkout completed", { sessionId: session.id });
+        logStep(correlationId, "Checkout completed", { sessionId: maskId(session.id) });
 
         const customerId = session.customer as string;
         const organizationName = session.metadata?.organization_name;
         const userId = session.metadata?.user_id;
 
         if (!organizationName || !userId) {
-          logStep("Missing metadata", { organizationName, userId });
+          logStep(correlationId, "Missing metadata");
           break;
         }
 
@@ -63,11 +66,11 @@ serve(async (req) => {
           .single();
 
         if (orgError) {
-          logStep("Error creating organization", { error: orgError });
+          logStep(correlationId, "Error creating organization", { error: orgError.message });
           throw orgError;
         }
 
-        logStep("Organization created", { orgId: org.id });
+        logStep(correlationId, "Organization created", { orgId: maskId(org.id) });
 
         // Assign manager role to user
         const { error: roleError } = await supabaseClient
@@ -79,11 +82,11 @@ serve(async (req) => {
           });
 
         if (roleError) {
-          logStep("Error assigning role", { error: roleError });
+          logStep(correlationId, "Error assigning role", { error: roleError.message });
           throw roleError;
         }
 
-        logStep("Manager role assigned", { userId, orgId: org.id });
+        logStep(correlationId, "Manager role assigned successfully");
         break;
       }
 
@@ -92,7 +95,10 @@ serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
-        logStep("Payment succeeded", { customerId, invoiceId: invoice.id });
+        logStep(correlationId, "Payment succeeded", { 
+          customerId: maskId(customerId), 
+          invoiceId: maskId(invoice.id) 
+        });
 
         // Update organization status to active
         const { error } = await supabaseClient
@@ -101,11 +107,11 @@ serve(async (req) => {
           .eq("stripe_customer_id", customerId);
 
         if (error) {
-          logStep("Error updating organization status", { error });
+          logStep(correlationId, "Error updating organization status", { error: error.message });
           throw error;
         }
 
-        logStep("Organization activated", { customerId });
+        logStep(correlationId, "Organization activated");
         break;
       }
 
@@ -113,7 +119,10 @@ serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
-        logStep("Payment failed", { customerId, invoiceId: invoice.id });
+        logStep(correlationId, "Payment failed", { 
+          customerId: maskId(customerId), 
+          invoiceId: maskId(invoice.id) 
+        });
 
         // Update organization status to delinquent
         const { error } = await supabaseClient
@@ -122,11 +131,11 @@ serve(async (req) => {
           .eq("stripe_customer_id", customerId);
 
         if (error) {
-          logStep("Error updating organization status", { error });
+          logStep(correlationId, "Error updating organization status", { error: error.message });
           throw error;
         }
 
-        logStep("Organization marked as delinquent", { customerId });
+        logStep(correlationId, "Organization marked as delinquent");
         break;
       }
 
@@ -134,7 +143,10 @@ serve(async (req) => {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
-        logStep("Subscription canceled", { customerId, subscriptionId: subscription.id });
+        logStep(correlationId, "Subscription canceled", { 
+          customerId: maskId(customerId), 
+          subscriptionId: maskId(subscription.id) 
+        });
 
         // Update organization status to canceled
         const { error } = await supabaseClient
@@ -143,16 +155,16 @@ serve(async (req) => {
           .eq("stripe_customer_id", customerId);
 
         if (error) {
-          logStep("Error updating organization status", { error });
+          logStep(correlationId, "Error updating organization status", { error: error.message });
           throw error;
         }
 
-        logStep("Organization canceled", { customerId });
+        logStep(correlationId, "Organization canceled");
         break;
       }
 
       default:
-        logStep("Unhandled event type", { type: event.type });
+        logStep(correlationId, "Unhandled event type", { type: event.type });
     }
 
     return new Response(JSON.stringify({ received: true }), {
@@ -161,7 +173,7 @@ serve(async (req) => {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logStep("ERROR", { message: errorMessage });
+    logStep(correlationId, "ERROR", { message: errorMessage });
     return new Response(
       JSON.stringify({ error: errorMessage }),
       {
