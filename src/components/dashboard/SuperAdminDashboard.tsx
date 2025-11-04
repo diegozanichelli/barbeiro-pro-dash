@@ -40,10 +40,25 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   });
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
+    const checkSuperAdminRole = async () => {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "super_admin")
+        .maybeSingle();
+
+      if (!error && data) {
+        setIsSuperAdmin(true);
+      }
+    };
+
+    checkSuperAdminRole();
     fetchOrganizations();
-  }, []);
+  }, [user.id]);
 
   const fetchOrganizations = async () => {
     try {
@@ -104,10 +119,10 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   };
 
   const handleMigrateOrganization = async () => {
-    if (user.email !== "cassiano.diego@gmail.com") {
+    if (!isSuperAdmin) {
       toast({
         title: "Não autorizado",
-        description: "Apenas cassiano.diego@gmail.com pode executar esta operação",
+        description: "Você não tem permissão para executar esta operação",
         variant: "destructive",
       });
       return;
@@ -187,7 +202,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
               </div>
             </div>
             <div className="flex gap-2">
-              {user.email === "cassiano.diego@gmail.com" && (
+              {isSuperAdmin && (
                 <Button 
                   variant="default" 
                   onClick={handleMigrateOrganization}

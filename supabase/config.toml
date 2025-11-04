@@ -1,10 +1,10 @@
 project_id = "pcszguaqnodzshekldgw"
 
 [functions.create-barber]
-verify_jwt = false
+verify_jwt = true
 
 [functions.update-barber-auth]
-verify_jwt = false
+verify_jwt = true
 
 [functions.create-organization-checkout]
 verify_jwt = true
@@ -15,11 +15,8 @@ verify_jwt = false
 [functions.check-subscription-status]
 verify_jwt = true
 
-[functions.bootstrap-super-admin]
-verify_jwt = false
-
 [functions.migrate-organization]
-verify_jwt = false
+verify_jwt = true
 
 [functions.complete-onboarding]
 verify_jwt = true
