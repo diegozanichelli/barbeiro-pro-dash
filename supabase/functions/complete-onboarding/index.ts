@@ -1,28 +1,24 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-import { maskId, generateCorrelationId, redactSensitive } from "../_shared/privacy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const logStep = (correlationId: string, step: string, details?: any) => {
-  const safeDetails = details ? redactSensitive(details) : undefined;
-  const detailsStr = safeDetails ? ` - ${JSON.stringify(safeDetails)}` : '';
-  console.log(`[${correlationId}] ${step}${detailsStr}`);
+const logStep = (step: string, details?: any) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[COMPLETE-ONBOARDING] ${step}${detailsStr}`);
 };
 
 serve(async (req) => {
-  const correlationId = generateCorrelationId();
-  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    logStep(correlationId, "Function started");
+    logStep("Function started");
 
     const { sessionId } = await req.json();
     
@@ -45,7 +41,7 @@ serve(async (req) => {
       throw new Error("User not authenticated");
     }
 
-    logStep(correlationId, "User authenticated", { userId: maskId(userData.user.id) });
+    logStep("User authenticated");
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", { 
       apiVersion: "2025-08-27.basil" 
@@ -53,8 +49,7 @@ serve(async (req) => {
 
     // Retrieve the checkout session from Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    logStep(correlationId, "Session retrieved", { 
-      sessionId: maskId(session.id), 
+    logStep("Session retrieved", { 
       status: session.status,
       paymentStatus: session.payment_status 
     });
@@ -71,11 +66,7 @@ serve(async (req) => {
       throw new Error("Missing metadata in session");
     }
 
-    logStep(correlationId, "Session metadata validated", { 
-      organizationName, 
-      userId: maskId(userId), 
-      customerId: maskId(customerId) 
-    });
+    logStep("Session metadata validated");
 
     // Check if organization already exists for this user
     const { data: existingRole } = await supabaseClient
@@ -85,9 +76,7 @@ serve(async (req) => {
       .single();
 
     if (existingRole?.organization_id) {
-      logStep(correlationId, "Organization already exists", { 
-        organizationId: maskId(existingRole.organization_id) 
-      });
+      logStep("Organization already exists");
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -113,11 +102,11 @@ serve(async (req) => {
       .single();
 
     if (orgError) {
-      logStep(correlationId, "Error creating organization", { error: orgError.message });
+      logStep("Error creating organization", { error: orgError.message });
       throw orgError;
     }
 
-    logStep(correlationId, "Organization created", { orgId: maskId(org.id) });
+    logStep("Organization created");
 
     // Assign manager role to user
     const { error: roleError } = await supabaseClient
@@ -129,11 +118,11 @@ serve(async (req) => {
       });
 
     if (roleError) {
-      logStep(correlationId, "Error assigning role", { error: roleError.message });
+      logStep("Error assigning role", { error: roleError.message });
       throw roleError;
     }
 
-    logStep(correlationId, "Manager role assigned successfully");
+    logStep("Manager role assigned successfully");
 
     return new Response(
       JSON.stringify({ 
@@ -148,7 +137,7 @@ serve(async (req) => {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logStep(correlationId, "ERROR", { message: errorMessage });
+    logStep("ERROR", { message: errorMessage });
     return new Response(
       JSON.stringify({ error: errorMessage }),
       {
