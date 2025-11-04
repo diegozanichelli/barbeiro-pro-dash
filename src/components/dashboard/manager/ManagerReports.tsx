@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+import { format, startOfMonth, endOfMonth, parse } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -493,7 +493,7 @@ export default function ManagerReports() {
                 ) : (
                   productions.map((production) => (
                     <TableRow key={production.id}>
-                      <TableCell>{format(new Date(production.date), "dd/MM/yyyy")}</TableCell>
+                      <TableCell>{format(parse(production.date as string, "yyyy-MM-dd", new Date()), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{getBarberName(production)}</TableCell>
                       <TableCell className="text-right">
                         R$ {Number(production.services_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
