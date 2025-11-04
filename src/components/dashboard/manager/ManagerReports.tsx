@@ -55,25 +55,23 @@ export default function ManagerReports() {
   });
 
   useEffect(() => {
-    fetchStats();
     fetchBarbers();
   }, []);
 
   useEffect(() => {
+    fetchStats();
     fetchProductions();
   }, [startDate, endDate, selectedBarber]);
 
   const fetchStats = async () => {
     const now = new Date();
-    const start = format(startOfMonth(now), "yyyy-MM-dd");
-    const end = format(endOfMonth(now), "yyyy-MM-dd");
 
-    // Buscar produções do mês
+    // Buscar produções no período selecionado
     const { data: productions } = await supabase
       .from("daily_productions")
       .select("*")
-      .gte("date", start)
-      .lte("date", end);
+      .gte("date", startDate)
+      .lte("date", endDate);
 
     // Buscar barbeiros ativos
     const { data: barbers } = await supabase
