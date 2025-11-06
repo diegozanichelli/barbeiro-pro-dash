@@ -504,10 +504,10 @@ export default function ManagerReports() {
                       <TableCell>{format(parse(production.date as string, "yyyy-MM-dd", new Date()), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{getBarberName(production)}</TableCell>
                       <TableCell className="text-right">
-                        R$ {(Number(production.services_basic_total) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(Number(production.services_basic_total ?? production.services_total ?? 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {(Number(production.services_extra_total) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(Number(production.services_extra_total ?? 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {Number(production.products_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
