@@ -307,7 +307,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   if (!barber || !stats) {
     return <div>Carregando...</div>;
   }
-  const progressPercentage = monthlyGoal
+  const progressPercentage = monthlyGoal && monthlyGoal.target_commission > 0
     ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
     : 0;
 
@@ -315,6 +315,11 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const today = new Date();
   const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
   const daysLeft = isCurrentMonth ? calculateRemainingWorkDays() : 0;
+  
+  // Calcular "Falta Ganhar" com proteção contra NaN
+  const remaining = monthlyGoal 
+    ? Math.max(0, monthlyGoal.target_commission - stats.accumulated_commission)
+    : 0;
 
   // Nome do mês em português
   const monthNames = [
@@ -445,12 +450,22 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Sua Meta de Comissão Mensal:</span>
-                    <span className="font-bold">R$ {monthlyGoal?.target_commission.toFixed(2)}</span>
+                    <span className="font-bold">
+                      {monthlyGoal ? `R$ ${monthlyGoal.target_commission.toFixed(2)}` : "Sem meta cadastrada"}
+                    </span>
                   </div>
-                  <Progress value={progressPercentage} className="h-3" />
-                  <div className="flex justify-end text-sm">
-                    <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
-                  </div>
+                  {monthlyGoal ? (
+                    <>
+                      <Progress value={progressPercentage} className="h-3" />
+                      <div className="flex justify-end text-sm">
+                        <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-2">
+                      Peça ao gerente para cadastrar sua meta mensal
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
@@ -463,7 +478,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                   <div>
                     <p className="text-sm text-muted-foreground">Falta Ganhar</p>
                     <p className="text-2xl font-bold text-destructive">
-                      R$ {(monthlyGoal?.target_commission! - stats.accumulated_commission).toFixed(2)}
+                      R$ {remaining.toFixed(2)}
                     </p>
                   </div>
                 </div>

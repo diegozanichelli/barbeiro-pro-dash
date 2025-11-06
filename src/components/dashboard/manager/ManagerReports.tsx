@@ -204,11 +204,15 @@ export default function ManagerReports() {
     } else {
       toast({
         title: "Lançamento atualizado",
-        description: "A meta dinâmica foi recalculada automaticamente.",
+        description: "Os dados foram atualizados automaticamente.",
       });
       setEditingProduction(null);
-      fetchStats();
-      fetchProductions();
+      
+      // Forçar reload completo dos dados
+      await Promise.all([
+        fetchStats(),
+        fetchProductions(),
+      ]);
     }
   };
 
@@ -229,11 +233,15 @@ export default function ManagerReports() {
     } else {
       toast({
         title: "Lançamento excluído",
-        description: "A meta dinâmica foi recalculada automaticamente.",
+        description: "Os dados foram atualizados automaticamente.",
       });
       setDeletingProductionId(null);
-      fetchStats();
-      fetchProductions();
+      
+      // Forçar reload completo dos dados
+      await Promise.all([
+        fetchStats(),
+        fetchProductions(),
+      ]);
     }
   };
 
