@@ -58,7 +58,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     fetchBarberData();
 
     // Realtime listener para atualizar quando gerente alterar comissões
-    const channel = supabase
+    const barberChannel = supabase
       .channel('barbers-changes')
       .on(
         'postgres_changes',
@@ -76,7 +76,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(barberChannel);
     };
   }, [user]);
 
@@ -84,6 +84,30 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     if (barber) {
       fetchMonthlyGoal();
       fetchMonthlyStats();
+      
+      // Realtime listener para FORÇAR recálculo quando lançamentos forem alterados
+      const productionsChannel = supabase
+        .channel(`daily-productions-${barber.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'daily_productions',
+            filter: `barber_id=eq.${barber.id}`,
+          },
+          (payload) => {
+            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
+            // Forçar recálculo IMEDIATO das estatísticas
+            fetchMonthlyStats();
+            fetchMonthlyGoal();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(productionsChannel);
+      };
     }
   }, [barber, selectedMonth, selectedYear]); // Recarregar quando mês/ano mudar
 
