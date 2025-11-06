@@ -152,8 +152,18 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       const totalClients = productions.reduce((sum, p) => sum + Number(p.clients_count), 0);
       const totalServicesCount = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
       const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
-      const totalServicesRevenue = productions.reduce((sum, p) => sum + Number(p.services_total), 0);
-      const totalProductsRevenue = productions.reduce((sum, p) => sum + Number(p.products_total), 0);
+      
+      // Calcular total de serviços com retrocompatibilidade
+      const totalServicesRevenue = productions.reduce((sum, p) => {
+        // Se tem os novos campos, soma Basic + Extra
+        if (p.services_basic_total !== null || p.services_extra_total !== null) {
+          return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
+        }
+        // Senão, usa o campo antigo
+        return sum + Number(p.services_total || 0);
+      }, 0);
+      
+      const totalProductsRevenue = productions.reduce((sum, p) => sum + Number(p.products_total || 0), 0);
       const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
       setStats({
