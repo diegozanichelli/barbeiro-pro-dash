@@ -481,7 +481,8 @@ export default function ManagerReports() {
                 <TableRow>
                   <TableHead>Data</TableHead>
                   <TableHead>Barbeiro</TableHead>
-                  <TableHead className="text-right">Serviços (R$)</TableHead>
+                  <TableHead className="text-right">Serviços Básicos (R$)</TableHead>
+                  <TableHead className="text-right">Serviços Extras (R$)</TableHead>
                   <TableHead className="text-right">Produtos (R$)</TableHead>
                   <TableHead className="text-right">Qtd Serviços</TableHead>
                   <TableHead className="text-right">Qtd Produtos</TableHead>
@@ -493,7 +494,7 @@ export default function ManagerReports() {
               <TableBody>
                 {productions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
                       Nenhum lançamento encontrado
                     </TableCell>
                   </TableRow>
@@ -503,7 +504,10 @@ export default function ManagerReports() {
                       <TableCell>{format(parse(production.date as string, "yyyy-MM-dd", new Date()), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{getBarberName(production)}</TableCell>
                       <TableCell className="text-right">
-                        R$ {Number(production.services_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(Number(production.services_basic_total) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        R$ {(Number(production.services_extra_total) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {Number(production.products_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
