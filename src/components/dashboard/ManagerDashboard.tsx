@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp } from "lucide-react";
+import logo from "@/assets/performance-barber-logo.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
 import GoalsManagement from "./manager/GoalsManagement";
@@ -31,11 +32,9 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-gold flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
               <div>
-                <h1 className="text-xl font-bold bg-gradient-gold bg-clip-text text-transparent">
+                <h1 className="text-xl font-bold text-foreground">
                   Painel do Gestor
                 </h1>
                 <p className="text-sm text-muted-foreground">Bem-vindo, {user.email}</p>

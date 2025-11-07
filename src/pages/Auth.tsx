@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Scissors } from "lucide-react";
+import logo from "@/assets/performance-barber-logo.png";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -64,12 +64,10 @@ export default function Auth() {
       <Card className="w-full max-w-md bg-card border-border shadow-card-custom">
         <CardHeader className="text-center space-y-2">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center">
-              <Scissors className="w-8 h-8 text-primary-foreground" />
-            </div>
+            <img src={logo} alt="Performance Barber" className="h-24 w-auto" />
           </div>
-          <CardTitle className="text-3xl font-bold bg-gradient-gold bg-clip-text text-transparent">
-            Barber Performance
+          <CardTitle className="text-xl font-bold text-foreground">
+            Sistema de Gestão de Performance
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             Sistema de gestão de performance para barbearias

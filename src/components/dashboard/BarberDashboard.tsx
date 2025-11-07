@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import logo from "@/assets/performance-barber-logo.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
 import Leaderboard from "./Leaderboard";
 import { format } from "date-fns";
@@ -302,9 +303,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold bg-gradient-gold bg-clip-text text-transparent">
-                Vinculação pendente
-              </h1>
+              <div className="flex items-center gap-3">
+                <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
+                <h1 className="text-xl font-bold text-foreground">
+                  Vinculação pendente
+                </h1>
+              </div>
               <Button variant="outline" onClick={handleSignOut}>Sair</Button>
             </div>
           </div>
@@ -357,16 +361,19 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-gold bg-clip-text text-transparent">
-                Olá, {barber.name}!
-              </h1>
-              {isCurrentMonth && (
-                <p className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
-                </p>
-              )}
+            <div className="flex items-center gap-3">
+              <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
+              <div>
+                <h1 className="text-xl font-bold text-foreground">
+                  Olá, {barber.name}!
+                </h1>
+                {isCurrentMonth && (
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
+                  </p>
+                )}
+              </div>
             </div>
             <Button variant="outline" onClick={handleSignOut}>
               <LogOut className="w-4 h-4 mr-2" />

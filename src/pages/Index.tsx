@@ -1,19 +1,14 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { BarChart3, Target, Trophy, Building2 } from "lucide-react";
+import logo from "@/assets/performance-barber-logo.png";
 export default function Index() {
   const navigate = useNavigate();
   return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
       <div className="max-w-4xl w-full text-center space-y-8">
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <div className="w-16 h-16 rounded-full bg-gradient-gold flex items-center justify-center">
-            <BarChart3 className="w-8 h-8 text-primary-foreground" />
-          </div>
+        <div className="flex items-center justify-center mb-6">
+          <img src={logo} alt="Performance Barber" className="h-32 w-auto" />
         </div>
-        
-        <h1 className="text-5xl md:text-6xl font-bold bg-gradient-gold bg-clip-text text-transparent">Barber Performance
-
-      </h1>
         
         <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
           Sistema de Gestão de Performance para Barbearias
