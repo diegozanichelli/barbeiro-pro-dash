@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import logo from "@/assets/performance-barber-logo.png";
+import logo from "@/assets/performance-barber-logo-transparent.png";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -64,9 +64,9 @@ export default function Auth() {
       <Card className="w-full max-w-md bg-card border-border shadow-card-custom">
         <CardHeader className="text-center space-y-2">
           <div className="flex justify-center mb-4">
-            <img src={logo} alt="Performance Barber" className="h-24 w-auto" />
+            <img src={logo} alt="Performance Barber" className="w-64 h-auto max-w-full" />
           </div>
-          <CardTitle className="text-xl font-bold text-foreground">
+          <CardTitle className="text-lg font-semibold text-foreground">
             Sistema de Gestão de Performance
           </CardTitle>
           <CardDescription className="text-muted-foreground">

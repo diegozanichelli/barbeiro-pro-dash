@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
-import logo from "@/assets/performance-barber-logo.png";
+import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
 import Leaderboard from "./Leaderboard";
 import { format } from "date-fns";
@@ -304,7 +304,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
+                <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
                 <h1 className="text-xl font-bold text-foreground">
                   Vinculação pendente
                 </h1>
@@ -362,7 +362,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
+              <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
               <div>
                 <h1 className="text-xl font-bold text-foreground">
                   Olá, {barber.name}!

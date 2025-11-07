@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { LogOut, Building2, Users, DollarSign, TrendingUp } from "lucide-react";
-import logo from "@/assets/performance-barber-logo.png";
+import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
 
 interface SuperAdminDashboardProps {
@@ -192,7 +192,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
+              <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
               <div>
                 <h1 className="text-xl font-bold text-foreground">
                   Super Admin - Performance Barber

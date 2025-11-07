@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp } from "lucide-react";
-import logo from "@/assets/performance-barber-logo.png";
+import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
 import GoalsManagement from "./manager/GoalsManagement";
@@ -32,7 +32,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={logo} alt="Performance Barber" className="h-12 w-auto" />
+              <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
               <div>
                 <h1 className="text-xl font-bold text-foreground">
                   Painel do Gestor

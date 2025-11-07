@@ -1,13 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { BarChart3, Target, Trophy, Building2 } from "lucide-react";
-import logo from "@/assets/performance-barber-logo.png";
+import logo from "@/assets/performance-barber-logo-transparent.png";
 export default function Index() {
   const navigate = useNavigate();
   return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
       <div className="max-w-4xl w-full text-center space-y-8">
-        <div className="flex items-center justify-center mb-6">
-          <img src={logo} alt="Performance Barber" className="h-32 w-auto" />
+        <div className="flex items-center justify-center mb-8">
+          <img src={logo} alt="Performance Barber" className="w-full max-w-md h-auto" />
         </div>
         
         <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
