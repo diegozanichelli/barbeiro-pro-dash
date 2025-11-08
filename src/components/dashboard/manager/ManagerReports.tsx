@@ -31,6 +31,12 @@ interface DailyProduction {
 interface Barber {
   id: string;
   name: string;
+  unit_id: string;
+}
+
+interface Unit {
+  id: string;
+  name: string;
 }
 
 export default function ManagerReports() {
@@ -45,7 +51,10 @@ export default function ManagerReports() {
   
   const [productions, setProductions] = useState<DailyProduction[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [allBarbers, setAllBarbers] = useState<Barber[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -61,8 +70,20 @@ export default function ManagerReports() {
   });
 
   useEffect(() => {
+    fetchUnits();
     fetchBarbers();
   }, []);
+
+  useEffect(() => {
+    // Filtrar barbeiros pela unidade selecionada
+    if (selectedUnit === "all") {
+      setBarbers(allBarbers);
+    } else {
+      setBarbers(allBarbers.filter(b => b.unit_id === selectedUnit));
+    }
+    // Reset do barbeiro selecionado quando a unidade muda
+    setSelectedBarber("all");
+  }, [selectedUnit, allBarbers]);
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
@@ -138,14 +159,27 @@ export default function ManagerReports() {
     }
   };
 
-  const fetchBarbers = async () => {
+  const fetchUnits = async () => {
     const { data } = await supabase
-      .from("barbers")
+      .from("units")
       .select("id, name")
       .eq("status", "active")
       .order("name");
     
     if (data) {
+      setUnits(data);
+    }
+  };
+
+  const fetchBarbers = async () => {
+    const { data } = await supabase
+      .from("barbers")
+      .select("id, name, unit_id")
+      .eq("status", "active")
+      .order("name");
+    
+    if (data) {
+      setAllBarbers(data);
       setBarbers(data);
     }
   };
@@ -456,6 +490,22 @@ export default function ManagerReports() {
             <div className="flex-1">
               <Label>Período</Label>
               <DateRangePicker date={dateRange} onDateChange={setDateRange} />
+            </div>
+            <div className="flex-1">
+              <Label>Unidade</Label>
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Unidades</SelectItem>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex-1">
               <Label>Barbeiro</Label>
