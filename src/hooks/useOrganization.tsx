@@ -38,5 +38,9 @@ export function useOrganization() {
     }
   };
 
-  return { organizationId, loading };
+  return { 
+    organization: organizationId ? { id: organizationId } : null, 
+    organizationId, 
+    loading 
+  };
 }

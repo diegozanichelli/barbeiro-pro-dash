@@ -233,6 +233,33 @@ export type Database = {
         }
         Relationships: []
       }
+      ranking_custom_names: {
+        Row: {
+          created_at: string
+          custom_name: string
+          id: string
+          organization_id: string
+          ranking_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          custom_name: string
+          id?: string
+          organization_id: string
+          ranking_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          custom_name?: string
+          id?: string
+          organization_id?: string
+          ranking_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       units: {
         Row: {
           created_at: string

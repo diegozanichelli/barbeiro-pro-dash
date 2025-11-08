@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trophy, TrendingUp, DollarSign, Users } from "lucide-react";
+import { Trophy, TrendingUp, DollarSign, Users, Pencil } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useOrganization } from "@/hooks/useOrganization";
 
 interface RankingItem {
   barber_id: string;
@@ -13,6 +19,8 @@ interface RankingItem {
 }
 
 export default function Leaderboard() {
+  const { toast } = useToast();
+  const { organization } = useOrganization();
   const [period, setPeriod] = useState("current_month");
   const [unitFilter, setUnitFilter] = useState("all");
   const [units, setUnits] = useState<any[]>([]);
@@ -23,8 +31,13 @@ export default function Leaderboard() {
   const [ticketRanking, setTicketRanking] = useState<RankingItem[]>([]);
   const [commissionRanking, setCommissionRanking] = useState<RankingItem[]>([]);
 
+  const [customNames, setCustomNames] = useState<Record<string, string>>({});
+  const [editingRanking, setEditingRanking] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
   useEffect(() => {
     fetchUnits();
+    fetchCustomNames();
   }, []);
 
   useEffect(() => {
@@ -34,6 +47,95 @@ export default function Leaderboard() {
   const fetchUnits = async () => {
     const { data } = await supabase.from("units").select("*").eq("status", "active");
     if (data) setUnits(data);
+  };
+
+  const fetchCustomNames = async () => {
+    if (!organization?.id) return;
+
+    const { data } = await supabase
+      .from("ranking_custom_names")
+      .select("ranking_key, custom_name")
+      .eq("organization_id", organization.id);
+
+    if (data) {
+      const names: Record<string, string> = {};
+      data.forEach((item) => {
+        names[item.ranking_key] = item.custom_name;
+      });
+      setCustomNames(names);
+    }
+  };
+
+  const handleEditRanking = (rankingKey: string, currentName: string) => {
+    setEditingRanking(rankingKey);
+    setEditName(customNames[rankingKey] || currentName);
+  };
+
+  const handleSaveCustomName = async () => {
+    if (!organization?.id || !editingRanking) return;
+
+    const { error } = await supabase
+      .from("ranking_custom_names")
+      .upsert({
+        organization_id: organization.id,
+        ranking_key: editingRanking,
+        custom_name: editName,
+      });
+
+    if (error) {
+      toast({
+        title: "Erro ao salvar",
+        description: "Não foi possível salvar o nome customizado.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCustomNames((prev) => ({
+      ...prev,
+      [editingRanking]: editName,
+    }));
+
+    toast({
+      title: "Nome atualizado!",
+      description: "O nome do ranking foi atualizado com sucesso.",
+    });
+
+    setEditingRanking(null);
+    setEditName("");
+  };
+
+  const handleResetToDefault = async () => {
+    if (!organization?.id || !editingRanking) return;
+
+    const { error } = await supabase
+      .from("ranking_custom_names")
+      .delete()
+      .eq("organization_id", organization.id)
+      .eq("ranking_key", editingRanking);
+
+    if (error) {
+      toast({
+        title: "Erro ao resetar",
+        description: "Não foi possível resetar o nome.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCustomNames((prev) => {
+      const updated = { ...prev };
+      delete updated[editingRanking];
+      return updated;
+    });
+
+    toast({
+      title: "Nome resetado!",
+      description: "O nome do ranking foi resetado para o padrão.",
+    });
+
+    setEditingRanking(null);
+    setEditName("");
   };
 
   const getDateRange = () => {
@@ -131,45 +233,61 @@ export default function Leaderboard() {
 
   const RankingCard = ({
     title,
+    rankingKey,
     icon,
     data,
     valuePrefix = "R$",
   }: {
     title: string;
+    rankingKey: string;
     icon: React.ReactNode;
     data: RankingItem[];
     valuePrefix?: string;
-  }) => (
-    <Card className="bg-card border-border shadow-card-custom">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {icon}
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {data.map((item, index) => (
-            <div
-              key={item.barber_id}
-              className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{getMedal(index)}</span>
-                <div>
-                  <p className="font-bold">{item.barber_name}</p>
-                  <p className="text-sm text-muted-foreground">({item.unit_name})</p>
-                </div>
-              </div>
-              <p className="text-xl font-bold text-primary">
-                {valuePrefix} {item.value.toFixed(2)}
-              </p>
+  }) => {
+    const displayTitle = customNames[rankingKey] || title;
+    
+    return (
+      <Card className="bg-card border-border shadow-card-custom">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {icon}
+              {displayTitle}
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleEditRanking(rankingKey, title)}
+              className="h-8 w-8"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {data.map((item, index) => (
+              <div
+                key={item.barber_id}
+                className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{getMedal(index)}</span>
+                  <div>
+                    <p className="font-bold">{item.barber_name}</p>
+                    <p className="text-sm text-muted-foreground">({item.unit_name})</p>
+                  </div>
+                </div>
+                <p className="text-xl font-bold text-primary">
+                  {valuePrefix} {item.value.toFixed(2)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -202,30 +320,62 @@ export default function Leaderboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RankingCard
           title="O BICHÃO DOS SERVIÇOS"
+          rankingKey="services"
           icon={<TrendingUp className="w-5 h-5 text-success" />}
           data={servicesRanking}
         />
         <RankingCard
           title="REI DOS SERVIÇOS EXTRAS"
+          rankingKey="services_extra"
           icon={<TrendingUp className="w-5 h-5 text-warning" />}
           data={servicesExtraRanking}
         />
         <RankingCard
           title="REI DOS PRODUTOS"
+          rankingKey="products"
           icon={<DollarSign className="w-5 h-5 text-primary" />}
           data={productsRanking}
         />
         <RankingCard
           title="MESTRE DO TICKET MÉDIO"
+          rankingKey="ticket"
           icon={<Users className="w-5 h-5 text-accent" />}
           data={ticketRanking}
         />
         <RankingCard
           title="MÃO DE OURO"
+          rankingKey="commission"
           icon={<Trophy className="w-5 h-5 text-primary" />}
           data={commissionRanking}
         />
       </div>
+
+      <Dialog open={!!editingRanking} onOpenChange={(open) => !open && setEditingRanking(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Nome do Ranking</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="ranking-name">Nome da Campanha</Label>
+              <Input
+                id="ranking-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Ex: Batalha de Novembro, Missão Ticket Médio..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={handleResetToDefault}>
+              Resetar para Padrão
+            </Button>
+            <Button onClick={handleSaveCustomName}>
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
