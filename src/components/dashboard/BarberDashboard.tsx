@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
+import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -55,6 +56,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTarget, setDailyTarget] = useState(0);
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [missingLink, setMissingLink] = useState(false);
+  const [editingProduction, setEditingProduction] = useState<any>(null);
   useEffect(() => {
     fetchBarberData();
 
@@ -297,6 +299,26 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     setSelectedYear(today.getFullYear());
   };
 
+  const handleEditProduction = (production: any) => {
+    setEditingProduction({
+      id: production.id,
+      date: production.date,
+      servicesBasicTotal: (production.services_basic_total || 0).toString(),
+      servicesExtraTotal: (production.services_extra_total || 0).toString(),
+      productsTotal: (production.products_total || 0).toString(),
+      clientsCount: (production.clients_count || 0).toString(),
+      servicesCount: (production.services_count || 0).toString(),
+      productsCount: (production.products_count || 0).toString(),
+    });
+  };
+
+  const handleFormSuccess = () => {
+    // Forçar recálculo de TODOS os dados
+    fetchMonthlyStats();
+    fetchMonthlyGoal();
+    setEditingProduction(null); // Limpar edição
+  };
+
   if (missingLink) {
     return (
       <div className="min-h-screen bg-background">
@@ -385,8 +407,9 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="daily" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
+            <TabsTrigger value="history">Histórico</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
           </TabsList>
 
@@ -556,7 +579,20 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
             </Card>
 
             {/* Formulário de Lançamento */}
-            <DailyProductionForm barberId={barber.id} onSuccess={fetchMonthlyStats} />
+            <DailyProductionForm 
+              barberId={barber.id} 
+              onSuccess={handleFormSuccess}
+              initialData={editingProduction}
+            />
+          </TabsContent>
+
+          <TabsContent value="history" className="space-y-6">
+            <ProductionHistory
+              barberId={barber.id}
+              selectedMonth={selectedMonth}
+              selectedYear={selectedYear}
+              onEdit={handleEditProduction}
+            />
           </TabsContent>
 
           <TabsContent value="leaderboard">

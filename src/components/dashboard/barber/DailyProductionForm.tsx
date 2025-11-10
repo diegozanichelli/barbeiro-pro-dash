@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,19 +11,44 @@ import { format } from "date-fns";
 interface DailyProductionFormProps {
   barberId: string;
   onSuccess: () => void;
+  initialData?: {
+    id?: string;
+    date: string;
+    servicesBasicTotal: string;
+    servicesExtraTotal: string;
+    productsTotal: string;
+    clientsCount: string;
+    servicesCount: string;
+    productsCount: string;
+  };
 }
 
-export default function DailyProductionForm({ barberId, onSuccess }: DailyProductionFormProps) {
-  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
+export default function DailyProductionForm({ barberId, onSuccess, initialData }: DailyProductionFormProps) {
+  const [date, setDate] = useState(initialData?.date || format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    servicesBasicTotal: "",
-    servicesExtraTotal: "",
-    productsTotal: "",
-    clientsCount: "",
-    servicesCount: "",
-    productsCount: "",
+    servicesBasicTotal: initialData?.servicesBasicTotal || "",
+    servicesExtraTotal: initialData?.servicesExtraTotal || "",
+    productsTotal: initialData?.productsTotal || "",
+    clientsCount: initialData?.clientsCount || "",
+    servicesCount: initialData?.servicesCount || "",
+    productsCount: initialData?.productsCount || "",
   });
+
+  // Atualizar form quando initialData mudar
+  useEffect(() => {
+    if (initialData) {
+      setDate(initialData.date);
+      setFormData({
+        servicesBasicTotal: initialData.servicesBasicTotal,
+        servicesExtraTotal: initialData.servicesExtraTotal,
+        productsTotal: initialData.productsTotal,
+        clientsCount: initialData.clientsCount,
+        servicesCount: initialData.servicesCount,
+        productsCount: initialData.productsCount,
+      });
+    }
+  }, [initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,15 +86,20 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
 
       if (error) throw error;
 
-      toast.success("Produção registrada com sucesso!");
-      setFormData({
-        servicesBasicTotal: "",
-        servicesExtraTotal: "",
-        productsTotal: "",
-        clientsCount: "",
-        servicesCount: "",
-        productsCount: "",
-      });
+      toast.success(initialData ? "Produção atualizada com sucesso!" : "Produção registrada com sucesso!");
+      
+      // Limpar apenas se não está editando
+      if (!initialData) {
+        setFormData({
+          servicesBasicTotal: "",
+          servicesExtraTotal: "",
+          productsTotal: "",
+          clientsCount: "",
+          servicesCount: "",
+          productsCount: "",
+        });
+      }
+      
       onSuccess();
     } catch (error: any) {
       toast.error(error.message || "Erro ao registrar produção");
@@ -83,9 +113,11 @@ export default function DailyProductionForm({ barberId, onSuccess }: DailyProduc
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <DollarSign className="w-5 h-5 text-primary" />
-          Lançamento de Produção Diária
+          {initialData ? "Editar Produção Diária" : "Lançamento de Produção Diária"}
         </CardTitle>
-        <CardDescription>Registre sua produção do dia</CardDescription>
+        <CardDescription>
+          {initialData ? "Corrija os dados do lançamento" : "Registre sua produção do dia"}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
