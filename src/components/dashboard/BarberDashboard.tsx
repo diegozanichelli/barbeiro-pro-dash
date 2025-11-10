@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
@@ -316,7 +317,11 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     // Forçar recálculo de TODOS os dados
     fetchMonthlyStats();
     fetchMonthlyGoal();
-    setEditingProduction(null); // Limpar edição
+    setEditingProduction(null); // Limpar edição e fechar modal
+  };
+
+  const handleCloseEditModal = () => {
+    setEditingProduction(null);
   };
 
   if (missingLink) {
@@ -599,6 +604,25 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
             <Leaderboard />
           </TabsContent>
         </Tabs>
+
+        {/* Modal de Edição */}
+        <Dialog open={!!editingProduction} onOpenChange={handleCloseEditModal}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Editar Lançamento</DialogTitle>
+              <DialogDescription>
+                Corrija os dados do seu lançamento de produção
+              </DialogDescription>
+            </DialogHeader>
+            {editingProduction && (
+              <DailyProductionForm 
+                barberId={barber.id} 
+                onSuccess={handleFormSuccess}
+                initialData={editingProduction}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
