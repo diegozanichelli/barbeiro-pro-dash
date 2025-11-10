@@ -1,0 +1,47 @@
+-- Ensure the retrocompatible commission calculation is in place
+CREATE OR REPLACE FUNCTION public.calculate_commission()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_services_commission_rate DECIMAL(5,2);
+  v_products_commission_rate DECIMAL(5,2);
+  v_services_total_to_calc NUMERIC;
+  v_commission_from_services NUMERIC;
+  v_commission_from_products NUMERIC;
+BEGIN
+  -- 1) Fetch barber commission rates
+  SELECT services_commission, products_commission
+  INTO v_services_commission_rate, v_products_commission_rate
+  FROM public.barbers
+  WHERE id = NEW.barber_id;
+
+  -- 2) Determine which services total to use (retrocompatible)
+  IF (NEW.services_basic_total IS NOT NULL) OR (NEW.services_extra_total IS NOT NULL) THEN
+    -- New record style: sum Basic + Extra
+    v_services_total_to_calc := COALESCE(NEW.services_basic_total, 0) + COALESCE(NEW.services_extra_total, 0);
+  ELSE
+    -- Old record style: use legacy services_total
+    v_services_total_to_calc := COALESCE(NEW.services_total, 0);
+  END IF;
+
+  -- 3) Calculate commissions separately
+  v_commission_from_services := COALESCE(v_services_total_to_calc, 0) * COALESCE(v_services_commission_rate, 0) / 100;
+  v_commission_from_products := COALESCE(NEW.products_total, 0) * COALESCE(v_products_commission_rate, 0) / 100;
+
+  -- 4) Sum at the end
+  NEW.commission_earned := COALESCE(v_commission_from_services, 0) + COALESCE(v_commission_from_products, 0);
+
+  RETURN NEW;
+END;
+$function$;
+
+-- Recreate trigger to enforce correct calculation on write operations
+DROP TRIGGER IF EXISTS calculate_commission_trigger ON public.daily_productions;
+CREATE TRIGGER calculate_commission_trigger
+BEFORE INSERT OR UPDATE OF services_basic_total, services_extra_total, services_total, products_total, barber_id
+ON public.daily_productions
+FOR EACH ROW
+EXECUTE FUNCTION public.calculate_commission();
