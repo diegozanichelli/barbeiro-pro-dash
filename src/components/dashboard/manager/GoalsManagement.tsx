@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -117,7 +117,12 @@ export default function GoalsManagement() {
       resetForm();
       fetchGoals();
     } catch (error: any) {
-      toast.error(error.message || "Erro ao criar meta");
+      // Detectar erro de duplicate key
+      if (error.code === '23505' || error.message?.includes('duplicate key')) {
+        toast.error("Erro: Este barbeiro já possui uma meta para este mês. Use o botão Editar (lápis) para modificar.");
+      } else {
+        toast.error(error.message || "Erro ao criar meta");
+      }
     } finally {
       setLoading(false);
     }
@@ -196,6 +201,11 @@ export default function GoalsManagement() {
     setEditingGoal(null);
   };
 
+  // Calcular barbeiros disponíveis (sem meta no mês/ano atual)
+  const availableBarbers = useMemo(() => {
+    const barbersWithGoals = new Set(goals.map(goal => goal.barber_id));
+    return barbers.filter(barber => !barbersWithGoals.has(barber.id));
+  }, [barbers, goals]);
 
   const months = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -216,7 +226,10 @@ export default function GoalsManagement() {
               </CardTitle>
               <CardDescription>Visualize, edite e exclua as metas cadastradas</CardDescription>
             </div>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Button 
+              onClick={() => setIsCreateDialogOpen(true)}
+              disabled={availableBarbers.length === 0}
+            >
               <Plus className="w-4 h-4 mr-2" />
               Adicionar Nova Meta
             </Button>
@@ -338,10 +351,10 @@ export default function GoalsManagement() {
                 onValueChange={(value) => setSelectedBarberId(value)}
               >
                 <SelectTrigger id="create-barber">
-                  <SelectValue placeholder="Escolha um barbeiro..." />
+                  <SelectValue placeholder={availableBarbers.length === 0 ? "Todos os barbeiros já têm meta" : "Escolha um barbeiro..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {barbers.map((barber) => (
+                  {availableBarbers.map((barber) => (
                     <SelectItem key={barber.id} value={barber.id}>
                       {barber.name}
                     </SelectItem>
