@@ -10,13 +10,28 @@ export default function SubscriptionBlocked() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [hasStripeCustomer, setHasStripeCustomer] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const getUserEmail = async () => {
+    const getUserData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUserEmail(user?.email || null);
+      
+      if (user) {
+        // Check if user has stripe customer ID
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("organization_id, organizations(stripe_customer_id)")
+          .eq("user_id", user.id)
+          .single();
+        
+        if (roleData) {
+          const org = roleData.organizations as any;
+          setHasStripeCustomer(!!org?.stripe_customer_id);
+        }
+      }
     };
-    getUserEmail();
+    getUserData();
   }, []);
 
   const handleBootstrap = async () => {
@@ -96,6 +111,24 @@ export default function SubscriptionBlocked() {
                 {loading ? "Migrando..." : "Transferir Organização"}
               </Button>
             </div>
+          )}
+
+          {hasStripeCustomer !== null && (
+            <Button 
+              onClick={() => {
+                if (hasStripeCustomer) {
+                  // Redirect to customer portal (you'll need to implement this)
+                  window.location.href = "https://billing.stripe.com/p/login/test_XXXXXX";
+                } else {
+                  // Redirect to checkout
+                  window.open("https://buy.stripe.com/test_XXXXXX", "_blank");
+                }
+              }}
+              className="w-full"
+              variant="default"
+            >
+              {hasStripeCustomer ? "Regularizar Pagamento" : "Iniciar Assinatura Agora"}
+            </Button>
           )}
 
           <Button 

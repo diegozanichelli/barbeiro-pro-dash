@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const logStep = (step: string, details?: any) => {
   const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
-  console.log(`[CHECK-SUBSCRIPTION] ${step}${detailsStr}`);
+  console.log(`[REVOKE-FREE-ACCESS] ${step}${detailsStr}`);
 };
 
 serve(async (req) => {
@@ -28,6 +28,7 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
+    // Verify super admin
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
     
@@ -35,60 +36,46 @@ serve(async (req) => {
       throw new Error("User not authenticated");
     }
 
-    logStep("User authenticated", { userId: userData.user.id });
-
-    // Get user role and organization
-    const { data: userRole, error: roleError } = await supabaseClient
+    const { data: roleData } = await supabaseClient
       .from("user_roles")
-      .select("role, organization_id, organizations(subscription_status)")
+      .select("role")
       .eq("user_id", userData.user.id)
-      .single();
+      .eq("role", "super_admin")
+      .maybeSingle();
 
-    if (roleError) {
-      logStep("No role found for user", { error: roleError });
-      return new Response(
-        JSON.stringify({ 
-          has_access: false, 
-          message: "User not assigned to any organization" 
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        }
-      );
+    if (!roleData) {
+      throw new Error("Unauthorized: Only super admins can revoke free access");
     }
 
-    logStep("User role found", { role: userRole.role });
+    logStep("Super admin verified");
 
-    // Super admins always have access
-    if (userRole.role === "super_admin") {
-      return new Response(
-        JSON.stringify({ 
-          has_access: true, 
-          role: "super_admin",
-          subscription_status: "active"
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        }
-      );
+    // Parse request body
+    const { organizationId } = await req.json();
+
+    if (!organizationId) {
+      throw new Error("Missing required field: organizationId");
     }
 
-    // Check organization subscription status
-    const org = userRole.organizations as any;
-    const subscriptionStatus = org?.subscription_status;
+    logStep("Revoking access", { organizationId });
 
-    logStep("Subscription status checked", { status: subscriptionStatus });
+    // Update organization status to delinquent
+    const { error: updateError } = await supabaseClient
+      .from("organizations")
+      .update({ subscription_status: "delinquent" })
+      .eq("id", organizationId)
+      .eq("subscription_status", "gratuita");
 
-    const hasAccess = subscriptionStatus === "trial" || subscriptionStatus === "active" || subscriptionStatus === "gratuita";
+    if (updateError) {
+      logStep("Error revoking access", { error: updateError });
+      throw new Error(`Failed to revoke access: ${updateError.message}`);
+    }
+
+    logStep("Free access revoked successfully");
 
     return new Response(
-      JSON.stringify({ 
-        has_access: hasAccess,
-        role: userRole.role,
-        subscription_status: subscriptionStatus,
-        organization_id: userRole.organization_id
+      JSON.stringify({
+        success: true,
+        message: "Acesso gratuito revogado com sucesso",
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -6,9 +6,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface SuperAdminDashboardProps {
   user: User;
@@ -42,6 +53,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newAccountData, setNewAccountData] = useState({
+    organizationName: "",
+    managerEmail: "",
+    managerPassword: "",
+  });
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     const checkSuperAdminRole = async () => {
@@ -159,6 +177,68 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleCreateFreeAccount = async () => {
+    if (!newAccountData.organizationName || !newAccountData.managerEmail || !newAccountData.managerPassword) {
+      toast({
+        title: "Campos obrigatórios",
+        description: "Preencha todos os campos",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-free-account", {
+        body: newAccountData,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Conta criada!",
+        description: "Conta gratuita criada com sucesso",
+      });
+
+      setShowCreateDialog(false);
+      setNewAccountData({ organizationName: "", managerEmail: "", managerPassword: "" });
+      fetchOrganizations();
+    } catch (error) {
+      console.error("Error creating free account:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao criar conta",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRevokeAccess = async (orgId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke("revoke-free-access", {
+        body: { organizationId: orgId },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Acesso revogado",
+        description: "Acesso gratuito revogado com sucesso",
+      });
+
+      fetchOrganizations();
+    } catch (error) {
+      console.error("Error revoking access:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao revogar acesso",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
@@ -177,6 +257,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       trial: "Trial",
       delinquent: "Inadimplente",
       canceled: "Cancelada",
+      gratuita: "Gratuita",
     };
 
     return (
@@ -202,13 +283,80 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </div>
             <div className="flex gap-2">
               {isSuperAdmin && (
-                <Button 
-                  variant="default" 
-                  onClick={handleMigrateOrganization}
-                  disabled={migrating}
-                >
-                  {migrating ? "Migrando..." : "🔄 Transferir Organização"}
-                </Button>
+                <>
+                  <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                    <DialogTrigger asChild>
+                      <Button variant="default">
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Criar Conta Gratuita
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Criar Conta Gratuita (Mentorado)</DialogTitle>
+                        <DialogDescription>
+                          Crie uma nova organização com acesso gratuito ao sistema
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="orgName">Nome da Barbearia</Label>
+                          <Input
+                            id="orgName"
+                            value={newAccountData.organizationName}
+                            onChange={(e) =>
+                              setNewAccountData({ ...newAccountData, organizationName: e.target.value })
+                            }
+                            placeholder="Ex: Barbearia do João"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="email">Email do Gerente</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={newAccountData.managerEmail}
+                            onChange={(e) =>
+                              setNewAccountData({ ...newAccountData, managerEmail: e.target.value })
+                            }
+                            placeholder="gerente@email.com"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="password">Senha Temporária</Label>
+                          <Input
+                            id="password"
+                            type="password"
+                            value={newAccountData.managerPassword}
+                            onChange={(e) =>
+                              setNewAccountData({ ...newAccountData, managerPassword: e.target.value })
+                            }
+                            placeholder="Mínimo 6 caracteres"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowCreateDialog(false)}
+                          disabled={creating}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button onClick={handleCreateFreeAccount} disabled={creating}>
+                          {creating ? "Criando..." : "Criar Conta"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleMigrateOrganization}
+                    disabled={migrating}
+                  >
+                    {migrating ? "Migrando..." : "🔄 Transferir Organização"}
+                  </Button>
+                </>
               )}
               <Button variant="outline" onClick={handleSignOut}>
                 <LogOut className="w-4 h-4 mr-2" />
@@ -300,13 +448,24 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                       {org.stripe_customer_id || "N/A"}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant={org.subscription_status === "active" ? "destructive" : "default"}
-                        onClick={() => handleToggleAccess(org.id, org.subscription_status)}
-                      >
-                        {org.subscription_status === "active" ? "Desativar" : "Ativar"}
-                      </Button>
+                      {org.subscription_status === "gratuita" ? (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleRevokeAccess(org.id)}
+                        >
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Revogar Acesso
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={org.subscription_status === "active" ? "destructive" : "default"}
+                          onClick={() => handleToggleAccess(org.id, org.subscription_status)}
+                        >
+                          {org.subscription_status === "active" ? "Desativar" : "Ativar"}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

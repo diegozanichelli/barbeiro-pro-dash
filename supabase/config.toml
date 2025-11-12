@@ -20,3 +20,9 @@ verify_jwt = true
 
 [functions.complete-onboarding]
 verify_jwt = true
+
+[functions.create-free-account]
+verify_jwt = true
+
+[functions.revoke-free-access]
+verify_jwt = true
