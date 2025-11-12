@@ -58,10 +58,10 @@ serve(async (req) => {
 
     logStep("Revoking access", { organizationId });
 
-    // Update organization status to delinquent
+    // Update organization status to past_due
     const { error: updateError } = await supabaseClient
       .from("organizations")
-      .update({ subscription_status: "delinquent" })
+      .update({ subscription_status: "past_due" })
       .eq("id", organizationId)
       .eq("subscription_status", "gratuita");
 
