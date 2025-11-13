@@ -7,33 +7,35 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Building2 } from "lucide-react";
-
 export default function Onboarding() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { toast } = useToast();
+  const {
+    toast
+  } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     organizationName: "",
     fullName: location.state?.fullName || "",
     email: location.state?.email || "",
-    password: location.state?.password || "",
+    password: location.state?.password || ""
   });
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       // Step 1: Try to create user account, or login if already exists
       let userId: string;
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      const {
+        data: signUpData,
+        error: signUpError
+      } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           emailRedirectTo: `${window.location.origin}/onboarding-success`,
           data: {
-            full_name: formData.fullName,
+            full_name: formData.fullName
           }
         }
       });
@@ -41,14 +43,15 @@ export default function Onboarding() {
       // If user already exists, login instead
       if (signUpError?.message === "User already registered") {
         console.log("User already exists, logging in...");
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        const {
+          data: signInData,
+          error: signInError
+        } = await supabase.auth.signInWithPassword({
           email: formData.email,
-          password: formData.password,
+          password: formData.password
         });
-
         if (signInError) throw signInError;
         if (!signInData.user) throw new Error("Falha ao fazer login");
-        
         userId = signInData.user.id;
         console.log("User logged in successfully:", userId);
       } else if (signUpError) {
@@ -61,12 +64,16 @@ export default function Onboarding() {
       }
 
       // Ensure we have an active session token
-      const { data: sessionData } = await supabase.auth.getSession();
+      const {
+        data: sessionData
+      } = await supabase.auth.getSession();
       if (!sessionData.session) {
         console.log("No active session after sign up, attempting sign in...");
-        const { error: signInError2 } = await supabase.auth.signInWithPassword({
+        const {
+          error: signInError2
+        } = await supabase.auth.signInWithPassword({
           email: formData.email,
-          password: formData.password,
+          password: formData.password
         });
         if (signInError2) {
           throw new Error("Não foi possível autenticar para criar o checkout. Verifique sua confirmação de e-mail.");
@@ -74,20 +81,18 @@ export default function Onboarding() {
       }
 
       // Step 2: Create Stripe checkout session
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
-        "create-organization-checkout",
-        {
-          body: {
-            organizationName: formData.organizationName,
-          }
+      const {
+        data: checkoutData,
+        error: checkoutError
+      } = await supabase.functions.invoke("create-organization-checkout", {
+        body: {
+          organizationName: formData.organizationName
         }
-      );
-
+      });
       if (checkoutError) {
         console.error("Checkout error:", checkoutError);
         throw checkoutError;
       }
-
       console.log("Checkout session created:", checkoutData);
 
       // Redirect to Stripe checkout
@@ -103,14 +108,12 @@ export default function Onboarding() {
       toast({
         title: "Erro no cadastro",
         description: error.message || "Ocorreu um erro ao criar sua conta.",
-        variant: "destructive",
+        variant: "destructive"
       });
       setLoading(false);
     }
   };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
+  return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto w-12 h-12 rounded-full bg-gradient-gold flex items-center justify-center mb-4">
@@ -118,76 +121,48 @@ export default function Onboarding() {
           </div>
           <CardTitle className="text-2xl">Começar Teste Grátis de 7 Dias</CardTitle>
           <CardDescription>
-            Cadastre sua barbearia e ganhe 7 dias grátis do SGP-B Pro por apenas R$ 99,00/mês
+            Cadastre sua barbearia e ganhe 7 dias grátis do SGP-B Pro por apenas R$ 197,00/mês
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="organizationName">Nome da Barbearia</Label>
-              <Input
-                id="organizationName"
-                type="text"
-                placeholder="Barbearia Premium"
-                value={formData.organizationName}
-                onChange={(e) =>
-                  setFormData({ ...formData, organizationName: e.target.value })
-                }
-                required
-              />
+              <Input id="organizationName" type="text" placeholder="Barbearia Premium" value={formData.organizationName} onChange={e => setFormData({
+              ...formData,
+              organizationName: e.target.value
+            })} required />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="fullName">Seu Nome Completo</Label>
-              <Input
-                id="fullName"
-                type="text"
-                placeholder="João Silva"
-                value={formData.fullName}
-                onChange={(e) =>
-                  setFormData({ ...formData, fullName: e.target.value })
-                }
-                required
-              />
+              <Input id="fullName" type="text" placeholder="João Silva" value={formData.fullName} onChange={e => setFormData({
+              ...formData,
+              fullName: e.target.value
+            })} required />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="joao@barbearia.com"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-                required
-              />
+              <Input id="email" type="email" placeholder="joao@barbearia.com" value={formData.email} onChange={e => setFormData({
+              ...formData,
+              email: e.target.value
+            })} required />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                required
-              />
+              <Input id="password" type="password" placeholder="••••••••" value={formData.password} onChange={e => setFormData({
+              ...formData,
+              password: e.target.value
+            })} required />
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (
-                <>
+              {loading ? <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processando...
-                </>
-              ) : (
-                "Iniciar Teste Grátis"
-              )}
+                </> : "Iniciar Teste Grátis"}
             </Button>
 
             <p className="text-xs text-center text-muted-foreground">
@@ -195,17 +170,11 @@ export default function Onboarding() {
               Sem cobranças nos primeiros 7 dias.
             </p>
 
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => navigate("/auth")}
-            >
+            <Button type="button" variant="ghost" className="w-full" onClick={() => navigate("/auth")}>
               Já tem uma conta? Entrar
             </Button>
           </form>
         </CardContent>
       </Card>
-    </div>
-  );
+    </div>;
 }
