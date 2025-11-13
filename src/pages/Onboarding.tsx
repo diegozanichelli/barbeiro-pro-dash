@@ -1,79 +1,68 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { onboardingSchema, type OnboardingFormData } from "@/lib/validations/onboarding";
 import { Loader2, Building2 } from "lucide-react";
+
 export default function Onboarding() {
   const navigate = useNavigate();
   const location = useLocation();
-  const {
-    toast
-  } = useToast();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    organizationName: "",
-    fullName: location.state?.fullName || "",
-    email: location.state?.email || "",
-    password: location.state?.password || ""
+  const { toast } = useToast();
+
+  const form = useForm<OnboardingFormData>({
+    resolver: zodResolver(onboardingSchema),
+    defaultValues: {
+      organizationName: "",
+      fullName: location.state?.fullName || "",
+      email: location.state?.email || "",
+      password: location.state?.password || "",
+    },
   });
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+
+  const handleSubmit = async (data: OnboardingFormData) => {
     try {
       // Step 1: Try to create user account, or login if already exists
       let userId: string;
-      const {
-        data: signUpData,
-        error: signUpError
-      } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
         options: {
           emailRedirectTo: `${window.location.origin}/onboarding-success`,
           data: {
-            full_name: formData.fullName
-          }
-        }
+            full_name: data.fullName,
+          },
+        },
       });
 
       // If user already exists, login instead
       if (signUpError?.message === "User already registered") {
-        console.log("User already exists, logging in...");
-        const {
-          data: signInData,
-          error: signInError
-        } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.password,
         });
         if (signInError) throw signInError;
         if (!signInData.user) throw new Error("Falha ao fazer login");
         userId = signInData.user.id;
-        console.log("User logged in successfully:", userId);
       } else if (signUpError) {
         throw signUpError;
       } else if (!signUpData.user) {
         throw new Error("Falha ao criar usuário");
       } else {
         userId = signUpData.user.id;
-        console.log("User created successfully:", userId);
       }
 
       // Ensure we have an active session token
-      const {
-        data: sessionData
-      } = await supabase.auth.getSession();
+      const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
-        console.log("No active session after sign up, attempting sign in...");
-        const {
-          error: signInError2
-        } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password
+        const { error: signInError2 } = await supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.password,
         });
         if (signInError2) {
           throw new Error("Não foi possível autenticar para criar o checkout. Verifique sua confirmação de e-mail.");
@@ -81,100 +70,142 @@ export default function Onboarding() {
       }
 
       // Step 2: Create Stripe checkout session
-      const {
-        data: checkoutData,
-        error: checkoutError
-      } = await supabase.functions.invoke("create-organization-checkout", {
-        body: {
-          organizationName: formData.organizationName
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
+        "create-organization-checkout",
+        {
+          body: {
+            organizationName: data.organizationName,
+          },
         }
-      });
+      );
+
       if (checkoutError) {
-        console.error("Checkout error:", checkoutError);
         throw checkoutError;
       }
-      console.log("Checkout session created:", checkoutData);
 
       // Redirect to Stripe checkout
       if (checkoutData?.url) {
-        console.log("Redirecting to Stripe:", checkoutData.url);
         window.location.href = checkoutData.url;
       } else {
-        console.error("No URL in response:", checkoutData);
         throw new Error("URL de checkout não recebida");
       }
     } catch (error: any) {
-      console.error("Onboarding error:", error);
       toast({
         title: "Erro no cadastro",
         description: error.message || "Ocorreu um erro ao criar sua conta.",
-        variant: "destructive"
+        variant: "destructive",
       });
-      setLoading(false);
     }
   };
-  return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 rounded-full bg-gradient-gold flex items-center justify-center mb-4">
-            <Building2 className="w-6 h-6 text-primary-foreground" />
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-lg bg-card border-border shadow-card-custom">
+        <CardHeader className="text-center space-y-2">
+          <div className="flex justify-center mb-4">
+            <div className="p-4 bg-primary/10 rounded-full">
+              <Building2 className="w-12 h-12 text-primary" />
+            </div>
           </div>
-          <CardTitle className="text-2xl">Começar Teste Grátis de 7 Dias</CardTitle>
-          <CardDescription>
-            Cadastre sua barbearia e ganhe 7 dias grátis do SGP-B Pro por apenas R$ 197,00/mês
+          <CardTitle className="text-2xl font-bold text-foreground">
+            Complete seu Cadastro
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Crie sua organização e comece o teste grátis de 7 dias
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="organizationName">Nome da Barbearia</Label>
-              <Input id="organizationName" type="text" placeholder="Barbearia Premium" value={formData.organizationName} onChange={e => setFormData({
-              ...formData,
-              organizationName: e.target.value
-            })} required />
-            </div>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="organizationName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome da Organização</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Barbearia XYZ" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <div className="space-y-2">
-              <Label htmlFor="fullName">Seu Nome Completo</Label>
-              <Input id="fullName" type="text" placeholder="João Silva" value={formData.fullName} onChange={e => setFormData({
-              ...formData,
-              fullName: e.target.value
-            })} required />
-            </div>
+              <FormField
+                control={form.control}
+                name="fullName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome Completo</FormLabel>
+                    <FormControl>
+                      <Input placeholder="João Silva" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="joao@barbearia.com" value={formData.email} onChange={e => setFormData({
-              ...formData,
-              email: e.target.value
-            })} required />
-            </div>
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="seu@email.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <Input id="password" type="password" placeholder="••••••••" value={formData.password} onChange={e => setFormData({
-              ...formData,
-              password: e.target.value
-            })} required />
-            </div>
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Senha</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processando...
-                </> : "Iniciar Teste Grátis"}
-            </Button>
+              <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-primary">🎉 Teste Grátis por 7 Dias</h4>
+                <p className="text-sm text-muted-foreground">
+                  Após o período de teste, a assinatura será de R$ 99,90/mês. Você pode cancelar a qualquer momento.
+                </p>
+              </div>
 
-            <p className="text-xs text-center text-muted-foreground">
-              Ao continuar, você será redirecionado para o Stripe para confirmar o pagamento.
-              Sem cobranças nos primeiros 7 dias.
-            </p>
+              <Button 
+                type="submit" 
+                className="w-full" 
+                size="lg" 
+                disabled={form.formState.isSubmitting}
+              >
+                {form.formState.isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processando...
+                  </>
+                ) : (
+                  "Iniciar Teste Grátis"
+                )}
+              </Button>
 
-            <Button type="button" variant="ghost" className="w-full" onClick={() => navigate("/auth")}>
-              Já tem uma conta? Entrar
-            </Button>
-          </form>
+              <p className="text-sm text-center text-muted-foreground">
+                Já tem uma conta?{" "}
+                <Link to="/auth" className="text-primary hover:underline">
+                  Fazer login
+                </Link>
+              </p>
+            </form>
+          </Form>
         </CardContent>
       </Card>
-    </div>;
+    </div>
+  );
 }
