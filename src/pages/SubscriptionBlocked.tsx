@@ -121,7 +121,7 @@ export default function SubscriptionBlocked() {
                   window.location.href = "https://billing.stripe.com/p/login/test_XXXXXX";
                 } else {
                   // Redirect to checkout
-                  window.open("https://buy.stripe.com/test_XXXXXX", "_blank");
+                  window.open("https://buy.stripe.com/4gM9AT6nt1n7g7g1FH4Ni00", "_blank");
                 }
               }}
               className="w-full"
