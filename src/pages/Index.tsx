@@ -57,7 +57,7 @@ export default function Index() {
         </div>
 
         <p className="text-sm text-muted-foreground mt-8">
-          Apenas R$ 99,00/mês após o período de teste • Cancele quando quiser
+          Apenas R$ 197,00/mês após o período de teste • Cancele quando quiser
         </p>
       </div>
     </div>;
