@@ -25,7 +25,7 @@ export default function Leaderboard() {
   const [unitFilter, setUnitFilter] = useState("all");
   const [units, setUnits] = useState<any[]>([]);
   
-  const [servicesRanking, setServicesRanking] = useState<RankingItem[]>([]);
+  const [performanceRanking, setPerformanceRanking] = useState<RankingItem[]>([]);
   const [servicesExtraRanking, setServicesExtraRanking] = useState<RankingItem[]>([]);
   const [productsRanking, setProductsRanking] = useState<RankingItem[]>([]);
   const [ticketRanking, setTicketRanking] = useState<RankingItem[]>([]);
@@ -187,12 +187,15 @@ export default function Leaderboard() {
       commission_earned: Number(r.commission_earned) || 0,
     }));
 
-    // Ranking de Serviços
-    const services = statsArray
-      .map((s) => ({ ...s, value: s.services_total }))
+    // Ranking de Performance (Serviços Extras + Produtos por Cliente)
+    const performance = statsArray
+      .map((s) => ({
+        ...s,
+        value: s.clients_count > 0 ? (s.services_extra_total + s.products_total) / s.clients_count : 0,
+      }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 3);
-    setServicesRanking(services);
+    setPerformanceRanking(performance);
 
     // Ranking de Serviços Extras
     const servicesExtra = statsArray
@@ -326,11 +329,11 @@ export default function Leaderboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RankingCard
-          title="O BICHÃO DOS SERVIÇOS"
-          rankingKey="services"
+          title="MESTRE DA PERFORMANCE"
+          rankingKey="performance"
           icon={<TrendingUp className="w-5 h-5 text-success" />}
-          data={servicesRanking}
-          description="Ranking baseado no total de serviços básicos vendidos no período"
+          data={performanceRanking}
+          description="Ranking baseado na média de serviços extras e produtos vendidos por cliente atendido"
         />
         <RankingCard
           title="REI DOS SERVIÇOS EXTRAS"
