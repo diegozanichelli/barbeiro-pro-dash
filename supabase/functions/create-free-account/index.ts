@@ -56,6 +56,18 @@ serve(async (req) => {
       throw new Error("Missing required fields: organizationName, managerEmail, managerPassword");
     }
 
+    // Validate password (8+ characters with complexity)
+    const passwordStr = String(managerPassword);
+    if (passwordStr.length < 8) {
+      throw new Error("Senha deve ter no mínimo 8 caracteres");
+    }
+    
+    // Check password complexity (must have uppercase and lowercase or numbers)
+    const hasComplexity = /^(?=.*[a-z])(?=.*[A-Z\d])/.test(passwordStr);
+    if (!hasComplexity) {
+      throw new Error("Senha deve conter letras maiúsculas e minúsculas ou números");
+    }
+
     logStep("Creating organization", { organizationName });
 
     // Create organization with gratuita status
