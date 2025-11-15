@@ -99,7 +99,7 @@ serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logStep("ERROR", { message: errorMessage });
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: "Operação falhou. Tente novamente." }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
