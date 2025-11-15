@@ -236,12 +236,14 @@ export default function Leaderboard() {
     rankingKey,
     icon,
     data,
+    description,
     valuePrefix = "R$",
   }: {
     title: string;
     rankingKey: string;
     icon: React.ReactNode;
     data: RankingItem[];
+    description?: string;
     valuePrefix?: string;
   }) => {
     const displayTitle = customNames[rankingKey] || title;
@@ -263,6 +265,11 @@ export default function Leaderboard() {
               <Pencil className="h-4 w-4" />
             </Button>
           </CardTitle>
+          {description && (
+            <CardDescription className="text-muted-foreground">
+              {description}
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -323,30 +330,35 @@ export default function Leaderboard() {
           rankingKey="services"
           icon={<TrendingUp className="w-5 h-5 text-success" />}
           data={servicesRanking}
+          description="Ranking baseado no total de serviços básicos vendidos no período"
         />
         <RankingCard
           title="REI DOS SERVIÇOS EXTRAS"
           rankingKey="services_extra"
           icon={<TrendingUp className="w-5 h-5 text-warning" />}
           data={servicesExtraRanking}
+          description="Ranking baseado no total de serviços extras (adicionais) vendidos no período"
         />
         <RankingCard
           title="REI DOS PRODUTOS"
           rankingKey="products"
           icon={<DollarSign className="w-5 h-5 text-primary" />}
           data={productsRanking}
+          description="Ranking baseado no total de produtos vendidos no período"
         />
         <RankingCard
           title="MESTRE DO TICKET MÉDIO"
           rankingKey="ticket"
           icon={<Users className="w-5 h-5 text-accent" />}
           data={ticketRanking}
+          description="Ranking baseado no valor médio gasto por cliente (serviços + produtos ÷ quantidade de clientes)"
         />
         <RankingCard
           title="MÃO DE OURO"
           rankingKey="commission"
           icon={<Trophy className="w-5 h-5 text-primary" />}
           data={commissionRanking}
+          description="Ranking baseado no total de comissão ganha no período"
         />
       </div>
 
