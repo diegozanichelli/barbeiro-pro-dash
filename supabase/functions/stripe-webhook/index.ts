@@ -64,7 +64,7 @@ serve(async (req) => {
 
         if (orgError) {
           logStep("Error creating organization", { error: orgError.message });
-          throw orgError;
+          throw new Error("Organization creation failed");
         }
 
         logStep("Organization created");
@@ -80,7 +80,7 @@ serve(async (req) => {
 
         if (roleError) {
           logStep("Error assigning role", { error: roleError.message });
-          throw roleError;
+          throw new Error("Role assignment failed");
         }
 
         logStep("Manager role assigned successfully");
@@ -102,7 +102,7 @@ serve(async (req) => {
 
         if (error) {
           logStep("Error updating organization status", { error: error.message });
-          throw error;
+          throw new Error("Organization update failed");
         }
 
         logStep("Organization activated");
@@ -123,7 +123,7 @@ serve(async (req) => {
 
         if (error) {
           logStep("Error updating organization status", { error: error.message });
-          throw error;
+          throw new Error("Organization update failed");
         }
 
         logStep("Organization marked as delinquent");
@@ -144,7 +144,7 @@ serve(async (req) => {
 
         if (error) {
           logStep("Error updating organization status", { error: error.message });
-          throw error;
+          throw new Error("Organization update failed");
         }
 
         logStep("Organization canceled");

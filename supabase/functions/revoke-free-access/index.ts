@@ -67,7 +67,7 @@ serve(async (req) => {
 
     if (updateError) {
       logStep("Error revoking access", { error: updateError });
-      throw new Error(`Failed to revoke access: ${updateError.message}`);
+      throw new Error("Operação falhou. Tente novamente.");
     }
 
     logStep("Free access revoked successfully");
@@ -86,7 +86,7 @@ serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logStep("ERROR", { message: errorMessage });
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: "Operação falhou. Tente novamente." }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,

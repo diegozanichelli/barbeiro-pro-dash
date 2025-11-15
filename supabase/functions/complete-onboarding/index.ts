@@ -103,7 +103,7 @@ serve(async (req) => {
 
     if (orgError) {
       logStep("Error creating organization", { error: orgError.message });
-      throw orgError;
+      throw new Error("Operação falhou. Tente novamente.");
     }
 
     logStep("Organization created");
@@ -119,7 +119,7 @@ serve(async (req) => {
 
     if (roleError) {
       logStep("Error assigning role", { error: roleError.message });
-      throw roleError;
+      throw new Error("Operação falhou. Tente novamente.");
     }
 
     logStep("Manager role assigned successfully");
@@ -139,7 +139,7 @@ serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logStep("ERROR", { message: errorMessage });
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: "Operação falhou. Tente novamente." }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
