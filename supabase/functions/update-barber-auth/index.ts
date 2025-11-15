@@ -111,6 +111,28 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Validate password if provided (8+ characters with complexity)
+    if (password) {
+      const passwordStr = String(password);
+      if (passwordStr.length < 8) {
+        console.error('Password too short');
+        return new Response(
+          JSON.stringify({ error: 'Senha deve ter no mínimo 8 caracteres' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Check password complexity (must have uppercase and lowercase or numbers)
+      const hasComplexity = /^(?=.*[a-z])(?=.*[A-Z\d])/.test(passwordStr);
+      if (!hasComplexity) {
+        console.error('Password lacks complexity');
+        return new Response(
+          JSON.stringify({ error: 'Senha deve conter letras maiúsculas e minúsculas ou números' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Preparar dados de atualização
     const updateData: any = {}
     
@@ -140,7 +162,7 @@ Deno.serve(async (req) => {
     if (updateError) {
       console.error('Update failed:', updateError.message)
       return new Response(
-        JSON.stringify({ error: `Erro ao atualizar: ${updateError.message}` }),
+        JSON.stringify({ error: 'Falha ao atualizar dados de autenticação. Tente novamente.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

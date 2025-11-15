@@ -40,24 +40,30 @@ serve(async (req: Request) => {
     // Service role client for privileged operations
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-    // Ensure caller is a manager
-    const { data: isManager, error: roleErr } = await supabase.rpc("is_manager");
-    if (roleErr) {
-      console.error("[CREATE-BARBER] Manager check failed:", roleErr);
-      return new Response(JSON.stringify({ error: roleErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-    if (!isManager) {
-      console.error("[CREATE-BARBER] User is not a manager");
-      return new Response(JSON.stringify({ error: "Forbidden: only managers can create barbers" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    // Get manager's organization_id
+    // Get authenticated user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       console.error("[CREATE-BARBER] User not found in JWT");
-      return new Response(JSON.stringify({ error: "User not found" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Verify user is a manager with direct query (secure)
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'manager')
+      .maybeSingle();
+    
+    if (!roleData) {
+      console.error("[CREATE-BARBER] User is not a manager");
+      return new Response(
+        JSON.stringify({ error: "Acesso negado" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Get manager's organization_id
     console.log("[CREATE-BARBER] Manager user_id:", user.id);
 
     const { data: managerOrgData, error: orgErr } = await supabase
@@ -68,7 +74,7 @@ serve(async (req: Request) => {
 
     if (orgErr || !managerOrgData?.organization_id) {
       console.error("[CREATE-BARBER] Manager organization not found:", orgErr);
-      return new Response(JSON.stringify({ error: "Manager organization not found" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Organização não encontrada" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const organization_id = managerOrgData.organization_id;
@@ -96,11 +102,27 @@ serve(async (req: Request) => {
     // Basic validation
     if (!name || !email || !password || !unit_id) {
       console.error("[CREATE-BARBER] Missing required fields");
-      return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Campos obrigatórios faltando" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    if (String(password).length < 6) {
+    
+    // Validate password (8+ characters with complexity)
+    const passwordStr = String(password);
+    if (passwordStr.length < 8) {
       console.error("[CREATE-BARBER] Password too short");
-      return new Response(JSON.stringify({ error: "Password must be at least 6 characters" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({ error: "Senha deve ter no mínimo 8 caracteres" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    // Check password complexity (must have uppercase and lowercase or numbers)
+    const hasComplexity = /^(?=.*[a-z])(?=.*[A-Z\d])/.test(passwordStr);
+    if (!hasComplexity) {
+      console.error("[CREATE-BARBER] Password lacks complexity");
+      return new Response(
+        JSON.stringify({ error: "Senha deve conter letras maiúsculas e minúsculas ou números" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.log("[CREATE-BARBER] Creating user:", email);
@@ -114,12 +136,12 @@ serve(async (req: Request) => {
     });
     if (createErr) {
       console.error("[CREATE-BARBER] Auth user creation failed:", createErr);
-      return new Response(JSON.stringify({ error: createErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Falha ao criar usuário. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const newUser = created.user;
     if (!newUser) {
       console.error("[CREATE-BARBER] No user returned from auth");
-      return new Response(JSON.stringify({ error: "Failed to create user" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Falha ao criar usuário" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log("[CREATE-BARBER] Auth user created:", newUser.id);
@@ -133,7 +155,7 @@ serve(async (req: Request) => {
       // If duplicate, ignore conflict
       if (profileErr.code !== "23505") {
         console.error("[CREATE-BARBER] Profile creation failed:", profileErr);
-        return new Response(JSON.stringify({ error: profileErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: "Falha ao criar perfil. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }
 
@@ -151,7 +173,7 @@ serve(async (req: Request) => {
     });
     if (barberErr) {
       console.error("[CREATE-BARBER] Barber creation failed:", barberErr);
-      return new Response(JSON.stringify({ error: barberErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Falha ao criar barbeiro. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log("[CREATE-BARBER] Barber row created");
@@ -164,7 +186,7 @@ serve(async (req: Request) => {
     });
     if (userRoleErr) {
       console.error("[CREATE-BARBER] User role creation failed:", userRoleErr);
-      return new Response(JSON.stringify({ error: userRoleErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Falha ao atribuir permissão. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log("[CREATE-BARBER] User role created - Barber creation complete!");
