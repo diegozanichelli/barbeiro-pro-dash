@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { managerAuthSchema, type ManagerAuthFormData } from "@/lib/validations/manager";
+import { organizationEditSchema, type OrganizationEditFormData } from "@/lib/validations/organization";
 import {
   Form,
   FormControl,
@@ -83,12 +84,26 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [showEditManagerDialog, setShowEditManagerDialog] = useState(false);
   const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [showEditOrgDialog, setShowEditOrgDialog] = useState(false);
+  const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
+  const [editingOrg, setEditingOrg] = useState(false);
 
   const form = useForm<ManagerAuthFormData>({
     resolver: zodResolver(managerAuthSchema),
     defaultValues: {
       email: "",
       password: "",
+    },
+  });
+
+  const orgForm = useForm<OrganizationEditFormData>({
+    resolver: zodResolver(organizationEditSchema),
+    defaultValues: {
+      organizationName: "",
+      managerName: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
     },
   });
 
@@ -339,6 +354,108 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleEditOrganization = async (org: Organization) => {
+    setSelectedOrganization(org);
+    setEditingOrg(true);
+
+    try {
+      // Buscar o gerente da organização
+      const { data: managerRole, error: roleError } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("organization_id", org.id)
+        .eq("role", "manager")
+        .maybeSingle();
+
+      if (roleError) throw roleError;
+
+      let managerEmail = "";
+      let managerName = "";
+
+      if (managerRole) {
+        // Buscar dados do gerente via edge function
+        const { data: managersData, error: managersError } = await supabase.functions.invoke("list-managers");
+        
+        if (!managersError && managersData) {
+          const manager = managersData.managers.find((m: Manager) => m.user_id === managerRole.user_id);
+          if (manager) {
+            managerEmail = manager.email;
+          }
+        }
+
+        // Buscar nome do perfil
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", managerRole.user_id)
+          .maybeSingle();
+
+        if (!profileError && profile) {
+          managerName = profile.full_name || "";
+        }
+      }
+
+      orgForm.reset({
+        organizationName: org.name,
+        managerName: managerName,
+        email: managerEmail,
+        password: "",
+        confirmPassword: "",
+      });
+
+      setShowEditOrgDialog(true);
+    } catch (error) {
+      console.error("Error loading organization data:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar dados da organização",
+        variant: "destructive",
+      });
+    } finally {
+      setEditingOrg(false);
+    }
+  };
+
+  const handleUpdateOrganization = async (data: OrganizationEditFormData) => {
+    if (!selectedOrganization) return;
+
+    try {
+      setEditingOrg(true);
+
+      const { error } = await supabase.functions.invoke("admin-update-manager", {
+        body: {
+          organization_id: selectedOrganization.id,
+          organization_name: data.organizationName,
+          manager_name: data.managerName,
+          email: data.email,
+          password: data.password || undefined,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Organização e gerente atualizados com sucesso",
+      });
+
+      setShowEditOrgDialog(false);
+      setSelectedOrganization(null);
+      orgForm.reset();
+      fetchOrganizations();
+      fetchManagers();
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao atualizar organização",
+        variant: "destructive",
+      });
+    } finally {
+      setEditingOrg(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       active: "default",
@@ -550,24 +667,35 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                       {org.stripe_customer_id || "N/A"}
                     </TableCell>
                     <TableCell>
-                      {org.subscription_status === "gratuita" ? (
+                      <div className="flex gap-2">
                         <Button
                           size="sm"
-                          variant="destructive"
-                          onClick={() => handleRevokeAccess(org.id)}
+                          variant="outline"
+                          onClick={() => handleEditOrganization(org)}
+                          disabled={editingOrg}
                         >
-                          <XCircle className="w-4 h-4 mr-1" />
-                          Revogar Acesso
+                          <Pencil className="w-4 h-4 mr-1" />
+                          Editar
                         </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant={org.subscription_status === "active" ? "destructive" : "default"}
-                          onClick={() => handleToggleAccess(org.id, org.subscription_status)}
-                        >
-                          {org.subscription_status === "active" ? "Desativar" : "Ativar"}
-                        </Button>
-                      )}
+                        {org.subscription_status === "gratuita" ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleRevokeAccess(org.id)}
+                          >
+                            <XCircle className="w-4 h-4 mr-1" />
+                            Revogar
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant={org.subscription_status === "active" ? "destructive" : "default"}
+                            onClick={() => handleToggleAccess(org.id, org.subscription_status)}
+                          >
+                            {org.subscription_status === "active" ? "Desativar" : "Ativar"}
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -575,6 +703,100 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </Table>
             </CardContent>
           </Card>
+
+          {/* Modal de Edição de Organização */}
+          <Dialog open={showEditOrgDialog} onOpenChange={setShowEditOrgDialog}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Editar Organização e Gerente</DialogTitle>
+                <DialogDescription>
+                  Atualize as informações da barbearia e do gerente responsável
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...orgForm}>
+                <form onSubmit={orgForm.handleSubmit(handleUpdateOrganization)} className="space-y-4">
+                  <FormField
+                    control={orgForm.control}
+                    name="organizationName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nome da Barbearia</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Ex: Barbearia do João" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={orgForm.control}
+                    name="managerName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nome do Gerente</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Ex: João Silva" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={orgForm.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email de Login</FormLabel>
+                        <FormControl>
+                          <Input type="email" {...field} placeholder="gerente@email.com" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={orgForm.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nova Senha Temporária (deixe em branco para não alterar)</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} placeholder="Mínimo 8 caracteres" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={orgForm.control}
+                    name="confirmPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Confirmar Nova Senha</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} placeholder="Digite a senha novamente" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowEditOrgDialog(false)}
+                      disabled={editingOrg}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={editingOrg}>
+                      {editingOrg ? "Salvando..." : "Salvar Alterações"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="managers">
