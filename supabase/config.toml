@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.revoke-free-access]
 verify_jwt = true
+
+[functions.update-manager-auth]
+verify_jwt = true

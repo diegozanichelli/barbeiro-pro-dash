@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -20,6 +20,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { managerAuthSchema, type ManagerAuthFormData } from "@/lib/validations/manager";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 
 interface SuperAdminDashboardProps {
   user: User;
@@ -38,6 +50,13 @@ interface OrganizationStats {
   active_subscriptions: number;
   trial_subscriptions: number;
   monthly_revenue: number;
+}
+
+interface Manager {
+  user_id: string;
+  email: string;
+  organization_name: string;
+  organization_id: string;
 }
 
 export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) {
@@ -60,6 +79,18 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     managerPassword: "",
   });
   const [creating, setCreating] = useState(false);
+  const [managers, setManagers] = useState<Manager[]>([]);
+  const [showEditManagerDialog, setShowEditManagerDialog] = useState(false);
+  const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
+  const [updating, setUpdating] = useState(false);
+
+  const form = useForm<ManagerAuthFormData>({
+    resolver: zodResolver(managerAuthSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
 
   useEffect(() => {
     const checkSuperAdminRole = async () => {
@@ -77,6 +108,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
 
     checkSuperAdminRole();
     fetchOrganizations();
+    fetchManagers();
   }, [user.id]);
 
   const fetchOrganizations = async () => {
@@ -244,6 +276,90 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     navigate("/auth");
   };
 
+  const fetchManagers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select(`
+          user_id,
+          organization_id,
+          organizations!inner(name)
+        `)
+        .eq("role", "manager");
+
+      if (error) throw error;
+
+      const listResult = await supabase.auth.admin.listUsers();
+      
+      if (listResult.error) throw listResult.error;
+
+      const managersData = data?.map((role) => {
+        const authUser = listResult.data.users.find((u: any) => u.id === role.user_id);
+        return {
+          user_id: role.user_id,
+          email: authUser?.email || "",
+          organization_name: (role.organizations as any).name,
+          organization_id: role.organization_id,
+        };
+      }) || [];
+
+      setManagers(managersData);
+    } catch (error) {
+      console.error("Error fetching managers:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar gerentes",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditManager = (manager: Manager) => {
+    setSelectedManager(manager);
+    form.reset({
+      email: manager.email,
+      password: "",
+    });
+    setShowEditManagerDialog(true);
+  };
+
+  const handleUpdateManager = async (data: ManagerAuthFormData) => {
+    if (!selectedManager) return;
+
+    try {
+      setUpdating(true);
+
+      const { error } = await supabase.functions.invoke("update-manager-auth", {
+        body: {
+          manager_user_id: selectedManager.user_id,
+          email: data.email,
+          password: data.password || undefined,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Dados do gerente atualizados com sucesso",
+      });
+
+      setShowEditManagerDialog(false);
+      setSelectedManager(null);
+      form.reset();
+      fetchManagers();
+    } catch (error) {
+      console.error("Error updating manager:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao atualizar gerente",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       active: "default",
@@ -368,7 +484,14 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       </header>
 
       <div className="container mx-auto px-4 py-6">
-        <div className="grid gap-4 md:grid-cols-4 mb-6">
+        <Tabs defaultValue="organizations" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="organizations">Organizações</TabsTrigger>
+            <TabsTrigger value="managers">Gerentes</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="organizations">
+            <div className="grid gap-4 md:grid-cols-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -471,8 +594,96 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="managers">
+          <Card>
+            <CardHeader>
+              <CardTitle>Gerentes</CardTitle>
+              <CardDescription>
+                Edite email e senha dos gerentes cadastrados
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Organização</TableHead>
+                    <TableHead>Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {managers.map((manager) => (
+                    <TableRow key={manager.user_id}>
+                      <TableCell className="font-medium">{manager.email}</TableCell>
+                      <TableCell>{manager.organization_name}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditManager(manager)}
+                        >
+                          <Edit className="w-4 h-4 mr-1" />
+                          Editar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Dialog open={showEditManagerDialog} onOpenChange={setShowEditManagerDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Editar Gerente</DialogTitle>
+                <DialogDescription>
+                  Atualize o email e/ou senha do gerente
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(handleUpdateManager)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input type="email" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nova Senha (deixe em branco para não alterar)</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button type="submit" disabled={updating}>
+                      {updating ? "Atualizando..." : "Atualizar"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+      </Tabs>
       </div>
     </div>
   );
