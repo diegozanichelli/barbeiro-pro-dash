@@ -278,32 +278,11 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
 
   const fetchManagers = async () => {
     try {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select(`
-          user_id,
-          organization_id,
-          organizations!inner(name)
-        `)
-        .eq("role", "manager");
+      const { data, error } = await supabase.functions.invoke("list-managers");
 
       if (error) throw error;
 
-      const listResult = await supabase.auth.admin.listUsers();
-      
-      if (listResult.error) throw listResult.error;
-
-      const managersData = data?.map((role) => {
-        const authUser = listResult.data.users.find((u: any) => u.id === role.user_id);
-        return {
-          user_id: role.user_id,
-          email: authUser?.email || "",
-          organization_name: (role.organizations as any).name,
-          organization_id: role.organization_id,
-        };
-      }) || [];
-
-      setManagers(managersData);
+      setManagers(data?.managers || []);
     } catch (error) {
       console.error("Error fetching managers:", error);
       toast({

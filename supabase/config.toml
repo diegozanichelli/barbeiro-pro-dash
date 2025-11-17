@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.update-manager-auth]
 verify_jwt = true
+
+[functions.list-managers]
+verify_jwt = true
