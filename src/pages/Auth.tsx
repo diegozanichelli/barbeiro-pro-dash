@@ -117,11 +117,21 @@ export default function Auth() {
                   />
                   <Button 
                     type="submit" 
-                    className="w-full" 
+                    className="w-full"
                     disabled={signInForm.formState.isSubmitting}
                   >
                     {signInForm.formState.isSubmitting ? "Entrando..." : "Entrar"}
                   </Button>
+                  <div className="text-center mt-4">
+                    <Button
+                      variant="link"
+                      className="text-sm text-muted-foreground hover:text-foreground"
+                      onClick={() => navigate("/recuperar-senha")}
+                      type="button"
+                    >
+                      Esqueci minha senha
+                    </Button>
+                  </div>
                 </form>
               </Form>
             </TabsContent>
