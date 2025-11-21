@@ -27,6 +27,14 @@ export function useSubscriptionCheck() {
 
       if (error) {
         console.error("Error checking subscription:", error);
+        setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
+        setLoading(false);
+        return;
+      }
+
+      if (data?.error) {
+        console.error("Subscription check error:", data.error, data.details);
+        setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
         return;
       }
@@ -39,6 +47,7 @@ export function useSubscriptionCheck() {
       }
     } catch (error) {
       console.error("Subscription check failed:", error);
+      setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
     } finally {
       setLoading(false);
     }
