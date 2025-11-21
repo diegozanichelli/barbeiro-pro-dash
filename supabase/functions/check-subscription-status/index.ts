@@ -20,7 +20,19 @@ serve(async (req) => {
     logStep("Function started");
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No authorization header");
+    if (!authHeader) {
+      logStep("Missing authorization header");
+      return new Response(
+        JSON.stringify({ 
+          has_access: false, 
+          message: "No authorization header" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -31,21 +43,45 @@ serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
     
-    if (userError || !userData.user) {
-      throw new Error("User not authenticated");
+    if (userError) {
+      logStep("Auth error", { error: userError.message });
+      return new Response(
+        JSON.stringify({ 
+          has_access: false, 
+          message: "Invalid or expired token" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
+
+    if (!userData.user) {
+      logStep("No user data");
+      return new Response(
+        JSON.stringify({ 
+          has_access: false, 
+          message: "User not found" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
     }
 
     logStep("User authenticated", { userId: userData.user.id });
 
-    // Get user role and organization
+    // Get user role (without organization join for now)
     const { data: userRole, error: roleError } = await supabaseClient
       .from("user_roles")
-      .select("role, organization_id, organizations(subscription_status)")
+      .select("role, organization_id")
       .eq("user_id", userData.user.id)
       .single();
 
     if (roleError) {
-      logStep("No role found for user", { error: roleError });
+      logStep("No role found for user", { error: roleError.message });
       return new Response(
         JSON.stringify({ 
           has_access: false, 
@@ -58,10 +94,11 @@ serve(async (req) => {
       );
     }
 
-    logStep("User role found", { role: userRole.role });
+    logStep("User role found", { role: userRole.role, organizationId: userRole.organization_id });
 
     // Super admins always have access
     if (userRole.role === "super_admin") {
+      logStep("Super admin access granted");
       return new Response(
         JSON.stringify({ 
           has_access: true, 
@@ -75,10 +112,44 @@ serve(async (req) => {
       );
     }
 
-    // Check organization subscription status
-    const org = userRole.organizations as any;
-    const subscriptionStatus = org?.subscription_status;
+    // Check organization subscription status for non-super-admins
+    if (!userRole.organization_id) {
+      logStep("No organization assigned");
+      return new Response(
+        JSON.stringify({ 
+          has_access: false,
+          role: userRole.role,
+          message: "No organization assigned"
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
 
+    const { data: org, error: orgError } = await supabaseClient
+      .from("organizations")
+      .select("subscription_status")
+      .eq("id", userRole.organization_id)
+      .single();
+
+    if (orgError) {
+      logStep("Error fetching organization", { error: orgError.message });
+      return new Response(
+        JSON.stringify({ 
+          has_access: false,
+          role: userRole.role,
+          message: "Organization not found"
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
+
+    const subscriptionStatus = org.subscription_status;
     logStep("Subscription status checked", { status: subscriptionStatus });
 
     const hasAccess = subscriptionStatus === "trial" || subscriptionStatus === "active" || subscriptionStatus === "gratuita";
@@ -97,9 +168,13 @@ serve(async (req) => {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logStep("ERROR", { message: errorMessage });
+    const errorStack = error instanceof Error ? error.stack : "";
+    logStep("CRITICAL ERROR", { message: errorMessage, stack: errorStack });
     return new Response(
-      JSON.stringify({ error: "Operação falhou. Tente novamente." }),
+      JSON.stringify({ 
+        error: "Operação falhou. Tente novamente.",
+        details: errorMessage
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
