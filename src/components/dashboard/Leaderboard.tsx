@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trophy, TrendingUp, DollarSign, Users, Pencil } from "lucide-react";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subDays, subHours, startOfDay, endOfDay } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -150,6 +150,23 @@ export default function Leaderboard() {
         return {
           start: format(startOfMonth(now), "yyyy-MM-dd"),
           end: format(endOfMonth(now), "yyyy-MM-dd"),
+        };
+      case "last_month":
+        const lastMonth = subMonths(now, 1);
+        return {
+          start: format(startOfMonth(lastMonth), "yyyy-MM-dd"),
+          end: format(endOfMonth(lastMonth), "yyyy-MM-dd"),
+        };
+      case "last_7_days":
+        return {
+          start: format(subDays(now, 6), "yyyy-MM-dd"),
+          end: format(now, "yyyy-MM-dd"),
+        };
+      case "last_24_hours":
+        const yesterday = subHours(now, 24);
+        return {
+          start: format(yesterday, "yyyy-MM-dd HH:mm:ss"),
+          end: format(now, "yyyy-MM-dd HH:mm:ss"),
         };
       default:
         return {
@@ -321,8 +338,10 @@ export default function Leaderboard() {
             <SelectValue placeholder="Período" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="current_week">Semana Atual</SelectItem>
-            <SelectItem value="current_month">Mês Atual</SelectItem>
+            <SelectItem value="current_month">Este Mês</SelectItem>
+            <SelectItem value="last_month">Mês Passado</SelectItem>
+            <SelectItem value="last_7_days">Últimos 7 Dias</SelectItem>
+            <SelectItem value="last_24_hours">Últimas 24 Horas</SelectItem>
           </SelectContent>
         </Select>
       </div>
