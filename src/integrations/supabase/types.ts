@@ -238,6 +238,7 @@ export type Database = {
           created_at: string
           custom_name: string
           id: string
+          is_active: boolean
           organization_id: string
           ranking_key: string
           updated_at: string
@@ -246,6 +247,7 @@ export type Database = {
           created_at?: string
           custom_name: string
           id?: string
+          is_active?: boolean
           organization_id: string
           ranking_key: string
           updated_at?: string
@@ -254,6 +256,7 @@ export type Database = {
           created_at?: string
           custom_name?: string
           id?: string
+          is_active?: boolean
           organization_id?: string
           ranking_key?: string
           updated_at?: string

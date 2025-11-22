@@ -601,7 +601,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           </TabsContent>
 
           <TabsContent value="leaderboard">
-            <Leaderboard />
+            <Leaderboard viewerRole="barber" />
           </TabsContent>
         </Tabs>
 

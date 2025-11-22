@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trophy, TrendingUp, DollarSign, Users, Pencil } from "lucide-react";
+import { Trophy, TrendingUp, DollarSign, Users, Pencil, Eye, EyeOff } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subDays, subHours, startOfDay, endOfDay } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useOrganization } from "@/hooks/useOrganization";
+import { Switch } from "@/components/ui/switch";
 
 interface RankingItem {
   barber_id: string;
@@ -18,7 +19,17 @@ interface RankingItem {
   value: number;
 }
 
-export default function Leaderboard() {
+interface RankingConfig {
+  key: string;
+  title: string;
+  is_active: boolean;
+}
+
+interface LeaderboardProps {
+  viewerRole?: "barber" | "manager";
+}
+
+export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps) {
   const { toast } = useToast();
   const { organization } = useOrganization();
   const [period, setPeriod] = useState("current_month");
@@ -32,8 +43,10 @@ export default function Leaderboard() {
   const [commissionRanking, setCommissionRanking] = useState<RankingItem[]>([]);
 
   const [customNames, setCustomNames] = useState<Record<string, string>>({});
+  const [rankingConfigs, setRankingConfigs] = useState<Record<string, RankingConfig>>({});
   const [editingRanking, setEditingRanking] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [showCampaignControl, setShowCampaignControl] = useState(false);
 
   useEffect(() => {
     fetchUnits();
@@ -54,15 +67,24 @@ export default function Leaderboard() {
 
     const { data } = await supabase
       .from("ranking_custom_names")
-      .select("ranking_key, custom_name")
+      .select("ranking_key, custom_name, is_active")
       .eq("organization_id", organization.id);
 
     if (data) {
       const names: Record<string, string> = {};
+      const configs: Record<string, RankingConfig> = {};
+      
       data.forEach((item) => {
         names[item.ranking_key] = item.custom_name;
+        configs[item.ranking_key] = {
+          key: item.ranking_key,
+          title: item.custom_name,
+          is_active: item.is_active,
+        };
       });
+      
       setCustomNames(names);
+      setRankingConfigs(configs);
     }
   };
 
@@ -129,6 +151,12 @@ export default function Leaderboard() {
       return updated;
     });
 
+    setRankingConfigs((prev) => {
+      const updated = { ...prev };
+      delete updated[editingRanking];
+      return updated;
+    });
+
     toast({
       title: "Nome resetado!",
       description: "O nome do ranking foi resetado para o padrão.",
@@ -136,6 +164,67 @@ export default function Leaderboard() {
 
     setEditingRanking(null);
     setEditName("");
+  };
+
+  const handleToggleCampaign = async (rankingKey: string, currentState: boolean) => {
+    if (!organization?.id) return;
+
+    const newState = !currentState;
+
+    const { error } = await supabase
+      .from("ranking_custom_names")
+      .upsert({
+        organization_id: organization.id,
+        ranking_key: rankingKey,
+        custom_name: customNames[rankingKey] || getDefaultTitle(rankingKey),
+        is_active: newState,
+      });
+
+    if (error) {
+      toast({
+        title: "Erro ao atualizar",
+        description: "Não foi possível atualizar o status da campanha.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRankingConfigs((prev) => ({
+      ...prev,
+      [rankingKey]: {
+        ...prev[rankingKey],
+        key: rankingKey,
+        title: customNames[rankingKey] || getDefaultTitle(rankingKey),
+        is_active: newState,
+      },
+    }));
+
+    toast({
+      title: newState ? "Campanha ativada!" : "Campanha desativada!",
+      description: `A campanha agora está ${newState ? "visível" : "oculta"} para os barbeiros.`,
+    });
+  };
+
+  const getDefaultTitle = (key: string) => {
+    const titles: Record<string, string> = {
+      performance: "MESTRE DA PERFORMANCE",
+      services_extra: "REI DOS SERVIÇOS EXTRAS",
+      products: "REI DOS PRODUTOS",
+      ticket: "MESTRE DO TICKET MÉDIO",
+      commission: "MÃO DE OURO",
+    };
+    return titles[key] || key;
+  };
+
+  const isRankingActive = (rankingKey: string) => {
+    // Se for gerente, mostrar todos
+    if (viewerRole === "manager") return true;
+    
+    // Se for barbeiro e não há configuração, mostrar (padrão ativo)
+    if (!rankingConfigs[rankingKey]) return true;
+    
+    // Se for barbeiro e há configuração, verificar is_active
+    return rankingConfigs[rankingKey].is_active;
   };
 
   const getDateRange = () => {
@@ -276,14 +365,16 @@ export default function Leaderboard() {
               {icon}
               {displayTitle}
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handleEditRanking(rankingKey, title)}
-              className="h-8 w-8"
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
+            {viewerRole === "manager" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleEditRanking(rankingKey, title)}
+                className="h-8 w-8"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
           </CardTitle>
           {description && (
             <CardDescription className="text-muted-foreground">
@@ -318,6 +409,76 @@ export default function Leaderboard() {
 
   return (
     <div className="space-y-6">
+      {viewerRole === "manager" && (
+        <Card className="bg-card border-border shadow-card-custom">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Controle de Campanhas Ativas</CardTitle>
+                <CardDescription>
+                  Gerencie quais campanhas os barbeiros podem visualizar
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCampaignControl(!showCampaignControl)}
+              >
+                {showCampaignControl ? (
+                  <>
+                    <EyeOff className="w-4 h-4 mr-2" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4 mr-2" />
+                    Mostrar
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          {showCampaignControl && (
+            <CardContent>
+              <div className="space-y-4">
+                {[
+                  { key: "performance", title: "MESTRE DA PERFORMANCE", description: "Ranking de serviços extras e produtos por cliente" },
+                  { key: "services_extra", title: "REI DOS SERVIÇOS EXTRAS", description: "Ranking de serviços extras vendidos" },
+                  { key: "products", title: "REI DOS PRODUTOS", description: "Ranking de produtos vendidos" },
+                  { key: "ticket", title: "MESTRE DO TICKET MÉDIO", description: "Ranking de ticket médio por cliente" },
+                  { key: "commission", title: "MÃO DE OURO", description: "Ranking de comissão ganha" },
+                ].map((campaign) => {
+                  const config = rankingConfigs[campaign.key];
+                  const isActive = config?.is_active ?? true;
+                  const displayTitle = customNames[campaign.key] || campaign.title;
+
+                  return (
+                    <div
+                      key={campaign.key}
+                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-secondary/50 transition-colors"
+                    >
+                      <div className="flex-1">
+                        <p className="font-semibold text-foreground">{displayTitle}</p>
+                        <p className="text-sm text-muted-foreground">{campaign.description}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-sm font-medium ${isActive ? "text-success" : "text-muted-foreground"}`}>
+                          {isActive ? "Ativa" : "Inativa"}
+                        </span>
+                        <Switch
+                          checked={isActive}
+                          onCheckedChange={() => handleToggleCampaign(campaign.key, isActive)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       <div className="flex flex-col md:flex-row gap-4">
         <Select value={unitFilter} onValueChange={setUnitFilter}>
           <SelectTrigger className="w-full md:w-[200px]">
@@ -347,69 +508,81 @@ export default function Leaderboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RankingCard
-          title="MESTRE DA PERFORMANCE"
-          rankingKey="performance"
-          icon={<TrendingUp className="w-5 h-5 text-success" />}
-          data={performanceRanking}
-          description="Ranking baseado na média de serviços extras e produtos vendidos por cliente atendido"
-        />
-        <RankingCard
-          title="REI DOS SERVIÇOS EXTRAS"
-          rankingKey="services_extra"
-          icon={<TrendingUp className="w-5 h-5 text-warning" />}
-          data={servicesExtraRanking}
-          description="Ranking baseado no total de serviços extras (adicionais) vendidos no período"
-        />
-        <RankingCard
-          title="REI DOS PRODUTOS"
-          rankingKey="products"
-          icon={<DollarSign className="w-5 h-5 text-primary" />}
-          data={productsRanking}
-          description="Ranking baseado no total de produtos vendidos no período"
-        />
-        <RankingCard
-          title="MESTRE DO TICKET MÉDIO"
-          rankingKey="ticket"
-          icon={<Users className="w-5 h-5 text-accent" />}
-          data={ticketRanking}
-          description="Ranking baseado no valor médio gasto por cliente (serviços + produtos ÷ quantidade de clientes)"
-        />
-        <RankingCard
-          title="MÃO DE OURO"
-          rankingKey="commission"
-          icon={<Trophy className="w-5 h-5 text-primary" />}
-          data={commissionRanking}
-          description="Ranking baseado no total de comissão ganha no período"
-        />
+        {isRankingActive("performance") && (
+          <RankingCard
+            title="MESTRE DA PERFORMANCE"
+            rankingKey="performance"
+            icon={<TrendingUp className="w-5 h-5 text-success" />}
+            data={performanceRanking}
+            description="Ranking baseado na média de serviços extras e produtos vendidos por cliente atendido"
+          />
+        )}
+        {isRankingActive("services_extra") && (
+          <RankingCard
+            title="REI DOS SERVIÇOS EXTRAS"
+            rankingKey="services_extra"
+            icon={<TrendingUp className="w-5 h-5 text-warning" />}
+            data={servicesExtraRanking}
+            description="Ranking baseado no total de serviços extras (adicionais) vendidos no período"
+          />
+        )}
+        {isRankingActive("products") && (
+          <RankingCard
+            title="REI DOS PRODUTOS"
+            rankingKey="products"
+            icon={<DollarSign className="w-5 h-5 text-primary" />}
+            data={productsRanking}
+            description="Ranking baseado no total de produtos vendidos no período"
+          />
+        )}
+        {isRankingActive("ticket") && (
+          <RankingCard
+            title="MESTRE DO TICKET MÉDIO"
+            rankingKey="ticket"
+            icon={<Users className="w-5 h-5 text-accent" />}
+            data={ticketRanking}
+            description="Ranking baseado no valor médio gasto por cliente (serviços + produtos ÷ quantidade de clientes)"
+          />
+        )}
+        {isRankingActive("commission") && (
+          <RankingCard
+            title="MÃO DE OURO"
+            rankingKey="commission"
+            icon={<Trophy className="w-5 h-5 text-primary" />}
+            data={commissionRanking}
+            description="Ranking baseado no total de comissão ganha no período"
+          />
+        )}
       </div>
 
-      <Dialog open={!!editingRanking} onOpenChange={(open) => !open && setEditingRanking(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Nome do Ranking</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="ranking-name">Nome da Campanha</Label>
-              <Input
-                id="ranking-name"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Ex: Batalha de Novembro, Missão Ticket Médio..."
-              />
+      {viewerRole === "manager" && (
+        <Dialog open={!!editingRanking} onOpenChange={(open) => !open && setEditingRanking(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar Nome do Ranking</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="ranking-name">Nome da Campanha</Label>
+                <Input
+                  id="ranking-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Ex: Batalha de Novembro, Missão Ticket Médio..."
+                />
+              </div>
             </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={handleResetToDefault}>
-              Resetar para Padrão
-            </Button>
-            <Button onClick={handleSaveCustomName}>
-              Salvar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={handleResetToDefault}>
+                Resetar para Padrão
+              </Button>
+              <Button onClick={handleSaveCustomName}>
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
