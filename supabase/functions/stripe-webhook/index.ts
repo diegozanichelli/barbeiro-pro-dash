@@ -16,7 +16,7 @@ serve(async (req) => {
   
   if (!signature) {
     logStep("No signature found");
-    return new Response("No signature", { status: 400 });
+    return new Response("Invalid request", { status: 400 });
   }
 
   try {
@@ -25,11 +25,21 @@ serve(async (req) => {
     
     if (!webhookSecret) {
       logStep("No webhook secret configured");
-      return new Response("Webhook secret not configured", { status: 500 });
+      return new Response("Configuration error", { status: 500 });
     }
 
     const event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
     logStep("Event received", { type: event.type });
+    
+    // Replay attack prevention: Check timestamp (Stripe recommends tolerance of 300 seconds)
+    const tolerance = 300;
+    const timestamp = event.created;
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    
+    if (Math.abs(currentTimestamp - timestamp) > tolerance) {
+      logStep("Event timestamp outside tolerance", { timestamp, currentTimestamp });
+      return new Response("Request expired", { status: 400 });
+    }
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -162,8 +172,10 @@ serve(async (req) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logStep("ERROR", { message: errorMessage });
+    
+    // Generic error response - don't leak internal details
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: "Webhook processing failed" }),
       {
         headers: { "Content-Type": "application/json" },
         status: 400,
