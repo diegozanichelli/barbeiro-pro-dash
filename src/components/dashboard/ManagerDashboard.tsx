@@ -12,6 +12,7 @@ import GoalsManagement from "./manager/GoalsManagement";
 import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
+import { PerformanceAlerts } from "./manager/PerformanceAlerts";
 
 interface ManagerDashboardProps {
   user: User;
@@ -78,6 +79,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            <PerformanceAlerts />
             <ManagerReports />
           </TabsContent>
 
