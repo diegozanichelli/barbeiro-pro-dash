@@ -1,5 +1,8 @@
 project_id = "pcszguaqnodzshekldgw"
 
+[functions.check-performance-alerts]
+verify_jwt = false
+
 [functions.create-barber]
 verify_jwt = true
 

@@ -212,6 +212,63 @@ export type Database = {
         }
         Relationships: []
       }
+      performance_alerts: {
+        Row: {
+          alerta_tipo: string
+          barber_id: string
+          created_at: string
+          dias_restantes: number | null
+          id: string
+          mes_referencia: string
+          organization_id: string
+          percentual_atingido: number | null
+          status: string
+          updated_at: string
+          valor_deficit_r$: number
+        }
+        Insert: {
+          alerta_tipo: string
+          barber_id: string
+          created_at?: string
+          dias_restantes?: number | null
+          id?: string
+          mes_referencia: string
+          organization_id: string
+          percentual_atingido?: number | null
+          status?: string
+          updated_at?: string
+          valor_deficit_r$?: number
+        }
+        Update: {
+          alerta_tipo?: string
+          barber_id?: string
+          created_at?: string
+          dias_restantes?: number | null
+          id?: string
+          mes_referencia?: string
+          organization_id?: string
+          percentual_atingido?: number | null
+          status?: string
+          updated_at?: string
+          valor_deficit_r$?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "performance_alerts_barber_id_fkey"
+            columns: ["barber_id"]
+            isOneToOne: false
+            referencedRelation: "barbers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
