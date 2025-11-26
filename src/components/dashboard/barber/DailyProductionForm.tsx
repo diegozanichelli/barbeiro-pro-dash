@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Calendar, DollarSign } from "lucide-react";
 import { format } from "date-fns";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { dailyProductionSchema, type DailyProductionFormData } from "@/lib/validations/production";
 
 interface DailyProductionFormProps {
   barberId: string;
@@ -24,34 +27,37 @@ interface DailyProductionFormProps {
 }
 
 export default function DailyProductionForm({ barberId, onSuccess, initialData }: DailyProductionFormProps) {
-  const [date, setDate] = useState(initialData?.date || format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    servicesBasicTotal: initialData?.servicesBasicTotal || "",
-    servicesExtraTotal: initialData?.servicesExtraTotal || "",
-    productsTotal: initialData?.productsTotal || "",
-    clientsCount: initialData?.clientsCount || "",
-    servicesCount: initialData?.servicesCount || "",
-    productsCount: initialData?.productsCount || "",
+
+  const form = useForm<DailyProductionFormData>({
+    resolver: zodResolver(dailyProductionSchema),
+    defaultValues: {
+      date: initialData?.date || format(new Date(), "yyyy-MM-dd"),
+      servicesBasicTotal: Number(initialData?.servicesBasicTotal) || 0,
+      servicesExtraTotal: Number(initialData?.servicesExtraTotal) || 0,
+      productsTotal: Number(initialData?.productsTotal) || 0,
+      clientsCount: Number(initialData?.clientsCount) || 0,
+      servicesCount: Number(initialData?.servicesCount) || 0,
+      productsCount: Number(initialData?.productsCount) || 0,
+    },
   });
 
   // Atualizar form quando initialData mudar
   useEffect(() => {
     if (initialData) {
-      setDate(initialData.date);
-      setFormData({
-        servicesBasicTotal: initialData.servicesBasicTotal,
-        servicesExtraTotal: initialData.servicesExtraTotal,
-        productsTotal: initialData.productsTotal,
-        clientsCount: initialData.clientsCount,
-        servicesCount: initialData.servicesCount,
-        productsCount: initialData.productsCount,
+      form.reset({
+        date: initialData.date,
+        servicesBasicTotal: Number(initialData.servicesBasicTotal) || 0,
+        servicesExtraTotal: Number(initialData.servicesExtraTotal) || 0,
+        productsTotal: Number(initialData.productsTotal) || 0,
+        clientsCount: Number(initialData.clientsCount) || 0,
+        servicesCount: Number(initialData.servicesCount) || 0,
+        productsCount: Number(initialData.productsCount) || 0,
       });
     }
-  }, [initialData]);
+  }, [initialData, form]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (data: DailyProductionFormData) => {
     setLoading(true);
 
     try {
@@ -71,15 +77,15 @@ export default function DailyProductionForm({ barberId, onSuccess, initialData }
       const { error } = await supabase
         .from("daily_productions")
         .upsert({
-          date,
+          date: data.date,
           barber_id: barberId,
           organization_id: barberData.organization_id,
-          services_basic_total: Number(formData.servicesBasicTotal) || 0,
-          services_extra_total: Number(formData.servicesExtraTotal) || 0,
-          products_total: Number(formData.productsTotal) || 0,
-          clients_count: Number(formData.clientsCount) || 0,
-          services_count: Number(formData.servicesCount) || 0,
-          products_count: Number(formData.productsCount) || 0,
+          services_basic_total: data.servicesBasicTotal,
+          services_extra_total: data.servicesExtraTotal,
+          products_total: data.productsTotal,
+          clients_count: data.clientsCount,
+          services_count: data.servicesCount,
+          products_count: data.productsCount,
         }, {
           onConflict: "date,barber_id"
         });
@@ -90,13 +96,14 @@ export default function DailyProductionForm({ barberId, onSuccess, initialData }
       
       // Limpar apenas se não está editando
       if (!initialData) {
-        setFormData({
-          servicesBasicTotal: "",
-          servicesExtraTotal: "",
-          productsTotal: "",
-          clientsCount: "",
-          servicesCount: "",
-          productsCount: "",
+        form.reset({
+          date: format(new Date(), "yyyy-MM-dd"),
+          servicesBasicTotal: 0,
+          servicesExtraTotal: 0,
+          productsTotal: 0,
+          clientsCount: 0,
+          servicesCount: 0,
+          productsCount: 0,
         });
       }
       
@@ -120,101 +127,148 @@ export default function DailyProductionForm({ barberId, onSuccess, initialData }
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="date" className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Data
-            </Label>
-            <Input
-              id="date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              required
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Data
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="servicesBasicTotal">Total em Serviços Básicos (R$)</Label>
-              <Input
-                id="servicesBasicTotal"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={formData.servicesBasicTotal}
-                onChange={(e) => setFormData({ ...formData, servicesBasicTotal: e.target.value })}
-                required
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="servicesBasicTotal"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Total em Serviços Básicos (R$)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="servicesExtraTotal"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Total em Serviços Extras (R$)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="servicesExtraTotal">Total em Serviços Extras (R$)</Label>
-              <Input
-                id="servicesExtraTotal"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={formData.servicesExtraTotal}
-                onChange={(e) => setFormData({ ...formData, servicesExtraTotal: e.target.value })}
-                required
-              />
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="productsTotal">Total em Produtos (R$)</Label>
-            <Input
-              id="productsTotal"
-              type="number"
-              step="0.01"
-              placeholder="0.00"
-              value={formData.productsTotal}
-              onChange={(e) => setFormData({ ...formData, productsTotal: e.target.value })}
-              required
+            <FormField
+              control={form.control}
+              name="productsTotal"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Total em Produtos (R$)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      {...field}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="clientsCount">Qtd. Clientes</Label>
-              <Input
-                id="clientsCount"
-                type="number"
-                placeholder="0"
-                value={formData.clientsCount}
-                onChange={(e) => setFormData({ ...formData, clientsCount: e.target.value })}
-                required
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="clientsCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Qtd. Clientes</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="servicesCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Qtd. Serviços Extras</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="productsCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Qtd. Produtos</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="servicesCount">Qtd. Serviços Extras</Label>
-              <Input
-                id="servicesCount"
-                type="number"
-                placeholder="0"
-                value={formData.servicesCount}
-                onChange={(e) => setFormData({ ...formData, servicesCount: e.target.value })}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="productsCount">Qtd. Produtos</Label>
-              <Input
-                id="productsCount"
-                type="number"
-                placeholder="0"
-                value={formData.productsCount}
-                onChange={(e) => setFormData({ ...formData, productsCount: e.target.value })}
-                required
-              />
-            </div>
-          </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Salvando..." : "Salvar Lançamento"}
-          </Button>
-        </form>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Salvando..." : "Salvar Lançamento"}
+            </Button>
+          </form>
+        </Form>
       </CardContent>
     </Card>
   );

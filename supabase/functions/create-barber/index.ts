@@ -104,6 +104,27 @@ serve(async (req: Request) => {
       console.error("[CREATE-BARBER] Missing required fields");
       return new Response(JSON.stringify({ error: "Campos obrigatórios faltando" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    // Validate name length
+    const trimmedName = String(name).trim();
+    if (trimmedName.length < 2 || trimmedName.length > 100) {
+      console.error("[CREATE-BARBER] Invalid name length");
+      return new Response(
+        JSON.stringify({ error: "Nome deve ter entre 2 e 100 caracteres" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate email format and length
+    const trimmedEmail = String(email).trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail) || trimmedEmail.length > 255) {
+      console.error("[CREATE-BARBER] Invalid email");
+      return new Response(
+        JSON.stringify({ error: "Email inválido ou muito longo (máx. 255 caracteres)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     
     // Validate password (8+ characters with complexity)
     const passwordStr = String(password);
@@ -125,14 +146,41 @@ serve(async (req: Request) => {
       );
     }
 
+    // Validate commission percentages (0-100)
+    const servicesCommNum = Number(services_commission);
+    const productsCommNum = Number(products_commission);
+    if (isNaN(servicesCommNum) || servicesCommNum < 0 || servicesCommNum > 100) {
+      console.error("[CREATE-BARBER] Invalid services commission");
+      return new Response(
+        JSON.stringify({ error: "Comissão de serviços deve estar entre 0% e 100%" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (isNaN(productsCommNum) || productsCommNum < 0 || productsCommNum > 100) {
+      console.error("[CREATE-BARBER] Invalid products commission");
+      return new Response(
+        JSON.stringify({ error: "Comissão de produtos deve estar entre 0% e 100%" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate status
+    if (status && !["active", "inactive"].includes(status)) {
+      console.error("[CREATE-BARBER] Invalid status");
+      return new Response(
+        JSON.stringify({ error: "Status deve ser 'active' ou 'inactive'" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.log("[CREATE-BARBER] Creating user:", email);
 
     // 1) Create auth user (email confirmed so they can login immediately)
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
+      email: trimmedEmail,
+      password: passwordStr,
       email_confirm: true,
-      user_metadata: { full_name: name, role: "barber" },
+      user_metadata: { full_name: trimmedName, role: "barber" },
     });
     if (createErr) {
       console.error("[CREATE-BARBER] Auth user creation failed:", createErr);
@@ -149,7 +197,7 @@ serve(async (req: Request) => {
     // 2) Ensure profile exists
     const { error: profileErr } = await supabaseAdmin.from("profiles").insert({
       id: newUser.id,
-      full_name: name,
+      full_name: trimmedName,
     });
     if (profileErr) {
       // If duplicate, ignore conflict
@@ -163,10 +211,10 @@ serve(async (req: Request) => {
 
     // 3) Create barber row linked to user with organization_id
     const { error: barberErr } = await supabaseAdmin.from("barbers").insert({
-      name,
+      name: trimmedName,
       unit_id,
-      services_commission: Number(services_commission),
-      products_commission: Number(products_commission),
+      services_commission: servicesCommNum,
+      products_commission: productsCommNum,
       status: status || "active",
       user_id: newUser.id,
       organization_id: organization_id,

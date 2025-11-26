@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ interface MonthlyGoal {
 }
 
 export default function GoalsManagement() {
+  const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<any[]>([]);
   const [goals, setGoals] = useState<MonthlyGoal[]>([]);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
@@ -97,6 +99,11 @@ export default function GoalsManagement() {
       return;
     }
 
+    if (!organizationId) {
+      toast.error("Organização não encontrada");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -104,6 +111,7 @@ export default function GoalsManagement() {
         .from("monthly_goals")
         .insert({
           barber_id: selectedBarberId,
+          organization_id: organizationId,
           month: filterMonth,
           year: filterYear,
           target_commission: Number(targetCommission),
