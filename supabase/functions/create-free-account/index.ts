@@ -56,6 +56,19 @@ serve(async (req) => {
       throw new Error("Missing required fields: organizationName, managerEmail, managerPassword");
     }
 
+    // Validate organization name
+    const trimmedOrgName = String(organizationName).trim();
+    if (trimmedOrgName.length < 2 || trimmedOrgName.length > 100) {
+      throw new Error("Nome da organização deve ter entre 2 e 100 caracteres");
+    }
+
+    // Validate email format and length
+    const trimmedEmail = String(managerEmail).trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail) || trimmedEmail.length > 255) {
+      throw new Error("Email inválido ou muito longo (máx. 255 caracteres)");
+    }
+
     // Validate password (8+ characters with complexity)
     const passwordStr = String(managerPassword);
     if (passwordStr.length < 8) {
@@ -74,7 +87,7 @@ serve(async (req) => {
     const { data: orgData, error: orgError } = await supabaseClient
       .from("organizations")
       .insert({
-        name: organizationName,
+        name: trimmedOrgName,
         stripe_customer_id: null,
         subscription_status: "gratuita",
       })
@@ -90,11 +103,11 @@ serve(async (req) => {
 
     // Create manager user
     const { data: newUser, error: createUserError } = await supabaseClient.auth.admin.createUser({
-      email: managerEmail,
-      password: managerPassword,
+      email: trimmedEmail,
+      password: passwordStr,
       email_confirm: true,
       user_metadata: {
-        full_name: organizationName,
+        full_name: trimmedOrgName,
       },
     });
 
