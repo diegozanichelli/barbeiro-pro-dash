@@ -19,7 +19,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
-          organization_id: string | null
+          organization_id: string
           products_commission: number
           services_commission: number
           status: string
@@ -31,7 +31,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
-          organization_id?: string | null
+          organization_id: string
           products_commission?: number
           services_commission?: number
           status?: string
@@ -43,7 +43,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
-          organization_id?: string | null
+          organization_id?: string
           products_commission?: number
           services_commission?: number
           status?: string
@@ -76,7 +76,7 @@ export type Database = {
           created_at: string
           date: string
           id: string
-          organization_id: string | null
+          organization_id: string
           products_count: number
           products_total: number
           services_basic_total: number | null
@@ -92,7 +92,7 @@ export type Database = {
           created_at?: string
           date: string
           id?: string
-          organization_id?: string | null
+          organization_id: string
           products_count?: number
           products_total?: number
           services_basic_total?: number | null
@@ -108,7 +108,7 @@ export type Database = {
           created_at?: string
           date?: string
           id?: string
-          organization_id?: string | null
+          organization_id?: string
           products_count?: number
           products_total?: number
           services_basic_total?: number | null
@@ -140,7 +140,7 @@ export type Database = {
           created_at: string
           id: string
           month: number
-          organization_id: string | null
+          organization_id: string
           target_commission: number
           updated_at: string
           work_days: number
@@ -151,7 +151,7 @@ export type Database = {
           created_at?: string
           id?: string
           month: number
-          organization_id?: string | null
+          organization_id: string
           target_commission: number
           updated_at?: string
           work_days: number
@@ -162,7 +162,7 @@ export type Database = {
           created_at?: string
           id?: string
           month?: number
-          organization_id?: string | null
+          organization_id?: string
           target_commission?: number
           updated_at?: string
           work_days?: number
@@ -325,7 +325,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
-          organization_id: string | null
+          organization_id: string
           status: string
           updated_at: string
         }
@@ -333,7 +333,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
-          organization_id?: string | null
+          organization_id: string
           status?: string
           updated_at?: string
         }
@@ -341,7 +341,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
-          organization_id?: string | null
+          organization_id?: string
           status?: string
           updated_at?: string
         }
