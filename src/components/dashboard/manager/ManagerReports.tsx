@@ -119,7 +119,13 @@ export default function ManagerReports() {
 
     if (productions) {
       const totalRevenue = productions.reduce(
-        (sum, p) => sum + Number(p.services_total) + Number(p.products_total),
+        (sum, p) => {
+          // Usar lógica retrocompatível: se houver services_basic_total ou services_extra_total, usar eles
+          const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
+            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+            : (Number(p.services_total) || 0);
+          return sum + servicesTotal + Number(p.products_total);
+        },
         0
       );
       const totalCommission = productions.reduce(
