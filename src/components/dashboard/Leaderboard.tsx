@@ -98,11 +98,14 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
     const { error } = await supabase
       .from("ranking_custom_names")
-      .upsert({
-        organization_id: organization.id,
-        ranking_key: editingRanking,
-        custom_name: editName,
-      });
+      .upsert(
+        {
+          organization_id: organization.id,
+          ranking_key: editingRanking,
+          custom_name: editName,
+        },
+        { onConflict: 'organization_id,ranking_key' }
+      );
 
     if (error) {
       toast({
@@ -173,12 +176,15 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
     const { error } = await supabase
       .from("ranking_custom_names")
-      .upsert({
-        organization_id: organization.id,
-        ranking_key: rankingKey,
-        custom_name: customNames[rankingKey] || getDefaultTitle(rankingKey),
-        is_active: newState,
-      });
+      .upsert(
+        {
+          organization_id: organization.id,
+          ranking_key: rankingKey,
+          custom_name: customNames[rankingKey] || getDefaultTitle(rankingKey),
+          is_active: newState,
+        },
+        { onConflict: 'organization_id,ranking_key' }
+      );
 
     if (error) {
       toast({
