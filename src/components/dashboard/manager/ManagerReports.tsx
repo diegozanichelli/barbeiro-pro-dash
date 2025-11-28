@@ -388,11 +388,12 @@ export default function ManagerReports() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Barbeiro</TableHead>
-                  <TableHead className="text-right">Receita Serviços (R$)</TableHead>
-                  <TableHead className="text-right">Receita Serviços Extras (R$)</TableHead>
-                  <TableHead className="text-right">Receita Produtos (R$)</TableHead>
-                  <TableHead className="text-right">Comissão Total (R$)</TableHead>
+                  <TableHead className="text-right">Faturamento Total (R$)</TableHead>
+                  <TableHead className="text-right">Serviços (R$)</TableHead>
+                  <TableHead className="text-right">Produtos (R$)</TableHead>
+                  <TableHead className="text-right">Comissão (R$)</TableHead>
                   <TableHead className="text-right">Ticket Médio (R$)</TableHead>
+                  <TableHead className="text-right">Clientes</TableHead>
                   <TableHead className="text-right">Clientes Atendidos</TableHead>
                 </TableRow>
               </TableHeader>
@@ -461,11 +462,11 @@ export default function ManagerReports() {
                   return barberArray.map((barber) => (
                     <TableRow key={barber.id}>
                       <TableCell className="font-medium">{barber.name}</TableCell>
-                      <TableCell className="text-right">
-                        R$ {barber.servicesTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      <TableCell className="text-right font-bold text-primary">
+                        R$ {(barber.servicesTotal + barber.productsTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {barber.servicesExtraTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {barber.servicesTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {barber.productsTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
