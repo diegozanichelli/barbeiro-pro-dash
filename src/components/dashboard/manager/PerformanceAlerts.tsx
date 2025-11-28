@@ -17,7 +17,7 @@ interface PerformanceAlert {
   created_at: string;
   barber: {
     name: string;
-  };
+  } | null;
 }
 
 export function PerformanceAlerts() {
@@ -135,7 +135,7 @@ export function PerformanceAlerts() {
           </Alert>
         ) : (
           <div className="space-y-4">
-            {alerts?.map((alert) => (
+            {alerts?.filter(alert => alert.barber !== null).map((alert) => (
               <Card key={alert.id}>
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between">
@@ -145,7 +145,7 @@ export function PerformanceAlerts() {
                           {getAlertIcon(alert.alerta_tipo)}
                           {alert.alerta_tipo}
                         </Badge>
-                        <span className="font-semibold">{alert.barber.name}</span>
+                        <span className="font-semibold">{alert.barber?.name ?? 'Barbeiro Removido'}</span>
                       </div>
                       
                       <div className="grid grid-cols-3 gap-4 text-sm">
