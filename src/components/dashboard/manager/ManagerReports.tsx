@@ -389,10 +389,10 @@ export default function ManagerReports() {
                 <TableRow>
                   <TableHead>Barbeiro</TableHead>
                   <TableHead className="text-right">Faturamento Total (R$)</TableHead>
-                  <TableHead className="text-right">Serviços (R$)</TableHead>
+                  <TableHead className="text-right">Serviços Básicos (R$)</TableHead>
+                  <TableHead className="text-right">Serviços Extras (R$)</TableHead>
                   <TableHead className="text-right">Produtos (R$)</TableHead>
                   <TableHead className="text-right">Comissão (R$)</TableHead>
-                  <TableHead className="text-right">Ticket Médio (R$)</TableHead>
                   <TableHead className="text-right">Clientes</TableHead>
                   <TableHead className="text-right">Clientes Atendidos</TableHead>
                 </TableRow>
@@ -402,7 +402,7 @@ export default function ManagerReports() {
                   // Agrupar produções por barbeiro
                   const barberStats = new Map<string, {
                     name: string;
-                    servicesTotal: number;
+                    servicesBasicTotal: number;
                     servicesExtraTotal: number;
                     productsTotal: number;
                     commissionTotal: number;
@@ -416,7 +416,7 @@ export default function ManagerReports() {
                     if (!barberStats.has(barberId)) {
                       barberStats.set(barberId, {
                         name: barberName,
-                        servicesTotal: 0,
+                        servicesBasicTotal: 0,
                         servicesExtraTotal: 0,
                         productsTotal: 0,
                         commissionTotal: 0,
@@ -426,13 +426,16 @@ export default function ManagerReports() {
 
                     const stats = barberStats.get(barberId)!;
                     
-                    // Calcular total de serviços (retrocompatível)
-                    const servicesTotal = (production.services_basic_total !== null || production.services_extra_total !== null)
-                      ? (Number(production.services_basic_total) || 0) + (Number(production.services_extra_total) || 0)
-                      : (Number(production.services_total) || 0);
+                    // Se tiver os campos novos, usa eles separadamente
+                    // Caso contrário, considera tudo como serviços básicos (retrocompatível)
+                    if (production.services_basic_total !== null || production.services_extra_total !== null) {
+                      stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
+                      stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
+                    } else {
+                      // Registros antigos: services_total vai para básicos
+                      stats.servicesBasicTotal += Number(production.services_total) || 0;
+                    }
                     
-                    stats.servicesTotal += servicesTotal;
-                    stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
                     stats.productsTotal += Number(production.products_total);
                     stats.commissionTotal += Number(production.commission_earned);
                     stats.clientsTotal += Number(production.clients_count);
@@ -441,13 +444,11 @@ export default function ManagerReports() {
                   const barberArray = Array.from(barberStats.entries()).map(([id, stats]) => ({
                     id,
                     ...stats,
-                    averageTicket: stats.clientsTotal > 0 
-                      ? (stats.servicesTotal + stats.productsTotal) / stats.clientsTotal 
-                      : 0,
+                    totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
                   }));
 
-                  // Ordenar por comissão total (decrescente)
-                  barberArray.sort((a, b) => b.commissionTotal - a.commissionTotal);
+                  // Ordenar por faturamento total (decrescente)
+                  barberArray.sort((a, b) => b.totalRevenue - a.totalRevenue);
 
                   if (barberArray.length === 0) {
                     return (
@@ -463,19 +464,19 @@ export default function ManagerReports() {
                     <TableRow key={barber.id}>
                       <TableCell className="font-medium">{barber.name}</TableCell>
                       <TableCell className="text-right font-bold text-primary">
-                        R$ {(barber.servicesTotal + barber.productsTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {barber.totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {barber.servicesTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {barber.servicesBasicTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        R$ {barber.servicesExtraTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {barber.productsTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right font-bold text-success">
                         R$ {barber.commissionTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        R$ {barber.averageTicket.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">{barber.clientsTotal}</TableCell>
                     </TableRow>
