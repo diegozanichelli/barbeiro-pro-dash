@@ -4,8 +4,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Building2, User } from "lucide-react";
+import { TrendingUp, Building2, User, GitCompare } from "lucide-react";
 import ShopEvolution from "./ShopEvolution";
+import UnitsComparison from "./UnitsComparison";
 
 interface Barber {
   id: string;
@@ -237,10 +238,14 @@ function BarberEvolutionChart() {
 export default function BarberEvolution() {
   return (
     <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full max-w-md grid-cols-2">
+      <TabsList className="grid w-full max-w-xl grid-cols-3">
         <TabsTrigger value="barbearia" className="flex items-center gap-2">
           <Building2 className="w-4 h-4" />
           Barbearia
+        </TabsTrigger>
+        <TabsTrigger value="comparativo" className="flex items-center gap-2">
+          <GitCompare className="w-4 h-4" />
+          Comparativo
         </TabsTrigger>
         <TabsTrigger value="barbeiro" className="flex items-center gap-2">
           <User className="w-4 h-4" />
@@ -250,6 +255,10 @@ export default function BarberEvolution() {
       
       <TabsContent value="barbearia">
         <ShopEvolution />
+      </TabsContent>
+
+      <TabsContent value="comparativo">
+        <UnitsComparison />
       </TabsContent>
       
       <TabsContent value="barbeiro">
