@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, Building2, User } from "lucide-react";
+import ShopEvolution from "./ShopEvolution";
 
 interface Barber {
   id: string;
@@ -16,7 +18,7 @@ interface MonthlyData {
   comissaoGanha: number;
 }
 
-export default function BarberEvolution() {
+function BarberEvolutionChart() {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -228,5 +230,31 @@ export default function BarberEvolution() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Componente principal com tabs
+export default function BarberEvolution() {
+  return (
+    <Tabs defaultValue="barbearia" className="space-y-6">
+      <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsTrigger value="barbearia" className="flex items-center gap-2">
+          <Building2 className="w-4 h-4" />
+          Barbearia
+        </TabsTrigger>
+        <TabsTrigger value="barbeiro" className="flex items-center gap-2">
+          <User className="w-4 h-4" />
+          Barbeiro
+        </TabsTrigger>
+      </TabsList>
+      
+      <TabsContent value="barbearia">
+        <ShopEvolution />
+      </TabsContent>
+      
+      <TabsContent value="barbeiro">
+        <BarberEvolutionChart />
+      </TabsContent>
+    </Tabs>
   );
 }
