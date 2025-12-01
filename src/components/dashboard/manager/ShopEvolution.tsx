@@ -124,8 +124,9 @@ export default function ShopEvolution() {
 
   // Calcular totais e comparativos
   const currentMonth = new Date().getMonth();
-  const currentMonthData = chartData[currentMonth] || { receita: 0, ticketMedio: 0, performance: 0, clientes: 0 };
-  const previousMonthData = currentMonth > 0 ? chartData[currentMonth - 1] : { receita: 0, ticketMedio: 0, performance: 0, clientes: 0 };
+  const defaultMonthData = { receita: 0, ticketMedio: 0, performance: 0, clientes: 0, receitaBasica: 0, receitaExtra: 0, receitaProdutos: 0, comissaoTotal: 0, metaTotal: 0 };
+  const currentMonthData = chartData.length > 0 ? (chartData[currentMonth] || defaultMonthData) : defaultMonthData;
+  const previousMonthData = chartData.length > 0 && currentMonth > 0 ? (chartData[currentMonth - 1] || defaultMonthData) : defaultMonthData;
 
   const receitaVariation = previousMonthData.receita > 0 
     ? ((currentMonthData.receita - previousMonthData.receita) / previousMonthData.receita) * 100 
@@ -134,8 +135,8 @@ export default function ShopEvolution() {
     ? ((currentMonthData.ticketMedio - previousMonthData.ticketMedio) / previousMonthData.ticketMedio) * 100 
     : 0;
 
-  const totalAnual = chartData.reduce((acc, m) => acc + m.receita, 0);
-  const totalClientes = chartData.reduce((acc, m) => acc + m.clientes, 0);
+  const totalAnual = chartData.length > 0 ? chartData.reduce((acc, m) => acc + m.receita, 0) : 0;
+  const totalClientes = chartData.length > 0 ? chartData.reduce((acc, m) => acc + m.clientes, 0) : 0;
   const ticketMedioAnual = totalClientes > 0 ? totalAnual / totalClientes : 0;
 
   const CustomTooltip = ({ active, payload }: any) => {
