@@ -3,7 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
-import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target } from "lucide-react";
+import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target, MapPin } from "lucide-react";
+
+interface Unit {
+  id: string;
+  name: string;
+}
 
 interface MonthlyShopData {
   month: string;
@@ -21,6 +26,8 @@ interface MonthlyShopData {
 
 export default function ShopEvolution() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  const [units, setUnits] = useState<Unit[]>([]);
   const [chartData, setChartData] = useState<MonthlyShopData[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'receita' | 'ticket' | 'performance'>('receita');
@@ -33,18 +40,39 @@ export default function ShopEvolution() {
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 
   useEffect(() => {
+    fetchUnits();
+  }, []);
+
+  useEffect(() => {
     fetchShopEvolutionData();
-  }, [selectedYear]);
+  }, [selectedYear, selectedUnit]);
+
+  const fetchUnits = async () => {
+    const { data, error } = await supabase
+      .from("units")
+      .select("id, name")
+      .eq("status", "active")
+      .order("name");
+
+    if (error) {
+      console.error("Erro ao buscar unidades:", error);
+      return;
+    }
+
+    setUnits(data || []);
+  };
 
   const fetchShopEvolutionData = async () => {
     setLoading(true);
 
-    // Buscar todas as produções do ano
-    const { data: productions, error: productionsError } = await supabase
+    // Buscar todas as produções do ano com dados do barbeiro para filtrar por unidade
+    let productionsQuery = supabase
       .from("daily_productions")
-      .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count")
+      .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
       .gte("date", `${selectedYear}-01-01`)
       .lte("date", `${selectedYear}-12-31`);
+
+    const { data: productions, error: productionsError } = await productionsQuery;
 
     if (productionsError) {
       console.error("Erro ao buscar produções:", productionsError);
@@ -52,15 +80,27 @@ export default function ShopEvolution() {
       return;
     }
 
-    // Buscar todas as metas do ano
-    const { data: goals, error: goalsError } = await supabase
+    // Filtrar produções por unidade se selecionada
+    const filteredProductions = selectedUnit === "all" 
+      ? productions 
+      : productions?.filter((p: any) => p.barbers?.unit_id === selectedUnit);
+
+    // Buscar metas do ano com dados do barbeiro para filtrar por unidade
+    let goalsQuery = supabase
       .from("monthly_goals")
-      .select("month, target_commission")
+      .select("month, target_commission, barber_id, barbers!inner(unit_id)")
       .eq("year", selectedYear);
+
+    const { data: goals, error: goalsError } = await goalsQuery;
 
     if (goalsError) {
       console.error("Erro ao buscar metas:", goalsError);
     }
+
+    // Filtrar metas por unidade se selecionada
+    const filteredGoals = selectedUnit === "all"
+      ? goals
+      : goals?.filter((g: any) => g.barbers?.unit_id === selectedUnit);
 
     // Agrupar dados por mês
     const monthlyAggregates = monthNames.map((_, index) => ({
@@ -72,7 +112,7 @@ export default function ShopEvolution() {
       clientes: 0,
     }));
 
-    productions?.forEach((prod) => {
+    filteredProductions?.forEach((prod: any) => {
       const month = new Date(prod.date).getMonth();
       
       // Lógica retrocompatível para serviços
@@ -92,7 +132,7 @@ export default function ShopEvolution() {
 
     // Agrupar metas por mês
     const metasByMonth = new Array(12).fill(0);
-    goals?.forEach((goal) => {
+    filteredGoals?.forEach((goal: any) => {
       metasByMonth[goal.month - 1] += Number(goal.target_commission);
     });
 
@@ -242,11 +282,27 @@ export default function ShopEvolution() {
               <div>
                 <CardTitle>Evolução da Barbearia</CardTitle>
                 <CardDescription>
-                  Comparativo mensal de receita, ticket médio e performance
+                  {selectedUnit === "all" 
+                    ? "Comparativo mensal de receita, ticket médio e performance - Todas as unidades"
+                    : `Comparativo mensal - ${units.find(u => u.id === selectedUnit)?.name || 'Unidade'}`}
                 </CardDescription>
               </div>
             </div>
             <div className="flex gap-3 flex-wrap">
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger className="w-[180px] bg-secondary">
+                  <MapPin className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Todas Unidades" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas Unidades</SelectItem>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
                 <SelectTrigger className="w-[160px] bg-secondary">
                   <SelectValue />
