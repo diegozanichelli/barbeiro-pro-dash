@@ -40,7 +40,24 @@ Deno.serve(async (req) => {
 
     logStep('Processing month', { mes: mesAtual, ano: anoAtual, dia: diaAtual });
 
-    // Buscar todas as metas do mês atual
+    // PASSO 1: Resolver/fechar automaticamente todos os alertas de meses anteriores
+    const { data: alertasAntigos, error: alertasAntigosError } = await supabaseClient
+      .from('performance_alerts')
+      .update({ 
+        status: 'encerrado_fim_mes',
+        updated_at: new Date().toISOString()
+      })
+      .eq('status', 'ativo')
+      .neq('mes_referencia', mesReferenciaStr)
+      .select('id');
+
+    if (alertasAntigosError) {
+      logStep('Error closing old alerts', { error: alertasAntigosError.message });
+    } else {
+      logStep('Old alerts closed', { count: alertasAntigos?.length || 0 });
+    }
+
+    // PASSO 2: Buscar todas as metas do mês atual
     const { data: metas, error: metasError } = await supabaseClient
       .from('monthly_goals')
       .select(`
