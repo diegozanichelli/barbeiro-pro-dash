@@ -24,6 +24,11 @@ export function PerformanceAlerts() {
   const { data: alerts, isLoading, refetch } = useQuery({
     queryKey: ['performance-alerts'],
     queryFn: async () => {
+      // Calcular primeiro dia do mês atual para filtrar apenas alertas do mês vigente
+      const hoje = new Date();
+      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const mesReferenciaStr = primeiroDiaMes.toISOString().split('T')[0];
+
       const { data, error } = await supabase
         .from('performance_alerts')
         .select(`
@@ -31,6 +36,7 @@ export function PerformanceAlerts() {
           barber:barbers(name)
         `)
         .eq('status', 'ativo')
+        .eq('mes_referencia', mesReferenciaStr)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
