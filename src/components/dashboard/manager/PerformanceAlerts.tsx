@@ -100,6 +100,10 @@ export function PerformanceAlerts() {
     }
   };
 
+  // Filtrar apenas alertas com barbeiros válidos (da mesma organização)
+  const filteredAlerts = alerts?.filter(alert => alert.barber !== null) || [];
+  const activeAlertsCount = filteredAlerts.length;
+
   if (isLoading) {
     return (
       <Card>
@@ -110,8 +114,6 @@ export function PerformanceAlerts() {
       </Card>
     );
   }
-
-  const activeAlertsCount = alerts?.length || 0;
 
   return (
     <Card>
@@ -141,7 +143,7 @@ export function PerformanceAlerts() {
           </Alert>
         ) : (
           <div className="space-y-4">
-            {alerts?.filter(alert => alert.barber !== null).map((alert) => (
+            {filteredAlerts.map((alert) => (
               <Card key={alert.id}>
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between">
