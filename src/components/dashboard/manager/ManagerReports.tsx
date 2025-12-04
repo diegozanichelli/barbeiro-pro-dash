@@ -90,32 +90,56 @@ export default function ManagerReports() {
       fetchStats();
       fetchProductions();
     }
-  }, [dateRange, selectedBarber]);
+  }, [dateRange, selectedBarber, selectedUnit]);
 
   const fetchStats = async () => {
     if (!dateRange?.from || !dateRange?.to) return;
     
     const now = new Date();
 
-    // Buscar produções no período selecionado
-    const { data: productions } = await supabase
+    // Buscar produções no período selecionado com filtro de unidade/barbeiro
+    let productionsQuery = supabase
       .from("daily_productions")
-      .select("*")
+      .select("*, barbers!inner(id, unit_id)")
       .gte("date", format(dateRange.from, "yyyy-MM-dd"))
       .lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
-    // Buscar barbeiros ativos
-    const { data: barbers } = await supabase
+    // Aplicar filtro de unidade
+    if (selectedUnit !== "all") {
+      productionsQuery = productionsQuery.eq("barbers.unit_id", selectedUnit);
+    }
+
+    // Aplicar filtro de barbeiro
+    if (selectedBarber !== "all") {
+      productionsQuery = productionsQuery.eq("barber_id", selectedBarber);
+    }
+
+    const { data: productions } = await productionsQuery;
+
+    // Buscar barbeiros ativos (filtrados por unidade se selecionada)
+    let barbersQuery = supabase
       .from("barbers")
       .select("id")
       .eq("status", "active");
 
-    // Buscar metas do mês
-    const { data: goals } = await supabase
+    if (selectedUnit !== "all") {
+      barbersQuery = barbersQuery.eq("unit_id", selectedUnit);
+    }
+
+    const { data: barbersData } = await barbersQuery;
+
+    // Buscar metas do mês (filtradas por unidade se selecionada)
+    let goalsQuery = supabase
       .from("monthly_goals")
-      .select("*, barbers!inner(id)")
+      .select("*, barbers!inner(id, unit_id)")
       .eq("month", now.getMonth() + 1)
       .eq("year", now.getFullYear());
+
+    if (selectedUnit !== "all") {
+      goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
+    }
+
+    const { data: goals } = await goalsQuery;
 
     if (productions) {
       const totalRevenue = productions.reduce(
@@ -160,7 +184,7 @@ export default function ManagerReports() {
         totalClients,
         averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
         goalsAchieved,
-        totalBarbers: barbers?.length || 0,
+        totalBarbers: barbersData?.length || 0,
       });
     }
   };
@@ -195,11 +219,17 @@ export default function ManagerReports() {
     
     let query = supabase
       .from("daily_productions")
-      .select("*, barbers(name)")
+      .select("*, barbers!inner(name, unit_id)")
       .gte("date", format(dateRange.from, "yyyy-MM-dd"))
       .lte("date", format(dateRange.to, "yyyy-MM-dd"))
       .order("date", { ascending: false });
 
+    // Aplicar filtro de unidade
+    if (selectedUnit !== "all") {
+      query = query.eq("barbers.unit_id", selectedUnit);
+    }
+
+    // Aplicar filtro de barbeiro
     if (selectedBarber !== "all") {
       query = query.eq("barber_id", selectedBarber);
     }
