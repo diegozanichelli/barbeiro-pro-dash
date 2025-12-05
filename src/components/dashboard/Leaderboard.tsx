@@ -50,8 +50,13 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
   useEffect(() => {
     fetchUnits();
-    fetchCustomNames();
   }, []);
+
+  useEffect(() => {
+    if (organization?.id) {
+      fetchCustomNames();
+    }
+  }, [organization?.id]);
 
   useEffect(() => {
     fetchRankings();
