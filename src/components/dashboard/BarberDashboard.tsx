@@ -12,6 +12,7 @@ import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
+import CoachingNudgeCard from "./barber/CoachingNudgeCard";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays } from "@/lib/dateUtils";
@@ -496,6 +497,9 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 )}
               </CardContent>
             </Card>
+
+            {/* Card de Dica de Vendas - Coaching Nudge */}
+            {isCurrentMonth && <CoachingNudgeCard barberId={barber.id} />}
 
             {/* Card de Progresso Mensal */}
             <Card className="bg-card border-border shadow-card-custom">
