@@ -305,22 +305,19 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
         ...s,
         value: s.clients_count > 0 ? (s.services_extra_total + s.products_total) / s.clients_count : 0,
       }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 3);
+      .sort((a, b) => b.value - a.value);
     setPerformanceRanking(performance);
 
     // Ranking de Serviços Extras
     const servicesExtra = statsArray
       .map((s) => ({ ...s, value: s.services_extra_total }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 3);
+      .sort((a, b) => b.value - a.value);
     setServicesExtraRanking(servicesExtra);
 
     // Ranking de Produtos
     const products = statsArray
       .map((s) => ({ ...s, value: s.products_total }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 3);
+      .sort((a, b) => b.value - a.value);
     setProductsRanking(products);
 
     // Ranking de Ticket Médio
@@ -329,21 +326,20 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
         ...s,
         value: s.clients_count > 0 ? (s.services_total + s.products_total) / s.clients_count : 0,
       }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 3);
+      .sort((a, b) => b.value - a.value);
     setTicketRanking(ticket);
 
     // Ranking de Comissão
     const commission = statsArray
       .map((s) => ({ ...s, value: s.commission_earned }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 3);
+      .sort((a, b) => b.value - a.value);
     setCommissionRanking(commission);
   };
 
-  const getMedal = (index: number) => {
+  const getPosition = (index: number) => {
     const medals = ["🥇", "🥈", "🥉"];
-    return medals[index] || "";
+    if (index < 3) return medals[index];
+    return `${index + 1}º`;
   };
 
   const RankingCard = ({
@@ -389,20 +385,26 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
           )}
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className="space-y-2 max-h-[400px] overflow-y-auto">
             {data.map((item, index) => (
               <div
                 key={item.barber_id}
-                className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+                className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                  index < 3 
+                    ? "bg-primary/10 border border-primary/20" 
+                    : "bg-secondary/50 hover:bg-secondary"
+                }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{getMedal(index)}</span>
+                  <span className={`${index < 3 ? "text-2xl" : "text-lg font-bold text-muted-foreground w-8 text-center"}`}>
+                    {getPosition(index)}
+                  </span>
                   <div>
                     <p className="font-bold">{item.barber_name}</p>
                     <p className="text-sm text-muted-foreground">({item.unit_name})</p>
                   </div>
                 </div>
-                <p className="text-xl font-bold text-primary">
+                <p className={`font-bold ${index < 3 ? "text-xl text-primary" : "text-lg text-foreground"}`}>
                   {valuePrefix} {item.value.toFixed(2)}
                 </p>
               </div>
