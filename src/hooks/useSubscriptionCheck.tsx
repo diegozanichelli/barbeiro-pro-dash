@@ -34,9 +34,13 @@ export function useSubscriptionCheck() {
         return;
       }
 
-      // Check for auth-related errors (session expired, invalid token)
-      if (data?.message === "Invalid or expired token" || data?.message === "No authorization header") {
-        console.log("Auth issue detected, signing out for re-authentication");
+      // Check for auth-related errors (session expired, invalid token, corrupted JWT)
+      const authErrors = ["Invalid or expired token", "No authorization header", "User not found"];
+      const isAuthError = authErrors.some(err => data?.message?.includes(err)) || 
+                          data?.message?.includes("invalid claim");
+      
+      if (isAuthError) {
+        console.log("Auth issue detected, signing out for re-authentication", data?.message);
         await supabase.auth.signOut();
         setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
