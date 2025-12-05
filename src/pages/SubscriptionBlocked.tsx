@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Shield } from "lucide-react";
+import { AlertCircle, Shield, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export default function SubscriptionBlocked() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [hasStripeCustomer, setHasStripeCustomer] = useState<boolean | null>(null);
 
@@ -18,7 +19,6 @@ export default function SubscriptionBlocked() {
       setUserEmail(user?.email || null);
       
       if (user) {
-        // Check if user has stripe customer ID
         const { data: roleData } = await supabase
           .from("user_roles")
           .select("organization_id, organizations(stripe_customer_id)")
@@ -33,6 +33,29 @@ export default function SubscriptionBlocked() {
     };
     getUserData();
   }, []);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-subscription-status");
+      
+      if (error) {
+        toast.error("Erro ao verificar assinatura. Tente novamente.");
+        return;
+      }
+
+      if (data?.has_access) {
+        toast.success("Acesso liberado!");
+        navigate("/dashboard");
+      } else {
+        toast.info("Sua assinatura ainda está pendente.");
+      }
+    } catch (error) {
+      toast.error("Erro de conexão. Tente novamente.");
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const handleBootstrap = async () => {
     setLoading(true);
@@ -90,6 +113,16 @@ export default function SubscriptionBlocked() {
           <p className="text-sm text-muted-foreground">
             Para continuar usando o SGP-B, regularize seu pagamento.
           </p>
+
+          <Button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="w-full"
+            variant="secondary"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${retrying ? "animate-spin" : ""}`} />
+            {retrying ? "Verificando..." : "Verificar Novamente"}
+          </Button>
           
           {userEmail === "cassiano.diego@gmail.com" && (
             <div className="flex flex-col gap-2">
@@ -117,10 +150,8 @@ export default function SubscriptionBlocked() {
             <Button 
               onClick={() => {
                 if (hasStripeCustomer) {
-                  // Redirect to customer portal (you'll need to implement this)
                   window.location.href = "https://billing.stripe.com/p/login/test_XXXXXX";
                 } else {
-                  // Redirect to checkout
                   window.open("https://buy.stripe.com/4gM9AT6nt1n7g7g1FH4Ni00", "_blank");
                 }
               }}
