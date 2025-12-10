@@ -177,7 +177,6 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       .lte("date", format(lastDay, "yyyy-MM-dd"));
 
     if (productions && productions.length > 0) {
-      const totalCommission = productions.reduce((sum, p) => sum + Number(p.commission_earned), 0);
       const totalClients = productions.reduce((sum, p) => sum + Number(p.clients_count), 0);
       const totalServicesCount = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
       const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
@@ -195,8 +194,13 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       const totalProductsRevenue = productions.reduce((sum, p) => sum + Number(p.products_total || 0), 0);
       const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
+      // RECALCULAR comissão com as taxas ATUAIS do barbeiro (não usar valor histórico do BD)
+      // Isso permite que quando o gerente alterar a comissão, o dashboard mostre o novo valor em tempo real
+      const recalculatedCommission = (totalServicesRevenue * (barber.services_commission / 100)) + 
+                                      (totalProductsRevenue * (barber.products_commission / 100));
+
       setStats({
-        accumulated_commission: totalCommission,
+        accumulated_commission: recalculatedCommission,
         days_worked: productions.length,
         total_clients: totalClients,
         total_services: totalServicesRevenue,
