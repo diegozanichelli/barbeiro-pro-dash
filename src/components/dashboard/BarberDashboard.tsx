@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown } from "lucide-react";
+import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
 import ProductionHistory from "./barber/ProductionHistory";
@@ -59,6 +60,15 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [missingLink, setMissingLink] = useState(false);
   const [editingProduction, setEditingProduction] = useState<any>(null);
+  
+  // Estado para notificação de alteração de comissão
+  const [commissionChange, setCommissionChange] = useState<{
+    oldServices: number;
+    newServices: number;
+    oldProducts: number;
+    newProducts: number;
+    timestamp: Date;
+  } | null>(null);
   useEffect(() => {
     fetchBarberData();
 
@@ -75,7 +85,30 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         },
         (payload) => {
           console.log('Comissão atualizada pelo gerente:', payload);
-          setBarber(payload.new as BarberData);
+          const oldBarber = payload.old as BarberData;
+          const newBarber = payload.new as BarberData;
+          
+          // Verificar se houve mudança nas comissões
+          const servicesChanged = oldBarber.services_commission !== newBarber.services_commission;
+          const productsChanged = oldBarber.products_commission !== newBarber.products_commission;
+          
+          if (servicesChanged || productsChanged) {
+            setCommissionChange({
+              oldServices: oldBarber.services_commission,
+              newServices: newBarber.services_commission,
+              oldProducts: oldBarber.products_commission,
+              newProducts: newBarber.products_commission,
+              timestamp: new Date(),
+            });
+            
+            // Toast de notificação
+            toast.success("Sua comissão foi atualizada pelo gerente!", {
+              description: "Confira as novas taxas no banner acima.",
+              duration: 5000,
+            });
+          }
+          
+          setBarber(newBarber);
         }
       )
       .subscribe();
@@ -416,6 +449,63 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       </header>
 
       <div className="container mx-auto px-4 py-6">
+        {/* Banner de Alteração de Comissão */}
+        {commissionChange && (
+          <Card className="mb-6 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-primary/30 animate-pulse-slow">
+            <CardContent className="py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-primary/20 rounded-full">
+                    <Bell className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="font-bold text-foreground flex items-center gap-2">
+                      🎉 Sua comissão foi atualizada!
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Serviços:</span>
+                        <span className="line-through text-muted-foreground">{commissionChange.oldServices}%</span>
+                        <span className="font-bold text-primary flex items-center gap-1">
+                          {commissionChange.newServices > commissionChange.oldServices ? (
+                            <ArrowUp className="w-3 h-3" />
+                          ) : (
+                            <ArrowDown className="w-3 h-3" />
+                          )}
+                          {commissionChange.newServices}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Produtos:</span>
+                        <span className="line-through text-muted-foreground">{commissionChange.oldProducts}%</span>
+                        <span className="font-bold text-primary flex items-center gap-1">
+                          {commissionChange.newProducts > commissionChange.oldProducts ? (
+                            <ArrowUp className="w-3 h-3" />
+                          ) : (
+                            <ArrowDown className="w-3 h-3" />
+                          )}
+                          {commissionChange.newProducts}%
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Seus valores de comissão e metas já foram recalculados automaticamente.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setCommissionChange(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Tabs defaultValue="daily" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
