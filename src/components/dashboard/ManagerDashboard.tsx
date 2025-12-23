@@ -4,16 +4,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp } from "lucide-react";
+import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
 import GoalsManagement from "./manager/GoalsManagement";
+import DailyGoalsTracking from "./manager/DailyGoalsTracking";
 import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
-
 interface ManagerDashboardProps {
   user: User;
 }
@@ -51,36 +51,44 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4" />
-              Visão Geral
+              <span className="hidden sm:inline">Visão Geral</span>
+            </TabsTrigger>
+            <TabsTrigger value="daily-goals" className="gap-2">
+              <CalendarDays className="w-4 h-4" />
+              <span className="hidden sm:inline">Metas do Dia</span>
             </TabsTrigger>
             <TabsTrigger value="units" className="gap-2">
               <Building2 className="w-4 h-4" />
-              Unidades
+              <span className="hidden sm:inline">Unidades</span>
             </TabsTrigger>
             <TabsTrigger value="barbers" className="gap-2">
               <Users className="w-4 h-4" />
-              Barbeiros
+              <span className="hidden sm:inline">Barbeiros</span>
             </TabsTrigger>
             <TabsTrigger value="goals" className="gap-2">
               <Target className="w-4 h-4" />
-              Metas
+              <span className="hidden sm:inline">Metas</span>
             </TabsTrigger>
             <TabsTrigger value="evolution" className="gap-2">
               <TrendingUp className="w-4 h-4" />
-              Evolução
+              <span className="hidden sm:inline">Evolução</span>
             </TabsTrigger>
             <TabsTrigger value="leaderboard" className="gap-2">
               <Trophy className="w-4 h-4" />
-              Rankings
+              <span className="hidden sm:inline">Rankings</span>
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
             <PerformanceAlerts />
             <ManagerReports />
+          </TabsContent>
+
+          <TabsContent value="daily-goals">
+            <DailyGoalsTracking />
           </TabsContent>
 
           <TabsContent value="units">
