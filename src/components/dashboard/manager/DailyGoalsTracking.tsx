@@ -13,7 +13,9 @@ interface BarberDailyGoal {
   unitName: string;
   targetCommission: number;
   workDays: number;
-  dailyTarget: number;
+  dailyCommissionTarget: number;
+  dailyRevenueTarget: number;
+  servicesCommission: number;
   totalEarnedMonth: number;
   totalEarnedToday: number;
   daysWorked: number;
@@ -69,7 +71,7 @@ export default function DailyGoalsTracking() {
     setLoading(true);
 
     try {
-      // Fetch monthly goals for current month
+      // Fetch monthly goals for current month with barber commission rates
       const { data: goals, error: goalsError } = await supabase
         .from("monthly_goals")
         .select(`
@@ -81,6 +83,7 @@ export default function DailyGoalsTracking() {
             id,
             name,
             unit_id,
+            services_commission,
             units (
               name
             )
@@ -120,7 +123,12 @@ export default function DailyGoalsTracking() {
           : 0;
 
         const daysWorked = barberProductions.length;
-        const dailyTarget = goal.target_commission / goal.work_days;
+        const dailyCommissionTarget = goal.target_commission / goal.work_days;
+        
+        // Calculate daily revenue target based on services commission rate
+        const servicesCommission = goal.barbers?.services_commission || 50;
+        const dailyRevenueTarget = dailyCommissionTarget / (servicesCommission / 100);
+        
         const progressPercent = (totalEarnedMonth / goal.target_commission) * 100;
         
         // Expected progress based on working days passed
@@ -146,7 +154,9 @@ export default function DailyGoalsTracking() {
           unitName: goal.barbers?.units?.name || "Unidade",
           targetCommission: goal.target_commission,
           workDays: goal.work_days,
-          dailyTarget,
+          dailyCommissionTarget,
+          dailyRevenueTarget,
+          servicesCommission,
           totalEarnedMonth,
           totalEarnedToday,
           daysWorked,
@@ -307,15 +317,15 @@ export default function DailyGoalsTracking() {
                       {/* Stats */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-6">
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Meta Diária</p>
+                          <p className="text-xs text-muted-foreground">Meta Diária (Faturamento)</p>
                           <p className="font-semibold text-foreground">
-                            R$ {goal.dailyTarget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            R$ {goal.dailyRevenueTarget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Hoje</p>
+                          <p className="text-xs text-muted-foreground">Comissão Hoje</p>
                           <p className={`font-semibold ${
-                            goal.totalEarnedToday >= goal.dailyTarget 
+                            goal.totalEarnedToday >= goal.dailyCommissionTarget 
                               ? "text-green-500" 
                               : goal.totalEarnedToday > 0 
                               ? "text-yellow-500" 
@@ -325,7 +335,7 @@ export default function DailyGoalsTracking() {
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Acumulado</p>
+                          <p className="text-xs text-muted-foreground">Acumulado Mês</p>
                           <p className="font-semibold text-foreground">
                             R$ {goal.totalEarnedMonth.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </p>
