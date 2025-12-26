@@ -3,9 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, TrendingDown, X } from "lucide-react";
+import { AlertTriangle, TrendingDown, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useState } from "react";
 
 interface PerformanceAlert {
   id: string;
@@ -21,6 +23,8 @@ interface PerformanceAlert {
 }
 
 export function PerformanceAlerts() {
+  const [isOpen, setIsOpen] = useState(false);
+  
   const { data: alerts, isLoading, refetch } = useQuery({
     queryKey: ['performance-alerts'],
     queryFn: async () => {
@@ -116,95 +120,106 @@ export function PerformanceAlerts() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              Alertas de Performance
-              {activeAlertsCount > 0 && (
-                <Badge variant="destructive" className="ml-2">
-                  {activeAlertsCount}
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Barbeiros em risco de não atingir a meta do mês
-            </CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {activeAlertsCount === 0 ? (
-          <Alert>
-            <AlertDescription>
-              Nenhum alerta ativo no momento. Todos os barbeiros estão no ritmo esperado! 🎉
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <div className="space-y-4">
-            {filteredAlerts.map((alert) => (
-              <Card key={alert.id}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={getAlertColor(alert.alerta_tipo)} className="flex items-center gap-1">
-                          {getAlertIcon(alert.alerta_tipo)}
-                          {alert.alerta_tipo}
-                        </Badge>
-                        <span className="font-semibold">{alert.barber?.name ?? 'Barbeiro Removido'}</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Deficit</p>
-                          <p className="font-medium text-destructive">
-                            R$ {alert.valor_deficit_r$.toFixed(2)}
-                          </p>
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    Alertas de Performance
+                    {activeAlertsCount > 0 && (
+                      <Badge variant="destructive">
+                        {activeAlertsCount}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="text-sm">
+                    {activeAlertsCount === 0 
+                      ? "Todos os barbeiros estão no ritmo esperado"
+                      : `${activeAlertsCount} barbeiro(s) em risco`}
+                  </CardDescription>
+                </div>
+              </div>
+              <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="pt-0">
+            {activeAlertsCount === 0 ? (
+              <Alert>
+                <AlertDescription>
+                  Nenhum alerta ativo no momento. Todos os barbeiros estão no ritmo esperado! 🎉
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-3">
+                {filteredAlerts.map((alert) => (
+                  <div key={alert.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant={getAlertColor(alert.alerta_tipo)} className="flex items-center gap-1">
+                            {getAlertIcon(alert.alerta_tipo)}
+                            {alert.alerta_tipo}
+                          </Badge>
+                          <span className="font-semibold truncate">{alert.barber?.name ?? 'Barbeiro Removido'}</span>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">% Atingido</p>
-                          <p className="font-medium">
-                            {alert.percentual_atingido.toFixed(1)}%
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Dias Restantes</p>
-                          <p className="font-medium">
-                            {alert.dias_restantes} dias
-                          </p>
+                        
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          <div>
+                            <p className="text-muted-foreground text-xs">Deficit</p>
+                            <p className="font-medium text-destructive">
+                              R$ {alert.valor_deficit_r$.toFixed(2)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs">% Atingido</p>
+                            <p className="font-medium">
+                              {alert.percentual_atingido.toFixed(1)}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs">Dias Restantes</p>
+                            <p className="font-medium">
+                              {alert.dias_restantes}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
-                      <p className="text-xs text-muted-foreground">
-                        Alerta criado em {new Date(alert.created_at).toLocaleDateString('pt-BR')}
-                      </p>
-                    </div>
-
-                    <div className="flex gap-2 ml-4">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleResolveAlert(alert.id)}
-                      >
-                        Resolver
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleIgnoreAlert(alert.id)}
-                      >
-                        Ignorar
-                      </Button>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResolveAlert(alert.id);
+                          }}
+                        >
+                          Resolver
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleIgnoreAlert(alert.id);
+                          }}
+                        >
+                          Ignorar
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 }
