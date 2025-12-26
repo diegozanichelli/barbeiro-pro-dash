@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
-
+import { calculateRemainingWorkDays } from "@/lib/dateUtils";
 interface BarberDailyGoal {
   barberId: string;
   barberName: string;
@@ -123,11 +123,23 @@ export default function DailyGoalsTracking() {
           : 0;
 
         const daysWorked = barberProductions.length;
-        const dailyCommissionTarget = goal.target_commission / goal.work_days;
+        
+        // Calculate remaining commission to achieve
+        const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
+        
+        // Calculate remaining work days (same logic as BarberDashboard)
+        const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
+        const remainingCalendarDays = calculateRemainingWorkDays();
+        const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
+        
+        // Daily commission target based on remaining amount / remaining days
+        const dailyCommissionTarget = remainingCommission / daysToUse;
         
         // Calculate daily revenue target based on services commission rate
         const servicesCommission = goal.barbers?.services_commission || 50;
-        const dailyRevenueTarget = dailyCommissionTarget / (servicesCommission / 100);
+        const dailyRevenueTarget = servicesCommission > 0 
+          ? dailyCommissionTarget / (servicesCommission / 100)
+          : 0;
         
         const progressPercent = (totalEarnedMonth / goal.target_commission) * 100;
         
