@@ -14,6 +14,7 @@ import DailyProductionForm from "./barber/DailyProductionForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 import CoachingNudgeCard from "./barber/CoachingNudgeCard";
+import MissingProductionAlert from "./barber/MissingProductionAlert";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays } from "@/lib/dateUtils";
@@ -514,6 +515,9 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           </TabsList>
 
           <TabsContent value="daily" className="space-y-6">
+            {/* Alerta de Produções Pendentes */}
+            {isCurrentMonth && <MissingProductionAlert barberId={barber.id} />}
+            
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
