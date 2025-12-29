@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 import { calculateRemainingWorkDays } from "@/lib/dateUtils";
+import MissingProductionsAlert from "./MissingProductionsAlert";
 interface BarberDailyGoal {
   barberId: string;
   barberName: string;
@@ -266,6 +267,9 @@ export default function DailyGoalsTracking() {
 
   return (
     <div className="space-y-6">
+      {/* Alerta de Produções Pendentes */}
+      <MissingProductionsAlert />
+      
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
