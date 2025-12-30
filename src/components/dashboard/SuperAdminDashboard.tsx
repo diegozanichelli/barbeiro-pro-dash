@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -44,6 +45,7 @@ interface Organization {
   stripe_customer_id: string;
   subscription_status: string;
   created_at: string;
+  has_subscription_module: boolean;
 }
 
 interface OrganizationStats {
@@ -650,6 +652,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                 <TableRow>
                   <TableHead>Nome da Barbearia</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Módulo Assinatura</TableHead>
                   <TableHead>Data de Cadastro</TableHead>
                   <TableHead>Customer ID</TableHead>
                   <TableHead>Ações</TableHead>
@@ -660,6 +663,36 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   <TableRow key={org.id}>
                     <TableCell className="font-medium">{org.name}</TableCell>
                     <TableCell>{getStatusBadge(org.subscription_status)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={org.has_subscription_module}
+                          onCheckedChange={async (checked) => {
+                            const { error } = await supabase
+                              .from("organizations")
+                              .update({ has_subscription_module: checked })
+                              .eq("id", org.id);
+                            
+                            if (error) {
+                              toast({
+                                title: "Erro",
+                                description: "Erro ao atualizar módulo",
+                                variant: "destructive",
+                              });
+                            } else {
+                              toast({
+                                title: "Sucesso",
+                                description: `Módulo de assinatura ${checked ? "habilitado" : "desabilitado"}`,
+                              });
+                              fetchOrganizations();
+                            }
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {org.has_subscription_module ? "Ativo" : "Inativo"}
+                        </span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {new Date(org.created_at).toLocaleDateString("pt-BR")}
                     </TableCell>
