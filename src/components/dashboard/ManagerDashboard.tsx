@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays } from "lucide-react";
+import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays, Repeat } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
@@ -14,6 +14,10 @@ import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
+import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
+import EarningsComparison from "./manager/EarningsComparison";
+import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
+
 interface ManagerDashboardProps {
   user: User;
 }
@@ -21,6 +25,7 @@ interface ManagerDashboardProps {
 export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
+  const { hasSubscriptionModule } = useSubscriptionModule();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -51,7 +56,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
+          <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-9' : 'grid-cols-7'} lg:w-auto lg:inline-grid`}>
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4" />
               <span className="hidden sm:inline">Visão Geral</span>
@@ -80,6 +85,18 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               <Trophy className="w-4 h-4" />
               <span className="hidden sm:inline">Rankings</span>
             </TabsTrigger>
+            {hasSubscriptionModule && (
+              <>
+                <TabsTrigger value="subscription" className="gap-2">
+                  <Repeat className="w-4 h-4" />
+                  <span className="hidden sm:inline">Assinaturas</span>
+                </TabsTrigger>
+                <TabsTrigger value="comparison" className="gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Comparativo</span>
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -110,6 +127,18 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsContent value="leaderboard">
             <Leaderboard />
           </TabsContent>
+
+          {hasSubscriptionModule && (
+            <>
+              <TabsContent value="subscription">
+                <SubscriptionEarningsForm />
+              </TabsContent>
+
+              <TabsContent value="comparison">
+                <EarningsComparison />
+              </TabsContent>
+            </>
+          )}
         </Tabs>
       </div>
     </div>

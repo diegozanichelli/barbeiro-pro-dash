@@ -15,6 +15,8 @@ import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 import CoachingNudgeCard from "./barber/CoachingNudgeCard";
 import MissingProductionAlert from "./barber/MissingProductionAlert";
+import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
+import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays } from "@/lib/dateUtils";
@@ -48,6 +50,7 @@ interface MonthlyStats {
 
 export default function BarberDashboard({ user }: BarberDashboardProps) {
   const navigate = useNavigate();
+  const { hasSubscriptionModule } = useSubscriptionModule();
   const now = new Date();
   
   // Estado para o mês/ano selecionado (default: mês atual)
@@ -598,6 +601,15 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
             {/* Card de Dica de Vendas - Coaching Nudge */}
             {isCurrentMonth && <CoachingNudgeCard barberId={barber.id} />}
+
+            {/* Card de Ganhos de Assinatura */}
+            {hasSubscriptionModule && (
+              <SubscriptionEarningsCard 
+                barberId={barber.id} 
+                selectedMonth={selectedMonth} 
+                selectedYear={selectedYear} 
+              />
+            )}
 
             {/* Card de Progresso Mensal */}
             <Card className="bg-card border-border shadow-card-custom">

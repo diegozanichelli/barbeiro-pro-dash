@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      barber_subscription_earnings: {
+        Row: {
+          amount: number
+          barber_id: string
+          created_at: string
+          id: string
+          month: number
+          organization_id: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount?: number
+          barber_id: string
+          created_at?: string
+          id?: string
+          month: number
+          organization_id: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount?: number
+          barber_id?: string
+          created_at?: string
+          id?: string
+          month?: number
+          organization_id?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "barber_subscription_earnings_barber_id_fkey"
+            columns: ["barber_id"]
+            isOneToOne: false
+            referencedRelation: "barbers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "barber_subscription_earnings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       barbers: {
         Row: {
           created_at: string
@@ -188,6 +236,7 @@ export type Database = {
       organizations: {
         Row: {
           created_at: string
+          has_subscription_module: boolean
           id: string
           name: string
           stripe_customer_id: string | null
@@ -196,6 +245,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          has_subscription_module?: boolean
           id?: string
           name: string
           stripe_customer_id?: string | null
@@ -204,6 +254,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          has_subscription_module?: boolean
           id?: string
           name?: string
           stripe_customer_id?: string | null
