@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays, Repeat } from "lucide-react";
+import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays, Repeat, Radio } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
@@ -17,6 +17,7 @@ import { PerformanceAlerts } from "./manager/PerformanceAlerts";
 import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
 import EarningsComparison from "./manager/EarningsComparison";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
+import LiveDashboard from "./manager/LiveDashboard";
 
 interface ManagerDashboardProps {
   user: User;
@@ -24,7 +25,7 @@ interface ManagerDashboardProps {
 
 export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("live");
   const { hasSubscriptionModule } = useSubscriptionModule();
 
   const handleSignOut = async () => {
@@ -56,7 +57,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-9' : 'grid-cols-7'} lg:w-auto lg:inline-grid`}>
+          <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-10' : 'grid-cols-8'} lg:w-auto lg:inline-grid`}>
+            <TabsTrigger value="live" className="gap-2">
+              <Radio className="w-4 h-4 text-red-500" />
+              <span className="hidden sm:inline">Ao Vivo</span>
+            </TabsTrigger>
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4" />
               <span className="hidden sm:inline">Visão Geral</span>
@@ -98,6 +103,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               </>
             )}
           </TabsList>
+
+          <TabsContent value="live" className="space-y-6">
+            <LiveDashboard />
+          </TabsContent>
 
           <TabsContent value="overview" className="space-y-6">
             <PerformanceAlerts />
