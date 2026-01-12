@@ -182,6 +182,57 @@ export type Database = {
           },
         ]
       }
+      financeiro_integracao: {
+        Row: {
+          created_at: string
+          daily_production_id: string
+          data_venda: string
+          id: string
+          organization_id: string
+          unit_id: string
+          updated_at: string
+          valor_comissao: number
+          valor_venda: number
+        }
+        Insert: {
+          created_at?: string
+          daily_production_id: string
+          data_venda: string
+          id?: string
+          organization_id: string
+          unit_id: string
+          updated_at?: string
+          valor_comissao?: number
+          valor_venda?: number
+        }
+        Update: {
+          created_at?: string
+          daily_production_id?: string
+          data_venda?: string
+          id?: string
+          organization_id?: string
+          unit_id?: string
+          updated_at?: string
+          valor_comissao?: number
+          valor_venda?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financeiro_integracao_daily_production_id_fkey"
+            columns: ["daily_production_id"]
+            isOneToOne: true
+            referencedRelation: "daily_productions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financeiro_integracao_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_goals: {
         Row: {
           barber_id: string
@@ -374,6 +425,7 @@ export type Database = {
       units: {
         Row: {
           created_at: string
+          external_unit_id: string | null
           id: string
           name: string
           organization_id: string
@@ -382,6 +434,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          external_unit_id?: string | null
           id?: string
           name: string
           organization_id: string
@@ -390,6 +443,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          external_unit_id?: string | null
           id?: string
           name?: string
           organization_id?: string
