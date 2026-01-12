@@ -27,6 +27,7 @@ export default function UnitsManagement() {
   const [formData, setFormData] = useState({
     name: "",
     status: "active",
+    external_unit_id: "",
   });
 
   useEffect(() => {
@@ -83,7 +84,7 @@ export default function UnitsManagement() {
       }
 
       setDialogOpen(false);
-      setFormData({ name: "", status: "active" });
+      setFormData({ name: "", status: "active", external_unit_id: "" });
       setEditingUnit(null);
       fetchUnits();
     } catch (error: any) {
@@ -95,7 +96,11 @@ export default function UnitsManagement() {
 
   const handleEdit = (unit: any) => {
     setEditingUnit(unit);
-    setFormData({ name: unit.name, status: unit.status });
+    setFormData({ 
+      name: unit.name, 
+      status: unit.status, 
+      external_unit_id: unit.external_unit_id || "" 
+    });
     setDialogOpen(true);
   };
 
@@ -124,8 +129,8 @@ export default function UnitsManagement() {
             <CardDescription>Gerencie suas filiais</CardDescription>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { setEditingUnit(null); setFormData({ name: "", status: "active" }); }}>
+          <DialogTrigger asChild>
+              <Button onClick={() => { setEditingUnit(null); setFormData({ name: "", status: "active", external_unit_id: "" }); }}>
                 <Plus className="w-4 h-4 mr-2" />
                 Nova Unidade
               </Button>
@@ -157,6 +162,18 @@ export default function UnitsManagement() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="external_unit_id">ID Externo (Meu Gerente 2.0)</Label>
+                  <Input
+                    id="external_unit_id"
+                    value={formData.external_unit_id}
+                    onChange={(e) => setFormData({ ...formData, external_unit_id: e.target.value })}
+                    placeholder="Ex: loja_01, filial_centro"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    ID usado para integração com o sistema Meu Gerente 2.0
+                  </p>
+                </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Salvando..." : "Salvar"}
                 </Button>
@@ -170,6 +187,7 @@ export default function UnitsManagement() {
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
+              <TableHead>ID Externo</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
@@ -178,6 +196,9 @@ export default function UnitsManagement() {
             {units.map((unit) => (
               <TableRow key={unit.id}>
                 <TableCell className="font-medium">{unit.name}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {unit.external_unit_id || <span className="text-xs italic">Não configurado</span>}
+                </TableCell>
                 <TableCell>
                   <Badge variant={unit.status === "active" ? "default" : "secondary"}>
                     {unit.status === "active" ? "Ativa" : "Inativa"}
