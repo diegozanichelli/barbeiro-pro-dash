@@ -236,9 +236,17 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       const recalculatedCommission = (totalServicesRevenue * (barber.services_commission / 100)) + 
                                       (totalProductsRevenue * (barber.products_commission / 100));
 
+      // Contar apenas dias com produção real (não contar registros zerados)
+      const daysWithProduction = productions.filter(p => {
+        const total = (Number(p.services_basic_total) || 0) + 
+                      (Number(p.services_extra_total) || 0) + 
+                      (Number(p.products_total) || 0);
+        return total > 0;
+      }).length;
+
       setStats({
         accumulated_commission: recalculatedCommission,
-        days_worked: productions.length,
+        days_worked: daysWithProduction,
         total_clients: totalClients,
         total_services: totalServicesRevenue,
         total_products: totalProductsRevenue,

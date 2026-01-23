@@ -123,7 +123,8 @@ export default function DailyGoalsTracking() {
           ? Number(todayProduction.commission_earned)
           : 0;
 
-        const daysWorked = barberProductions.length;
+        // Contar apenas dias com produção real (não contar registros zerados)
+        const daysWorked = barberProductions.filter(p => Number(p.commission_earned) > 0).length;
         
         // Calculate remaining commission to achieve
         const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
