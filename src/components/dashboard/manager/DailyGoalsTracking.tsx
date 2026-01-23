@@ -99,7 +99,7 @@ export default function DailyGoalsTracking() {
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
-        .select("barber_id, date, commission_earned")
+        .select("barber_id, date, commission_earned, confirmed_presence")
         .gte("date", startOfMonth)
         .lte("date", todayStr);
 
@@ -123,8 +123,10 @@ export default function DailyGoalsTracking() {
           ? Number(todayProduction.commission_earned)
           : 0;
 
-        // Contar apenas dias com produção real (não contar registros zerados)
-        const daysWorked = barberProductions.filter(p => Number(p.commission_earned) > 0).length;
+        // Contar dias com produção real OU com presença confirmada
+        const daysWorked = barberProductions.filter(p => 
+          Number(p.commission_earned) > 0 || p.confirmed_presence === true
+        ).length;
         
         // Calculate remaining commission to achieve
         const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);

@@ -121,6 +121,7 @@ export type Database = {
           barber_id: string
           clients_count: number
           commission_earned: number
+          confirmed_presence: boolean
           created_at: string
           date: string
           id: string
@@ -137,6 +138,7 @@ export type Database = {
           barber_id: string
           clients_count?: number
           commission_earned?: number
+          confirmed_presence?: boolean
           created_at?: string
           date: string
           id?: string
@@ -153,6 +155,7 @@ export type Database = {
           barber_id?: string
           clients_count?: number
           commission_earned?: number
+          confirmed_presence?: boolean
           created_at?: string
           date?: string
           id?: string

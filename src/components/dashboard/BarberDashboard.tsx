@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
@@ -64,6 +64,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [missingLink, setMissingLink] = useState(false);
   const [editingProduction, setEditingProduction] = useState<any>(null);
+  const [todayProduction, setTodayProduction] = useState<{
+    id?: string;
+    total: number;
+    confirmed_presence: boolean;
+  } | null>(null);
+  const [confirmingPresence, setConfirmingPresence] = useState(false);
   
   // Estado para notificação de alteração de comissão
   const [commissionChange, setCommissionChange] = useState<{
@@ -236,13 +242,30 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       const recalculatedCommission = (totalServicesRevenue * (barber.services_commission / 100)) + 
                                       (totalProductsRevenue * (barber.products_commission / 100));
 
-      // Contar apenas dias com produção real (não contar registros zerados)
+      // Contar dias com produção real OU com presença confirmada
       const daysWithProduction = productions.filter(p => {
         const total = (Number(p.services_basic_total) || 0) + 
                       (Number(p.services_extra_total) || 0) + 
                       (Number(p.products_total) || 0);
-        return total > 0;
+        return total > 0 || p.confirmed_presence === true;
       }).length;
+
+      // Identificar produção de hoje para o card de confirmação de presença
+      const todayStr = format(new Date(), "yyyy-MM-dd");
+      const todayProd = productions.find(p => p.date === todayStr);
+      
+      if (todayProd) {
+        const todayTotal = (Number(todayProd.services_basic_total) || 0) +
+                          (Number(todayProd.services_extra_total) || 0) +
+                          (Number(todayProd.products_total) || 0);
+        setTodayProduction({
+          id: todayProd.id,
+          total: todayTotal,
+          confirmed_presence: todayProd.confirmed_presence || false
+        });
+      } else {
+        setTodayProduction(null);
+      }
 
       setStats({
         accumulated_commission: recalculatedCommission,
@@ -368,6 +391,34 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     fetchMonthlyStats();
     fetchMonthlyGoal();
     setEditingProduction(null); // Limpar edição e fechar modal
+  };
+
+  const handleConfirmPresence = async (productionId: string) => {
+    setConfirmingPresence(true);
+    
+    const { error } = await supabase
+      .from("daily_productions")
+      .update({ confirmed_presence: true })
+      .eq("id", productionId);
+
+    setConfirmingPresence(false);
+
+    if (error) {
+      toast.error("Erro ao confirmar presença");
+      console.error("Erro ao confirmar presença:", error);
+      return;
+    }
+
+    toast.success("Dia contabilizado. Foco total amanhã!", {
+      description: "Sua presença foi registrada para o cálculo de metas.",
+      duration: 4000,
+    });
+
+    // Atualizar estado local
+    setTodayProduction(prev => prev ? { ...prev, confirmed_presence: true } : null);
+    
+    // Recarregar estatísticas para refletir o novo cálculo
+    fetchMonthlyStats();
   };
 
   const handleCloseEditModal = () => {
@@ -606,6 +657,55 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 )}
               </CardContent>
             </Card>
+
+            {/* Card de Faturamento de Hoje com Confirmação de Presença */}
+            {isCurrentMonth && todayProduction && (
+              <Card className="bg-card border-border shadow-card-custom">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-primary" />
+                    MEU FATURAMENTO HOJE
+                  </CardTitle>
+                  <CardDescription>
+                    {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-4xl font-bold text-foreground">
+                      R$ {todayProduction.total.toFixed(2)}
+                    </p>
+                  </div>
+                  
+                  {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
+                  {todayProduction.total === 0 && !todayProduction.confirmed_presence && todayProduction.id && (
+                    <div className="pt-4 border-t border-border">
+                      <Button
+                        variant="outline"
+                        className="w-full border-primary/50 hover:bg-primary/10"
+                        onClick={() => handleConfirmPresence(todayProduction.id!)}
+                        disabled={confirmingPresence}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
+                      </Button>
+                      <p className="text-xs text-muted-foreground text-center mt-2">
+                        Clique para informar que você compareceu, mesmo sem vendas.
+                        Isso contabiliza o dia na sua meta.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Se já confirmou presença */}
+                  {todayProduction.total === 0 && todayProduction.confirmed_presence && (
+                    <div className="flex items-center justify-center gap-2 text-success pt-4 border-t border-border">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="font-medium">Presença confirmada para hoje</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Card de Dica de Vendas - Coaching Nudge */}
             {isCurrentMonth && <CoachingNudgeCard barberId={barber.id} />}
