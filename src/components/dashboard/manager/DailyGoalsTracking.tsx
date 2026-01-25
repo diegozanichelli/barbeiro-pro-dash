@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
+import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle, UserCheck } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateRemainingWorkDays } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
 interface BarberDailyGoal {
@@ -23,6 +24,7 @@ interface BarberDailyGoal {
   progressPercent: number;
   expectedProgress: number;
   status: "ahead" | "on-track" | "behind" | "critical";
+  confirmedPresenceToday: boolean;
 }
 
 export default function DailyGoalsTracking() {
@@ -122,6 +124,9 @@ export default function DailyGoalsTracking() {
         const totalEarnedToday = todayProduction
           ? Number(todayProduction.commission_earned)
           : 0;
+        
+        // Verifica se confirmou presença hoje sem vendas
+        const confirmedPresenceToday = todayProduction?.confirmed_presence === true && totalEarnedToday === 0;
 
         // Contar dias com produção real OU com presença confirmada
         const daysWorked = barberProductions.filter(p => 
@@ -179,6 +184,7 @@ export default function DailyGoalsTracking() {
           progressPercent: Math.min(progressPercent, 100),
           expectedProgress: Math.min(expectedProgress, 100),
           status,
+          confirmedPresenceToday,
         };
       });
 
@@ -329,6 +335,21 @@ export default function DailyGoalsTracking() {
                             {goal.barberName}
                           </h3>
                           {getStatusBadge(goal.status)}
+                          {goal.confirmedPresenceToday && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge className="bg-orange-500/20 text-orange-500 border-orange-500/30">
+                                    <UserCheck className="w-3 h-3 mr-1" />
+                                    Presente s/ vendas
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Confirmou presença hoje, mas não registrou vendas</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">{goal.unitName}</p>
                       </div>
