@@ -30,6 +30,7 @@ interface BarberData {
   name: string;
   services_commission: number;
   products_commission: number;
+  organization_id: string;
 }
 
 interface MonthlyGoal {
@@ -64,10 +65,11 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [missingLink, setMissingLink] = useState(false);
   const [editingProduction, setEditingProduction] = useState<any>(null);
-  const [todayProduction, setTodayProduction] = useState<{
+const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
     confirmed_presence: boolean;
+    exists: boolean;
   } | null>(null);
   const [confirmingPresence, setConfirmingPresence] = useState(false);
   
@@ -261,10 +263,17 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         setTodayProduction({
           id: todayProd.id,
           total: todayTotal,
-          confirmed_presence: todayProd.confirmed_presence || false
+          confirmed_presence: todayProd.confirmed_presence || false,
+          exists: true
         });
       } else {
-        setTodayProduction(null);
+        // Registro NÃO existe - assumir R$ 0,00 e permitir confirmação
+        setTodayProduction({
+          id: undefined,
+          total: 0,
+          confirmed_presence: false,
+          exists: false
+        });
       }
 
       setStats({
@@ -278,6 +287,23 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         products_conversion: totalClients > 0 ? (totalProductsCount / totalClients) * 100 : 0,
       });
     } else {
+      // Nenhuma produção no mês - mas ainda precisamos tratar o dia de hoje
+      const todayDate = new Date();
+      const todayMonth = todayDate.getMonth() + 1;
+      const todayYear = todayDate.getFullYear();
+      
+      // Só mostrar card de hoje se estamos no mês atual
+      if (selectedMonth === todayMonth && selectedYear === todayYear) {
+        setTodayProduction({
+          id: undefined,
+          total: 0,
+          confirmed_presence: false,
+          exists: false
+        });
+      } else {
+        setTodayProduction(null);
+      }
+      
       setStats({
         accumulated_commission: 0,
         days_worked: 0,
@@ -393,13 +419,40 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     setEditingProduction(null); // Limpar edição e fechar modal
   };
 
-  const handleConfirmPresence = async (productionId: string) => {
+  const handleConfirmPresence = async () => {
+    if (!barber) return;
+    
     setConfirmingPresence(true);
     
-    const { error } = await supabase
-      .from("daily_productions")
-      .update({ confirmed_presence: true })
-      .eq("id", productionId);
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    let error = null;
+
+    if (todayProduction?.exists && todayProduction.id) {
+      // Registro EXISTE: fazer UPDATE
+      const result = await supabase
+        .from("daily_productions")
+        .update({ confirmed_presence: true })
+        .eq("id", todayProduction.id);
+      error = result.error;
+    } else {
+      // Registro NÃO EXISTE: fazer INSERT com valores zerados
+      const result = await supabase
+        .from("daily_productions")
+        .insert({
+          barber_id: barber.id,
+          organization_id: barber.organization_id,
+          date: todayStr,
+          services_basic_total: 0,
+          services_extra_total: 0,
+          products_total: 0,
+          services_total: 0,
+          clients_count: 0,
+          services_count: 0,
+          products_count: 0,
+          confirmed_presence: true
+        });
+      error = result.error;
+    }
 
     setConfirmingPresence(false);
 
@@ -415,7 +468,10 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     });
 
     // Atualizar estado local
-    setTodayProduction(prev => prev ? { ...prev, confirmed_presence: true } : null);
+    setTodayProduction(prev => prev 
+      ? { ...prev, confirmed_presence: true, exists: true } 
+      : null
+    );
     
     // Recarregar estatísticas para refletir o novo cálculo
     fetchMonthlyStats();
@@ -659,7 +715,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
             </Card>
 
             {/* Card de Faturamento de Hoje com Confirmação de Presença */}
-            {isCurrentMonth && todayProduction && (
+            {isCurrentMonth && todayProduction !== null && (
               <Card className="bg-card border-border shadow-card-custom">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -678,12 +734,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                   </div>
                   
                   {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
-                  {todayProduction.total === 0 && !todayProduction.confirmed_presence && todayProduction.id && (
+                  {todayProduction.total === 0 && !todayProduction.confirmed_presence && (
                     <div className="pt-4 border-t border-border">
                       <Button
                         variant="outline"
                         className="w-full border-primary/50 hover:bg-primary/10"
-                        onClick={() => handleConfirmPresence(todayProduction.id!)}
+                        onClick={() => handleConfirmPresence()}
                         disabled={confirmingPresence}
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
