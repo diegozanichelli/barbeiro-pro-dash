@@ -16,6 +16,8 @@ import Leaderboard from "./Leaderboard";
 import CoachingNudgeCard from "./barber/CoachingNudgeCard";
 import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
+import AIDailyCoachCard from "./barber/AIDailyCoachCard";
+import SalesHelpModal from "./barber/SalesHelpModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -763,7 +765,19 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
-            {/* Card de Dica de Vendas - Coaching Nudge */}
+            {/* Card do Coach IA - Dica Diária Personalizada */}
+            {isCurrentMonth && monthlyGoal && (
+              <AIDailyCoachCard
+                barberName={barber.name}
+                monthlyGoal={monthlyGoal.target_commission}
+                soldToday={todayProduction?.total || 0}
+                soldThisMonth={stats.accumulated_commission}
+                daysRemaining={daysLeft}
+                dailyTarget={dailyTarget}
+              />
+            )}
+
+            {/* Card de Dica de Vendas - Coaching Nudge (legado) */}
             {isCurrentMonth && <CoachingNudgeCard barberId={barber.id} />}
 
             {/* Card de Ganhos de Assinatura */}
@@ -901,6 +915,9 @@ const [todayProduction, setTodayProduction] = useState<{
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Botão Flutuante de Assistente de Vendas IA */}
+        {isCurrentMonth && <SalesHelpModal />}
       </div>
     </div>
   );

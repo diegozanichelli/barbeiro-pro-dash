@@ -41,3 +41,6 @@ verify_jwt = true
 
 [functions.get-coaching-nudge]
 verify_jwt = true
+
+[functions.barber-ai-assistant]
+verify_jwt = false
