@@ -6,6 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface AIDailyCoachCardProps {
+  barberId: string;
+  organizationId: string;
   barberName: string;
   monthlyGoal: number;
   soldToday: number;
@@ -15,6 +17,8 @@ interface AIDailyCoachCardProps {
 }
 
 export default function AIDailyCoachCard({
+  barberId,
+  organizationId,
   barberName,
   monthlyGoal,
   soldToday,
@@ -42,6 +46,8 @@ export default function AIDailyCoachCard({
       const { data, error: fnError } = await supabase.functions.invoke("barber-ai-assistant", {
         body: {
           type: "daily_insight",
+          barberId,
+          organizationId,
           barberName,
           monthlyGoal,
           soldToday,

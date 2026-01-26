@@ -52,7 +52,12 @@ const SCENARIOS = [
   },
 ];
 
-export default function SalesHelpModal() {
+interface SalesHelpModalProps {
+  barberId: string;
+  organizationId: string;
+}
+
+export default function SalesHelpModal({ barberId, organizationId }: SalesHelpModalProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
@@ -78,6 +83,8 @@ export default function SalesHelpModal() {
       const { data, error: fnError } = await supabase.functions.invoke("barber-ai-assistant", {
         body: {
           type: "sales_help",
+          barberId,
+          organizationId,
           scenario: scenarioId,
         },
         headers: {

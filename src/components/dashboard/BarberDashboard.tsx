@@ -768,6 +768,8 @@ const [todayProduction, setTodayProduction] = useState<{
             {/* Card do Coach IA - Dica Diária Personalizada */}
             {isCurrentMonth && monthlyGoal && (
               <AIDailyCoachCard
+                barberId={barber.id}
+                organizationId={barber.organization_id}
                 barberName={barber.name}
                 monthlyGoal={monthlyGoal.target_commission}
                 soldToday={todayProduction?.total || 0}
@@ -917,7 +919,7 @@ const [todayProduction, setTodayProduction] = useState<{
         </Dialog>
 
         {/* Botão Flutuante de Assistente de Vendas IA */}
-        {isCurrentMonth && <SalesHelpModal />}
+        {isCurrentMonth && barber && <SalesHelpModal barberId={barber.id} organizationId={barber.organization_id} />}
       </div>
     </div>
   );
