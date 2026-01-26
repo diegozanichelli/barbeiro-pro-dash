@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,6 +8,8 @@ const corsHeaders = {
 
 interface DailyInsightRequest {
   type: 'daily_insight';
+  barberId: string;
+  organizationId: string;
   barberName: string;
   monthlyGoal: number;
   soldToday: number;
@@ -17,10 +20,35 @@ interface DailyInsightRequest {
 
 interface SalesHelpRequest {
   type: 'sales_help';
+  barberId: string;
+  organizationId: string;
   scenario: string;
 }
 
 type RequestBody = DailyInsightRequest | SalesHelpRequest;
+
+async function logUsage(barberId: string, organizationId: string, usageType: string, scenario?: string) {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase credentials for logging");
+      return;
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    await supabase.from("ai_assistant_usage").insert({
+      barber_id: barberId,
+      organization_id: organizationId,
+      usage_type: usageType,
+      scenario: scenario || null,
+    });
+  } catch (error) {
+    console.error("Error logging AI usage:", error);
+  }
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -39,7 +67,10 @@ serve(async (req) => {
     let userPrompt = "";
 
     if (body.type === 'daily_insight') {
-      const { barberName, monthlyGoal, soldToday, soldThisMonth, daysRemaining, dailyTarget } = body;
+      const { barberId, organizationId, barberName, monthlyGoal, soldToday, soldThisMonth, daysRemaining, dailyTarget } = body;
+      
+      // Log usage
+      await logUsage(barberId, organizationId, 'daily_insight');
       
       const percentageAchieved = monthlyGoal > 0 ? ((soldThisMonth / monthlyGoal) * 100).toFixed(1) : 0;
       const remaining = Math.max(0, monthlyGoal - soldThisMonth);
@@ -66,7 +97,10 @@ REGRAS IMPORTANTES:
 Gere uma mensagem motivacional curta e estratégica.`;
 
     } else if (body.type === 'sales_help') {
-      const { scenario } = body;
+      const { barberId, organizationId, scenario } = body;
+      
+      // Log usage
+      await logUsage(barberId, organizationId, 'sales_help', scenario);
       
       systemPrompt = `Você é um especialista em vendas para barbearias de alto padrão.
 Seu papel é criar scripts de vendas curtos e persuasivos que o barbeiro pode usar AGORA com o cliente.

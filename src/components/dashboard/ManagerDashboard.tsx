@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays, Repeat, Radio } from "lucide-react";
+import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays, Repeat, Radio, Bot } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
@@ -18,6 +18,7 @@ import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
 import EarningsComparison from "./manager/EarningsComparison";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
+import AIUsageTracking from "./manager/AIUsageTracking";
 
 interface ManagerDashboardProps {
   user: User;
@@ -57,7 +58,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-10' : 'grid-cols-8'} lg:w-auto lg:inline-grid`}>
+          <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-11' : 'grid-cols-9'} lg:w-auto lg:inline-grid`}>
             <TabsTrigger value="live" className="gap-2">
               <Radio className="w-4 h-4 text-red-500" />
               <span className="hidden sm:inline">Ao Vivo</span>
@@ -89,6 +90,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <TabsTrigger value="leaderboard" className="gap-2">
               <Trophy className="w-4 h-4" />
               <span className="hidden sm:inline">Rankings</span>
+            </TabsTrigger>
+            <TabsTrigger value="ai-usage" className="gap-2">
+              <Bot className="w-4 h-4" />
+              <span className="hidden sm:inline">Uso IA</span>
             </TabsTrigger>
             {hasSubscriptionModule && (
               <>
@@ -135,6 +140,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="leaderboard">
             <Leaderboard />
+          </TabsContent>
+
+          <TabsContent value="ai-usage">
+            <AIUsageTracking />
           </TabsContent>
 
           {hasSubscriptionModule && (

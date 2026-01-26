@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_assistant_usage: {
+        Row: {
+          barber_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          scenario: string | null
+          usage_type: string
+        }
+        Insert: {
+          barber_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          scenario?: string | null
+          usage_type: string
+        }
+        Update: {
+          barber_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          scenario?: string | null
+          usage_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_assistant_usage_barber_id_fkey"
+            columns: ["barber_id"]
+            isOneToOne: false
+            referencedRelation: "barbers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_assistant_usage_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       barber_subscription_earnings: {
         Row: {
           amount: number
