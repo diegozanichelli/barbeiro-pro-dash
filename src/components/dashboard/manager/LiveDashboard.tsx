@@ -15,6 +15,7 @@ import { Plus, Radio, Loader2 } from "lucide-react";
 import { useOrganization } from "@/hooks/useOrganization";
 import LiveTop3Ranking from "./LiveTop3Ranking";
 import QuickSaleModal from "./QuickSaleModal";
+import { calculateRemainingWorkDays } from "@/lib/dateUtils";
 
 interface Barber {
   id: string;
@@ -31,6 +32,14 @@ interface DailyProduction {
   services_total: number;
   products_total: number;
   clients_count: number;
+  commission_earned: number;
+  confirmed_presence: boolean;
+}
+
+interface MonthProduction {
+  barber_id: string;
+  commission_earned: number;
+  confirmed_presence: boolean;
 }
 
 interface MonthlyGoal {
@@ -48,6 +57,7 @@ export default function LiveDashboard() {
   const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [productions, setProductions] = useState<DailyProduction[]>([]);
+  const [monthProductions, setMonthProductions] = useState<MonthProduction[]>([]);
   const [goals, setGoals] = useState<MonthlyGoal[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
@@ -60,9 +70,10 @@ export default function LiveDashboard() {
     barberName: string;
   }>({ open: false, barberId: "", barberName: "" });
 
-  const today = new Date().toISOString().split("T")[0];
-  const currentMonth = new Date().getMonth() + 1;
-  const currentYear = new Date().getFullYear();
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const currentMonth = today.getMonth() + 1;
+  const currentYear = today.getFullYear();
 
   const fetchData = useCallback(async () => {
     if (!organizationId) return;
@@ -97,10 +108,23 @@ export default function LiveDashboard() {
         .from("daily_productions")
         .select("*")
         .eq("organization_id", organizationId)
-        .eq("date", today);
+        .eq("date", todayStr);
 
       if (productionsData) {
         setProductions(productionsData);
+      }
+
+      // Fetch month's productions for days worked calculation
+      const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
+      const { data: monthProductionsData } = await supabase
+        .from("daily_productions")
+        .select("barber_id, commission_earned, confirmed_presence")
+        .eq("organization_id", organizationId)
+        .gte("date", startOfMonth)
+        .lte("date", todayStr);
+
+      if (monthProductionsData) {
+        setMonthProductions(monthProductionsData);
       }
 
       // Fetch monthly goals
@@ -130,7 +154,7 @@ export default function LiveDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, today, currentMonth, currentYear]);
+  }, [organizationId, todayStr, currentMonth, currentYear]);
 
   useEffect(() => {
     fetchData();
@@ -172,7 +196,7 @@ export default function LiveDashboard() {
           event: "*",
           schema: "public",
           table: "daily_productions",
-          filter: `date=eq.${today}`,
+          filter: `date=eq.${todayStr}`,
         },
         () => {
           fetchData();
@@ -183,7 +207,7 @@ export default function LiveDashboard() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [organizationId, today, fetchData]);
+  }, [organizationId, todayStr, fetchData]);
 
   const getBarberRevenue = (barberId: string) => {
     const production = productions.find((p) => p.barber_id === barberId);
@@ -201,9 +225,39 @@ export default function LiveDashboard() {
     const goal = goals.find((g) => g.barber_id === barber.id);
     if (!goal) return 0;
 
-    // Daily target = (monthly commission goal / work days) / commission rate
-    const dailyCommissionTarget = goal.target_commission / goal.work_days;
-    const dailyRevenueTarget = dailyCommissionTarget / (barber.services_commission / 100);
+    // Get barber's productions for the month
+    const barberMonthProductions = monthProductions.filter(
+      (p) => p.barber_id === barber.id
+    );
+
+    // Calculate total commission earned this month
+    const totalEarnedMonth = barberMonthProductions.reduce(
+      (sum, p) => sum + Number(p.commission_earned),
+      0
+    );
+
+    // Count days worked: production > 0 OR confirmed_presence === true
+    const daysWorked = barberMonthProductions.filter(
+      (p) => Number(p.commission_earned) > 0 || p.confirmed_presence === true
+    ).length;
+
+    // Calculate remaining commission to achieve
+    const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
+
+    // Calculate remaining work days (same logic as BarberDashboard)
+    const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
+    const remainingCalendarDays = calculateRemainingWorkDays();
+    const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
+
+    // Daily commission target based on remaining amount / remaining days
+    const dailyCommissionTarget = remainingCommission / daysToUse;
+
+    // Calculate daily revenue target based on services commission rate
+    const dailyRevenueTarget =
+      barber.services_commission > 0
+        ? dailyCommissionTarget / (barber.services_commission / 100)
+        : 0;
+
     return dailyRevenueTarget;
   };
 
