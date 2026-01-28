@@ -65,7 +65,7 @@ export default function ManagerDashboard({
             </TabsTrigger>
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4 bg-secondary" />
-              <span className="hidden sm:inline bg-primary">Dashboard
+              <span className="hidden sm:inline bg-secondary">Dashboard
             </span>
             </TabsTrigger>
             <TabsTrigger value="daily-goals" className="gap-2">
