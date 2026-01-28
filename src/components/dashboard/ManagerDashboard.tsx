@@ -64,7 +64,7 @@ export default function ManagerDashboard({
               <span className="hidden sm:inline bg-primary">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="overview" className="gap-2">
-              <BarChart3 className="w-4 h-4" />
+              <BarChart3 className="w-4 h-4 bg-secondary" />
               <span className="hidden sm:inline bg-primary">Dashboard
             </span>
             </TabsTrigger>
