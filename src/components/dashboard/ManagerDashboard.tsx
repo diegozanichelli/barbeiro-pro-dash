@@ -61,7 +61,7 @@ export default function ManagerDashboard({
           <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-12' : 'grid-cols-10'} lg:w-auto lg:inline-grid`}>
             <TabsTrigger value="live" className="gap-2">
               <Radio className="w-4 h-4 text-destructive" />
-              <span className="hidden sm:inline bg-primary">Ao Vivo</span>
+              <span className="hidden sm:inline bg-secondary">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4 bg-secondary" />
