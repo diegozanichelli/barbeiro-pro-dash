@@ -20,23 +20,22 @@ import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
 import AIUsageTracking from "./manager/AIUsageTracking";
 import CatalogManagement from "./manager/CatalogManagement";
-
 interface ManagerDashboardProps {
   user: User;
 }
-
-export default function ManagerDashboard({ user }: ManagerDashboardProps) {
+export default function ManagerDashboard({
+  user
+}: ManagerDashboardProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("live");
-  const { hasSubscriptionModule } = useSubscriptionModule();
-
+  const {
+    hasSubscriptionModule
+  } = useSubscriptionModule();
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
   };
-
-  return (
-    <div className="min-h-screen bg-background">
+  return <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -62,15 +61,17 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-12' : 'grid-cols-10'} lg:w-auto lg:inline-grid`}>
             <TabsTrigger value="live" className="gap-2">
               <Radio className="w-4 h-4 text-destructive" />
-              <span className="hidden sm:inline">Ao Vivo</span>
+              <span className="hidden sm:inline bg-primary">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="overview" className="gap-2">
               <BarChart3 className="w-4 h-4" />
-              <span className="hidden sm:inline">Visão Geral</span>
+              <span className="hidden sm:inline bg-primary">Dashboard
+            </span>
             </TabsTrigger>
             <TabsTrigger value="daily-goals" className="gap-2">
               <CalendarDays className="w-4 h-4" />
-              <span className="hidden sm:inline">Metas do Dia</span>
+              <span className="hidden sm:inline">Dia a Dia
+            </span>
             </TabsTrigger>
             <TabsTrigger value="units" className="gap-2">
               <Building2 className="w-4 h-4" />
@@ -82,7 +83,8 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             </TabsTrigger>
             <TabsTrigger value="catalog" className="gap-2">
               <Package className="w-4 h-4" />
-              <span className="hidden sm:inline">Catálogo</span>
+              <span className="hidden sm:inline">Comissões
+            </span>
             </TabsTrigger>
             <TabsTrigger value="goals" className="gap-2">
               <Target className="w-4 h-4" />
@@ -100,18 +102,16 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               <Bot className="w-4 h-4" />
               <span className="hidden sm:inline">Uso IA</span>
             </TabsTrigger>
-            {hasSubscriptionModule && (
-              <>
+            {hasSubscriptionModule && <>
                 <TabsTrigger value="subscription" className="gap-2">
                   <Repeat className="w-4 h-4" />
                   <span className="hidden sm:inline">Assinaturas</span>
                 </TabsTrigger>
                 <TabsTrigger value="comparison" className="gap-2">
                   <BarChart3 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Comparativo</span>
+                  <span className="hidden sm:inline">Money</span>
                 </TabsTrigger>
-              </>
-            )}
+              </>}
           </TabsList>
 
           <TabsContent value="live" className="space-y-6">
@@ -155,8 +155,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <AIUsageTracking />
           </TabsContent>
 
-          {hasSubscriptionModule && (
-            <>
+          {hasSubscriptionModule && <>
               <TabsContent value="subscription">
                 <SubscriptionEarningsForm />
               </TabsContent>
@@ -164,10 +163,8 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               <TabsContent value="comparison">
                 <EarningsComparison />
               </TabsContent>
-            </>
-          )}
+            </>}
         </Tabs>
       </div>
-    </div>
-  );
+    </div>;
 }
