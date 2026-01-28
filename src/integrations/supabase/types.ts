@@ -158,6 +158,91 @@ export type Database = {
           },
         ]
       }
+      catalog_products: {
+        Row: {
+          created_at: string
+          default_price: number
+          fixed_commission: number | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_price?: number
+          fixed_commission?: number | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_price?: number
+          fixed_commission?: number | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_products_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_services: {
+        Row: {
+          category: string
+          created_at: string
+          default_price: number
+          fixed_commission: number | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          default_price?: number
+          fixed_commission?: number | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          default_price?: number
+          fixed_commission?: number | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_productions: {
         Row: {
           barber_id: string
@@ -466,6 +551,90 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      sale_transactions: {
+        Row: {
+          barber_id: string
+          catalog_product_id: string | null
+          catalog_service_id: string | null
+          commission_amount: number
+          commission_rate_used: number
+          created_at: string
+          daily_production_id: string
+          id: string
+          item_name: string
+          item_type: string
+          organization_id: string
+          price_sold: number
+          service_category: string | null
+        }
+        Insert: {
+          barber_id: string
+          catalog_product_id?: string | null
+          catalog_service_id?: string | null
+          commission_amount: number
+          commission_rate_used: number
+          created_at?: string
+          daily_production_id: string
+          id?: string
+          item_name: string
+          item_type: string
+          organization_id: string
+          price_sold: number
+          service_category?: string | null
+        }
+        Update: {
+          barber_id?: string
+          catalog_product_id?: string | null
+          catalog_service_id?: string | null
+          commission_amount?: number
+          commission_rate_used?: number
+          created_at?: string
+          daily_production_id?: string
+          id?: string
+          item_name?: string
+          item_type?: string
+          organization_id?: string
+          price_sold?: number
+          service_category?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_transactions_barber_id_fkey"
+            columns: ["barber_id"]
+            isOneToOne: false
+            referencedRelation: "barbers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_transactions_catalog_product_id_fkey"
+            columns: ["catalog_product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_transactions_catalog_service_id_fkey"
+            columns: ["catalog_service_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_transactions_daily_production_id_fkey"
+            columns: ["daily_production_id"]
+            isOneToOne: false
+            referencedRelation: "daily_productions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       units: {
         Row: {
