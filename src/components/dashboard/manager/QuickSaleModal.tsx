@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,13 +8,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Zap, Search, Scissors, Package } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2, Search, Scissors, Package, Zap, Hash } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface QuickSaleModalProps {
   open: boolean;
@@ -34,8 +34,7 @@ interface CatalogItem {
   type: "service" | "product";
 }
 
-type SaleMode = "catalog" | "manual";
-type ManualSaleType = "basic" | "extra" | "product";
+type CategoryTab = "services" | "products" | "manual";
 
 export default function QuickSaleModal({
   open,
@@ -51,12 +50,11 @@ export default function QuickSaleModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const [customPrice, setCustomPrice] = useState("");
+  const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   
   // Manual sale state
-  const [saleMode, setSaleMode] = useState<SaleMode>("catalog");
   const [manualValue, setManualValue] = useState("");
-  const [manualSaleType, setManualSaleType] = useState<ManualSaleType>("basic");
-  const [clientsCount, setClientsCount] = useState("1");
+  const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
 
   // Fetch catalog items
   useEffect(() => {
@@ -104,10 +102,9 @@ export default function QuickSaleModal({
     setSelectedItem(null);
     setCustomPrice("");
     setManualValue("");
-    setManualSaleType("basic");
-    setClientsCount("1");
+    setManualCategory("basic");
     setSearchQuery("");
-    setSaleMode("catalog");
+    setActiveTab("services");
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -118,9 +115,31 @@ export default function QuickSaleModal({
   };
 
   const handleSelectItem = (item: CatalogItem) => {
-    setSelectedItem(item);
-    setCustomPrice(item.default_price.toString());
+    if (selectedItem?.id === item.id) {
+      setSelectedItem(null);
+      setCustomPrice("");
+    } else {
+      setSelectedItem(item);
+      setCustomPrice(item.default_price.toString());
+    }
   };
+
+  // Filter items based on search and active tab
+  const filteredItems = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    
+    return catalogItems.filter((item) => {
+      const matchesSearch = !query || item.name.toLowerCase().includes(query);
+      const matchesTab = 
+        (activeTab === "services" && item.type === "service") ||
+        (activeTab === "products" && item.type === "product");
+      
+      return matchesSearch && matchesTab;
+    });
+  }, [catalogItems, searchQuery, activeTab]);
+
+  const services = catalogItems.filter((item) => item.type === "service");
+  const products = catalogItems.filter((item) => item.type === "product");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,8 +180,8 @@ export default function QuickSaleModal({
         productionId = newProduction.id;
       }
 
-      if (saleMode === "catalog" && selectedItem) {
-        // Insert sale transaction (triggers will handle commission and sync)
+      if (activeTab !== "manual" && selectedItem) {
+        // Catalog sale - insert into sale_transactions
         const price = parseFloat(customPrice.replace(",", "."));
         if (isNaN(price) || price <= 0) {
           toast.error("Informe um valor válido");
@@ -180,20 +199,13 @@ export default function QuickSaleModal({
           item_name: selectedItem.name,
           service_category: selectedItem.type === "service" ? selectedItem.category : null,
           price_sold: price,
-          commission_rate_used: 0, // Will be calculated by trigger
-          commission_amount: 0, // Will be calculated by trigger
+          commission_rate_used: 0,
+          commission_amount: 0,
         });
 
         if (error) throw error;
 
-        // Update clients count
-        const numericClients = parseInt(clientsCount) || 1;
-        await supabase
-          .from("daily_productions")
-          .update({ clients_count: supabase.rpc ? numericClients : numericClients })
-          .eq("id", productionId);
-        
-        // Increment clients_count properly
+        // Increment clients_count
         const { data: currentProd } = await supabase
           .from("daily_productions")
           .select("clients_count")
@@ -203,15 +215,14 @@ export default function QuickSaleModal({
         if (currentProd) {
           await supabase
             .from("daily_productions")
-            .update({ clients_count: (currentProd.clients_count || 0) + numericClients })
+            .update({ clients_count: (currentProd.clients_count || 0) + 1 })
             .eq("id", productionId);
         }
 
         toast.success(`${selectedItem.name} registrado para ${barberName}`);
       } else {
-        // Manual sale - use existing legacy flow
+        // Manual sale - legacy flow
         const numericValue = parseFloat(manualValue.replace(",", "."));
-        const numericClients = parseInt(clientsCount) || 1;
 
         if (isNaN(numericValue) || numericValue <= 0) {
           toast.error("Informe um valor válido");
@@ -227,16 +238,14 @@ export default function QuickSaleModal({
 
         if (existingProd) {
           const updateData: Record<string, number> = {
-            clients_count: existingProd.clients_count + numericClients,
+            clients_count: existingProd.clients_count + 1,
           };
 
-          if (manualSaleType === "basic") {
-            updateData.services_basic_total =
-              (existingProd.services_basic_total || 0) + numericValue;
+          if (manualCategory === "basic") {
+            updateData.services_basic_total = (existingProd.services_basic_total || 0) + numericValue;
             updateData.services_count = existingProd.services_count + 1;
-          } else if (manualSaleType === "extra") {
-            updateData.services_extra_total =
-              (existingProd.services_extra_total || 0) + numericValue;
+          } else if (manualCategory === "extra") {
+            updateData.services_extra_total = (existingProd.services_extra_total || 0) + numericValue;
             updateData.services_count = existingProd.services_count + 1;
           } else {
             updateData.products_total = existingProd.products_total + numericValue;
@@ -265,13 +274,6 @@ export default function QuickSaleModal({
     }
   };
 
-  const filteredItems = catalogItems.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const services = filteredItems.filter((item) => item.type === "service");
-  const products = filteredItems.filter((item) => item.type === "product");
-
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -279,143 +281,144 @@ export default function QuickSaleModal({
     }).format(value);
   };
 
+  const canSubmit = 
+    (activeTab !== "manual" && selectedItem && customPrice) ||
+    (activeTab === "manual" && manualValue);
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="text-foreground">
-            Venda Rápida - {barberName}
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+          <DialogTitle className="text-lg font-semibold">
+            Venda Rápida — {barberName}
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs value={saleMode} onValueChange={(v) => setSaleMode(v as SaleMode)} className="flex-1">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="catalog">Catálogo</TabsTrigger>
-            <TabsTrigger value="manual">Venda Manual</TabsTrigger>
-          </TabsList>
+        {/* Search Bar */}
+        <div className="px-6 pt-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar serviço ou produto..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 h-11"
+              autoFocus
+            />
+          </div>
+        </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 mt-4">
-            <TabsContent value="catalog" className="flex-1 m-0">
+        {/* Category Tabs */}
+        <Tabs 
+          value={activeTab} 
+          onValueChange={(v) => {
+            setActiveTab(v as CategoryTab);
+            setSelectedItem(null);
+            setCustomPrice("");
+          }}
+          className="flex-1 flex flex-col overflow-hidden"
+        >
+          <div className="px-6 pt-4">
+            <TabsList className="grid w-full grid-cols-3 h-12">
+              <TabsTrigger value="services" className="gap-2 text-sm">
+                <Scissors className="h-4 w-4" />
+                Serviços
+                {services.length > 0 && (
+                  <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
+                    {services.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="products" className="gap-2 text-sm">
+                <Package className="h-4 w-4" />
+                Produtos
+                {products.length > 0 && (
+                  <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
+                    {products.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="gap-2 text-sm">
+                <Hash className="h-4 w-4" />
+                Manual
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+            {/* Services Grid */}
+            <TabsContent value="services" className="flex-1 m-0 overflow-hidden">
               {loadingCatalog ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-              ) : catalogItems.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Package className="mx-auto h-12 w-12 mb-4" />
-                  <p>Nenhum item no catálogo.</p>
-                  <p className="text-sm">Cadastre serviços e produtos na aba Catálogo.</p>
+              ) : filteredItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Scissors className="h-12 w-12 mb-4 opacity-50" />
+                  <p className="font-medium">
+                    {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
+                  </p>
+                  <p className="text-sm mt-1">
+                    {searchQuery ? "Tente outro termo de busca" : "Cadastre serviços na aba Catálogo"}
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar item..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9"
-                    />
+                <ScrollArea className="flex-1 px-6 py-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {filteredItems.map((item) => (
+                      <CatalogCard
+                        key={item.id}
+                        item={item}
+                        isSelected={selectedItem?.id === item.id}
+                        onSelect={() => handleSelectItem(item)}
+                        formatCurrency={formatCurrency}
+                      />
+                    ))}
                   </div>
-
-                  <ScrollArea className="h-[200px] rounded-md border p-2">
-                    {services.length > 0 && (
-                      <div className="mb-4">
-                        <div className="flex items-center gap-2 mb-2 text-sm font-medium text-muted-foreground">
-                          <Scissors className="h-4 w-4" />
-                          Serviços
-                        </div>
-                        <div className="space-y-1">
-                          {services.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => handleSelectItem(item)}
-                              className={cn(
-                                "w-full flex items-center justify-between p-2 rounded-md text-left transition-colors",
-                                selectedItem?.id === item.id
-                                  ? "bg-primary text-primary-foreground"
-                                  : "hover:bg-muted"
-                              )}
-                            >
-                              <span className="font-medium">{item.name}</span>
-                              <div className="flex items-center gap-2">
-                                {item.fixed_commission !== null && (
-                                  <Zap className="h-4 w-4 text-amber-500" />
-                                )}
-                                <span>{formatCurrency(item.default_price)}</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {products.length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2 text-sm font-medium text-muted-foreground">
-                          <Package className="h-4 w-4" />
-                          Produtos
-                        </div>
-                        <div className="space-y-1">
-                          {products.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => handleSelectItem(item)}
-                              className={cn(
-                                "w-full flex items-center justify-between p-2 rounded-md text-left transition-colors",
-                                selectedItem?.id === item.id
-                                  ? "bg-primary text-primary-foreground"
-                                  : "hover:bg-muted"
-                              )}
-                            >
-                              <span className="font-medium">{item.name}</span>
-                              <div className="flex items-center gap-2">
-                                {item.fixed_commission !== null && (
-                                  <Zap className="h-4 w-4 text-amber-500" />
-                                )}
-                                <span>{formatCurrency(item.default_price)}</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </ScrollArea>
-
-                  {selectedItem && (
-                    <div className="space-y-3 rounded-lg border p-3 bg-muted/50">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{selectedItem.name}</span>
-                        {selectedItem.fixed_commission !== null && (
-                          <div className="flex items-center gap-1 text-amber-600 text-sm">
-                            <Zap className="h-4 w-4" />
-                            <span>{selectedItem.fixed_commission}% fixa</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="customPrice">Valor (R$)</Label>
-                        <Input
-                          id="customPrice"
-                          type="text"
-                          inputMode="decimal"
-                          value={customPrice}
-                          onChange={(e) => setCustomPrice(e.target.value)}
-                          className="text-lg font-bold"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                </ScrollArea>
               )}
             </TabsContent>
 
-            <TabsContent value="manual" className="flex-1 m-0">
-              <div className="space-y-4">
+            {/* Products Grid */}
+            <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
+              {loadingCatalog ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : filteredItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Package className="h-12 w-12 mb-4 opacity-50" />
+                  <p className="font-medium">
+                    {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+                  </p>
+                  <p className="text-sm mt-1">
+                    {searchQuery ? "Tente outro termo de busca" : "Cadastre produtos na aba Catálogo"}
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="flex-1 px-6 py-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {filteredItems.map((item) => (
+                      <CatalogCard
+                        key={item.id}
+                        item={item}
+                        isSelected={selectedItem?.id === item.id}
+                        onSelect={() => handleSelectItem(item)}
+                        formatCurrency={formatCurrency}
+                      />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </TabsContent>
+
+            {/* Manual Entry */}
+            <TabsContent value="manual" className="flex-1 m-0 px-6 py-4">
+              <div className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="manualValue">Valor (R$)</Label>
+                  <Label htmlFor="manualValue" className="text-sm font-medium">
+                    Valor (R$)
+                  </Label>
                   <Input
                     id="manualValue"
                     type="text"
@@ -423,53 +426,75 @@ export default function QuickSaleModal({
                     placeholder="0,00"
                     value={manualValue}
                     onChange={(e) => setManualValue(e.target.value)}
-                    className="text-xl font-bold text-center h-12"
+                    className="text-2xl font-bold text-center h-14"
                   />
                 </div>
 
                 <div className="space-y-3">
-                  <Label>Tipo de Venda</Label>
-                  <RadioGroup
-                    value={manualSaleType}
-                    onValueChange={(v) => setManualSaleType(v as ManualSaleType)}
-                    className="grid grid-cols-3 gap-2"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="basic" id="basic" />
-                      <Label htmlFor="basic" className="cursor-pointer text-sm">
-                        Serviço Básico
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="extra" id="extra" />
-                      <Label htmlFor="extra" className="cursor-pointer text-sm">
-                        Serviço Extra
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="product" id="product" />
-                      <Label htmlFor="product" className="cursor-pointer text-sm">
-                        Produto
-                      </Label>
-                    </div>
-                  </RadioGroup>
+                  <Label className="text-sm font-medium">Categoria</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: "basic", label: "Serviço Básico", icon: Scissors },
+                      { value: "extra", label: "Serviço Extra", icon: Zap },
+                      { value: "product", label: "Produto", icon: Package },
+                    ].map(({ value, label, icon: Icon }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setManualCategory(value as typeof manualCategory)}
+                        className={cn(
+                          "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
+                          manualCategory === value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:border-muted-foreground/50"
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span className="text-xs font-medium text-center">{label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </TabsContent>
 
-            <div className="space-y-4 mt-4 pt-4 border-t">
-              <div className="space-y-2">
-                <Label htmlFor="clients">Clientes Atendidos</Label>
-                <Input
-                  id="clients"
-                  type="number"
-                  min="1"
-                  value={clientsCount}
-                  onChange={(e) => setClientsCount(e.target.value)}
-                  className="w-24"
-                />
-              </div>
+            {/* Footer */}
+            <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
+              {/* Selected Item Summary */}
+              {selectedItem && activeTab !== "manual" && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-background border">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      {selectedItem.type === "service" ? (
+                        <Scissors className="h-5 w-5 text-primary" />
+                      ) : (
+                        <Package className="h-5 w-5 text-primary" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium">{selectedItem.name}</p>
+                      {selectedItem.fixed_commission !== null && (
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <Zap className="h-3 w-3" />
+                          {selectedItem.fixed_commission}% comissão fixa
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">R$</span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={customPrice}
+                      onChange={(e) => setCustomPrice(e.target.value)}
+                      className="w-24 text-right font-bold"
+                    />
+                  </div>
+                </div>
+              )}
 
+              {/* Action Buttons */}
               <div className="flex gap-3">
                 <Button
                   type="button"
@@ -483,16 +508,12 @@ export default function QuickSaleModal({
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={
-                    isLoading ||
-                    (saleMode === "catalog" && !selectedItem) ||
-                    (saleMode === "manual" && !manualValue)
-                  }
+                  disabled={isLoading || !canSubmit}
                 >
                   {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "Registrar"
+                    "Confirmar Venda"
                   )}
                 </Button>
               </div>
@@ -501,5 +522,65 @@ export default function QuickSaleModal({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Catalog Card Component
+interface CatalogCardProps {
+  item: CatalogItem;
+  isSelected: boolean;
+  onSelect: () => void;
+  formatCurrency: (value: number) => string;
+}
+
+function CatalogCard({ item, isSelected, onSelect, formatCurrency }: CatalogCardProps) {
+  return (
+    <Card
+      onClick={onSelect}
+      className={cn(
+        "relative cursor-pointer p-4 transition-all hover:shadow-md",
+        isSelected
+          ? "ring-2 ring-primary bg-primary/5 shadow-md"
+          : "hover:bg-muted/50"
+      )}
+    >
+      {/* Fixed Commission Badge */}
+      {item.fixed_commission !== null && (
+        <div className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+          <Zap className="h-3 w-3" />
+          {item.fixed_commission}%
+        </div>
+      )}
+      
+      <div className="space-y-2">
+        <p className="font-semibold text-sm leading-tight line-clamp-2">
+          {item.name}
+        </p>
+        <p className="text-lg font-bold text-primary">
+          {formatCurrency(item.default_price)}
+        </p>
+        {item.category && (
+          <span className={cn(
+            "inline-block text-xs px-2 py-0.5 rounded-full",
+            item.category === "basic" 
+              ? "bg-secondary text-secondary-foreground"
+              : "bg-primary/10 text-primary"
+          )}>
+            {item.category === "basic" ? "Básico" : "Extra"}
+          </span>
+        )}
+      </div>
+      
+      {/* Selection Indicator */}
+      {isSelected && (
+        <div className="absolute bottom-2 right-2">
+          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+            <svg className="h-3 w-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
