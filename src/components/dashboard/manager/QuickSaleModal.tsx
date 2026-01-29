@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,11 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Hash } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Hash, Check } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 
 interface QuickSaleModalProps {
   open: boolean;
@@ -35,6 +36,35 @@ interface CatalogItem {
 }
 
 type CategoryTab = "services" | "products" | "manual";
+
+/**
+ * Handle numeric input to fix "leading zero" bug
+ * When value is "0" and user types "5", result should be "5" not "05"
+ */
+function handleNumericInput(
+  currentValue: string,
+  newValue: string,
+  setter: (value: string) => void
+) {
+  // Allow empty string
+  if (newValue === "") {
+    setter("");
+    return;
+  }
+
+  // Remove non-numeric characters except comma and period
+  const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+  
+  // If current value is "0" or "0,00" and new value starts with a digit, replace it
+  if ((currentValue === "0" || currentValue === "0,00") && /^\d/.test(cleaned)) {
+    // Remove leading zeros from the new value
+    const withoutLeadingZeros = cleaned.replace(/^0+(?=\d)/, "");
+    setter(withoutLeadingZeros || cleaned);
+    return;
+  }
+
+  setter(cleaned);
+}
 
 export default function QuickSaleModal({
   open,
@@ -423,9 +453,9 @@ export default function QuickSaleModal({
                     id="manualValue"
                     type="text"
                     inputMode="decimal"
-                    placeholder="0,00"
+                    placeholder="Digite o valor..."
                     value={manualValue}
-                    onChange={(e) => setManualValue(e.target.value)}
+                    onChange={(e) => handleNumericInput(manualValue, e.target.value, setManualValue)}
                     className="text-2xl font-bold text-center h-14"
                   />
                 </div>
@@ -487,7 +517,7 @@ export default function QuickSaleModal({
                       type="text"
                       inputMode="decimal"
                       value={customPrice}
-                      onChange={(e) => setCustomPrice(e.target.value)}
+                      onChange={(e) => handleNumericInput(customPrice, e.target.value, setCustomPrice)}
                       className="w-24 text-right font-bold"
                     />
                   </div>
@@ -538,46 +568,45 @@ function CatalogCard({ item, isSelected, onSelect, formatCurrency }: CatalogCard
     <Card
       onClick={onSelect}
       className={cn(
-        "relative cursor-pointer p-4 transition-all hover:shadow-md",
+        "relative cursor-pointer p-4 transition-all duration-200 hover:shadow-lg active:scale-[0.98]",
         isSelected
-          ? "ring-2 ring-primary bg-primary/5 shadow-md"
-          : "hover:bg-muted/50"
+          ? "ring-2 ring-primary bg-primary/10 shadow-lg border-primary"
+          : "hover:bg-accent/50 hover:border-primary/30"
       )}
     >
       {/* Fixed Commission Badge */}
       {item.fixed_commission !== null && (
-        <div className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-          <Zap className="h-3 w-3" />
+        <Badge 
+          variant="secondary" 
+          className="absolute -top-2 -right-2 bg-amber-500 text-white border-0 shadow-md"
+        >
+          <Zap className="h-3 w-3 mr-0.5" />
           {item.fixed_commission}%
-        </div>
+        </Badge>
       )}
       
       <div className="space-y-2">
-        <p className="font-semibold text-sm leading-tight line-clamp-2">
+        <p className="font-bold text-sm leading-tight line-clamp-2 text-foreground">
           {item.name}
         </p>
-        <p className="text-lg font-bold text-primary">
+        <p className="text-xl font-black text-primary">
           {formatCurrency(item.default_price)}
         </p>
         {item.category && (
-          <span className={cn(
-            "inline-block text-xs px-2 py-0.5 rounded-full",
-            item.category === "basic" 
-              ? "bg-secondary text-secondary-foreground"
-              : "bg-primary/10 text-primary"
-          )}>
+          <Badge 
+            variant={item.category === "basic" ? "secondary" : "default"}
+            className="text-xs"
+          >
             {item.category === "basic" ? "Básico" : "Extra"}
-          </span>
+          </Badge>
         )}
       </div>
       
       {/* Selection Indicator */}
       {isSelected && (
         <div className="absolute bottom-2 right-2">
-          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-            <svg className="h-3 w-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
+          <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center shadow-md">
+            <Check className="h-4 w-4 text-primary-foreground" strokeWidth={3} />
           </div>
         </div>
       )}
