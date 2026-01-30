@@ -11,6 +11,7 @@ import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, C
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
+import BarberSaleForm from "./barber/BarberSaleForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 import CoachingNudgeCard from "./barber/CoachingNudgeCard";
@@ -877,11 +878,11 @@ const [todayProduction, setTodayProduction] = useState<{
               </CardContent>
             </Card>
 
-            {/* Formulário de Lançamento */}
-            <DailyProductionForm 
-              barberId={barber.id} 
+            {/* Formulário de Lançamento - PDV Visual */}
+            <BarberSaleForm 
+              barberId={barber.id}
+              organizationId={barber.organization_id}
               onSuccess={handleFormSuccess}
-              initialData={editingProduction}
             />
           </TabsContent>
 
