@@ -7,9 +7,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2 } from "lucide-react";
+import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
 import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 
 interface BarberSaleFormProps {
@@ -25,6 +29,10 @@ interface CatalogItem {
   fixed_commission: number | null;
   type: "service" | "product";
   category?: string; // 'basic' | 'extra' para serviços
+}
+
+interface CartItem extends CatalogItem {
+  customPrice: number;
 }
 
 // Correção do bug do zero à esquerda
@@ -48,8 +56,15 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"services" | "products" | "manual">("services");
-  const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
-  const [customPrice, setCustomPrice] = useState("0");
+  
+  // Carrinho multi-select
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [clientsCount, setClientsCount] = useState(1);
+  
+  // Date picker
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   
   // Campos do modo manual
   const [manualValue, setManualValue] = useState("0");
@@ -111,43 +126,60 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     });
   }, [catalogItems, searchQuery, activeTab]);
 
-  const handleSelectItem = (item: CatalogItem) => {
-    setSelectedItem(item);
-    setCustomPrice(item.default_price.toString());
+  // Toggle item no carrinho
+  const handleToggleCart = (item: CatalogItem) => {
+    setCart(prev => {
+      const exists = prev.find(i => i.id === item.id);
+      if (exists) {
+        return prev.filter(i => i.id !== item.id);
+      } else {
+        return [...prev, { ...item, customPrice: item.default_price }];
+      }
+    });
   };
 
-  const handleConfirmCatalogSale = async () => {
-    if (!selectedItem) {
-      toast.error("Selecione um item do catálogo");
-      return;
-    }
+  const isInCart = (itemId: string) => cart.some(i => i.id === itemId);
 
-    const price = parseFloat(customPrice.replace(",", ".")) || 0;
-    if (price <= 0) {
-      toast.error("Informe um valor válido");
+  // Atualizar preço no carrinho
+  const updateCartItemPrice = (itemId: string, newPrice: string) => {
+    const parsed = parseFloat(newPrice.replace(",", ".")) || 0;
+    setCart(prev => prev.map(item => 
+      item.id === itemId ? { ...item, customPrice: parsed } : item
+    ));
+  };
+
+  // Total do carrinho
+  const cartTotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.customPrice, 0);
+  }, [cart]);
+
+  // Confirmar checkout (batch insert)
+  const handleConfirmCheckout = async () => {
+    if (cart.length === 0) {
+      toast.error("Selecione pelo menos um item");
       return;
     }
 
     setLoading(true);
-    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
-      // 1. Garantir que existe um registro de daily_productions para hoje
+      // 1. Garantir que existe um registro de daily_productions para a data
       let dailyProductionId: string;
 
       const { data: existingProd } = await supabase
         .from("daily_productions")
         .select("id, clients_count")
         .eq("barber_id", barberId)
-        .eq("date", todayStr)
+        .eq("date", dateStr)
         .maybeSingle();
 
       if (existingProd) {
         dailyProductionId = existingProd.id;
-        // Incrementar clients_count
+        // Incrementar clients_count pelo valor do contador
         await supabase
           .from("daily_productions")
-          .update({ clients_count: (existingProd.clients_count || 0) + 1 })
+          .update({ clients_count: (existingProd.clients_count || 0) + clientsCount })
           .eq("id", existingProd.id);
       } else {
         // Criar novo registro
@@ -156,12 +188,12 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           .insert({
             barber_id: barberId,
             organization_id: organizationId,
-            date: todayStr,
+            date: dateStr,
             services_basic_total: 0,
             services_extra_total: 0,
             products_total: 0,
             services_total: 0,
-            clients_count: 1,
+            clients_count: clientsCount,
             services_count: 0,
             products_count: 0,
           })
@@ -172,30 +204,35 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
         dailyProductionId = newProd.id;
       }
 
-      // 2. Inserir transação de venda (trigger calcula comissão híbrida)
-      const { error: txError } = await supabase.from("sale_transactions").insert({
+      // 2. Batch insert de todas as transações
+      const transactions = cart.map(item => ({
         barber_id: barberId,
         organization_id: organizationId,
         daily_production_id: dailyProductionId,
-        item_type: selectedItem.type,
-        item_name: selectedItem.name,
-        price_sold: price,
-        service_category: selectedItem.type === "service" ? selectedItem.category : null,
-        catalog_service_id: selectedItem.type === "service" ? selectedItem.id : null,
-        catalog_product_id: selectedItem.type === "product" ? selectedItem.id : null,
+        item_type: item.type,
+        item_name: item.name,
+        price_sold: item.customPrice,
+        service_category: item.type === "service" ? item.category : null,
+        catalog_service_id: item.type === "service" ? item.id : null,
+        catalog_product_id: item.type === "product" ? item.id : null,
         commission_rate_used: 0, // Trigger vai calcular
         commission_amount: 0, // Trigger vai calcular
-      });
+      }));
+
+      const { error: txError } = await supabase
+        .from("sale_transactions")
+        .insert(transactions);
 
       if (txError) throw txError;
 
-      toast.success(`${selectedItem.name} registrado com sucesso!`, {
-        description: `R$ ${price.toFixed(2)}`,
+      toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'}!`, {
+        description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
 
-      // Limpar seleção
-      setSelectedItem(null);
-      setCustomPrice("0");
+      // Limpar carrinho e fechar modal
+      setCart([]);
+      setCheckoutOpen(false);
+      setClientsCount(1);
       onSuccess();
     } catch (error: any) {
       console.error("Erro ao registrar venda:", error);
@@ -213,7 +250,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     }
 
     setLoading(true);
-    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
       // Buscar produção existente
@@ -221,13 +258,13 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
         .from("daily_productions")
         .select("*")
         .eq("barber_id", barberId)
-        .eq("date", todayStr)
+        .eq("date", dateStr)
         .maybeSingle();
 
       const updates = {
         barber_id: barberId,
         organization_id: organizationId,
-        date: todayStr,
+        date: dateStr,
         services_basic_total: (existingProd?.services_basic_total || 0) + (manualCategory === "basic" ? value : 0),
         services_extra_total: (existingProd?.services_extra_total || 0) + (manualCategory === "extra" ? value : 0),
         products_total: (existingProd?.products_total || 0) + (manualCategory === "product" ? value : 0),
@@ -260,193 +297,347 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const servicesCount = catalogItems.filter((i) => i.type === "service").length;
   const productsCount = catalogItems.filter((i) => i.type === "product").length;
 
+  const isToday = format(selectedDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+
   return (
-    <Card className="bg-card border-border shadow-card-custom">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-primary" />
-          REGISTRAR VENDA
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Barra de Busca */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="🔍 Buscar serviço ou produto..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
+    <>
+      <Card className="bg-card border-border shadow-card-custom">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-primary" />
+            REGISTRAR VENDA
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Date Picker */}
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">Data:</Label>
+            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "flex-1 justify-start text-left font-normal",
+                    !isToday && "border-warning text-warning"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {isToday ? "Hoje" : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => {
+                    if (date) {
+                      setSelectedDate(date);
+                      setDatePickerOpen(false);
+                    }
+                  }}
+                  disabled={(date) => date > new Date()}
+                  locale={ptBR}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
 
-        {/* Abas */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="services" className="flex items-center gap-1.5">
-              <Scissors className="w-4 h-4" />
-              Serviços
-              {servicesCount > 0 && (
-                <Badge variant="secondary" className="ml-1 text-xs">
-                  {servicesCount}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="products" className="flex items-center gap-1.5">
-              <ShoppingBag className="w-4 h-4" />
-              Produtos
-              {productsCount > 0 && (
-                <Badge variant="secondary" className="ml-1 text-xs">
-                  {productsCount}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="manual" className="flex items-center gap-1.5">
-              <Hash className="w-4 h-4" />
-              Manual
-            </TabsTrigger>
-          </TabsList>
+          {/* Barra de Busca */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="🔍 Buscar serviço ou produto..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
 
-          {/* Conteúdo de Serviços e Produtos */}
-          <TabsContent value="services" className="mt-4">
-            {loadingCatalog ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {filteredItems.map((item) => (
-                  <CatalogCard
-                    key={item.id}
-                    item={item}
-                    isSelected={selectedItem?.id === item.id}
-                    onSelect={() => handleSelectItem(item)}
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
+          {/* Abas */}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="services" className="flex items-center gap-1.5">
+                <Scissors className="w-4 h-4" />
+                <span className="hidden sm:inline">Serviços</span>
+                {servicesCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {servicesCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="products" className="flex items-center gap-1.5">
+                <ShoppingBag className="w-4 h-4" />
+                <span className="hidden sm:inline">Produtos</span>
+                {productsCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {productsCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="flex items-center gap-1.5">
+                <Hash className="w-4 h-4" />
+                Manual
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="products" className="mt-4">
-            {loadingCatalog ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {filteredItems.map((item) => (
-                  <CatalogCard
-                    key={item.id}
-                    item={item}
-                    isSelected={selectedItem?.id === item.id}
-                    onSelect={() => handleSelectItem(item)}
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Modo Manual */}
-          <TabsContent value="manual" className="mt-4 space-y-4">
-            <div className="space-y-2">
-              <Label>Categoria</Label>
-              <Select value={manualCategory} onValueChange={(v) => setManualCategory(v as typeof manualCategory)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="basic">Serviço Básico</SelectItem>
-                  <SelectItem value="extra">Serviço Extra</SelectItem>
-                  <SelectItem value="product">Produto</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Valor (R$)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={manualValue}
-                onChange={(e) => handleNumericInput(manualValue, e.target.value, setManualValue)}
-                placeholder="0,00"
-                className="text-lg font-bold text-center"
-              />
-            </div>
-
-            <Button
-              className="w-full"
-              onClick={handleConfirmManualSale}
-              disabled={loading || parseFloat(manualValue.replace(",", ".")) <= 0}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Salvando...
-                </>
+            {/* Conteúdo de Serviços e Produtos */}
+            <TabsContent value="services" className="mt-4">
+              {loadingCatalog ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : filteredItems.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
+                </p>
               ) : (
-                "Confirmar Venda Manual"
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {filteredItems.map((item) => (
+                    <CatalogCard
+                      key={item.id}
+                      item={item}
+                      isSelected={isInCart(item.id)}
+                      onSelect={() => handleToggleCart(item)}
+                    />
+                  ))}
+                </div>
               )}
-            </Button>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
 
-        {/* Resumo e Confirmação (modo catálogo) */}
-        {activeTab !== "manual" && selectedItem && (
-          <div className="border-t border-border pt-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <TabsContent value="products" className="mt-4">
+              {loadingCatalog ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : filteredItems.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {filteredItems.map((item) => (
+                    <CatalogCard
+                      key={item.id}
+                      item={item}
+                      isSelected={isInCart(item.id)}
+                      onSelect={() => handleToggleCart(item)}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Modo Manual */}
+            <TabsContent value="manual" className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label>Categoria</Label>
+                <Select value={manualCategory} onValueChange={(v) => setManualCategory(v as typeof manualCategory)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="basic">Serviço Básico</SelectItem>
+                    <SelectItem value="extra">Serviço Extra</SelectItem>
+                    <SelectItem value="product">Produto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Valor (R$)</Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={manualValue}
+                  onChange={(e) => handleNumericInput(manualValue, e.target.value, setManualValue)}
+                  placeholder="0,00"
+                  className="text-lg font-bold text-center"
+                />
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={handleConfirmManualSale}
+                disabled={loading || parseFloat(manualValue.replace(",", ".")) <= 0}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  "Confirmar Venda Manual"
+                )}
+              </Button>
+            </TabsContent>
+          </Tabs>
+
+          {/* Espaço para o footer fixo não sobrepor conteúdo */}
+          {cart.length > 0 && activeTab !== "manual" && <div className="h-20" />}
+        </CardContent>
+      </Card>
+
+      {/* Footer Fixo do Carrinho (estilo iFood) */}
+      {cart.length > 0 && activeTab !== "manual" && (
+        <div className="fixed bottom-0 left-0 right-0 bg-primary text-primary-foreground p-4 shadow-lg border-t z-50">
+          <div className="max-w-lg mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <ShoppingCart className="w-6 h-6" />
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-background text-primary text-xs">
+                  {cart.length}
+                </Badge>
+              </div>
               <div>
-                <p className="text-sm text-muted-foreground">Item Selecionado:</p>
-                <p className="font-bold text-foreground">{selectedItem.name}</p>
+                <p className="text-sm opacity-90">
+                  {cart.length} {cart.length === 1 ? 'item' : 'itens'}
+                </p>
+                <p className="font-bold text-lg">
+                  R$ {cartTotal.toFixed(2).replace(".", ",")}
+                </p>
               </div>
-              {selectedItem.fixed_commission && (
-                <Badge className="bg-warning/20 text-warning border-warning/30">
-                  <Zap className="w-3 h-3 mr-1" />
-                  {selectedItem.fixed_commission}%
-                </Badge>
-              )}
             </div>
-
-            <div className="space-y-2">
-              <Label>Valor Final (R$)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={customPrice}
-                onChange={(e) => handleNumericInput(customPrice, e.target.value, setCustomPrice)}
-                className="text-lg font-bold text-center"
-              />
-            </div>
-
             <Button
-              className="w-full"
-              onClick={handleConfirmCatalogSale}
-              disabled={loading || parseFloat(customPrice.replace(",", ".")) <= 0}
+              variant="secondary"
+              size="lg"
+              onClick={() => setCheckoutOpen(true)}
+              className="font-bold"
             >
+              CONCLUIR VENDA
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Checkout */}
+      <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-primary" />
+              Resumo da Venda
+            </DialogTitle>
+            <DialogDescription>
+              Revise os itens e ajuste os valores se necessário
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Data da venda */}
+          <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-md">
+            <span className="text-sm text-muted-foreground">Data:</span>
+            <span className={cn("font-medium", !isToday && "text-warning")}>
+              {isToday ? "Hoje" : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+            </span>
+          </div>
+
+          {/* Lista de itens com edição de preço */}
+          <div className="space-y-3">
+            {cart.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 p-3 bg-secondary rounded-lg">
+                <div className="flex-1">
+                  <p className="font-medium text-sm">{item.name}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {item.type === "service" && item.category && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {item.category === "basic" ? "Básico" : "Extra"}
+                      </Badge>
+                    )}
+                    {item.fixed_commission && (
+                      <Badge className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+                        <Zap className="w-2 h-2 mr-0.5" />
+                        {item.fixed_commission}%
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="w-24">
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={item.customPrice.toString()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const cleaned = val.replace(/[^\d,.\-]/g, "");
+                      updateCartItemPrice(item.id, cleaned);
+                    }}
+                    className="text-right font-bold text-sm h-9"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
+                >
+                  ×
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* Contador de Clientes */}
+          <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-primary" />
+              <div>
+                <p className="font-medium text-sm">Clientes Atendidos</p>
+                <p className="text-xs text-muted-foreground">
+                  Conta como {clientsCount} {clientsCount === 1 ? 'atendimento' : 'atendimentos'} no ranking
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setClientsCount(prev => Math.max(1, prev - 1))}
+                disabled={clientsCount <= 1}
+              >
+                <Minus className="w-4 h-4" />
+              </Button>
+              <span className="w-8 text-center font-bold text-lg">{clientsCount}</span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setClientsCount(prev => prev + 1)}
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Total */}
+          <div className="flex items-center justify-between p-4 bg-primary/10 rounded-lg border border-primary/20">
+            <span className="font-medium">Total:</span>
+            <span className="text-2xl font-bold text-primary">
+              R$ {cartTotal.toFixed(2).replace(".", ",")}
+            </span>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCheckoutOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmCheckout} disabled={loading} className="gap-2">
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Salvando...
                 </>
               ) : (
                 <>
-                  <Check className="w-4 h-4 mr-2" />
+                  <Check className="w-4 h-4" />
                   Confirmar Venda
                 </>
               )}
             </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -490,17 +681,17 @@ function CatalogCard({ item, isSelected, onSelect }: CatalogCardProps) {
         </Badge>
       )}
 
-      {/* Nome */}
-      <p className="font-bold text-sm text-center mt-2 line-clamp-2">{item.name}</p>
+      {/* Nome do item */}
+      <span className="text-sm font-medium text-center mt-2 line-clamp-2">{item.name}</span>
 
       {/* Preço */}
-      <p className="text-primary font-bold text-lg mt-1">
+      <span className="text-lg font-bold text-primary mt-1">
         R$ {item.default_price.toFixed(2).replace(".", ",")}
-      </p>
+      </span>
 
       {/* Badge de comissão fixa */}
       {item.fixed_commission && (
-        <Badge className="mt-2 bg-warning/20 text-warning border-warning/30 text-[10px]">
+        <Badge className="mt-1 bg-warning/20 text-warning border-warning/30 text-[10px]">
           <Zap className="w-3 h-3 mr-0.5" />
           {item.fixed_commission}%
         </Badge>
