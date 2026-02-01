@@ -1,10 +1,10 @@
 import { User } from "@supabase/supabase-js";
 import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut, BarChart3, Users, Target, Trophy, Building2, TrendingUp, CalendarDays, Repeat, Radio, Bot, Package } from "lucide-react";
+import { LogOut } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
@@ -20,151 +20,114 @@ import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
 import AIUsageTracking from "./manager/AIUsageTracking";
 import CatalogManagement from "./manager/CatalogManagement";
+import ManagerNavigation from "./manager/ManagerNavigation";
+
 interface ManagerDashboardProps {
   user: User;
 }
-export default function ManagerDashboard({
-  user
-}: ManagerDashboardProps) {
+
+export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("live");
-  const {
-    hasSubscriptionModule
-  } = useSubscriptionModule();
+  const { hasSubscriptionModule } = useSubscriptionModule();
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
   };
-  return <div className="min-h-screen bg-background">
+
+  return (
+    <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
-              <div>
-                <h1 className="text-xl font-bold text-foreground">
+              <img
+                src={logo}
+                alt="Performance Barber"
+                className="h-12 md:h-16 w-auto"
+              />
+              <div className="hidden sm:block">
+                <h1 className="text-lg md:text-xl font-bold text-foreground">
                   Painel do Gestor
                 </h1>
-                <p className="text-sm text-muted-foreground">Bem-vindo, {user.email}</p>
+                <p className="text-xs md:text-sm text-muted-foreground">
+                  {user.email}
+                </p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
-            </Button>
+
+            <div className="flex items-center gap-2">
+              <ManagerNavigation
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                hasSubscriptionModule={hasSubscriptionModule}
+              />
+              <Button variant="outline" size="sm" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Sair</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className={`grid w-full ${hasSubscriptionModule ? 'grid-cols-12' : 'grid-cols-10'} lg:w-auto lg:inline-grid`}>
-            <TabsTrigger value="live" className="gap-2">
-              <Radio className="w-4 h-4 text-destructive" />
-              <span className="hidden sm:inline bg-secondary">Ao Vivo</span>
-            </TabsTrigger>
-            <TabsTrigger value="overview" className="gap-2">
-              <BarChart3 className="w-4 h-4 bg-secondary" />
-              <span className="hidden sm:inline bg-secondary">Dashboard
-            </span>
-            </TabsTrigger>
-            <TabsTrigger value="daily-goals" className="gap-2">
-              <CalendarDays className="w-4 h-4" />
-              <span className="hidden sm:inline">Dia a Dia
-            </span>
-            </TabsTrigger>
-            <TabsTrigger value="units" className="gap-2">
-              <Building2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Unidades</span>
-            </TabsTrigger>
-            <TabsTrigger value="barbers" className="gap-2">
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Barbeiros</span>
-            </TabsTrigger>
-            <TabsTrigger value="catalog" className="gap-2">
-              <Package className="w-4 h-4" />
-              <span className="hidden sm:inline">Comissões
-            </span>
-            </TabsTrigger>
-            <TabsTrigger value="goals" className="gap-2">
-              <Target className="w-4 h-4" />
-              <span className="hidden sm:inline">Metas</span>
-            </TabsTrigger>
-            <TabsTrigger value="evolution" className="gap-2">
-              <TrendingUp className="w-4 h-4" />
-              <span className="hidden sm:inline">Evolução</span>
-            </TabsTrigger>
-            <TabsTrigger value="leaderboard" className="gap-2">
-              <Trophy className="w-4 h-4" />
-              <span className="hidden sm:inline">Rankings</span>
-            </TabsTrigger>
-            <TabsTrigger value="ai-usage" className="gap-2">
-              <Bot className="w-4 h-4" />
-              <span className="hidden sm:inline">Uso IA</span>
-            </TabsTrigger>
-            {hasSubscriptionModule && <>
-                <TabsTrigger value="subscription" className="gap-2">
-                  <Repeat className="w-4 h-4" />
-                  <span className="hidden sm:inline">Assinaturas</span>
-                </TabsTrigger>
-                <TabsTrigger value="comparison" className="gap-2">
-                  <BarChart3 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Money</span>
-                </TabsTrigger>
-              </>}
-          </TabsList>
-
-          <TabsContent value="live" className="space-y-6">
+          <TabsContent value="live" className="space-y-6 mt-0">
             <LiveDashboard />
           </TabsContent>
 
-          <TabsContent value="overview" className="space-y-6">
+          <TabsContent value="overview" className="space-y-6 mt-0">
             <PerformanceAlerts />
             <ManagerReports />
           </TabsContent>
 
-          <TabsContent value="daily-goals">
+          <TabsContent value="daily-goals" className="mt-0">
             <DailyGoalsTracking />
           </TabsContent>
 
-          <TabsContent value="units">
+          <TabsContent value="units" className="mt-0">
             <UnitsManagement />
           </TabsContent>
 
-          <TabsContent value="barbers">
+          <TabsContent value="barbers" className="mt-0">
             <BarbersManagement />
           </TabsContent>
 
-          <TabsContent value="catalog">
+          <TabsContent value="catalog" className="mt-0">
             <CatalogManagement />
           </TabsContent>
 
-          <TabsContent value="goals">
+          <TabsContent value="goals" className="mt-0">
             <GoalsManagement />
           </TabsContent>
 
-          <TabsContent value="evolution">
+          <TabsContent value="evolution" className="mt-0">
             <BarberEvolution />
           </TabsContent>
 
-          <TabsContent value="leaderboard">
+          <TabsContent value="leaderboard" className="mt-0">
             <Leaderboard />
           </TabsContent>
 
-          <TabsContent value="ai-usage">
+          <TabsContent value="ai-usage" className="mt-0">
             <AIUsageTracking />
           </TabsContent>
 
-          {hasSubscriptionModule && <>
-              <TabsContent value="subscription">
+          {hasSubscriptionModule && (
+            <>
+              <TabsContent value="subscription" className="mt-0">
                 <SubscriptionEarningsForm />
               </TabsContent>
 
-              <TabsContent value="comparison">
+              <TabsContent value="comparison" className="mt-0">
                 <EarningsComparison />
               </TabsContent>
-            </>}
+            </>
+          )}
         </Tabs>
       </div>
-    </div>;
+    </div>
+  );
 }
