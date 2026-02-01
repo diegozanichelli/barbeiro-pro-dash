@@ -551,17 +551,18 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                     )}
                   </div>
                 </div>
-                <div className="w-24">
+                <div className="relative w-28">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">R$</span>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    value={item.customPrice.toString()}
+                    value={item.customPrice.toFixed(2).replace(".", ",")}
                     onChange={(e) => {
                       const val = e.target.value;
                       const cleaned = val.replace(/[^\d,.\-]/g, "");
                       updateCartItemPrice(item.id, cleaned);
                     }}
-                    className="text-right font-bold text-sm h-9"
+                    className="pl-9 text-right font-bold text-sm h-9 bg-background border-primary/30 focus:border-primary"
                   />
                 </div>
                 <Button
