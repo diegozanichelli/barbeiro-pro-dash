@@ -39,35 +39,39 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex flex-row items-center justify-between gap-4">
+            {/* Left: Logo + Title */}
+            <div className="flex items-center gap-3 shrink-0">
               <img
                 src={logo}
                 alt="Performance Barber"
-                className="h-12 md:h-16 w-auto"
+                className="h-10 md:h-12 w-auto"
               />
-              <div className="hidden sm:block">
-                <h1 className="text-lg md:text-xl font-bold text-foreground">
+              <div className="hidden lg:block">
+                <h1 className="text-base font-bold text-foreground leading-tight">
                   Painel do Gestor
                 </h1>
-                <p className="text-xs md:text-sm text-muted-foreground">
+                <p className="text-xs text-muted-foreground truncate max-w-[180px]">
                   {user.email}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Center/Right: Navigation */}
+            <div className="flex-1 flex justify-end">
               <ManagerNavigation
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 hasSubscriptionModule={hasSubscriptionModule}
               />
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
-                <LogOut className="w-4 h-4 md:mr-2" />
-                <span className="hidden md:inline">Sair</span>
-              </Button>
             </div>
+
+            {/* Far Right: Sign Out */}
+            <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0">
+              <LogOut className="w-4 h-4 md:mr-2" />
+              <span className="hidden md:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
