@@ -39,6 +39,106 @@ interface DayStats {
   comissaoTotal: number;
 }
 
+interface HistoricalStats {
+  topService: { name: string; count: number } | null;
+  forgottenServices: string[];
+  avgTicket30d: number;
+  totalClients30d: number;
+  totalRevenue30d: number;
+  daysWorked: number;
+  avgDailyCommission: number;
+}
+
+async function fetchHistoricalStats(barberId: string, organizationId: string, supabase: any): Promise<HistoricalStats> {
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const startDate = thirtyDaysAgo.toISOString().split('T')[0];
+  const endDate = today.toISOString().split('T')[0];
+
+  // Buscar transações dos últimos 30 dias
+  const { data: transactions } = await supabase
+    .from("sale_transactions")
+    .select("item_type, item_name, price_sold, commission_amount, service_category")
+    .eq("barber_id", barberId)
+    .gte("created_at", `${startDate}T00:00:00`)
+    .lte("created_at", `${endDate}T23:59:59`);
+
+  // Buscar produções dos últimos 30 dias
+  const { data: productions } = await supabase
+    .from("daily_productions")
+    .select("clients_count, commission_earned, date")
+    .eq("barber_id", barberId)
+    .gte("date", startDate)
+    .lte("date", endDate);
+
+  // Buscar catálogo de serviços ativos
+  const { data: catalogServices } = await supabase
+    .from("catalog_services")
+    .select("name")
+    .eq("organization_id", organizationId)
+    .eq("is_active", true);
+
+  // Contagem de serviços vendidos
+  const serviceCount: Record<string, number> = {};
+  let totalRevenue30d = 0;
+
+  if (transactions) {
+    for (const tx of transactions) {
+      if (tx.item_type === 'service') {
+        serviceCount[tx.item_name] = (serviceCount[tx.item_name] || 0) + 1;
+      }
+      totalRevenue30d += tx.price_sold || 0;
+    }
+  }
+
+  // Top serviço vendido
+  let topService: { name: string; count: number } | null = null;
+  for (const [name, count] of Object.entries(serviceCount)) {
+    if (!topService || count > topService.count) {
+      topService = { name, count };
+    }
+  }
+
+  // Serviços esquecidos (no catálogo mas nunca vendidos nos últimos 30 dias)
+  const forgottenServices: string[] = [];
+  if (catalogServices) {
+    for (const service of catalogServices) {
+      if (!serviceCount[service.name]) {
+        forgottenServices.push(service.name);
+      }
+    }
+  }
+
+  // Estatísticas de produção
+  let totalClients30d = 0;
+  let totalCommission30d = 0;
+  let daysWorked = 0;
+
+  if (productions) {
+    for (const prod of productions) {
+      if (prod.clients_count > 0 || prod.commission_earned > 0) {
+        daysWorked++;
+        totalClients30d += prod.clients_count || 0;
+        totalCommission30d += prod.commission_earned || 0;
+      }
+    }
+  }
+
+  const avgTicket30d = totalClients30d > 0 ? totalRevenue30d / totalClients30d : 0;
+  const avgDailyCommission = daysWorked > 0 ? totalCommission30d / daysWorked : 0;
+
+  return {
+    topService,
+    forgottenServices,
+    avgTicket30d,
+    totalClients30d,
+    totalRevenue30d,
+    daysWorked,
+    avgDailyCommission,
+  };
+}
+
 async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats> {
   const today = new Date().toISOString().split('T')[0];
   
@@ -111,7 +211,7 @@ function buildDayStatsContext(stats: DayStats): string {
 - Serviços vendidos hoje: ${servicosList}
 - Produtos vendidos hoje: ${produtosList}
 
-## 🎯 ANÁLISE INTELIGENTE (Aplique estas regras):
+## 🎯 ANÁLISE INTELIGENTE DO DIA (Aplique estas regras):
 ${stats.clientesAtendidos > 0 && Object.keys(stats.produtosVendidos).length === 0 
   ? "⚠️ ALERTA: O barbeiro NÃO vendeu nenhum produto hoje. Sugira finalizar o próximo corte com um produto e colocar na mão do cliente." 
   : ""}
@@ -121,6 +221,59 @@ ${stats.clientesAtendidos >= 3 && stats.mixProdutos < 10
 ${Object.values(stats.servicosVendidos).reduce((a, b) => a + b, 0) > 3 && !stats.servicosVendidos['Barba'] && !stats.servicosVendidos['Barba SPA'] && !stats.servicosVendidos['Barbaterapia']
   ? "⚠️ ALERTA: Vários cortes mas ZERO barbas. O próximo cliente precisa sair com a barba feita ou pelo menos sobrancelha!" 
   : ""}
+`;
+}
+
+function buildHistoricalContext(stats: HistoricalStats, dayStats: DayStats): string {
+  const forgottenList = stats.forgottenServices.length > 0 
+    ? stats.forgottenServices.slice(0, 5).join(', ')
+    : 'Nenhum (parabéns, vendeu de tudo!)';
+  
+  const ticketComparison = dayStats.ticketMedio > 0 && stats.avgTicket30d > 0
+    ? ((dayStats.ticketMedio / stats.avgTicket30d) * 100 - 100).toFixed(0)
+    : "0";
+  
+  const ticketStatus = Number(ticketComparison) >= 0 
+    ? `✅ Hoje está ${ticketComparison}% ACIMA da média histórica` 
+    : `⚠️ Hoje está ${Math.abs(Number(ticketComparison))}% ABAIXO da média histórica`;
+
+  return `
+## 📈 HISTÓRICO DOS ÚLTIMOS 30 DIAS (Use para personalização profunda):
+
+### Performance Geral:
+- Dias trabalhados: ${stats.daysWorked}
+- Total de clientes: ${stats.totalClients30d}
+- Faturamento total: R$ ${stats.totalRevenue30d.toFixed(2)}
+- Ticket Médio (30d): R$ ${stats.avgTicket30d.toFixed(2)}
+- Comissão média diária: R$ ${stats.avgDailyCommission.toFixed(2)}
+
+### Análise Comparativa de Hoje vs Histórico:
+- Ticket Médio Hoje: R$ ${dayStats.ticketMedio.toFixed(2)}
+- ${ticketStatus}
+
+### Especialidade do Barbeiro:
+${stats.topService 
+  ? `🏆 TOP SERVIÇO (30d): "${stats.topService.name}" - vendeu ${stats.topService.count}x`
+  : '❓ Sem dados suficientes de vendas ainda'}
+
+### Serviços Esquecidos (ZERO vendas em 30 dias):
+🚨 ${forgottenList}
+
+---
+
+## 🧠 INSTRUÇÕES PARA O MENTOR (Use o histórico para ser incisivo):
+
+1. **SE tiver "Serviço Esquecido"**: Pergunte o motivo e DESAFIE a quebrar o jejum.
+   - Exemplo: "Faz 30 dias que você não vende ${stats.forgottenServices[0] || 'Alinhamento'}. O que aconteceu? Hoje é dia de quebrar esse jejum!"
+
+2. **SE ticket de hoje estiver ABAIXO da média histórica**: Cobre consistência.
+   - Exemplo: "Você costuma fazer R$ ${stats.avgTicket30d.toFixed(2)} de média, hoje está em R$ ${dayStats.ticketMedio.toFixed(2)}. O que houve? Precisamos de um upsell no próximo cliente."
+
+3. **ELOGIE a especialidade**: Use o Top Serviço como âncora.
+   - Exemplo: "Eu sei que você é o rei do ${stats.topService?.name || 'Corte'}, mas precisamos equilibrar o mix. Foco em ${stats.forgottenServices[0] || 'serviços extras'} hoje."
+
+4. **SE estiver performando ACIMA da média**: Celebre e desafie a manter.
+   - Exemplo: "Você está ON FIRE! Acima da sua média histórica. Vamos manter esse ritmo até o fechamento!"
 `;
 }
 
@@ -295,6 +448,10 @@ serve(async (req) => {
     const dayStats = await fetchDayStats(body.barberId, supabase);
     const dayStatsContext = buildDayStatsContext(dayStats);
 
+    // Buscar estatísticas históricas dos últimos 30 dias
+    const historicalStats = await fetchHistoricalStats(body.barberId, body.organizationId, supabase);
+    const historicalContext = buildHistoricalContext(historicalStats, dayStats);
+
     if (body.type === 'daily_insight') {
       const { barberId, organizationId, barberName, monthlyGoal, soldToday, soldThisMonth, daysRemaining, dailyTarget } = body;
       
@@ -306,6 +463,8 @@ serve(async (req) => {
       
       userPrompt = `${dayStatsContext}
 
+${historicalContext}
+
 Analise os números do barbeiro ${barberName}:
 - Meta do mês: R$ ${monthlyGoal.toFixed(2)}
 - Vendido hoje: R$ ${soldToday.toFixed(2)}
@@ -315,8 +474,12 @@ Analise os números do barbeiro ${barberName}:
 - Meta diária recomendada: R$ ${dailyTarget.toFixed(2)}
 
 Gere uma mensagem motivacional curta e estratégica usando as técnicas de PNL. 
-IMPORTANTE: Use os DADOS REAIS DO DIA acima para personalizar a dica. Se houver alertas (⚠️), incorpore-os na resposta.
-Se precisar recuperar vendas, sugira usar o Arsenal com os Gatilhos Mentais apropriados.`;
+IMPORTANTE: 
+- Use os DADOS REAIS DO DIA E O HISTÓRICO DE 30 DIAS para personalizar a dica
+- Se houver alertas (⚠️), incorpore-os na resposta
+- Siga as INSTRUÇÕES PARA O MENTOR baseadas no histórico
+- Se precisar recuperar vendas, sugira usar o Arsenal com os Gatilhos Mentais apropriados
+- Demonstre que você CONHECE a carreira do barbeiro, não apenas o dia de hoje`;
 
     } else if (body.type === 'sales_help') {
       const { barberId, organizationId, scenario } = body;
@@ -335,11 +498,14 @@ Se precisar recuperar vendas, sugira usar o Arsenal com os Gatilhos Mentais apro
 
       userPrompt = `${dayStatsContext}
 
+${historicalContext}
+
 ${scenarioPrompts[scenario] || `Cenário: ${scenario}. Gere um script de vendas persuasivo usando as técnicas de PNL e Gatilhos Mentais apropriados para esta situação.`}
 
 IMPORTANTE: 
-- Use os DADOS REAIS DO DIA para personalizar a resposta
+- Use os DADOS REAIS DO DIA E O HISTÓRICO para personalizar a resposta
 - Se houver alertas (⚠️), priorize resolver esses gaps
+- Se o barbeiro tem "Serviços Esquecidos", considere sugerir um deles se for apropriado ao cenário
 - Verifique o CONHECIMENTO TÉCNICO para não sugerir serviços redundantes ou conflitantes
 - Máximo de 3 frases que o barbeiro pode falar diretamente ao cliente`;
 
@@ -359,7 +525,7 @@ IMPORTANTE:
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        max_tokens: 250,
+        max_tokens: 350,
         temperature: 0.7,
       }),
     });
