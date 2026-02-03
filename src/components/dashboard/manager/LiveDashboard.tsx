@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -352,6 +352,23 @@ export default function LiveDashboard() {
     ? barbers
     : barbers.filter((b) => b.unit_id === selectedUnit);
 
+  // Ordenar barbeiros: quem está mais longe da meta aparece primeiro (prioridade para o gestor)
+  const sortedBarbers = useMemo(() => {
+    return [...filteredBarbers].sort((a, b) => {
+      const revenueA = getBarberRevenue(a.id);
+      const revenueB = getBarberRevenue(b.id);
+      const targetA = getBarberDailyTarget(a);
+      const targetB = getBarberDailyTarget(b);
+      
+      // Calcular percentual atingido (0-100+)
+      const percentA = targetA > 0 ? (revenueA / targetA) * 100 : 100;
+      const percentB = targetB > 0 ? (revenueB / targetB) * 100 : 100;
+      
+      // Ordenar por menor percentual primeiro (quem mais precisa de atenção)
+      return percentA - percentB;
+    });
+  }, [filteredBarbers, productions, goals, monthProductions]);
+
   const rankingData = filteredBarbers.map((b) => ({
     id: b.id,
     name: b.name,
@@ -428,9 +445,9 @@ export default function LiveDashboard() {
         </Card>
       )}
 
-      {/* Barber Cards */}
+      {/* Barber Cards - Ordenados por quem mais precisa de atenção */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredBarbers.map((barber) => {
+        {sortedBarbers.map((barber) => {
           const revenue = getBarberRevenue(barber.id);
           const target = getBarberDailyTarget(barber);
           const percentage = target > 0 ? Math.min((revenue / target) * 100, 100) : 0;
