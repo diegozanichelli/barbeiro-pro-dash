@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trophy, TrendingUp, DollarSign, Users, Pencil, Eye, EyeOff } from "lucide-react";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subDays, subHours, startOfDay, endOfDay } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subDays, subHours } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Switch } from "@/components/ui/switch";
+import ChampionshipLeaderboard from "./ChampionshipLeaderboard";
+import { useChampionshipPoints, ChampionshipBarber } from "@/hooks/useChampionshipPoints";
 
 interface RankingItem {
   barber_id: string;
@@ -25,22 +27,43 @@ interface RankingConfig {
   is_active: boolean;
 }
 
+interface RawBarberData {
+  barber_id: string;
+  barber_name: string;
+  unit_name: string;
+  services_total: number;
+  services_extra_total: number;
+  products_total: number;
+  clients_count: number;
+  products_count: number;
+  extras_count: number;
+  subscriptions_count: number;
+}
+
 interface LeaderboardProps {
   viewerRole?: "barber" | "manager";
 }
 
 export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps) {
   const { toast } = useToast();
-  const { organization } = useOrganization();
+  const { organization, organizationId } = useOrganization();
   const [period, setPeriod] = useState("current_month");
   const [unitFilter, setUnitFilter] = useState("all");
   const [units, setUnits] = useState<any[]>([]);
+  
+  // View mode: "financial" or "championship"
+  const [viewMode, setViewMode] = useState<"financial" | "championship">("financial");
+  const [championshipName, setChampionshipName] = useState("Campeonato Anual");
   
   const [performanceRanking, setPerformanceRanking] = useState<RankingItem[]>([]);
   const [servicesExtraRanking, setServicesExtraRanking] = useState<RankingItem[]>([]);
   const [productsRanking, setProductsRanking] = useState<RankingItem[]>([]);
   const [ticketRanking, setTicketRanking] = useState<RankingItem[]>([]);
   const [commissionRanking, setCommissionRanking] = useState<RankingItem[]>([]);
+
+  // Championship data
+  const [rawBarberData, setRawBarberData] = useState<RawBarberData[]>([]);
+  const championshipData = useChampionshipPoints(rawBarberData);
 
   const [customNames, setCustomNames] = useState<Record<string, string>>({});
   const [rankingConfigs, setRankingConfigs] = useState<Record<string, RankingConfig>>({});
@@ -55,6 +78,7 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
   useEffect(() => {
     if (organization?.id) {
       fetchCustomNames();
+      fetchChampionshipName();
     }
   }, [organization?.id]);
 
@@ -65,6 +89,18 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
   const fetchUnits = async () => {
     const { data } = await supabase.from("units").select("*").eq("status", "active");
     if (data) setUnits(data);
+  };
+
+  const fetchChampionshipName = async () => {
+    if (!organizationId) return;
+    const { data } = await supabase
+      .from("organizations")
+      .select("championship_name")
+      .eq("id", organizationId)
+      .single();
+    if (data?.championship_name) {
+      setChampionshipName(data.championship_name);
+    }
   };
 
   const fetchCustomNames = async () => {
@@ -293,16 +329,57 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
     if (!rankings) return;
 
-    const statsArray = rankings.map((r: any) => ({
-      barber_id: r.barber_id,
-      barber_name: r.barber_name,
-      unit_name: r.unit_name,
-      services_total: Number(r.services_total) || 0,
-      services_extra_total: Number(r.services_extra_total) || 0,
-      products_total: Number(r.products_total) || 0,
-      clients_count: Number(r.clients_count) || 0,
-      commission_earned: Number(r.commission_earned) || 0,
-    }));
+    // First, get barber IDs to fetch additional transaction data
+    const barberIds = rankings.map((r: any) => r.barber_id);
+
+    // Fetch transaction counts for championship mode
+    const { data: transactionCounts } = await supabase
+      .from("sale_transactions")
+      .select("barber_id, item_type, service_category, item_name")
+      .in("barber_id", barberIds)
+      .gte("created_at", start)
+      .lte("created_at", end + "T23:59:59");
+
+    // Aggregate transaction counts by barber
+    const barberTransactionStats: Record<string, { products_count: number; extras_count: number; subscriptions_count: number }> = {};
+    
+    if (transactionCounts) {
+      transactionCounts.forEach((t) => {
+        if (!barberTransactionStats[t.barber_id]) {
+          barberTransactionStats[t.barber_id] = { products_count: 0, extras_count: 0, subscriptions_count: 0 };
+        }
+        if (t.item_type === "product") {
+          barberTransactionStats[t.barber_id].products_count++;
+        }
+        if (t.item_type === "service" && t.service_category === "extra") {
+          barberTransactionStats[t.barber_id].extras_count++;
+        }
+        // Check for subscriptions (item_name contains 'Assinatura' or 'Plano')
+        if (t.item_name && (t.item_name.toLowerCase().includes("assinatura") || t.item_name.toLowerCase().includes("plano"))) {
+          barberTransactionStats[t.barber_id].subscriptions_count++;
+        }
+      });
+    }
+
+    const statsArray = rankings.map((r: any) => {
+      const txStats = barberTransactionStats[r.barber_id] || { products_count: 0, extras_count: 0, subscriptions_count: 0 };
+      return {
+        barber_id: r.barber_id,
+        barber_name: r.barber_name,
+        unit_name: r.unit_name,
+        services_total: Number(r.services_total) || 0,
+        services_extra_total: Number(r.services_extra_total) || 0,
+        products_total: Number(r.products_total) || 0,
+        clients_count: Number(r.clients_count) || 0,
+        commission_earned: Number(r.commission_earned) || 0,
+        products_count: txStats.products_count,
+        extras_count: txStats.extras_count,
+        subscriptions_count: txStats.subscriptions_count,
+      };
+    });
+
+    // Store raw data for championship mode
+    setRawBarberData(statsArray);
 
     // Ranking de Performance (Serviços Extras + Produtos por Cliente)
     const performance = statsArray
@@ -492,81 +569,120 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
         </Card>
       )}
 
-      <div className="flex flex-col md:flex-row gap-4">
-        <Select value={unitFilter} onValueChange={setUnitFilter}>
-          <SelectTrigger className="w-full md:w-[200px]">
-            <SelectValue placeholder="Filtrar por unidade" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as Unidades</SelectItem>
-            {units.map((unit) => (
-              <SelectItem key={unit.id} value={unit.id}>
-                {unit.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* View Mode Toggle */}
+      <Card className="bg-card border-border shadow-card-custom">
+        <CardContent className="py-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-muted-foreground">Visualizar por:</span>
+              <div className="flex items-center gap-2 p-1 bg-secondary rounded-lg">
+                <Button
+                  variant={viewMode === "financial" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("financial")}
+                  className="h-8"
+                >
+                  <DollarSign className="w-4 h-4 mr-1" />
+                  Financeiro
+                </Button>
+                <Button
+                  variant={viewMode === "championship" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("championship")}
+                  className="h-8"
+                >
+                  <Trophy className="w-4 h-4 mr-1" />
+                  🏆 {championshipName}
+                </Button>
+              </div>
+            </div>
 
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-full md:w-[200px]">
-            <SelectValue placeholder="Período" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="current_month">Este Mês</SelectItem>
-            <SelectItem value="last_month">Mês Passado</SelectItem>
-            <SelectItem value="last_7_days">Últimos 7 Dias</SelectItem>
-            <SelectItem value="last_24_hours">Últimas 24 Horas</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Select value={unitFilter} onValueChange={setUnitFilter}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Filtrar por unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Unidades</SelectItem>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {isRankingActive("performance") && (
-          <RankingCard
-            title="MESTRE DA PERFORMANCE"
-            rankingKey="performance"
-            icon={<TrendingUp className="w-5 h-5 text-success" />}
-            data={performanceRanking}
-            description="Ranking baseado na média de serviços extras e produtos vendidos por cliente atendido"
-          />
-        )}
-        {isRankingActive("services_extra") && (
-          <RankingCard
-            title="REI DOS SERVIÇOS EXTRAS"
-            rankingKey="services_extra"
-            icon={<TrendingUp className="w-5 h-5 text-warning" />}
-            data={servicesExtraRanking}
-            description="Ranking baseado no total de serviços extras (adicionais) vendidos no período"
-          />
-        )}
-        {isRankingActive("products") && (
-          <RankingCard
-            title="REI DOS PRODUTOS"
-            rankingKey="products"
-            icon={<DollarSign className="w-5 h-5 text-primary" />}
-            data={productsRanking}
-            description="Ranking baseado no total de produtos vendidos no período"
-          />
-        )}
-        {isRankingActive("ticket") && (
-          <RankingCard
-            title="MESTRE DO TICKET MÉDIO"
-            rankingKey="ticket"
-            icon={<Users className="w-5 h-5 text-accent" />}
-            data={ticketRanking}
-            description="Ranking baseado no valor médio gasto por cliente (serviços + produtos ÷ quantidade de clientes)"
-          />
-        )}
-        {isRankingActive("commission") && (
-          <RankingCard
-            title="MÃO DE OURO"
-            rankingKey="commission"
-            icon={<Trophy className="w-5 h-5 text-primary" />}
-            data={commissionRanking}
-            description="Ranking baseado no total de comissão ganha no período"
-          />
-        )}
-      </div>
+              <Select value={period} onValueChange={setPeriod}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current_month">Este Mês</SelectItem>
+                  <SelectItem value="last_month">Mês Passado</SelectItem>
+                  <SelectItem value="last_7_days">Últimos 7 Dias</SelectItem>
+                  <SelectItem value="last_24_hours">Últimas 24 Horas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Championship View */}
+      {viewMode === "championship" && (
+        <ChampionshipLeaderboard data={championshipData} championshipName={championshipName} />
+      )}
+
+      {/* Financial View */}
+      {viewMode === "financial" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {isRankingActive("performance") && (
+            <RankingCard
+              title="MESTRE DA PERFORMANCE"
+              rankingKey="performance"
+              icon={<TrendingUp className="w-5 h-5 text-success" />}
+              data={performanceRanking}
+              description="Ranking baseado na média de serviços extras e produtos vendidos por cliente atendido"
+            />
+          )}
+          {isRankingActive("services_extra") && (
+            <RankingCard
+              title="REI DOS SERVIÇOS EXTRAS"
+              rankingKey="services_extra"
+              icon={<TrendingUp className="w-5 h-5 text-warning" />}
+              data={servicesExtraRanking}
+              description="Ranking baseado no total de serviços extras (adicionais) vendidos no período"
+            />
+          )}
+          {isRankingActive("products") && (
+            <RankingCard
+              title="REI DOS PRODUTOS"
+              rankingKey="products"
+              icon={<DollarSign className="w-5 h-5 text-primary" />}
+              data={productsRanking}
+              description="Ranking baseado no total de produtos vendidos no período"
+            />
+          )}
+          {isRankingActive("ticket") && (
+            <RankingCard
+              title="MESTRE DO TICKET MÉDIO"
+              rankingKey="ticket"
+              icon={<Users className="w-5 h-5 text-accent" />}
+              data={ticketRanking}
+              description="Ranking baseado no valor médio gasto por cliente (serviços + produtos ÷ quantidade de clientes)"
+            />
+          )}
+          {isRankingActive("commission") && (
+            <RankingCard
+              title="MÃO DE OURO"
+              rankingKey="commission"
+              icon={<Trophy className="w-5 h-5 text-primary" />}
+              data={commissionRanking}
+              description="Ranking baseado no total de comissão ganha no período"
+            />
+          )}
+        </div>
+      )}
 
       {viewerRole === "manager" && (
         <Dialog open={!!editingRanking} onOpenChange={(open) => !open && setEditingRanking(null)}>

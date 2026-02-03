@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Building2, Plus, Pencil, Trash2 } from "lucide-react";
+import ChampionshipSettings from "./ChampionshipSettings";
 
 export default function UnitsManagement() {
   const [units, setUnits] = useState<any[]>([]);
@@ -118,7 +119,10 @@ export default function UnitsManagement() {
   };
 
   return (
-    <Card className="bg-card border-border shadow-card-custom">
+    <div className="space-y-6">
+      <ChampionshipSettings />
+      
+      <Card className="bg-card border-border shadow-card-custom">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -218,5 +222,6 @@ export default function UnitsManagement() {
         </Table>
       </CardContent>
     </Card>
+    </div>
   );
 }
