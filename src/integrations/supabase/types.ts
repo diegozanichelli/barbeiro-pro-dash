@@ -714,6 +714,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      auto_replicate_goals: { Args: never; Returns: Json }
       get_organization_rankings: {
         Args: { p_end_date: string; p_start_date: string; p_unit_id?: string }
         Returns: {
