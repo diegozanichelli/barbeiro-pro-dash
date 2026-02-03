@@ -12,16 +12,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Radio, Loader2, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import DailyProductionForm from "../barber/DailyProductionForm";
 import { useOrganization } from "@/hooks/useOrganization";
 import LiveTop3Ranking from "./LiveTop3Ranking";
 import QuickSaleModal from "./QuickSaleModal";
+import TransactionManagerModal from "./TransactionManagerModal";
 import { calculateRemainingWorkDays } from "@/lib/dateUtils";
 
 interface Barber {
@@ -85,17 +86,9 @@ export default function LiveDashboard() {
     open: boolean;
     barberId: string;
     barberName: string;
-    data: {
-      id?: string;
-      date: string;
-      servicesBasicTotal: string;
-      servicesExtraTotal: string;
-      productsTotal: string;
-      clientsCount: string;
-      servicesCount: string;
-      productsCount: string;
-    } | null;
-  }>({ open: false, barberId: "", barberName: "", data: null });
+    dailyProductionId: string;
+    date: string;
+  }>({ open: false, barberId: "", barberName: "", dailyProductionId: "", date: "" });
 
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
@@ -262,48 +255,24 @@ export default function LiveDashboard() {
   };
 
   const handleEditClick = async (barber: Barber) => {
-    const production = getBarberProduction(barber.id);
-    
-    // Buscar dados completos da produção do dia
-    const { data: fullProduction } = await supabase
+    // Buscar daily_production_id
+    const { data: production } = await supabase
       .from("daily_productions")
-      .select("*")
+      .select("id")
       .eq("barber_id", barber.id)
       .eq("date", todayStr)
       .single();
     
-    if (fullProduction) {
+    if (production) {
       setEditModal({
         open: true,
         barberId: barber.id,
         barberName: barber.name,
-        data: {
-          id: fullProduction.id,
-          date: fullProduction.date,
-          servicesBasicTotal: String(fullProduction.services_basic_total || 0),
-          servicesExtraTotal: String(fullProduction.services_extra_total || 0),
-          productsTotal: String(fullProduction.products_total || 0),
-          clientsCount: String(fullProduction.clients_count || 0),
-          servicesCount: String(fullProduction.services_count || 0),
-          productsCount: String(fullProduction.products_count || 0),
-        },
+        dailyProductionId: production.id,
+        date: todayStr,
       });
     } else {
-      // Se não tem produção, criar uma nova
-      setEditModal({
-        open: true,
-        barberId: barber.id,
-        barberName: barber.name,
-        data: {
-          date: todayStr,
-          servicesBasicTotal: "0",
-          servicesExtraTotal: "0",
-          productsTotal: "0",
-          clientsCount: "0",
-          servicesCount: "0",
-          productsCount: "0",
-        },
-      });
+      toast.error("Nenhuma produção encontrada para editar");
     }
   };
 
@@ -634,27 +603,17 @@ export default function LiveDashboard() {
         onSuccess={fetchData}
       />
 
-      {/* Edit Production Modal */}
-      <Dialog 
-        open={editModal.open} 
+      {/* Edit Production Modal - Transaction Manager */}
+      <TransactionManagerModal
+        open={editModal.open}
         onOpenChange={(open) => setEditModal((prev) => ({ ...prev, open }))}
-      >
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Editar Produção — {editModal.barberName}</DialogTitle>
-          </DialogHeader>
-          {editModal.data && (
-            <DailyProductionForm
-              barberId={editModal.barberId}
-              onSuccess={() => {
-                setEditModal((prev) => ({ ...prev, open: false }));
-                fetchData();
-              }}
-              initialData={editModal.data}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+        barberId={editModal.barberId}
+        barberName={editModal.barberName}
+        organizationId={organizationId || ""}
+        dailyProductionId={editModal.dailyProductionId}
+        date={editModal.date}
+        onSuccess={fetchData}
+      />
     </div>
   );
 }
