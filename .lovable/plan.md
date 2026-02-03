@@ -1,158 +1,121 @@
 
+# Plano: Registrar Atendimentos de Assinatura (Trabalho sem Venda)
 
-# Plano: Aprimorar Modal de Assinatura com Detalhes para Auditoria
+## Contexto do Problema
 
-## Objetivo
+Atualmente, quando o barbeiro clica em **"Não vendi nada hoje"**, o sistema registra:
+- `clients_count: 0`
+- `confirmed_presence: true`
 
-Transformar o modal de confirmação de assinatura de um simples "Sim/Não" para um formulário que coleta informações essenciais para auditoria e controle gerencial.
-
----
-
-## Alterações Necessárias
-
-### 1. Banco de Dados - Adicionar Coluna `description`
-
-A tabela `sale_transactions` atualmente **não possui** uma coluna para descrição/observações. Precisamos criá-la:
-
-| Coluna | Tipo | Nullable | Descrição |
-|--------|------|----------|-----------|
-| `description` | TEXT | YES | Observações da venda (nome do cliente, forma de pagamento, etc) |
-
-**SQL da Migration:**
-```sql
-ALTER TABLE sale_transactions 
-ADD COLUMN description TEXT;
-
-COMMENT ON COLUMN sale_transactions.description IS 'Observações da transação (nome do cliente, detalhes, etc)';
-```
+Porém, o cenário real é diferente: o barbeiro pode ter **atendido 10 clientes de assinatura** que já pagaram a mensalidade. Esses atendimentos representam **trabalho realizado** e devem ser contabilizados para métricas de produtividade (ranking por clientes atendidos), mesmo que o faturamento direto seja R$ 0,00.
 
 ---
 
-### 2. Alteração do SubscriptionConfirmModal
+## Solução Proposta
 
-**Estado Atual:**
-- Modal com 2 botões: "Não" e "Sim, Vendi uma Assinatura"
-- Salva `item_name: "Venda de Assinatura"` (genérico)
+Evoluir o fluxo de **"Confirmar Presença"** para perguntar **quantos clientes de assinatura foram atendidos**.
 
-**Novo Fluxo:**
+### Fluxo de UX
+
+1. Barbeiro clica em **"Não vendi nada hoje"**
+2. Abre um **mini modal** perguntando:
+   - "Quantos clientes de assinatura você atendeu hoje?"
+   - Input numérico (default: 0)
+3. Ao confirmar:
+   - Sistema registra `confirmed_presence: true`
+   - Sistema registra `clients_count: [valor informado]`
+   - Opcionalmente: criar transações de "Atendimento Assinatura" para rastreio da IA
+
+---
+
+## Implementação Técnica
+
+### 1. Criar Componente de Modal (`ConfirmPresenceModal.tsx`)
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│           Esta venda incluiu uma Assinatura?          │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│  [Etapa 1: Pergunta inicial]                          │
-│                                                        │
-│  Botão [Não]           Botão [Sim, Incluiu]           │
-│                              │                         │
-│                              ▼                         │
-│  [Etapa 2: Formulário de Detalhes]                    │
-│                                                        │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ Qual o plano vendido? *                         │  │
-│  │ [________________________]                      │  │
-│  │ Ex: Gold, Prata, Duo...                         │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                        │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │ Nome do Cliente / Obs *                         │  │
-│  │ [________________________]                      │  │
-│  │ Nome do cliente para conferência               │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                        │
-│  Botão [Voltar]        Botão [Confirmar Assinatura]   │
-│                                                        │
-└────────────────────────────────────────────────────────┘
+src/components/dashboard/barber/ConfirmPresenceModal.tsx (NOVO)
 ```
 
-**Campos do Formulário:**
+**Estrutura:**
+- Dialog/Modal simples
+- Título: "Confirmar Presença"
+- Descrição: "Você trabalhou hoje mas não teve vendas diretas. Registre quantos clientes de assinatura atendeu para contabilizar o dia."
+- Input numérico: "Clientes de assinatura atendidos"
+- Botões: "Cancelar" e "Confirmar"
 
-| Campo | Label | Placeholder | Obrigatório |
-|-------|-------|-------------|-------------|
-| `subscriptionPlan` | Qual o plano vendido? | Ex: Gold, Prata, Duo... | Sim |
-| `clientNotes` | Nome do Cliente / Obs | Nome do cliente para conferência | Sim |
+### 2. Atualizar Função `handleConfirmPresence`
+
+**Arquivo:** `src/components/dashboard/BarberDashboard.tsx`
+
+**Mudanças:**
+- Remover chamada direta ao clicar no botão
+- Abrir o modal de confirmação
+- Passar o número de clientes informado para a função de salvamento
+- Atualizar o INSERT/UPDATE para usar o `clients_count` do modal
+
+```typescript
+// Antes (linha 452):
+clients_count: 0,
+
+// Depois:
+clients_count: subscriptionClientsCount, // valor vindo do modal
+```
+
+### 3. (Opcional) Registrar Transações para Rastreio da IA
+
+Para manter a inteligência da IA sobre "o que foi feito", podemos criar transações simbólicas:
+
+```text
+Item: "Atendimento Assinatura"
+Tipo: service
+Categoria: basic
+Valor: R$ 0,00
+Quantidade: [número informado pelo barbeiro]
+```
+
+**Benefício:** A IA conseguirá ver que o barbeiro atendeu X clientes de assinatura naquele dia, mesmo sem faturamento.
+
+**Desvantagem:** Aumenta complexidade. Se o gestor não quiser esse nível de rastreio, podemos pular essa etapa.
 
 ---
 
-### 3. Lógica de Salvamento
+## Arquivos a Modificar
 
-**Antes:**
-```typescript
-item_name: "Venda de Assinatura",
-// Sem campo description
-```
-
-**Depois:**
-```typescript
-item_name: `Assinatura ${subscriptionPlan}`,  // Ex: "Assinatura Gold"
-description: clientNotes,                      // Ex: "Cliente João Silva - Pago no Pix"
-```
+| Arquivo | Ação |
+|---------|------|
+| `src/components/dashboard/barber/ConfirmPresenceModal.tsx` | Criar novo componente |
+| `src/components/dashboard/BarberDashboard.tsx` | Integrar modal e atualizar lógica |
 
 ---
 
-## Resumo das Mudanças
+## Detalhes Técnicos
 
-| Arquivo/Recurso | Alteração |
-|-----------------|-----------|
-| **Banco de Dados** | Adicionar coluna `description` (TEXT, nullable) |
-| **SubscriptionConfirmModal.tsx** | Adicionar formulário com 2 inputs obrigatórios e fluxo de 2 etapas |
-| **types.ts** | Será atualizado automaticamente após migração |
+### Estado do Modal
+
+```typescript
+const [presenceModal, setPresenceModal] = useState<{
+  open: boolean;
+  clientsCount: number;
+}>({ open: false, clientsCount: 0 });
+```
+
+### Validação
+
+- Aceitar valores de 0 até 100 (limite razoável)
+- Se informar 0, comportamento igual ao atual (só confirma presença)
+- Se informar > 0, registra os clientes atendidos
+
+### Feedback Visual
+
+Após confirmar, mostrar mensagem contextual:
+- Se `clients_count = 0`: "Dia contabilizado. Foco total amanhã!"
+- Se `clients_count > 0`: "Registrado! Você atendeu X clientes de assinatura hoje."
 
 ---
 
 ## Resultado Esperado
 
-### No Registro do Banco:
-```json
-{
-  "item_type": "subscription",
-  "item_name": "Assinatura Black",
-  "description": "Cliente João Silva - Pago no Pix",
-  "barber_id": "...",
-  "price_sold": 0
-}
-```
-
-### No Relatório de Assinaturas (futuro):
-| Barbeiro | Plano | Cliente/Obs | Data |
-|----------|-------|-------------|------|
-| Carlos | Assinatura Black | Cliente João Silva - Pago no Pix | 03/02/2026 |
-| Werlen | Assinatura Gold | Maria Souza | 02/02/2026 |
-
----
-
-## Seção Técnica
-
-### Estrutura do Componente Atualizado
-
-```typescript
-// Estados adicionais
-const [step, setStep] = useState<"question" | "form">("question");
-const [subscriptionPlan, setSubscriptionPlan] = useState("");
-const [clientNotes, setClientNotes] = useState("");
-
-// Validação
-const isFormValid = subscriptionPlan.trim().length > 0 && clientNotes.trim().length > 0;
-
-// Fluxo
-// 1. Usuário clica "Sim" → setStep("form")
-// 2. Preenche os campos obrigatórios
-// 3. Clica "Confirmar" → salva com dados detalhados
-// 4. Botão "Voltar" → setStep("question")
-```
-
-### Reset ao Fechar
-
-```typescript
-// Ao fechar ou completar, resetar estados
-const resetModal = () => {
-  setStep("question");
-  setSubscriptionPlan("");
-  setClientNotes("");
-};
-```
-
-### Atualização do TypeScript Types
-
-Após a migração, o campo `description` será reconhecido automaticamente no tipo da tabela `sale_transactions`.
-
+- O barbeiro pode informar que **trabalhou** mesmo sem vender
+- O número de **clientes de assinatura atendidos** é contabilizado
+- O dia é contado para o cálculo de **meta diária** (dias trabalhados)
+- As métricas de **produtividade por cliente** ficam mais precisas
