@@ -11,7 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2 } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import DailyProductionForm from "../barber/DailyProductionForm";
 import { useOrganization } from "@/hooks/useOrganization";
 import LiveTop3Ranking from "./LiveTop3Ranking";
 import QuickSaleModal from "./QuickSaleModal";
@@ -74,6 +81,21 @@ export default function LiveDashboard() {
     barberId: string;
     barberName: string;
   }>({ open: false, barberId: "", barberName: "" });
+  const [editModal, setEditModal] = useState<{
+    open: boolean;
+    barberId: string;
+    barberName: string;
+    data: {
+      id?: string;
+      date: string;
+      servicesBasicTotal: string;
+      servicesExtraTotal: string;
+      productsTotal: string;
+      clientsCount: string;
+      servicesCount: string;
+      productsCount: string;
+    } | null;
+  }>({ open: false, barberId: "", barberName: "", data: null });
 
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
@@ -233,6 +255,56 @@ export default function LiveDashboard() {
         : production.services_total || 0;
 
     return servicesTotal + (production.products_total || 0);
+  };
+
+  const getBarberProduction = (barberId: string) => {
+    return productions.find((p) => p.barber_id === barberId);
+  };
+
+  const handleEditClick = async (barber: Barber) => {
+    const production = getBarberProduction(barber.id);
+    
+    // Buscar dados completos da produção do dia
+    const { data: fullProduction } = await supabase
+      .from("daily_productions")
+      .select("*")
+      .eq("barber_id", barber.id)
+      .eq("date", todayStr)
+      .single();
+    
+    if (fullProduction) {
+      setEditModal({
+        open: true,
+        barberId: barber.id,
+        barberName: barber.name,
+        data: {
+          id: fullProduction.id,
+          date: fullProduction.date,
+          servicesBasicTotal: String(fullProduction.services_basic_total || 0),
+          servicesExtraTotal: String(fullProduction.services_extra_total || 0),
+          productsTotal: String(fullProduction.products_total || 0),
+          clientsCount: String(fullProduction.clients_count || 0),
+          servicesCount: String(fullProduction.services_count || 0),
+          productsCount: String(fullProduction.products_count || 0),
+        },
+      });
+    } else {
+      // Se não tem produção, criar uma nova
+      setEditModal({
+        open: true,
+        barberId: barber.id,
+        barberName: barber.name,
+        data: {
+          date: todayStr,
+          servicesBasicTotal: "0",
+          servicesExtraTotal: "0",
+          productsTotal: "0",
+          clientsCount: "0",
+          servicesCount: "0",
+          productsCount: "0",
+        },
+      });
+    }
   };
 
   const getBarberDailyTarget = (barber: Barber) => {
@@ -469,19 +541,32 @@ export default function LiveDashboard() {
                       <p className="text-xs text-muted-foreground">{barber.unit_name}</p>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() =>
-                      setQuickSaleModal({
-                        open: true,
-                        barberId: barber.id,
-                        barberName: barber.name,
-                      })
-                    }
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
+                  <div className="flex gap-1">
+                    {revenue > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 p-0"
+                        onClick={() => handleEditClick(barber)}
+                        title="Editar lançamento"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() =>
+                        setQuickSaleModal({
+                          open: true,
+                          barberId: barber.id,
+                          barberName: barber.name,
+                        })
+                      }
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Progress Bar */}
@@ -548,6 +633,28 @@ export default function LiveDashboard() {
         organizationId={organizationId || ""}
         onSuccess={fetchData}
       />
+
+      {/* Edit Production Modal */}
+      <Dialog 
+        open={editModal.open} 
+        onOpenChange={(open) => setEditModal((prev) => ({ ...prev, open }))}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Produção — {editModal.barberName}</DialogTitle>
+          </DialogHeader>
+          {editModal.data && (
+            <DailyProductionForm
+              barberId={editModal.barberId}
+              onSuccess={() => {
+                setEditModal((prev) => ({ ...prev, open: false }));
+                fetchData();
+              }}
+              initialData={editModal.data}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
