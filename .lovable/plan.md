@@ -1,125 +1,135 @@
 
-# Plano: Corrigir Cálculo de "Cortes Restantes" no Dashboard Ao Vivo
+# Plano: Corrigir Erro de Digitação de Preço no PDV
 
 ## Problema Identificado
 
-O cálculo de "Faltam X cortes para bater a meta" está incorreto porque:
+No modal de "Venda Rápida" (QuickSaleModal), quando o gestor tenta alterar o preço de um serviço ou produto no carrinho, a digitação fica "travada" ou apresenta comportamento estranho.
 
-1. **Ticket médio padrão muito baixo**: Quando não há clientes registrados hoje, o sistema usa R$ 50,00 como fallback
-2. **Cálculo inconsistente**: `357,14 / 50 = 7,14` → arredonda para **8 cortes**, quando na verdade deveria considerar o ticket real (ex: R$ 80)
+### Causa Raiz
 
-### Exemplo do Werlen:
-- Meta do dia: R$ 357,14
-- Ticket médio real: ~R$ 80 (corte padrão)
-- Cortes necessários corretos: `357,14 / 80 = 4,5` → **5 cortes**
-- Sistema atual (bug): `357,14 / 50 = 7,14` → **8 cortes**
+O input de preço do carrinho usa uma abordagem problemática:
+
+```tsx
+// PROBLEMA: value derivado diretamente do número
+value={item.customPrice.toFixed(2).replace(".", ",")}
+onChange={(e) => {
+  const cleaned = e.target.value.replace(/[^\d,.\-]/g, "");
+  updateCartItemPrice(item.id, cleaned); // Converte para número imediatamente
+}}
+```
+
+**Fluxo do bug:**
+1. Usuário clica no campo com valor "80,00"
+2. Tenta apagar e digitar "75"
+3. Ao apagar, `parseFloat("")` retorna `0`
+4. O React re-renderiza com `value="0,00"`
+5. O cursor perde a posição, a digitação fica inconsistente
+
+**Diferença para o input que funciona (Manual):**
+- O input manual usa `handleNumericInput` com estado de **string** separado
+- Isso permite manter o estado intermediário durante a digitação
 
 ---
 
 ## Solução Proposta
 
-### 1. Buscar Ticket Médio Histórico do Mês
+### Estratégia: Manter Estado de String por Item
 
-Usar os dados de produção mensal (`monthProductions`) para calcular o ticket médio real baseado no histórico:
+Adicionar um estado separado para armazenar o valor como **string** durante a digitação, convertendo para número apenas ao sair do campo (onBlur) ou ao submeter.
 
-```text
-Lógica:
-1. Somar faturamento total do mês (da unidade/organização)
-2. Somar clientes atendidos no mês
-3. Calcular: faturamento_mes / clientes_mes
-4. Se não houver histórico: usar fallback mais realista (R$ 70-80)
-```
+### Alterações no Código
 
-### 2. Alterações no LiveDashboard.tsx
+**1. Atualizar interface CartItem** (linha 43-46)
 
-**A. Expandir dados buscados do mês** (linhas ~118-128)
-
-Adicionar campos `services_total`, `services_basic_total`, `services_extra_total`, `products_total`, e `clients_count` na query de `monthProductionsData`:
+Adicionar campo `customPriceInput` para manter o valor como string:
 
 ```typescript
-// Buscar mais dados do mês para calcular ticket médio histórico
-const { data: monthProductionsData } = await supabase
-  .from("daily_productions")
-  .select(`
-    barber_id, 
-    commission_earned, 
-    confirmed_presence,
-    services_total,
-    services_basic_total,
-    services_extra_total,
-    products_total,
-    clients_count
-  `)
-  .eq("organization_id", organizationId)
-  .gte("date", startOfMonth)
-  .lte("date", todayStr);
-```
-
-**B. Atualizar interface MonthProduction** (linhas ~39-43)
-
-```typescript
-interface MonthProduction {
-  barber_id: string;
-  commission_earned: number;
-  confirmed_presence: boolean;
-  services_total: number;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  products_total: number;
-  clients_count: number;
+interface CartItem extends CatalogItem {
+  customPrice: number;
+  customPriceInput: string;  // NOVO: estado de string para digitação
+  quantity: number;
 }
 ```
 
-**C. Corrigir função getAverageTicket()** (linhas ~270-281)
+**2. Inicializar customPriceInput ao adicionar ao carrinho** (linha 167-176)
 
 ```typescript
-const getAverageTicket = () => {
-  // Primeiro: tentar calcular do mês inteiro (histórico mais robusto)
-  const filteredMonthProductions = selectedUnit === "all"
-    ? monthProductions
-    : monthProductions.filter((p) => {
-        const barber = barbers.find((b) => b.id === p.barber_id);
-        return barber?.unit_id === selectedUnit;
-      });
-
-  const totalClientsMonth = filteredMonthProductions.reduce(
-    (sum, p) => sum + (p.clients_count || 0), 
-    0
-  );
-  
-  const totalRevenueMonth = filteredMonthProductions.reduce((sum, p) => {
-    const servicesTotal =
-      p.services_basic_total !== null || p.services_extra_total !== null
-        ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
-        : p.services_total || 0;
-    return sum + servicesTotal + (p.products_total || 0);
-  }, 0);
-
-  // Se há histórico no mês, usar ticket médio mensal
-  if (totalClientsMonth > 0) {
-    return totalRevenueMonth / totalClientsMonth;
-  }
-
-  // Fallback: usar dados de hoje
-  const filteredProductions = selectedUnit === "all"
-    ? productions
-    : productions.filter((p) => {
-        const barber = barbers.find((b) => b.id === p.barber_id);
-        return barber?.unit_id === selectedUnit;
-      });
-
-  const totalClients = filteredProductions.reduce(
-    (sum, p) => sum + p.clients_count, 
-    0
-  );
-  
-  if (totalClients > 0) {
-    return totalRevenue / totalClients;
-  }
-
-  // Fallback final: valor padrão mais realista (R$ 70)
-  return 70;
+const handleToggleCart = (item: CatalogItem) => {
+  setCart(prev => {
+    const exists = prev.find(i => i.id === item.id);
+    if (exists) {
+      return prev.filter(i => i.id !== item.id);
+    } else {
+      return [...prev, { 
+        ...item, 
+        customPrice: item.default_price, 
+        customPriceInput: item.default_price.toFixed(2).replace(".", ","),  // NOVO
+        quantity: 1 
+      }];
+    }
+  });
 };
+```
+
+**3. Criar nova função para atualizar o input** (após linha 195)
+
+```typescript
+const updateCartItemPriceInput = (itemId: string, newValue: string) => {
+  setCart(prev => prev.map(item => {
+    if (item.id !== itemId) return item;
+    
+    // Usar a mesma lógica do handleNumericInput para consistência
+    let cleanedValue = newValue;
+    
+    if (newValue === "") {
+      cleanedValue = "";
+    } else {
+      const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+      // Remover zeros à esquerda se necessário
+      if ((item.customPriceInput === "0" || item.customPriceInput === "0,00") && /^\d/.test(cleaned)) {
+        cleanedValue = cleaned.replace(/^0+(?=\d)/, "") || cleaned;
+      } else {
+        cleanedValue = cleaned;
+      }
+    }
+    
+    // Atualizar o valor numérico também para cálculos em tempo real
+    const parsed = parseFloat(cleanedValue.replace(",", ".")) || 0;
+    
+    return { 
+      ...item, 
+      customPriceInput: cleanedValue,
+      customPrice: parsed
+    };
+  }));
+};
+
+const finalizeCartItemPrice = (itemId: string) => {
+  setCart(prev => prev.map(item => {
+    if (item.id !== itemId) return item;
+    
+    // Ao sair do campo, formatar o valor corretamente
+    const formattedInput = item.customPrice > 0 
+      ? item.customPrice.toFixed(2).replace(".", ",")
+      : "0,00";
+    
+    return { ...item, customPriceInput: formattedInput };
+  }));
+};
+```
+
+**4. Atualizar o Input de Preço no Carrinho** (linhas 635-644)
+
+```tsx
+{/* Price */}
+<Input
+  type="text"
+  inputMode="decimal"
+  value={item.customPriceInput}
+  onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
+  onBlur={() => finalizeCartItemPrice(item.id)}
+  className="w-20 text-right font-bold text-xs h-7"
+/>
 ```
 
 ---
@@ -128,40 +138,36 @@ const getAverageTicket = () => {
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/dashboard/manager/LiveDashboard.tsx` | Expandir query de produções mensais, atualizar interface, corrigir `getAverageTicket()` |
+| `src/components/dashboard/manager/QuickSaleModal.tsx` | Adicionar `customPriceInput` à interface, criar funções de handling, atualizar input |
 
 ## Resultado Esperado
 
-- **Antes**: Werlen com meta R$ 357,14 → "Faltam 8 cortes" (ticket R$ 50)
-- **Depois**: Werlen com meta R$ 357,14 → "Faltam 5 cortes" (ticket ~R$ 75 baseado no histórico real)
-
-O sistema passará a usar o ticket médio **histórico do mês** para calcular quantos cortes faltam, tornando a informação muito mais precisa e útil para o gestor.
+- **Antes**: Gestor tenta digitar "75" e o campo mostra "0,00" ou valores estranhos
+- **Depois**: Gestor consegue apagar e digitar livremente, valor é formatado ao sair do campo
 
 ---
 
 ## Seção Técnica
 
-### Fluxo de Dados Atualizado
+### Fluxo de Dados Corrigido
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                    getAverageTicket()                          │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. Filtrar produções do mês (por unidade se aplicável)         │
-│ 2. Somar faturamento total do mês                              │
-│ 3. Somar total de clientes do mês                              │
-│ 4. SE clientes_mes > 0:                                        │
-│    └─→ Retorna: faturamento_mes / clientes_mes                 │
-│ 5. SENÃO, tentar com dados de hoje                             │
-│ 6. SE clientes_hoje > 0:                                       │
-│    └─→ Retorna: faturamento_hoje / clientes_hoje               │
-│ 7. SENÃO:                                                      │
-│    └─→ Retorna: R$ 70 (fallback realista)                      │
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                    Input de Preço (Carrinho)                   │
+├────────────────────────────────────────────────────────────────┤
+│ 1. value={item.customPriceInput}  ← Estado de STRING           │
+│ 2. onChange → updateCartItemPriceInput()                       │
+│    └─→ Limpa caracteres inválidos                              │
+│    └─→ Remove zeros à esquerda                                 │
+│    └─→ Atualiza customPriceInput (string)                      │
+│    └─→ Atualiza customPrice (número) para cálculos             │
+│ 3. onBlur → finalizeCartItemPrice()                            │
+│    └─→ Formata valor final ("45,50")                           │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-### Dependências de Dados
+### Compatibilidade
 
-- `monthProductions`: Precisa incluir campos de faturamento e clientes
-- Nenhuma mudança no banco de dados necessária
-- Compatível com lógica existente de filtro por unidade
+- Mantém compatibilidade com cálculos existentes (cartTotal usa customPrice)
+- Não afeta lógica de checkout
+- Segue padrão já usado no input Manual (handleNumericInput)
