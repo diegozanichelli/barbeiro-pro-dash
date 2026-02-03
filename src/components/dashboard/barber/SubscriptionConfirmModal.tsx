@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Crown, X, Check } from "lucide-react";
+import { Loader2, Crown, X, Check, ArrowLeft } from "lucide-react";
 
 interface SubscriptionConfirmModalProps {
   open: boolean;
@@ -30,24 +32,49 @@ export default function SubscriptionConfirmModal({
   onComplete,
 }: SubscriptionConfirmModalProps) {
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<"question" | "form">("question");
+  const [subscriptionPlan, setSubscriptionPlan] = useState("");
+  const [clientNotes, setClientNotes] = useState("");
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setStep("question");
+      setSubscriptionPlan("");
+      setClientNotes("");
+    }
+  }, [open]);
+
+  const isFormValid = subscriptionPlan.trim().length > 0 && clientNotes.trim().length > 0;
 
   const handleNoSubscription = () => {
     onOpenChange(false);
     onComplete();
   };
 
-  const handleYesSubscription = async () => {
+  const handleYesSubscription = () => {
+    setStep("form");
+  };
+
+  const handleBack = () => {
+    setStep("question");
+  };
+
+  const handleConfirmSubscription = async () => {
+    if (!isFormValid) return;
+    
     setLoading(true);
 
     try {
-      // Registrar transação de assinatura
+      // Registrar transação de assinatura com detalhes
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: barberId,
         organization_id: organizationId,
         daily_production_id: dailyProductionId,
         item_type: "subscription",
-        item_name: "Venda de Assinatura",
-        price_sold: 0, // Valor já contabilizado nos serviços
+        item_name: `Assinatura ${subscriptionPlan.trim()}`,
+        description: clientNotes.trim(),
+        price_sold: 0,
         service_category: null,
         catalog_service_id: null,
         catalog_product_id: null,
@@ -79,38 +106,91 @@ export default function SubscriptionConfirmModal({
             <Crown className="w-8 h-8 text-primary" />
           </div>
           <DialogTitle className="text-xl">
-            Esta venda incluiu uma nova Assinatura?
+            {step === "question" 
+              ? "Esta venda incluiu uma nova Assinatura?" 
+              : "Detalhes da Assinatura"}
           </DialogTitle>
           <DialogDescription>
-            Assinaturas vendidas geram <strong>+10 pontos</strong> no Campeonato
+            {step === "question" 
+              ? <>Assinaturas vendidas geram <strong>+10 pontos</strong> no Campeonato</>
+              : "Preencha os detalhes para registro"}
           </DialogDescription>
         </DialogHeader>
 
-        <DialogFooter className="flex-row gap-3 sm:flex-row mt-4">
-          <Button
-            variant="outline"
-            className="flex-1 gap-2"
-            onClick={handleNoSubscription}
-            disabled={loading}
-          >
-            <X className="w-4 h-4" />
-            Não
-          </Button>
-          <Button
-            className="flex-1 gap-2"
-            onClick={handleYesSubscription}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <>
-                <Check className="w-4 h-4" />
-                Sim, Vendi uma Assinatura
-              </>
-            )}
-          </Button>
-        </DialogFooter>
+        {step === "question" ? (
+          <DialogFooter className="flex-row gap-3 sm:flex-row mt-4">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={handleNoSubscription}
+              disabled={loading}
+            >
+              <X className="w-4 h-4" />
+              Não
+            </Button>
+            <Button
+              className="flex-1 gap-2"
+              onClick={handleYesSubscription}
+              disabled={loading}
+            >
+              <Check className="w-4 h-4" />
+              Sim, Incluiu
+            </Button>
+          </DialogFooter>
+        ) : (
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="subscription-plan">
+                Qual o plano vendido? <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="subscription-plan"
+                placeholder="Ex: Gold, Prata, Duo..."
+                value={subscriptionPlan}
+                onChange={(e) => setSubscriptionPlan(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="client-notes">
+                Nome do Cliente / Obs <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="client-notes"
+                placeholder="Nome do cliente para conferência"
+                value={clientNotes}
+                onChange={(e) => setClientNotes(e.target.value)}
+              />
+            </div>
+
+            <DialogFooter className="flex-row gap-3 sm:flex-row mt-6">
+              <Button
+                variant="outline"
+                className="flex-1 gap-2"
+                onClick={handleBack}
+                disabled={loading}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </Button>
+              <Button
+                className="flex-1 gap-2"
+                onClick={handleConfirmSubscription}
+                disabled={loading || !isFormValid}
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Confirmar
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

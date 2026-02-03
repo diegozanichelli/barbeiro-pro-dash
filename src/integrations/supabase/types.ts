@@ -564,6 +564,7 @@ export type Database = {
           commission_rate_used: number
           created_at: string
           daily_production_id: string
+          description: string | null
           id: string
           item_name: string
           item_type: string
@@ -579,6 +580,7 @@ export type Database = {
           commission_rate_used: number
           created_at?: string
           daily_production_id: string
+          description?: string | null
           id?: string
           item_name: string
           item_type: string
@@ -594,6 +596,7 @@ export type Database = {
           commission_rate_used?: number
           created_at?: string
           daily_production_id?: string
+          description?: string | null
           id?: string
           item_name?: string
           item_type?: string
