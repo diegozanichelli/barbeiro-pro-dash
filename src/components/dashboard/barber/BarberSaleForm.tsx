@@ -10,11 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
+import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users, Crown, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import SubscriptionConfirmModal from "./SubscriptionConfirmModal";
 
 interface BarberSaleFormProps {
   barberId: string;
@@ -33,7 +35,9 @@ interface CatalogItem {
 
 interface CartItem extends CatalogItem {
   customPrice: number;
+  quantity: number;
 }
+
 
 // Correção do bug do zero à esquerda
 function handleNumericInput(
@@ -66,16 +70,23 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   
+  // Modal de confirmação de assinatura
+  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
+  const [lastDailyProductionId, setLastDailyProductionId] = useState<string | null>(null);
+  const [todaySubscriptionsCount, setTodaySubscriptionsCount] = useState(0);
+  
   // Campos do modo manual
   const [manualValue, setManualValue] = useState("0");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
 
-  // Buscar catálogo da organização
+  // Buscar catálogo da organização + assinaturas de hoje
   useEffect(() => {
     const fetchCatalog = async () => {
       setLoadingCatalog(true);
       
-      const [servicesRes, productsRes] = await Promise.all([
+      const today = format(new Date(), "yyyy-MM-dd");
+      
+      const [servicesRes, productsRes, subscriptionsRes] = await Promise.all([
         supabase
           .from("catalog_services")
           .select("*")
@@ -88,6 +99,13 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           .eq("organization_id", organizationId)
           .eq("is_active", true)
           .order("name"),
+        supabase
+          .from("sale_transactions")
+          .select("id")
+          .eq("barber_id", barberId)
+          .eq("item_type", "subscription")
+          .gte("created_at", today)
+          .lte("created_at", today + "T23:59:59"),
       ]);
 
       const services: CatalogItem[] = (servicesRes.data || []).map((s) => ({
@@ -108,6 +126,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       }));
 
       setCatalogItems([...services, ...products]);
+      setTodaySubscriptionsCount(subscriptionsRes.data?.length || 0);
       setLoadingCatalog(false);
     };
 
@@ -133,12 +152,23 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       if (exists) {
         return prev.filter(i => i.id !== item.id);
       } else {
-        return [...prev, { ...item, customPrice: item.default_price }];
+        return [...prev, { ...item, customPrice: item.default_price, quantity: 1 }];
       }
     });
   };
 
   const isInCart = (itemId: string) => cart.some(i => i.id === itemId);
+
+  // Atualizar quantidade no carrinho
+  const updateCartItemQuantity = (itemId: string, delta: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === itemId) {
+        const newQty = Math.max(1, item.quantity + delta);
+        return { ...item, quantity: newQty };
+      }
+      return item;
+    }));
+  };
 
   // Atualizar preço no carrinho
   const updateCartItemPrice = (itemId: string, newPrice: string) => {
@@ -148,12 +178,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     ));
   };
 
-  // Total do carrinho
+  // Total do carrinho (considerando quantidade)
   const cartTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.customPrice, 0);
+    return cart.reduce((sum, item) => sum + (item.customPrice * item.quantity), 0);
   }, [cart]);
 
-  // Confirmar checkout (batch insert)
+  // Contagem total de itens
+  const cartItemsTotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.quantity, 0);
+  }, [cart]);
+
+  // Confirmar checkout (batch insert) - com suporte a quantidade
   const handleConfirmCheckout = async () => {
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
@@ -204,20 +239,25 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
         dailyProductionId = newProd.id;
       }
 
-      // 2. Batch insert de todas as transações
-      const transactions = cart.map(item => ({
-        barber_id: barberId,
-        organization_id: organizationId,
-        daily_production_id: dailyProductionId,
-        item_type: item.type,
-        item_name: item.name,
-        price_sold: item.customPrice,
-        service_category: item.type === "service" ? item.category : null,
-        catalog_service_id: item.type === "service" ? item.id : null,
-        catalog_product_id: item.type === "product" ? item.id : null,
-        commission_rate_used: 0, // Trigger vai calcular
-        commission_amount: 0, // Trigger vai calcular
-      }));
+      // 2. Batch insert de todas as transações - expandindo quantidade em múltiplas transações
+      const transactions: any[] = [];
+      cart.forEach(item => {
+        for (let i = 0; i < item.quantity; i++) {
+          transactions.push({
+            barber_id: barberId,
+            organization_id: organizationId,
+            daily_production_id: dailyProductionId,
+            item_type: item.type,
+            item_name: item.name,
+            price_sold: item.customPrice,
+            service_category: item.type === "service" ? item.category : null,
+            catalog_service_id: item.type === "service" ? item.id : null,
+            catalog_product_id: item.type === "product" ? item.id : null,
+            commission_rate_used: 0, // Trigger vai calcular
+            commission_amount: 0, // Trigger vai calcular
+          });
+        }
+      });
 
       const { error: txError } = await supabase
         .from("sale_transactions")
@@ -225,21 +265,44 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
 
       if (txError) throw txError;
 
-      toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'}!`, {
+      toast.success(`${cartItemsTotal} ${cartItemsTotal === 1 ? 'item registrado' : 'itens registrados'}!`, {
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
 
-      // Limpar carrinho e fechar modal
+      // Salvar ID para o modal de assinatura
+      setLastDailyProductionId(dailyProductionId);
+      
+      // Limpar carrinho e fechar modal de checkout
       setCart([]);
       setCheckoutOpen(false);
       setClientsCount(1);
-      onSuccess();
+      
+      // Abrir modal de assinatura
+      setSubscriptionModalOpen(true);
     } catch (error: any) {
       console.error("Erro ao registrar venda:", error);
       toast.error(error.message || "Erro ao registrar venda");
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Callback após modal de assinatura
+  const handleSubscriptionComplete = () => {
+    // Recarregar contagem de assinaturas
+    const fetchSubscriptions = async () => {
+      const today = format(new Date(), "yyyy-MM-dd");
+      const { data } = await supabase
+        .from("sale_transactions")
+        .select("id")
+        .eq("barber_id", barberId)
+        .eq("item_type", "subscription")
+        .gte("created_at", today)
+        .lte("created_at", today + "T23:59:59");
+      setTodaySubscriptionsCount(data?.length || 0);
+    };
+    fetchSubscriptions();
+    onSuccess();
   };
 
   const handleConfirmManualSale = async () => {
@@ -531,48 +594,85 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             </span>
           </div>
 
-          {/* Lista de itens com edição de preço */}
+          {/* Lista de itens com edição de preço e quantidade */}
           <div className="space-y-3">
             {cart.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 p-3 bg-secondary rounded-lg">
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{item.name}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {item.type === "service" && item.category && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {item.category === "basic" ? "Básico" : "Extra"}
-                      </Badge>
-                    )}
-                    {item.fixed_commission && (
-                      <Badge className="bg-warning/20 text-warning border-warning/30 text-[10px]">
-                        <Zap className="w-2 h-2 mr-0.5" />
-                        {item.fixed_commission}%
-                      </Badge>
-                    )}
+              <div key={item.id} className="p-3 bg-secondary rounded-lg space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{item.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {item.type === "service" && item.category && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {item.category === "basic" ? "Básico" : "Extra"}
+                        </Badge>
+                      )}
+                      {item.fixed_commission && (
+                        <Badge className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+                          <Zap className="w-2 h-2 mr-0.5" />
+                          {item.fixed_commission}%
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
+                  >
+                    ×
+                  </Button>
+                </div>
+                
+                {/* Linha de Quantidade e Preço */}
+                <div className="flex items-center justify-between gap-2">
+                  {/* Seletor de Quantidade */}
+                  <div className="flex items-center gap-1 bg-background rounded-md border p-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => updateCartItemQuantity(item.id, -1)}
+                      disabled={item.quantity <= 1}
+                    >
+                      <Minus className="w-3 h-3" />
+                    </Button>
+                    <span className="w-6 text-center font-bold text-sm">{item.quantity}x</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => updateCartItemQuantity(item.id, 1)}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  
+                  {/* Preço Unitário */}
+                  <div className="relative flex-1 max-w-[120px]">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.customPrice.toFixed(2).replace(".", ",")}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const cleaned = val.replace(/[^\d,.\-]/g, "");
+                        updateCartItemPrice(item.id, cleaned);
+                      }}
+                      className="pl-7 text-right font-bold text-sm h-8 bg-background"
+                    />
+                  </div>
+                  
+                  {/* Subtotal */}
+                  <div className="text-right min-w-[70px]">
+                    <p className="text-xs text-muted-foreground">Subtotal</p>
+                    <p className="font-bold text-sm text-primary">
+                      R$ {(item.customPrice * item.quantity).toFixed(2).replace(".", ",")}
+                    </p>
                   </div>
                 </div>
-                <div className="relative w-28">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">R$</span>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    value={item.customPrice.toFixed(2).replace(".", ",")}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const cleaned = val.replace(/[^\d,.\-]/g, "");
-                      updateCartItemPrice(item.id, cleaned);
-                    }}
-                    className="pl-9 text-right font-bold text-sm h-9 bg-background border-primary/30 focus:border-primary"
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
-                >
-                  ×
-                </Button>
               </div>
             ))}
           </div>
@@ -612,11 +712,27 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
 
           {/* Total */}
           <div className="flex items-center justify-between p-4 bg-primary/10 rounded-lg border border-primary/20">
-            <span className="font-medium">Total:</span>
+            <div>
+              <span className="font-medium">Total ({cartItemsTotal} {cartItemsTotal === 1 ? 'item' : 'itens'}):</span>
+            </div>
             <span className="text-2xl font-bold text-primary">
               R$ {cartTotal.toFixed(2).replace(".", ",")}
             </span>
           </div>
+
+          {/* Conferência de Assinaturas */}
+          {todaySubscriptionsCount > 0 && (
+            <Alert variant="default" className="bg-warning/10 border-warning/30">
+              <Crown className="h-4 w-4 text-warning" />
+              <AlertDescription className="text-sm">
+                Você tem <strong>{todaySubscriptionsCount}</strong> {todaySubscriptionsCount === 1 ? 'Assinatura vendida' : 'Assinaturas vendidas'} hoje. Confere?
+                <br />
+                <span className="text-xs text-muted-foreground">
+                  Divergência? Chame o Gestor para corrigir.
+                </span>
+              </AlertDescription>
+            </Alert>
+          )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCheckoutOpen(false)}>
@@ -638,6 +754,18 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Confirmação de Assinatura */}
+      {lastDailyProductionId && (
+        <SubscriptionConfirmModal
+          open={subscriptionModalOpen}
+          onOpenChange={setSubscriptionModalOpen}
+          barberId={barberId}
+          organizationId={organizationId}
+          dailyProductionId={lastDailyProductionId}
+          onComplete={handleSubscriptionComplete}
+        />
+      )}
     </>
   );
 }

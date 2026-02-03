@@ -354,8 +354,9 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
         if (t.item_type === "service" && t.service_category === "extra") {
           barberTransactionStats[t.barber_id].extras_count++;
         }
-        // Check for subscriptions (item_name contains 'Assinatura' or 'Plano')
-        if (t.item_name && (t.item_name.toLowerCase().includes("assinatura") || t.item_name.toLowerCase().includes("plano"))) {
+        // Check for subscriptions by type OR by name containing 'Assinatura' or 'Plano'
+        if (t.item_type === "subscription" || 
+            (t.item_name && (t.item_name.toLowerCase().includes("assinatura") || t.item_name.toLowerCase().includes("plano")))) {
           barberTransactionStats[t.barber_id].subscriptions_count++;
         }
       });

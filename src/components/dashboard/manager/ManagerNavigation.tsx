@@ -95,6 +95,7 @@ export default function ManagerNavigation({
     items: [
       { id: "evolution", label: "Evolução", icon: TrendingUp },
       { id: "leaderboard", label: "Rankings", icon: Trophy },
+      { id: "subscriptions", label: "Assinaturas", icon: Repeat },
       { id: "ai-usage", label: "Uso IA", icon: Bot },
     ],
   };
