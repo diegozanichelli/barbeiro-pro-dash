@@ -19,6 +19,7 @@ import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AIDailyCoachCard from "./barber/AIDailyCoachCard";
 import SalesHelpModal from "./barber/SalesHelpModal";
+import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -75,6 +76,7 @@ const [todayProduction, setTodayProduction] = useState<{
     exists: boolean;
   } | null>(null);
   const [confirmingPresence, setConfirmingPresence] = useState(false);
+  const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   
   // Estado para notificação de alteração de comissão
   const [commissionChange, setCommissionChange] = useState<{
@@ -422,7 +424,11 @@ const [todayProduction, setTodayProduction] = useState<{
     setEditingProduction(null); // Limpar edição e fechar modal
   };
 
-  const handleConfirmPresence = async () => {
+  const handleOpenPresenceModal = () => {
+    setPresenceModalOpen(true);
+  };
+
+  const handleConfirmPresence = async (subscriptionClientsCount: number) => {
     if (!barber) return;
     
     setConfirmingPresence(true);
@@ -431,14 +437,17 @@ const [todayProduction, setTodayProduction] = useState<{
     let error = null;
 
     if (todayProduction?.exists && todayProduction.id) {
-      // Registro EXISTE: fazer UPDATE
+      // Registro EXISTE: fazer UPDATE com o número de clientes
       const result = await supabase
         .from("daily_productions")
-        .update({ confirmed_presence: true })
+        .update({ 
+          confirmed_presence: true,
+          clients_count: subscriptionClientsCount
+        })
         .eq("id", todayProduction.id);
       error = result.error;
     } else {
-      // Registro NÃO EXISTE: fazer INSERT com valores zerados
+      // Registro NÃO EXISTE: fazer INSERT com valores zerados e clientes informados
       const result = await supabase
         .from("daily_productions")
         .insert({
@@ -449,7 +458,7 @@ const [todayProduction, setTodayProduction] = useState<{
           services_extra_total: 0,
           products_total: 0,
           services_total: 0,
-          clients_count: 0,
+          clients_count: subscriptionClientsCount,
           services_count: 0,
           products_count: 0,
           confirmed_presence: true
@@ -458,6 +467,7 @@ const [todayProduction, setTodayProduction] = useState<{
     }
 
     setConfirmingPresence(false);
+    setPresenceModalOpen(false);
 
     if (error) {
       toast.error("Erro ao confirmar presença");
@@ -465,10 +475,18 @@ const [todayProduction, setTodayProduction] = useState<{
       return;
     }
 
-    toast.success("Dia contabilizado. Foco total amanhã!", {
-      description: "Sua presença foi registrada para o cálculo de metas.",
-      duration: 4000,
-    });
+    // Mensagem contextual baseada no número de clientes
+    if (subscriptionClientsCount > 0) {
+      toast.success(`Registrado! Você atendeu ${subscriptionClientsCount} cliente${subscriptionClientsCount > 1 ? 's' : ''} de assinatura hoje.`, {
+        description: "Dia contabilizado na sua meta.",
+        duration: 4000,
+      });
+    } else {
+      toast.success("Dia contabilizado. Foco total amanhã!", {
+        description: "Sua presença foi registrada para o cálculo de metas.",
+        duration: 4000,
+      });
+    }
 
     // Atualizar estado local
     setTodayProduction(prev => prev 
@@ -742,7 +760,7 @@ const [todayProduction, setTodayProduction] = useState<{
                       <Button
                         variant="outline"
                         className="w-full border-primary/50 hover:bg-primary/10"
-                        onClick={() => handleConfirmPresence()}
+                        onClick={handleOpenPresenceModal}
                         disabled={confirmingPresence}
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
@@ -918,6 +936,14 @@ const [todayProduction, setTodayProduction] = useState<{
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Modal de Confirmação de Presença */}
+        <ConfirmPresenceModal
+          open={presenceModalOpen}
+          onOpenChange={setPresenceModalOpen}
+          onConfirm={handleConfirmPresence}
+          isLoading={confirmingPresence}
+        />
 
         {/* Botão Flutuante de Assistente de Vendas IA */}
         {isCurrentMonth && barber && <SalesHelpModal barberId={barber.id} organizationId={barber.organization_id} />}
