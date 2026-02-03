@@ -42,6 +42,7 @@ interface CatalogItem {
 
 interface CartItem extends CatalogItem {
   customPrice: number;
+  customPriceInput: string;
   quantity: number;
 }
 
@@ -170,7 +171,12 @@ export default function QuickSaleModal({
       if (exists) {
         return prev.filter(i => i.id !== item.id);
       } else {
-        return [...prev, { ...item, customPrice: item.default_price, quantity: 1 }];
+        return [...prev, { 
+          ...item, 
+          customPrice: item.default_price, 
+          customPriceInput: item.default_price.toFixed(2).replace(".", ","),
+          quantity: 1 
+        }];
       }
     });
   };
@@ -187,11 +193,43 @@ export default function QuickSaleModal({
     }));
   };
 
-  const updateCartItemPrice = (itemId: string, newPrice: string) => {
-    const parsed = parseFloat(newPrice.replace(",", ".")) || 0;
-    setCart(prev => prev.map(item => 
-      item.id === itemId ? { ...item, customPrice: parsed } : item
-    ));
+  const updateCartItemPriceInput = (itemId: string, newValue: string) => {
+    setCart(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      
+      let cleanedValue = newValue;
+      
+      if (newValue === "") {
+        cleanedValue = "";
+      } else {
+        const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+        if ((item.customPriceInput === "0" || item.customPriceInput === "0,00") && /^\d/.test(cleaned)) {
+          cleanedValue = cleaned.replace(/^0+(?=\d)/, "") || cleaned;
+        } else {
+          cleanedValue = cleaned;
+        }
+      }
+      
+      const parsed = parseFloat(cleanedValue.replace(",", ".")) || 0;
+      
+      return { 
+        ...item, 
+        customPriceInput: cleanedValue,
+        customPrice: parsed
+      };
+    }));
+  };
+
+  const finalizeCartItemPrice = (itemId: string) => {
+    setCart(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      
+      const formattedInput = item.customPrice > 0 
+        ? item.customPrice.toFixed(2).replace(".", ",")
+        : "0,00";
+      
+      return { ...item, customPriceInput: formattedInput };
+    }));
   };
 
   // Cart totals
@@ -635,11 +673,9 @@ export default function QuickSaleModal({
                           <Input
                             type="text"
                             inputMode="decimal"
-                            value={item.customPrice.toFixed(2).replace(".", ",")}
-                            onChange={(e) => {
-                              const cleaned = e.target.value.replace(/[^\d,.\-]/g, "");
-                              updateCartItemPrice(item.id, cleaned);
-                            }}
+                            value={item.customPriceInput}
+                            onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
+                            onBlur={() => finalizeCartItemPrice(item.id)}
                             className="w-20 text-right font-bold text-xs h-7"
                           />
                           {/* Remove */}
