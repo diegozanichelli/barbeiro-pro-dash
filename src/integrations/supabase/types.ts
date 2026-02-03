@@ -416,6 +416,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          championship_name: string
           created_at: string
           has_subscription_module: boolean
           id: string
@@ -425,6 +426,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          championship_name?: string
           created_at?: string
           has_subscription_module?: boolean
           id?: string
@@ -434,6 +436,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          championship_name?: string
           created_at?: string
           has_subscription_module?: boolean
           id?: string
