@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,6 +31,27 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("live");
   const { hasSubscriptionModule } = useSubscriptionModule();
+
+  // Auto-replicar metas silenciosamente ao carregar o dashboard
+  useEffect(() => {
+    const replicateGoals = async () => {
+      try {
+        const { data, error } = await supabase.rpc('auto_replicate_goals');
+        if (error) {
+          console.error("Erro ao replicar metas:", error);
+        } else if (data && typeof data === 'object' && 'goals_created' in data) {
+          const result = data as { goals_created: number; month: number; year: number };
+          if (result.goals_created > 0) {
+            console.log(`Metas replicadas automaticamente: ${result.goals_created} para ${result.month}/${result.year}`);
+          }
+        }
+      } catch (err) {
+        console.error("Erro na replicação de metas:", err);
+      }
+    };
+    
+    replicateGoals();
+  }, []);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
