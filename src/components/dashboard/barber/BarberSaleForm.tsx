@@ -75,6 +75,9 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [lastDailyProductionId, setLastDailyProductionId] = useState<string | null>(null);
   const [todaySubscriptionsCount, setTodaySubscriptionsCount] = useState(0);
   
+  // Standalone subscription modal
+  const [standaloneSubscriptionOpen, setStandaloneSubscriptionOpen] = useState(false);
+  
   // Campos do modo manual
   const [manualValue, setManualValue] = useState("0");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
@@ -366,10 +369,22 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     <>
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-primary" />
-            REGISTRAR VENDA
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-primary" />
+              REGISTRAR VENDA
+            </CardTitle>
+            {/* Botão de Assinatura Avulsa */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-warning text-warning hover:bg-warning/10"
+              onClick={() => setStandaloneSubscriptionOpen(true)}
+            >
+              <Crown className="w-4 h-4" />
+              <span className="hidden sm:inline">Assinatura Avulsa</span>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Date Picker */}
@@ -766,6 +781,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           onComplete={handleSubscriptionComplete}
         />
       )}
+
+      {/* Modal de Assinatura Avulsa (sem carrinho) */}
+      <SubscriptionConfirmModal
+        open={standaloneSubscriptionOpen}
+        onOpenChange={setStandaloneSubscriptionOpen}
+        barberId={barberId}
+        organizationId={organizationId}
+        dailyProductionId={null}
+        onComplete={handleSubscriptionComplete}
+        standaloneMode
+      />
     </>
   );
 }

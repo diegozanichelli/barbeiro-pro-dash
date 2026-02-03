@@ -95,6 +95,9 @@ export default function QuickSaleModal({
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [lastDailyProductionId, setLastDailyProductionId] = useState<string | null>(null);
   const [todaySubscriptionsCount, setTodaySubscriptionsCount] = useState(0);
+  
+  // Standalone subscription modal
+  const [standaloneSubscriptionOpen, setStandaloneSubscriptionOpen] = useState(false);
 
   // Fetch catalog items
   useEffect(() => {
@@ -465,12 +468,29 @@ export default function QuickSaleModal({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b">
-            <DialogTitle className="text-lg font-semibold">
-              Venda Rápida — {barberName}
-            </DialogTitle>
-            <DialogDescription>
-              Selecione múltiplos itens para registrar
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-lg font-semibold">
+                  Venda Rápida — {barberName}
+                </DialogTitle>
+                <DialogDescription>
+                  Selecione múltiplos itens para registrar
+                </DialogDescription>
+              </div>
+              {/* Botão de Assinatura Avulsa */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-warning text-warning hover:bg-warning/10"
+                onClick={() => {
+                  onOpenChange(false);
+                  setStandaloneSubscriptionOpen(true);
+                }}
+              >
+                <Crown className="w-4 h-4" />
+                Assinatura
+              </Button>
+            </div>
           </DialogHeader>
 
           {/* Search Bar */}
@@ -785,6 +805,17 @@ export default function QuickSaleModal({
           onComplete={handleSubscriptionComplete}
         />
       )}
+
+      {/* Modal de Assinatura Avulsa (sem carrinho) */}
+      <SubscriptionConfirmModal
+        open={standaloneSubscriptionOpen}
+        onOpenChange={setStandaloneSubscriptionOpen}
+        barberId={barberId}
+        organizationId={organizationId}
+        dailyProductionId={null}
+        onComplete={handleSubscriptionComplete}
+        standaloneMode
+      />
     </>
   );
 }
