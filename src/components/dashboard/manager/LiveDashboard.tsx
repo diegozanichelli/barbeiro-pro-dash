@@ -40,6 +40,11 @@ interface MonthProduction {
   barber_id: string;
   commission_earned: number;
   confirmed_presence: boolean;
+  services_total: number;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  products_total: number;
+  clients_count: number;
 }
 
 interface MonthlyGoal {
@@ -114,11 +119,20 @@ export default function LiveDashboard() {
         setProductions(productionsData);
       }
 
-      // Fetch month's productions for days worked calculation
+      // Fetch month's productions for days worked calculation and average ticket
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
       const { data: monthProductionsData } = await supabase
         .from("daily_productions")
-        .select("barber_id, commission_earned, confirmed_presence")
+        .select(`
+          barber_id, 
+          commission_earned, 
+          confirmed_presence,
+          services_total,
+          services_basic_total,
+          services_extra_total,
+          products_total,
+          clients_count
+        `)
         .eq("organization_id", organizationId)
         .gte("date", startOfMonth)
         .lte("date", todayStr);
@@ -268,6 +282,33 @@ export default function LiveDashboard() {
   };
 
   const getAverageTicket = () => {
+    // Primeiro: tentar calcular do mês inteiro (histórico mais robusto)
+    const filteredMonthProductions = selectedUnit === "all"
+      ? monthProductions
+      : monthProductions.filter((p) => {
+          const barber = barbers.find((b) => b.id === p.barber_id);
+          return barber?.unit_id === selectedUnit;
+        });
+
+    const totalClientsMonth = filteredMonthProductions.reduce(
+      (sum, p) => sum + (p.clients_count || 0), 
+      0
+    );
+    
+    const totalRevenueMonth = filteredMonthProductions.reduce((sum, p) => {
+      const servicesTotal =
+        p.services_basic_total !== null || p.services_extra_total !== null
+          ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
+          : p.services_total || 0;
+      return sum + servicesTotal + (p.products_total || 0);
+    }, 0);
+
+    // Se há histórico no mês, usar ticket médio mensal
+    if (totalClientsMonth > 0) {
+      return totalRevenueMonth / totalClientsMonth;
+    }
+
+    // Fallback: usar dados de hoje
     const filteredProductions = selectedUnit === "all"
       ? productions
       : productions.filter((p) => {
@@ -275,9 +316,17 @@ export default function LiveDashboard() {
           return barber?.unit_id === selectedUnit;
         });
 
-    const totalClients = filteredProductions.reduce((sum, p) => sum + p.clients_count, 0);
-    if (totalClients === 0) return 50; // Default average ticket
-    return totalRevenue / totalClients;
+    const totalClients = filteredProductions.reduce(
+      (sum, p) => sum + p.clients_count, 
+      0
+    );
+    
+    if (totalClients > 0) {
+      return totalRevenue / totalClients;
+    }
+
+    // Fallback final: valor padrão mais realista (R$ 70)
+    return 70;
   };
 
   const getCutsRemaining = (barberId: string, barber: Barber) => {
