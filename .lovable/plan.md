@@ -1,172 +1,167 @@
 
-# Plano: Atualização Visual do PDV para Barbeiros
+# Plano: Corrigir Cálculo de "Cortes Restantes" no Dashboard Ao Vivo
 
-## Resumo da Mudança
+## Problema Identificado
 
-O Dashboard do Barbeiro (`BarberDashboard.tsx`) atualmente usa o formulário antigo `DailyProductionForm.tsx` com inputs numéricos manuais. Vamos substituir essa experiência pela mesma interface visual de Cards/PDV que já existe no `QuickSaleModal.tsx` do Gestor.
+O cálculo de "Faltam X cortes para bater a meta" está incorreto porque:
+
+1. **Ticket médio padrão muito baixo**: Quando não há clientes registrados hoje, o sistema usa R$ 50,00 como fallback
+2. **Cálculo inconsistente**: `357,14 / 50 = 7,14` → arredonda para **8 cortes**, quando na verdade deveria considerar o ticket real (ex: R$ 80)
+
+### Exemplo do Werlen:
+- Meta do dia: R$ 357,14
+- Ticket médio real: ~R$ 80 (corte padrão)
+- Cortes necessários corretos: `357,14 / 80 = 4,5` → **5 cortes**
+- Sistema atual (bug): `357,14 / 50 = 7,14` → **8 cortes**
 
 ---
 
-## O Que Será Criado
+## Solução Proposta
 
-### 1. Novo Componente: `BarberSaleForm.tsx`
+### 1. Buscar Ticket Médio Histórico do Mês
 
-Um componente moderno de PDV (Ponto de Venda) para o barbeiro, com:
+Usar os dados de produção mensal (`monthProductions`) para calcular o ticket médio real baseado no histórico:
 
 ```text
-┌────────────────────────────────────────────────────────────────┐
-│  💰 REGISTRAR VENDA                                            │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│  🔍 Buscar serviço ou produto...                               │
-│                                                                │
-│  ┌────────────────┬────────────────┬────────────────┐         │
-│  │  ✂️ Serviços   │  🧴 Produtos   │   # Manual     │         │
-│  └────────────────┴────────────────┴────────────────┘         │
-│                                                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │   Corte     │  │   Barba     │  │  Degradê    │            │
-│  │   R$ 50     │  │   R$ 30     │  │   R$ 45     │            │
-│  │    [✓]      │  │             │  │             │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
-│                                                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ Progressiva │  │    Luzes    │  │  Relaxamento│            │
-│  │   R$ 150    │  │   R$ 200    │  │   R$ 120    │            │
-│  │   ⚡30%     │  │   ⚡25%     │  │             │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
-│                                                                │
-│  ══════════════════════════════════════════════════════════   │
-│  Item Selecionado: Corte Masculino                             │
-│  Valor: [  R$ 50,00  ] (editável)                              │
-│                                                                │
-│               [  CONFIRMAR VENDA  ]                            │
-└────────────────────────────────────────────────────────────────┘
+Lógica:
+1. Somar faturamento total do mês (da unidade/organização)
+2. Somar clientes atendidos no mês
+3. Calcular: faturamento_mes / clientes_mes
+4. Se não houver histórico: usar fallback mais realista (R$ 70-80)
 ```
 
----
+### 2. Alterações no LiveDashboard.tsx
 
-## Comportamento do Novo Componente
+**A. Expandir dados buscados do mês** (linhas ~118-128)
 
-### Fluxo Principal (Catálogo)
-1. Barbeiro abre o Dashboard
-2. Vê o grid de cards com serviços e produtos
-3. Digita "Cor" na busca -> Filtra para "Corte Masculino"
-4. Clica no card -> Card fica selecionado (borda colorida + checkmark)
-5. Ajusta o valor se necessário (campo editável)
-6. Clica "Confirmar Venda"
-7. Sistema salva em `sale_transactions` (trigger calcula comissão híbrida)
-8. Grid é atualizado, toast de sucesso aparece
-
-### Fluxo Manual (Fallback)
-1. Barbeiro clica na aba "Manual"
-2. Digita o valor (com correção do bug do zero)
-3. Seleciona categoria (Básico/Extra/Produto)
-4. Clica "Confirmar Venda"
-5. Sistema salva diretamente em `daily_productions` (fluxo legado)
-
----
-
-## Correção do Bug do Zero à Esquerda
-
-Será aplicada a mesma função `handleNumericInput` do `QuickSaleModal`:
+Adicionar campos `services_total`, `services_basic_total`, `services_extra_total`, `products_total`, e `clients_count` na query de `monthProductionsData`:
 
 ```typescript
-function handleNumericInput(currentValue, newValue, setter) {
-  // Se valor atual é "0" e usuário digita "5"
-  // Resultado: "5" (não "05")
-  if ((currentValue === "0") && /^\d/.test(newValue)) {
-    setter(newValue.replace(/^0+(?=\d)/, ""));
-    return;
-  }
-  setter(newValue);
+// Buscar mais dados do mês para calcular ticket médio histórico
+const { data: monthProductionsData } = await supabase
+  .from("daily_productions")
+  .select(`
+    barber_id, 
+    commission_earned, 
+    confirmed_presence,
+    services_total,
+    services_basic_total,
+    services_extra_total,
+    products_total,
+    clients_count
+  `)
+  .eq("organization_id", organizationId)
+  .gte("date", startOfMonth)
+  .lte("date", todayStr);
+```
+
+**B. Atualizar interface MonthProduction** (linhas ~39-43)
+
+```typescript
+interface MonthProduction {
+  barber_id: string;
+  commission_earned: number;
+  confirmed_presence: boolean;
+  services_total: number;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  products_total: number;
+  clients_count: number;
 }
 ```
 
+**C. Corrigir função getAverageTicket()** (linhas ~270-281)
+
+```typescript
+const getAverageTicket = () => {
+  // Primeiro: tentar calcular do mês inteiro (histórico mais robusto)
+  const filteredMonthProductions = selectedUnit === "all"
+    ? monthProductions
+    : monthProductions.filter((p) => {
+        const barber = barbers.find((b) => b.id === p.barber_id);
+        return barber?.unit_id === selectedUnit;
+      });
+
+  const totalClientsMonth = filteredMonthProductions.reduce(
+    (sum, p) => sum + (p.clients_count || 0), 
+    0
+  );
+  
+  const totalRevenueMonth = filteredMonthProductions.reduce((sum, p) => {
+    const servicesTotal =
+      p.services_basic_total !== null || p.services_extra_total !== null
+        ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
+        : p.services_total || 0;
+    return sum + servicesTotal + (p.products_total || 0);
+  }, 0);
+
+  // Se há histórico no mês, usar ticket médio mensal
+  if (totalClientsMonth > 0) {
+    return totalRevenueMonth / totalClientsMonth;
+  }
+
+  // Fallback: usar dados de hoje
+  const filteredProductions = selectedUnit === "all"
+    ? productions
+    : productions.filter((p) => {
+        const barber = barbers.find((b) => b.id === p.barber_id);
+        return barber?.unit_id === selectedUnit;
+      });
+
+  const totalClients = filteredProductions.reduce(
+    (sum, p) => sum + p.clients_count, 
+    0
+  );
+  
+  if (totalClients > 0) {
+    return totalRevenue / totalClients;
+  }
+
+  // Fallback final: valor padrão mais realista (R$ 70)
+  return 70;
+};
+```
+
 ---
 
-## Arquivos a Serem Modificados
+## Resumo das Mudanças
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/dashboard/barber/BarberSaleForm.tsx` | **NOVO** - Componente PDV visual com Cards |
-| `src/components/dashboard/BarberDashboard.tsx` | Substituir `DailyProductionForm` por `BarberSaleForm` |
-| `src/components/dashboard/barber/DailyProductionForm.tsx` | Manter para edição de lançamentos passados (no modal) |
-
----
-
-## Detalhes Técnicos
-
-### Componente `BarberSaleForm.tsx`
-
-O novo componente irá:
-
-1. **Buscar catálogo** da organização do barbeiro (`catalog_services` e `catalog_products`)
-
-2. **Renderizar interface PDV**:
-   - Barra de busca com filtro em tempo real
-   - Tabs para Serviços/Produtos/Manual
-   - Grid de Cards 2-3 colunas (responsivo)
-   - Badge de comissão fixa (ícone ⚡)
-
-3. **Gerenciar seleção**:
-   - Estado `selectedItem` para o card selecionado
-   - Visual feedback (borda primary, checkmark)
-   - Input de preço editável
-
-4. **Salvar transação**:
-   - Inserir em `sale_transactions` (modo catálogo)
-   - Ou atualizar `daily_productions` (modo manual)
-   - Incrementar `clients_count` automaticamente
-
-5. **Props do componente**:
-```typescript
-interface BarberSaleFormProps {
-  barberId: string;
-  organizationId: string;
-  onSuccess: () => void;
-}
-```
-
-### Atualização do `BarberDashboard.tsx`
-
-Substituir:
-```tsx
-<DailyProductionForm 
-  barberId={barber.id} 
-  onSuccess={handleFormSuccess}
-  initialData={editingProduction}
-/>
-```
-
-Por:
-```tsx
-<BarberSaleForm 
-  barberId={barber.id}
-  organizationId={barber.organization_id}
-  onSuccess={handleFormSuccess}
-/>
-```
-
-O `DailyProductionForm` será mantido apenas no modal de edição de lançamentos passados.
-
----
-
-## Manutenção do Formulário Antigo
-
-O `DailyProductionForm.tsx` continuará existindo e será usado exclusivamente no **modal de edição** (quando o barbeiro clica para corrigir um lançamento passado). Isso permite editar dados agregados de dias anteriores sem precisar recriar cada transação individual.
-
----
+| `src/components/dashboard/manager/LiveDashboard.tsx` | Expandir query de produções mensais, atualizar interface, corrigir `getAverageTicket()` |
 
 ## Resultado Esperado
 
-Após a implementação:
+- **Antes**: Werlen com meta R$ 357,14 → "Faltam 8 cortes" (ticket R$ 50)
+- **Depois**: Werlen com meta R$ 357,14 → "Faltam 5 cortes" (ticket ~R$ 75 baseado no histórico real)
 
-1. O barbeiro verá a mesma interface moderna de PDV que o gestor vê no QuickSaleModal
-2. A experiência será "Clicou no Card -> Salvou" - rápida e gratificante
-3. O bug do zero à esquerda estará corrigido
-4. A busca filtrará itens instantaneamente
-5. Itens com comissão fixa terão o badge visual (⚡30%)
-6. O modo manual continuará disponível como fallback
-7. Os dashboards e rankings continuarão funcionando (retrocompatibilidade via triggers)
+O sistema passará a usar o ticket médio **histórico do mês** para calcular quantos cortes faltam, tornando a informação muito mais precisa e útil para o gestor.
 
+---
+
+## Seção Técnica
+
+### Fluxo de Dados Atualizado
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    getAverageTicket()                          │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Filtrar produções do mês (por unidade se aplicável)         │
+│ 2. Somar faturamento total do mês                              │
+│ 3. Somar total de clientes do mês                              │
+│ 4. SE clientes_mes > 0:                                        │
+│    └─→ Retorna: faturamento_mes / clientes_mes                 │
+│ 5. SENÃO, tentar com dados de hoje                             │
+│ 6. SE clientes_hoje > 0:                                       │
+│    └─→ Retorna: faturamento_hoje / clientes_hoje               │
+│ 7. SENÃO:                                                      │
+│    └─→ Retorna: R$ 70 (fallback realista)                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Dependências de Dados
+
+- `monthProductions`: Precisa incluir campos de faturamento e clientes
+- Nenhuma mudança no banco de dados necessária
+- Compatível com lógica existente de filtro por unidade
