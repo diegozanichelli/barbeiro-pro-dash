@@ -213,7 +213,7 @@ export default function LiveDashboard() {
     setTotalRevenue(newTotal);
   }, [productions, selectedUnit, barbers, totalRevenue]);
 
-  // Realtime subscription
+  // Realtime subscription for productions and transactions
   useEffect(() => {
     if (!organizationId) return;
 
@@ -228,6 +228,18 @@ export default function LiveDashboard() {
           filter: `date=eq.${todayStr}`,
         },
         () => {
+          fetchData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sale_transactions",
+        },
+        () => {
+          // Quando transações mudam, re-fetch os dados para refletir os novos totais
           fetchData();
         }
       )
