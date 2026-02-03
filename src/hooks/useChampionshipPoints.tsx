@@ -44,7 +44,8 @@ const VALIDATION_THRESHOLD = 15000; // R$ 15.000,00
 export function useChampionshipPoints(barbers: RawBarberData[]): ChampionshipBarber[] {
   return useMemo(() => {
     return barbers.map((barber) => {
-      const total_revenue = barber.services_total + barber.products_total;
+      // Total revenue includes all sources
+      const total_revenue = barber.services_total + barber.services_extra_total + barber.products_total;
       const ticket_medio = barber.clients_count > 0 
         ? total_revenue / barber.clients_count 
         : 0;
@@ -69,7 +70,7 @@ export function useChampionshipPoints(barbers: RawBarberData[]): ChampionshipBar
       // 4. Extras: 3 pontos por serviço extra vendido
       const points_extras = barber.extras_count * 3;
 
-      // 5. Assinaturas: 10 pontos por venda
+      // 5. Assinaturas: 10 pontos por venda (type='subscription' in sale_transactions)
       const points_assinaturas = barber.subscriptions_count * 10;
 
       // Total
