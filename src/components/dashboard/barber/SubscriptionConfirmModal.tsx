@@ -24,7 +24,7 @@ interface SubscriptionEntry {
 interface SubscriptionConfirmModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  barberId: string;
+  barberId: string | null;
   organizationId: string;
   dailyProductionId: string | null;
   onComplete: () => void;
@@ -116,10 +116,10 @@ export default function SubscriptionConfirmModal({
     setLoading(true);
 
     try {
-      // Get or create daily production if not provided
+      // Get or create daily production if not provided (only if barberId exists)
       let productionId = dailyProductionId;
       
-      if (!productionId) {
+      if (!productionId && barberId) {
         const today = new Date().toISOString().split("T")[0];
         
         const { data: existingProd } = await supabase
@@ -137,7 +137,7 @@ export default function SubscriptionConfirmModal({
             .insert({
               barber_id: barberId,
               organization_id: organizationId,
-              date: today,
+              date: new Date().toISOString().split("T")[0],
               clients_count: 0,
               services_count: 0,
               products_count: 0,

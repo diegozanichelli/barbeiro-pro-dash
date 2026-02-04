@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, Crown, AlertCircle } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, Crown, AlertCircle, Building2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -98,6 +99,9 @@ export default function QuickSaleModal({
   
   // Standalone subscription modal
   const [standaloneSubscriptionOpen, setStandaloneSubscriptionOpen] = useState(false);
+  
+  // Reception mode (no barber attribution)
+  const [isReceptionSale, setIsReceptionSale] = useState(false);
 
   // Fetch catalog items
   useEffect(() => {
@@ -158,6 +162,7 @@ export default function QuickSaleModal({
     setManualCategory("basic");
     setSearchQuery("");
     setActiveTab("services");
+    setIsReceptionSale(false);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -277,42 +282,46 @@ export default function QuickSaleModal({
 
     setIsLoading(true);
     const today = new Date().toISOString().split("T")[0];
+    const effectiveBarberId = isReceptionSale ? null : barberId;
 
     try {
-      // Get or create daily_production
-      let productionId: string;
-      const { data: existingProduction } = await supabase
-        .from("daily_productions")
-        .select("id, clients_count")
-        .eq("barber_id", barberId)
-        .eq("date", today)
-        .single();
-
-      if (existingProduction) {
-        productionId = existingProduction.id;
-        await supabase
+      // Get or create daily_production (only if NOT reception sale)
+      let productionId: string | null = null;
+      
+      if (!isReceptionSale) {
+        const { data: existingProduction } = await supabase
           .from("daily_productions")
-          .update({ clients_count: (existingProduction.clients_count || 0) + clientsCount })
-          .eq("id", productionId);
-      } else {
-        const { data: newProduction, error: createError } = await supabase
-          .from("daily_productions")
-          .insert({
-            barber_id: barberId,
-            organization_id: organizationId,
-            date: today,
-            clients_count: clientsCount,
-            services_count: 0,
-            products_count: 0,
-            services_basic_total: 0,
-            services_extra_total: 0,
-            products_total: 0,
-          })
-          .select("id")
+          .select("id, clients_count")
+          .eq("barber_id", barberId)
+          .eq("date", today)
           .single();
 
-        if (createError) throw createError;
-        productionId = newProduction.id;
+        if (existingProduction) {
+          productionId = existingProduction.id;
+          await supabase
+            .from("daily_productions")
+            .update({ clients_count: (existingProduction.clients_count || 0) + clientsCount })
+            .eq("id", productionId);
+        } else {
+          const { data: newProduction, error: createError } = await supabase
+            .from("daily_productions")
+            .insert({
+              barber_id: barberId,
+              organization_id: organizationId,
+              date: today,
+              clients_count: clientsCount,
+              services_count: 0,
+              products_count: 0,
+              services_basic_total: 0,
+              services_extra_total: 0,
+              products_total: 0,
+            })
+            .select("id")
+            .single();
+
+          if (createError) throw createError;
+          productionId = newProduction.id;
+        }
       }
 
       // Batch insert all transactions (expanded by quantity)
@@ -321,7 +330,7 @@ export default function QuickSaleModal({
         for (let i = 0; i < item.quantity; i++) {
           transactions.push({
             organization_id: organizationId,
-            barber_id: barberId,
+            barber_id: effectiveBarberId,
             daily_production_id: productionId,
             item_type: item.type,
             catalog_service_id: item.type === "service" ? item.id : null,
@@ -338,17 +347,23 @@ export default function QuickSaleModal({
       const { error } = await supabase.from("sale_transactions").insert(transactions);
       if (error) throw error;
 
-      toast.success(`${cartItemsTotal} ${cartItemsTotal === 1 ? 'item registrado' : 'itens registrados'} para ${barberName}`, {
+      const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
+      toast.success(`${cartItemsTotal} ${cartItemsTotal === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
 
-      // Save for subscription modal
-      setLastDailyProductionId(productionId);
-      resetForm();
-      onOpenChange(false);
-      
-      // Open subscription modal
-      setSubscriptionModalOpen(true);
+      // Save for subscription modal (only if not reception sale)
+      if (!isReceptionSale) {
+        setLastDailyProductionId(productionId);
+        resetForm();
+        onOpenChange(false);
+        // Open subscription modal
+        setSubscriptionModalOpen(true);
+      } else {
+        resetForm();
+        onOpenChange(false);
+        onSuccess();
+      }
     } catch (error) {
       console.error("Error registering sale:", error);
       toast.error("Erro ao registrar venda");
@@ -471,10 +486,13 @@ export default function QuickSaleModal({
             <div className="flex items-center justify-between">
               <div>
                 <DialogTitle className="text-lg font-semibold">
-                  Venda Rápida — {barberName}
+                  Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
                 </DialogTitle>
                 <DialogDescription>
-                  Selecione múltiplos itens para registrar
+                  {isReceptionSale 
+                    ? "Venda sem atribuição de barbeiro (pontos vão para a loja)"
+                    : "Selecione múltiplos itens para registrar"
+                  }
                 </DialogDescription>
               </div>
               {/* Botão de Assinatura Avulsa */}
@@ -490,6 +508,21 @@ export default function QuickSaleModal({
                 <Crown className="w-4 h-4" />
                 Assinatura
               </Button>
+            </div>
+            
+            {/* Toggle Venda Recepção */}
+            <div className="flex items-center justify-between mt-3 p-3 rounded-lg border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-muted-foreground" />
+                <Label htmlFor="reception-mode" className="text-sm font-medium cursor-pointer">
+                  Venda Recepção / Loja
+                </Label>
+              </div>
+              <Switch
+                id="reception-mode"
+                checked={isReceptionSale}
+                onCheckedChange={setIsReceptionSale}
+              />
             </div>
           </DialogHeader>
 
@@ -810,7 +843,7 @@ export default function QuickSaleModal({
       <SubscriptionConfirmModal
         open={standaloneSubscriptionOpen}
         onOpenChange={setStandaloneSubscriptionOpen}
-        barberId={barberId}
+        barberId={isReceptionSale ? null : barberId}
         organizationId={organizationId}
         dailyProductionId={null}
         onComplete={handleSubscriptionComplete}
