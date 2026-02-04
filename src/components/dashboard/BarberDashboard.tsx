@@ -432,13 +432,31 @@ const [todayProduction, setTodayProduction] = useState<{
     // Buscar se já existe produção para a data selecionada
     const { data: existingProd } = await supabase
       .from("daily_productions")
-      .select("id")
+      .select("id, services_basic_total, services_extra_total, products_total, services_total")
       .eq("barber_id", barber.id)
       .eq("date", dateStr)
       .maybeSingle();
 
+    // Validar se já existe faturamento na data selecionada
+    if (existingProd) {
+      const existingTotal = (Number(existingProd.services_basic_total) || 0) +
+                           (Number(existingProd.services_extra_total) || 0) +
+                           (Number(existingProd.products_total) || 0) +
+                           (Number(existingProd.services_total) || 0);
+      
+      if (existingTotal > 0) {
+        setConfirmingPresence(false);
+        setPresenceModalOpen(false);
+        toast.error("Não é possível confirmar presença nesta data", {
+          description: `Já existe faturamento de R$ ${existingTotal.toFixed(2).replace('.', ',')} registrado em ${dateStr.split("-").reverse().join("/")}.`,
+          duration: 5000,
+        });
+        return;
+      }
+    }
+
     if (existingProd?.id) {
-      // Registro EXISTE: fazer UPDATE com o número de clientes
+      // Registro EXISTE (com faturamento zero): fazer UPDATE com o número de clientes
       const result = await supabase
         .from("daily_productions")
         .update({ 
