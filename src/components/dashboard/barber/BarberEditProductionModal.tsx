@@ -281,24 +281,75 @@ export default function BarberEditProductionModal({
     setIsLoading(true);
 
     try {
-      // Calcular totais por categoria
+      // 1. Deletar transações antigas do BARBEIRO para esta produção
+      const { error: deleteError } = await supabase
+        .from("sale_transactions")
+        .delete()
+        .eq("daily_production_id", productionId)
+        .eq("source", "barber");
+
+      if (deleteError) {
+        console.error("Erro ao limpar transações antigas:", deleteError);
+        throw deleteError;
+      }
+
+      // 2. Criar novas transações itemizadas (source = 'barber')
+      const transactions: any[] = [];
+      
+      cart.forEach(item => {
+        for (let i = 0; i < item.quantity; i++) {
+          transactions.push({
+            organization_id: organizationId,
+            barber_id: barberId,
+            daily_production_id: productionId,
+            item_name: item.name,
+            item_type: item.type,
+            service_category: item.category || null,
+            catalog_service_id: item.type === "service" ? item.id : null,
+            catalog_product_id: item.type === "product" ? item.id : null,
+            price_sold: item.customPrice,
+            commission_rate_used: 0, // Trigger calculará
+            commission_amount: 0, // Trigger calculará
+            source: "barber", // <- Nova coluna!
+          });
+        }
+      });
+
+      if (transactions.length > 0) {
+        const { error: insertError } = await supabase
+          .from("sale_transactions")
+          .insert(transactions);
+
+        if (insertError) {
+          console.error("Erro ao inserir transações:", insertError);
+          throw insertError;
+        }
+      }
+
+      // 3. Atualizar clients_count manualmente (não vem das transações)
+      const { error: updateError } = await supabase
+        .from("daily_productions")
+        .update({
+          manual_clients_count: clientsCount,
+          clients_count: clientsCount,
+        })
+        .eq("id", productionId);
+
+      if (updateError) throw updateError;
+
+      // Calcular totais para verificar divergência
       let servicesBasicTotal = 0;
       let servicesExtraTotal = 0;
       let productsTotal = 0;
-      let servicesCount = 0;
-      let productsCount = 0;
 
       cart.forEach(item => {
         const itemTotal = item.customPrice * item.quantity;
         if (item.type === "product") {
           productsTotal += itemTotal;
-          productsCount += item.quantity;
         } else if (item.category === "extra") {
           servicesExtraTotal += itemTotal;
-          servicesCount += item.quantity;
         } else {
           servicesBasicTotal += itemTotal;
-          servicesCount += item.quantity;
         }
       });
 
@@ -309,30 +360,8 @@ export default function BarberEditProductionModal({
         ? existingData.tx_basic_total + existingData.tx_extra_total + existingData.tx_products_total
         : 0;
 
-      // Atualizar produção com valores MANUAIS
-      const { error } = await supabase
-        .from("daily_productions")
-        .update({
-          // Campos MANUAIS (declaração do barbeiro)
-          manual_basic_total: servicesBasicTotal,
-          manual_extra_total: servicesExtraTotal,
-          manual_products_total: productsTotal,
-          manual_clients_count: clientsCount,
-          manual_services_count: servicesCount,
-          manual_products_count: productsCount,
-          // Campos legados (valor OFICIAL = manual)
-          services_basic_total: servicesBasicTotal,
-          services_extra_total: servicesExtraTotal,
-          products_total: productsTotal,
-          clients_count: clientsCount,
-          services_count: servicesCount,
-          products_count: productsCount,
-        })
-        .eq("id", productionId);
-
-      if (error) throw error;
-
       // Verificar divergência
+
       const divergenceThreshold = 0.05;
       let hasDivergence = false;
 

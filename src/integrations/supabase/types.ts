@@ -610,6 +610,7 @@ export type Database = {
           organization_id: string
           price_sold: number
           service_category: string | null
+          source: string
         }
         Insert: {
           barber_id?: string | null
@@ -626,6 +627,7 @@ export type Database = {
           organization_id: string
           price_sold: number
           service_category?: string | null
+          source?: string
         }
         Update: {
           barber_id?: string | null
@@ -642,6 +644,7 @@ export type Database = {
           organization_id?: string
           price_sold?: number
           service_category?: string | null
+          source?: string
         }
         Relationships: [
           {
