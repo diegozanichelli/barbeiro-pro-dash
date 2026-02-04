@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle, UserCheck } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { calculateRemainingWorkDays } from "@/lib/dateUtils";
+import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
 interface BarberDailyGoal {
   barberId: string;
@@ -34,10 +34,9 @@ export default function DailyGoalsTracking() {
   const [filterUnit, setFilterUnit] = useState<string>("all");
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
 
-  const today = new Date();
-  const currentMonth = today.getMonth() + 1;
-  const currentYear = today.getFullYear();
-  const todayStr = today.toISOString().split("T")[0];
+  const today = getManausDate();
+  const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
+  const todayStr = getTodayString();
 
   // Calculate working days passed in the month (excluding Sundays)
   const getWorkingDaysPassed = () => {

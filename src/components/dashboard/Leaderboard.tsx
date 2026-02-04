@@ -13,6 +13,7 @@ import { useOrganization } from "@/hooks/useOrganization";
 import { Switch } from "@/components/ui/switch";
 import ChampionshipLeaderboard from "./ChampionshipLeaderboard";
 import { useChampionshipPoints, ChampionshipBarber } from "@/hooks/useChampionshipPoints";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface RankingItem {
   barber_id: string;
@@ -275,7 +276,7 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
   };
 
   const getDateRange = () => {
-    const now = new Date();
+    const now = getManausDate();
     switch (period) {
       case "current_week":
         return {

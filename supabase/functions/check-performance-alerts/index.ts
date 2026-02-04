@@ -5,6 +5,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Fuso horário de Manaus (GMT-4)
+const MANAUS_OFFSET = -4 * 60; // -4 horas em minutos
+
+function getManausDate(): Date {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  return new Date(utc + (MANAUS_OFFSET * 60000));
+}
+
 function logStep(step: string, data?: any) {
   console.log(`[CHECK-ALERTS] ${step}`, data ? JSON.stringify(data) : '');
 }
@@ -28,8 +37,8 @@ Deno.serve(async (req) => {
       }
     );
 
-    // Data atual
-    const hoje = new Date();
+    // Data atual no fuso horário de Manaus
+    const hoje = getManausDate();
     const mesAtual = hoje.getMonth() + 1; // 1-12
     const anoAtual = hoje.getFullYear();
     const diaAtual = hoje.getDate();
@@ -38,7 +47,7 @@ Deno.serve(async (req) => {
     const mesReferencia = new Date(anoAtual, mesAtual - 1, 1);
     const mesReferenciaStr = mesReferencia.toISOString().split('T')[0];
 
-    logStep('Processing month', { mes: mesAtual, ano: anoAtual, dia: diaAtual });
+    logStep('Processing month (Manaus timezone)', { mes: mesAtual, ano: anoAtual, dia: diaAtual, timezone: 'America/Manaus (GMT-4)' });
 
     // PASSO 1: Resolver/fechar automaticamente todos os alertas de meses anteriores
     const { data: alertasAntigos, error: alertasAntigosError } = await supabaseClient
