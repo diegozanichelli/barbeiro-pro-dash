@@ -117,7 +117,8 @@ export default function SubscriptionConfirmModal({
 
     try {
       // Get or create daily production if not provided (only if barberId exists)
-      let productionId = dailyProductionId;
+      // For reception sales (barberId = null), we don't need a daily_production
+      let productionId: string | null = dailyProductionId;
       
       if (!productionId && barberId) {
         const today = new Date().toISOString().split("T")[0];
@@ -154,10 +155,11 @@ export default function SubscriptionConfirmModal({
       }
 
       // Insert each subscription as a separate transaction
+      // barberId and productionId can be null for reception sales
       const transactions = subscriptionList.map(sub => ({
-        barber_id: barberId,
+        barber_id: barberId || null,
         organization_id: organizationId,
-        daily_production_id: productionId,
+        daily_production_id: productionId || null,
         item_type: "subscription",
         item_name: `Assinatura ${sub.plan}`,
         description: sub.clientNotes,
