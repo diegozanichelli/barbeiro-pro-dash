@@ -37,16 +37,32 @@ interface DayStats {
   produtosVendidos: Record<string, number>;
   clientesAtendidos: number;
   comissaoTotal: number;
+  servicosExtras: number;
+  servicosBasicos: number;
+  ultimoServicoVendido: string | null;
+  ultimoProdutoVendido: string | null;
 }
 
 interface HistoricalStats {
   topService: { name: string; count: number } | null;
+  topProduct: { name: string; count: number } | null;
   forgottenServices: string[];
+  forgottenProducts: string[];
   avgTicket30d: number;
   totalClients30d: number;
   totalRevenue30d: number;
   daysWorked: number;
   avgDailyCommission: number;
+  productConversionRate: number;
+  extrasRatio: number;
+  totalProducts: number;
+  totalServices: number;
+  serviceCount: Record<string, number>;
+  productCount: Record<string, number>;
+  categoryCount: Record<string, number>;
+  dayOfWeekSales: Record<number, number>;
+  managerTransactionsCount: number;
+  barberTransactionsCount: number;
 }
 
 async function fetchHistoricalStats(barberId: string, organizationId: string, supabase: any): Promise<HistoricalStats> {
@@ -56,18 +72,29 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
   const startDate = thirtyDaysAgo.toISOString().split('T')[0];
   const endDate = today.toISOString().split('T')[0];
 
-  // Buscar transações dos últimos 30 dias
-  const { data: transactions } = await supabase
+  // Buscar transações DECLARADAS PELO BARBEIRO dos últimos 30 dias (source='barber')
+  // Isso fornece dados itemizados precisos do que o barbeiro realmente declara vender
+  const { data: barberTransactions } = await supabase
+    .from("sale_transactions")
+    .select("item_type, item_name, price_sold, commission_amount, service_category, created_at")
+    .eq("barber_id", barberId)
+    .eq("source", "barber")
+    .gte("created_at", `${startDate}T00:00:00`)
+    .lte("created_at", `${endDate}T23:59:59`);
+
+  // Também buscar transações do gerente para comparação silenciosa
+  const { data: managerTransactions } = await supabase
     .from("sale_transactions")
     .select("item_type, item_name, price_sold, commission_amount, service_category")
     .eq("barber_id", barberId)
+    .eq("source", "manager")
     .gte("created_at", `${startDate}T00:00:00`)
     .lte("created_at", `${endDate}T23:59:59`);
 
   // Buscar produções dos últimos 30 dias
   const { data: productions } = await supabase
     .from("daily_productions")
-    .select("clients_count, commission_earned, date")
+    .select("clients_count, commission_earned, date, manual_clients_count")
     .eq("barber_id", barberId)
     .gte("date", startDate)
     .lte("date", endDate);
@@ -75,20 +102,48 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
   // Buscar catálogo de serviços ativos
   const { data: catalogServices } = await supabase
     .from("catalog_services")
+    .select("name, category")
+    .eq("organization_id", organizationId)
+    .eq("is_active", true);
+
+  // Buscar catálogo de produtos ativos
+  const { data: catalogProducts } = await supabase
+    .from("catalog_products")
     .select("name")
     .eq("organization_id", organizationId)
     .eq("is_active", true);
 
-  // Contagem de serviços vendidos
+  // Contagem de serviços e produtos vendidos pelo barbeiro (dados itemizados)
   const serviceCount: Record<string, number> = {};
+  const productCount: Record<string, number> = {};
+  const categoryCount: Record<string, number> = {};
   let totalRevenue30d = 0;
+  let totalProducts = 0;
+  let totalServices = 0;
 
-  if (transactions) {
-    for (const tx of transactions) {
+  if (barberTransactions) {
+    for (const tx of barberTransactions) {
       if (tx.item_type === 'service') {
         serviceCount[tx.item_name] = (serviceCount[tx.item_name] || 0) + 1;
+        totalServices++;
+        // Agrupar por categoria (basico/extra)
+        const cat = tx.service_category || 'basico';
+        categoryCount[cat] = (categoryCount[cat] || 0) + 1;
+      } else if (tx.item_type === 'product') {
+        productCount[tx.item_name] = (productCount[tx.item_name] || 0) + 1;
+        totalProducts++;
       }
       totalRevenue30d += tx.price_sold || 0;
+    }
+  }
+
+  // Análise de padrões - dias da semana com mais vendas
+  const dayOfWeekSales: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  if (barberTransactions) {
+    for (const tx of barberTransactions) {
+      const date = new Date(tx.created_at);
+      const dayOfWeek = date.getDay();
+      dayOfWeekSales[dayOfWeek] += tx.price_sold || 0;
     }
   }
 
@@ -97,6 +152,14 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
   for (const [name, count] of Object.entries(serviceCount)) {
     if (!topService || count > topService.count) {
       topService = { name, count };
+    }
+  }
+
+  // Top produto vendido
+  let topProduct: { name: string; count: number } | null = null;
+  for (const [name, count] of Object.entries(productCount)) {
+    if (!topProduct || count > topProduct.count) {
+      topProduct = { name, count };
     }
   }
 
@@ -110,6 +173,16 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
+  // Produtos esquecidos
+  const forgottenProducts: string[] = [];
+  if (catalogProducts) {
+    for (const product of catalogProducts) {
+      if (!productCount[product.name]) {
+        forgottenProducts.push(product.name);
+      }
+    }
+  }
+
   // Estatísticas de produção
   let totalClients30d = 0;
   let totalCommission30d = 0;
@@ -117,9 +190,10 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
 
   if (productions) {
     for (const prod of productions) {
-      if (prod.clients_count > 0 || prod.commission_earned > 0) {
+      const clients = prod.manual_clients_count || prod.clients_count || 0;
+      if (clients > 0 || prod.commission_earned > 0) {
         daysWorked++;
-        totalClients30d += prod.clients_count || 0;
+        totalClients30d += clients;
         totalCommission30d += prod.commission_earned || 0;
       }
     }
@@ -128,14 +202,34 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
   const avgTicket30d = totalClients30d > 0 ? totalRevenue30d / totalClients30d : 0;
   const avgDailyCommission = daysWorked > 0 ? totalCommission30d / daysWorked : 0;
 
+  // Calcular taxa de conversão de produtos (quantos clientes compram produtos)
+  const productConversionRate = totalClients30d > 0 ? (totalProducts / totalClients30d) * 100 : 0;
+
+  // Calcular mix de serviços extras vs básicos
+  const extrasCount = categoryCount['extra'] || 0;
+  const basicCount = categoryCount['basico'] || 0;
+  const extrasRatio = totalServices > 0 ? (extrasCount / totalServices) * 100 : 0;
+
   return {
     topService,
+    topProduct,
     forgottenServices,
+    forgottenProducts,
     avgTicket30d,
     totalClients30d,
     totalRevenue30d,
     daysWorked,
     avgDailyCommission,
+    productConversionRate,
+    extrasRatio,
+    totalProducts,
+    totalServices,
+    serviceCount,
+    productCount,
+    categoryCount,
+    dayOfWeekSales,
+    managerTransactionsCount: managerTransactions?.length || 0,
+    barberTransactionsCount: barberTransactions?.length || 0,
   };
 }
 
@@ -150,32 +244,57 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
     .eq("date", today)
     .single();
 
-  // Buscar transações detalhadas de hoje
-  const { data: transactions } = await supabase
+  // Buscar transações DECLARADAS PELO BARBEIRO de hoje (source='barber')
+  // Isso fornece dados itemizados precisos do que o barbeiro declara ter vendido
+  const { data: barberTransactions } = await supabase
     .from("sale_transactions")
-    .select("item_type, item_name, price_sold, commission_amount, service_category")
+    .select("item_type, item_name, price_sold, commission_amount, service_category, created_at")
     .eq("barber_id", barberId)
+    .eq("source", "barber")
     .gte("created_at", `${today}T00:00:00`)
-    .lte("created_at", `${today}T23:59:59`);
+    .lte("created_at", `${today}T23:59:59`)
+    .order("created_at", { ascending: false });
 
   const servicosVendidos: Record<string, number> = {};
   const produtosVendidos: Record<string, number> = {};
   let totalServicos = 0;
   let totalProdutos = 0;
+  let servicosExtras = 0;
+  let servicosBasicos = 0;
+  let ultimoServicoVendido: string | null = null;
+  let ultimoProdutoVendido: string | null = null;
 
-  if (transactions) {
-    for (const tx of transactions) {
+  if (barberTransactions && barberTransactions.length > 0) {
+    for (const tx of barberTransactions) {
       if (tx.item_type === 'service') {
         servicosVendidos[tx.item_name] = (servicosVendidos[tx.item_name] || 0) + 1;
         totalServicos += tx.price_sold;
+        
+        // Rastrear categoria do serviço
+        if (tx.service_category === 'extra') {
+          servicosExtras++;
+        } else {
+          servicosBasicos++;
+        }
+        
+        // Capturar último serviço vendido
+        if (!ultimoServicoVendido) {
+          ultimoServicoVendido = tx.item_name;
+        }
       } else if (tx.item_type === 'product') {
         produtosVendidos[tx.item_name] = (produtosVendidos[tx.item_name] || 0) + 1;
         totalProdutos += tx.price_sold;
+        
+        // Capturar último produto vendido
+        if (!ultimoProdutoVendido) {
+          ultimoProdutoVendido = tx.item_name;
+        }
       }
     }
   }
 
-  const clientesAtendidos = production?.clients_count || 0;
+  // Usar clients_count manual se disponível, senão o consolidado
+  const clientesAtendidos = production?.manual_clients_count || production?.clients_count || 0;
   const comissaoTotal = production?.commission_earned || 0;
   const totalVendas = totalServicos + totalProdutos;
   const ticketMedio = clientesAtendidos > 0 ? totalVendas / clientesAtendidos : 0;
@@ -190,6 +309,10 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
     produtosVendidos,
     clientesAtendidos,
     comissaoTotal,
+    servicosExtras,
+    servicosBasicos,
+    ultimoServicoVendido,
+    ultimoProdutoVendido,
   };
 }
 
@@ -202,14 +325,20 @@ function buildDayStatsContext(stats: DayStats): string {
     .map(([name, count]) => `${name}: ${count}x`)
     .join(', ') || 'Nenhum produto vendido ainda';
 
+  const totalServicosCount = Object.values(stats.servicosVendidos).reduce((a, b) => a + b, 0);
+
   return `
-## 📊 DADOS REAIS DO DIA (Use para personalizar a resposta):
+## 📊 DADOS REAIS DO DIA - DECLARADOS PELO BARBEIRO (source='barber'):
 - Clientes atendidos: ${stats.clientesAtendidos}
 - Ticket Médio: R$ ${stats.ticketMedio.toFixed(2)}
 - Comissão acumulada: R$ ${stats.comissaoTotal.toFixed(2)}
 - Mix: ${stats.mixServicos.toFixed(0)}% Serviços | ${stats.mixProdutos.toFixed(0)}% Produtos
-- Serviços vendidos hoje: ${servicosList}
-- Produtos vendidos hoje: ${produtosList}
+- Serviços Básicos: ${stats.servicosBasicos}x | Serviços Extras: ${stats.servicosExtras}x
+- Taxa de Extras: ${totalServicosCount > 0 ? ((stats.servicosExtras / totalServicosCount) * 100).toFixed(0) : 0}%
+- Serviços vendidos hoje (ITEMIZADO): ${servicosList}
+- Produtos vendidos hoje (ITEMIZADO): ${produtosList}
+${stats.ultimoServicoVendido ? `- Último serviço vendido: ${stats.ultimoServicoVendido}` : ''}
+${stats.ultimoProdutoVendido ? `- Último produto vendido: ${stats.ultimoProdutoVendido}` : ''}
 
 ## 🎯 ANÁLISE INTELIGENTE DO DIA (Aplique estas regras):
 ${stats.clientesAtendidos > 0 && Object.keys(stats.produtosVendidos).length === 0 
@@ -218,16 +347,26 @@ ${stats.clientesAtendidos > 0 && Object.keys(stats.produtosVendidos).length === 
 ${stats.clientesAtendidos >= 3 && stats.mixProdutos < 10 
   ? "⚠️ ALERTA: Mix de produtos muito baixo. Hora de focar em venda de produtos!" 
   : ""}
-${Object.values(stats.servicosVendidos).reduce((a, b) => a + b, 0) > 3 && !stats.servicosVendidos['Barba'] && !stats.servicosVendidos['Barba SPA'] && !stats.servicosVendidos['Barbaterapia']
+${totalServicosCount > 3 && !stats.servicosVendidos['Barba'] && !stats.servicosVendidos['Barba SPA'] && !stats.servicosVendidos['Barbaterapia']
   ? "⚠️ ALERTA: Vários cortes mas ZERO barbas. O próximo cliente precisa sair com a barba feita ou pelo menos sobrancelha!" 
+  : ""}
+${stats.servicosBasicos > 0 && stats.servicosExtras === 0
+  ? "⚠️ ALERTA: Nenhum serviço EXTRA vendido hoje. Cada cliente é uma oportunidade de upsell perdida!"
+  : ""}
+${stats.clientesAtendidos >= 5 && stats.servicosExtras >= stats.clientesAtendidos
+  ? "🔥 DESTAQUE: Excelente taxa de extras! Média de 1+ extra por cliente. Mantenha o ritmo!"
   : ""}
 `;
 }
 
 function buildHistoricalContext(stats: HistoricalStats, dayStats: DayStats): string {
-  const forgottenList = stats.forgottenServices.length > 0 
+  const forgottenServicesList = stats.forgottenServices.length > 0 
     ? stats.forgottenServices.slice(0, 5).join(', ')
     : 'Nenhum (parabéns, vendeu de tudo!)';
+
+  const forgottenProductsList = stats.forgottenProducts.length > 0 
+    ? stats.forgottenProducts.slice(0, 3).join(', ')
+    : 'Nenhum (está vendendo toda a linha!)';
   
   const ticketComparison = dayStats.ticketMedio > 0 && stats.avgTicket30d > 0
     ? ((dayStats.ticketMedio / stats.avgTicket30d) * 100 - 100).toFixed(0)
@@ -237,15 +376,53 @@ function buildHistoricalContext(stats: HistoricalStats, dayStats: DayStats): str
     ? `✅ Hoje está ${ticketComparison}% ACIMA da média histórica` 
     : `⚠️ Hoje está ${Math.abs(Number(ticketComparison))}% ABAIXO da média histórica`;
 
+  // Analisar dias da semana com melhor performance
+  const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  let bestDay = 0;
+  let bestDaySales = 0;
+  for (const [day, sales] of Object.entries(stats.dayOfWeekSales)) {
+    if (sales > bestDaySales) {
+      bestDaySales = sales;
+      bestDay = Number(day);
+    }
+  }
+
+  // Top 3 serviços vendidos
+  const topServices = Object.entries(stats.serviceCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, count]) => `${name}: ${count}x`)
+    .join(', ') || 'Sem dados';
+
+  // Top 3 produtos vendidos
+  const topProducts = Object.entries(stats.productCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, count]) => `${name}: ${count}x`)
+    .join(', ') || 'Sem dados';
+
   return `
-## 📈 HISTÓRICO DOS ÚLTIMOS 30 DIAS (Use para personalização profunda):
+## 📈 HISTÓRICO DOS ÚLTIMOS 30 DIAS - DADOS ITEMIZADOS (source='barber'):
 
 ### Performance Geral:
 - Dias trabalhados: ${stats.daysWorked}
 - Total de clientes: ${stats.totalClients30d}
-- Faturamento total: R$ ${stats.totalRevenue30d.toFixed(2)}
+- Faturamento total declarado: R$ ${stats.totalRevenue30d.toFixed(2)}
 - Ticket Médio (30d): R$ ${stats.avgTicket30d.toFixed(2)}
 - Comissão média diária: R$ ${stats.avgDailyCommission.toFixed(2)}
+- Total de transações declaradas: ${stats.barberTransactionsCount}
+
+### Análise de Vendas Itemizadas:
+- Total serviços vendidos (30d): ${stats.totalServices}
+- Total produtos vendidos (30d): ${stats.totalProducts}
+- Taxa conversão produtos: ${stats.productConversionRate.toFixed(1)}% dos clientes compram produto
+- Taxa de serviços extras: ${stats.extrasRatio.toFixed(1)}% dos serviços são extras
+
+### TOP 3 Serviços Mais Vendidos (30d):
+📊 ${topServices}
+
+### TOP 3 Produtos Mais Vendidos (30d):
+🛒 ${topProducts}
 
 ### Análise Comparativa de Hoje vs Histórico:
 - Ticket Médio Hoje: R$ ${dayStats.ticketMedio.toFixed(2)}
@@ -253,27 +430,45 @@ function buildHistoricalContext(stats: HistoricalStats, dayStats: DayStats): str
 
 ### Especialidade do Barbeiro:
 ${stats.topService 
-  ? `🏆 TOP SERVIÇO (30d): "${stats.topService.name}" - vendeu ${stats.topService.count}x`
+  ? `🏆 TOP SERVIÇO: "${stats.topService.name}" - vendeu ${stats.topService.count}x em 30 dias`
   : '❓ Sem dados suficientes de vendas ainda'}
+${stats.topProduct 
+  ? `🏆 TOP PRODUTO: "${stats.topProduct.name}" - vendeu ${stats.topProduct.count}x em 30 dias`
+  : ''}
+
+### Padrões de Vendas:
+📅 Melhor dia da semana: ${dayNames[bestDay]} (R$ ${bestDaySales.toFixed(2)} em vendas)
 
 ### Serviços Esquecidos (ZERO vendas em 30 dias):
-🚨 ${forgottenList}
+🚨 ${forgottenServicesList}
+
+### Produtos Esquecidos (ZERO vendas em 30 dias):
+🛍️ ${forgottenProductsList}
 
 ---
 
-## 🧠 INSTRUÇÕES PARA O MENTOR (Use o histórico para ser incisivo):
+## 🧠 INSTRUÇÕES PARA O MENTOR (Use os dados itemizados para ser CIRÚRGICO):
 
-1. **SE tiver "Serviço Esquecido"**: Pergunte o motivo e DESAFIE a quebrar o jejum.
+1. **SE taxa de conversão de produtos estiver abaixo de 30%**: Foque em upsell de produtos.
+   - Exemplo: "Apenas ${stats.productConversionRate.toFixed(0)}% dos seus clientes compram produto. A meta é 50%+. O próximo cliente SAI com uma pomada na mão!"
+
+2. **SE tiver "Serviço Esquecido"**: Pergunte o motivo e DESAFIE a quebrar o jejum.
    - Exemplo: "Faz 30 dias que você não vende ${stats.forgottenServices[0] || 'Alinhamento'}. O que aconteceu? Hoje é dia de quebrar esse jejum!"
 
-2. **SE ticket de hoje estiver ABAIXO da média histórica**: Cobre consistência.
+3. **SE tiver "Produto Esquecido"**: Sugira oferecer no próximo atendimento.
+   - Exemplo: "Você não vendeu ${stats.forgottenProducts[0] || 'Balm'} há 30 dias. O próximo cliente barbudo é uma venda garantida!"
+
+4. **SE ticket de hoje estiver ABAIXO da média histórica**: Cobre consistência.
    - Exemplo: "Você costuma fazer R$ ${stats.avgTicket30d.toFixed(2)} de média, hoje está em R$ ${dayStats.ticketMedio.toFixed(2)}. O que houve? Precisamos de um upsell no próximo cliente."
 
-3. **ELOGIE a especialidade**: Use o Top Serviço como âncora.
-   - Exemplo: "Eu sei que você é o rei do ${stats.topService?.name || 'Corte'}, mas precisamos equilibrar o mix. Foco em ${stats.forgottenServices[0] || 'serviços extras'} hoje."
+5. **USE o Top Serviço/Produto como âncora de elogio antes de desafiar**:
+   - Exemplo: "Eu sei que você é o rei do ${stats.topService?.name || 'Corte'} (${stats.topService?.count || 0}x esse mês!), mas precisamos equilibrar o mix. Foco em ${stats.forgottenServices[0] || 'serviços extras'} hoje."
 
-4. **SE estiver performando ACIMA da média**: Celebre e desafie a manter.
+6. **SE estiver performando ACIMA da média**: Celebre e desafie a manter.
    - Exemplo: "Você está ON FIRE! Acima da sua média histórica. Vamos manter esse ritmo até o fechamento!"
+
+7. **USE o padrão do dia da semana se aplicável**:
+   - Exemplo: "Hoje é ${dayNames[new Date().getDay()]} e você costuma bombar em ${dayNames[bestDay]}. Bora igualar o recorde!"
 `;
 }
 
