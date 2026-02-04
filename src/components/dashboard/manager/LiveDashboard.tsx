@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -213,7 +214,7 @@ export default function LiveDashboard() {
     setSelectedDate(todayManaus);
   };
 
-  // Calculate total revenue when productions change
+  // Calculate total revenue when productions change - EXCLUSIVAMENTE de tx_* (Ao Vivo)
   useEffect(() => {
     const filteredProductions = selectedUnit === "all"
       ? productions
@@ -222,12 +223,12 @@ export default function LiveDashboard() {
           return barber?.unit_id === selectedUnit;
         });
 
+    // ISOLAMENTO: Usar APENAS campos tx_* para o total do Ao Vivo
     const newTotal = filteredProductions.reduce((sum, p) => {
-      const servicesTotal =
-        p.services_basic_total !== null || p.services_extra_total !== null
-          ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
-          : p.services_total || 0;
-      return sum + servicesTotal + (p.products_total || 0);
+      const txBasic = (p as any).tx_basic_total || 0;
+      const txExtra = (p as any).tx_extra_total || 0;
+      const txProducts = (p as any).tx_products_total || 0;
+      return sum + txBasic + txExtra + txProducts;
     }, 0);
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
@@ -360,6 +361,7 @@ export default function LiveDashboard() {
 
   const getAverageTicket = () => {
     // Primeiro: tentar calcular do mês inteiro (histórico mais robusto)
+    // Usamos os campos legados para o ticket médio pois precisamos do histórico consolidado
     const filteredMonthProductions = selectedUnit === "all"
       ? monthProductions
       : monthProductions.filter((p) => {
@@ -385,7 +387,7 @@ export default function LiveDashboard() {
       return totalRevenueMonth / totalClientsMonth;
     }
 
-    // Fallback: usar dados de hoje
+    // Fallback: usar tx_clients_count de hoje
     const filteredProductions = selectedUnit === "all"
       ? productions
       : productions.filter((p) => {
@@ -394,7 +396,7 @@ export default function LiveDashboard() {
         });
 
     const totalClients = filteredProductions.reduce(
-      (sum, p) => sum + p.clients_count, 
+      (sum, p) => sum + ((p as any).tx_clients_count || 0), 
       0
     );
     
@@ -404,6 +406,25 @@ export default function LiveDashboard() {
 
     // Fallback final: valor padrão mais realista (R$ 70)
     return 70;
+  };
+
+  // Helper para verificar se há lançamento manual pendente de conferência
+  const hasPendingManualEntry = (barberId: string) => {
+    const production = productions.find((p) => p.barber_id === barberId);
+    if (!production) return false;
+
+    const txTotal = 
+      ((production as any).tx_basic_total || 0) +
+      ((production as any).tx_extra_total || 0) +
+      ((production as any).tx_products_total || 0);
+
+    const manualTotal =
+      ((production as any).manual_basic_total || 0) +
+      ((production as any).manual_extra_total || 0) +
+      ((production as any).manual_products_total || 0);
+
+    // Se tx é zero mas manual tem valor, há pendência de conferência
+    return txTotal === 0 && manualTotal > 0;
   };
 
   const getCutsRemaining = (barberId: string, barber: Barber) => {
@@ -590,7 +611,15 @@ export default function LiveDashboard() {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-semibold text-foreground">{barber.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-foreground">{barber.name}</p>
+                        {hasPendingManualEntry(barber.id) && (
+                          <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
+                            <FileText className="w-3 h-3 mr-1" />
+                            Aguardando
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">{barber.unit_name}</p>
                     </div>
                   </div>
