@@ -278,12 +278,12 @@ export default function LiveDashboard() {
     const production = productions.find((p) => p.barber_id === barberId);
     if (!production) return 0;
 
-    const servicesTotal =
-      production.services_basic_total !== null || production.services_extra_total !== null
-        ? (production.services_basic_total || 0) + (production.services_extra_total || 0)
-        : production.services_total || 0;
+    // Usar campos tx_* (dados do Ao Vivo/Gestor) para o dashboard em tempo real
+    const txBasic = (production as any).tx_basic_total || 0;
+    const txExtra = (production as any).tx_extra_total || 0;
+    const txProducts = (production as any).tx_products_total || 0;
 
-    return servicesTotal + (production.products_total || 0);
+    return txBasic + txExtra + txProducts;
   };
 
   const getBarberProduction = (barberId: string) => {
