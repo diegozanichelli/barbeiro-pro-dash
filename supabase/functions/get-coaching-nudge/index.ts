@@ -68,14 +68,19 @@ serve(async (req) => {
 
     console.log("[COACHING-NUDGE] Barber found:", barber.id, barber.name);
 
-    // Get current month dates
-    const now = new Date();
+    // Fuso horário de Manaus (GMT-4)
+    const MANAUS_OFFSET = -4 * 60; // -4 horas em minutos
+    const nowUTC = new Date();
+    const utcTime = nowUTC.getTime() + (nowUTC.getTimezoneOffset() * 60000);
+    const now = new Date(utcTime + (MANAUS_OFFSET * 60000));
+    
+    // Get current month dates (using Manaus timezone)
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const firstDayStr = firstDay.toISOString().split("T")[0];
     const lastDayStr = lastDay.toISOString().split("T")[0];
 
-    console.log("[COACHING-NUDGE] Date range:", firstDayStr, "to", lastDayStr);
+    console.log("[COACHING-NUDGE] Date range (Manaus timezone):", firstDayStr, "to", lastDayStr);
 
     // Get barber's productions for current month
     const { data: barberProductions, error: prodError } = await supabase

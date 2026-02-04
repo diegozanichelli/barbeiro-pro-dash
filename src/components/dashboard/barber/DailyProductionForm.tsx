@@ -6,10 +6,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Calendar, DollarSign } from "lucide-react";
-import { format } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { dailyProductionSchema, type DailyProductionFormData } from "@/lib/validations/production";
+import { getTodayString } from "@/lib/dateUtils";
 
 interface DailyProductionFormProps {
   barberId: string;
@@ -32,7 +32,7 @@ export default function DailyProductionForm({ barberId, onSuccess, initialData }
   const form = useForm<DailyProductionFormData>({
     resolver: zodResolver(dailyProductionSchema),
     defaultValues: {
-      date: initialData?.date || format(new Date(), "yyyy-MM-dd"),
+      date: initialData?.date || getTodayString(),
       servicesBasicTotal: Number(initialData?.servicesBasicTotal) || 0,
       servicesExtraTotal: Number(initialData?.servicesExtraTotal) || 0,
       productsTotal: Number(initialData?.productsTotal) || 0,
@@ -97,7 +97,7 @@ export default function DailyProductionForm({ barberId, onSuccess, initialData }
       // Limpar apenas se não está editando
       if (!initialData) {
         form.reset({
-          date: format(new Date(), "yyyy-MM-dd"),
+          date: getTodayString(),
           servicesBasicTotal: 0,
           servicesExtraTotal: 0,
           productsTotal: 0,

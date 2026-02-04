@@ -8,6 +8,7 @@ import { AlertTriangle, ChevronDown, Calendar, ChevronLeft, ChevronRight } from 
 import { format, getDaysInMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
+import { getManausDate, getCurrentMonthYear } from "@/lib/dateUtils";
 
 interface BarberMissingDays {
   barberId: string;
@@ -22,11 +23,12 @@ export default function MissingProductionsAlert() {
   const [missingData, setMissingData] = useState<BarberMissingDays[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(today.getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
+  const today = getManausDate();
+  const { month: todayMonth, year: todayYear } = getCurrentMonthYear();
+  const [selectedMonth, setSelectedMonth] = useState(todayMonth);
+  const [selectedYear, setSelectedYear] = useState(todayYear);
 
-  const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
+  const isCurrentMonth = selectedMonth === todayMonth && selectedYear === todayYear;
 
   useEffect(() => {
     fetchMissingProductions();

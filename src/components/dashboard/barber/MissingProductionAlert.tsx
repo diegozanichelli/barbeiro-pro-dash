@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 
 interface MissingProductionAlertProps {
   barberId: string;
@@ -13,9 +14,8 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
   const [missingDays, setMissingDays] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date();
-  const currentMonth = today.getMonth() + 1;
-  const currentYear = today.getFullYear();
+  const today = getManausDate();
+  const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
 
   useEffect(() => {
     fetchMissingDays();
@@ -39,7 +39,8 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
 
     try {
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
-      const yesterdayStr = format(new Date(today.getTime() - 86400000), "yyyy-MM-dd");
+      const yesterdayDate = new Date(today.getTime() - 86400000);
+      const yesterdayStr = format(yesterdayDate, "yyyy-MM-dd");
 
       const { data: productions, error } = await supabase
         .from("daily_productions")

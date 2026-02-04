@@ -23,7 +23,7 @@ import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { calculateRemainingWorkDays } from "@/lib/dateUtils";
+import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 
 interface BarberDashboardProps {
   user: User;
@@ -56,11 +56,11 @@ interface MonthlyStats {
 export default function BarberDashboard({ user }: BarberDashboardProps) {
   const navigate = useNavigate();
   const { hasSubscriptionModule } = useSubscriptionModule();
-  const now = new Date();
+  const { month: currentMonthNow, year: currentYearNow } = getCurrentMonthYear();
   
   // Estado para o mês/ano selecionado (default: mês atual)
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthNow); // 1-12
+  const [selectedYear, setSelectedYear] = useState(currentYearNow);
   
   const [barber, setBarber] = useState<BarberData | null>(null);
   const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(null);
@@ -258,7 +258,7 @@ const [todayProduction, setTodayProduction] = useState<{
       }).length;
 
       // Identificar produção de hoje para o card de confirmação de presença
-      const todayStr = format(new Date(), "yyyy-MM-dd");
+      const todayStr = getTodayString();
       const todayProd = productions.find(p => p.date === todayStr);
       
       if (todayProd) {
@@ -293,9 +293,7 @@ const [todayProduction, setTodayProduction] = useState<{
       });
     } else {
       // Nenhuma produção no mês - mas ainda precisamos tratar o dia de hoje
-      const todayDate = new Date();
-      const todayMonth = todayDate.getMonth() + 1;
-      const todayYear = todayDate.getFullYear();
+      const { month: todayMonth, year: todayYear } = getCurrentMonthYear();
       
       // Só mostrar card de hoje se estamos no mês atual
       if (selectedMonth === todayMonth && selectedYear === todayYear) {
@@ -328,9 +326,7 @@ const [todayProduction, setTodayProduction] = useState<{
     const remaining = monthlyGoal.target_commission - stats.accumulated_commission;
     
     // Detectar o tipo de mês selecionado
-    const today = new Date();
-    const currentMonth = today.getMonth() + 1;
-    const currentYear = today.getFullYear();
+    const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
     
     const isCurrentMonth = selectedMonth === currentMonth && selectedYear === currentYear;
     const isPastMonth = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth);
@@ -350,7 +346,8 @@ const [todayProduction, setTodayProduction] = useState<{
       const remainingWorkDaysFromGoal = workDaysConfigured - daysWorked;
       
       // Dias restantes no calendário (para urgência)
-      const selectedDate = new Date(selectedYear, selectedMonth - 1, today.getDate());
+      const manausDate = getManausDate();
+      const selectedDate = new Date(selectedYear, selectedMonth - 1, manausDate.getDate());
       const remainingCalendarDays = calculateRemainingWorkDays(selectedDate);
       
       // Usar o MENOR entre dias configurados restantes e dias no calendário
@@ -399,9 +396,9 @@ const [todayProduction, setTodayProduction] = useState<{
   };
 
   const handleCurrentMonth = () => {
-    const today = new Date();
-    setSelectedMonth(today.getMonth() + 1);
-    setSelectedYear(today.getFullYear());
+    const { month, year } = getCurrentMonthYear();
+    setSelectedMonth(month);
+    setSelectedYear(year);
   };
 
   const handleEditProduction = (production: any) => {
@@ -433,7 +430,7 @@ const [todayProduction, setTodayProduction] = useState<{
     
     setConfirmingPresence(true);
     
-    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const todayStr = getTodayString();
     let error = null;
 
     if (todayProduction?.exists && todayProduction.id) {
