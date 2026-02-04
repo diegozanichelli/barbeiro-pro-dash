@@ -557,13 +557,13 @@ export type Database = {
       }
       sale_transactions: {
         Row: {
-          barber_id: string
+          barber_id: string | null
           catalog_product_id: string | null
           catalog_service_id: string | null
           commission_amount: number
           commission_rate_used: number
           created_at: string
-          daily_production_id: string
+          daily_production_id: string | null
           description: string | null
           id: string
           item_name: string
@@ -573,13 +573,13 @@ export type Database = {
           service_category: string | null
         }
         Insert: {
-          barber_id: string
+          barber_id?: string | null
           catalog_product_id?: string | null
           catalog_service_id?: string | null
           commission_amount: number
           commission_rate_used: number
           created_at?: string
-          daily_production_id: string
+          daily_production_id?: string | null
           description?: string | null
           id?: string
           item_name: string
@@ -589,13 +589,13 @@ export type Database = {
           service_category?: string | null
         }
         Update: {
-          barber_id?: string
+          barber_id?: string | null
           catalog_product_id?: string | null
           catalog_service_id?: string | null
           commission_amount?: number
           commission_rate_used?: number
           created_at?: string
-          daily_production_id?: string
+          daily_production_id?: string | null
           description?: string | null
           id?: string
           item_name?: string
