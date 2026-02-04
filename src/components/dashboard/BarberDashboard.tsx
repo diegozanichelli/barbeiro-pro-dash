@@ -20,6 +20,7 @@ import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AIDailyCoachCard from "./barber/AIDailyCoachCard";
 import SalesHelpModal from "./barber/SalesHelpModal";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
+import BarberEditProductionModal from "./barber/BarberEditProductionModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -405,12 +406,6 @@ const [todayProduction, setTodayProduction] = useState<{
     setEditingProduction({
       id: production.id,
       date: production.date,
-      servicesBasicTotal: (production.services_basic_total || 0).toString(),
-      servicesExtraTotal: (production.services_extra_total || 0).toString(),
-      productsTotal: (production.products_total || 0).toString(),
-      clientsCount: (production.clients_count || 0).toString(),
-      servicesCount: (production.services_count || 0).toString(),
-      productsCount: (production.products_count || 0).toString(),
     });
   };
 
@@ -915,25 +910,18 @@ const [todayProduction, setTodayProduction] = useState<{
           </TabsContent>
         </Tabs>
 
-        {/* Modal de Edição */}
-        <Dialog open={!!editingProduction} onOpenChange={handleCloseEditModal}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Editar Lançamento</DialogTitle>
-              <DialogDescription>
-                Corrija os dados do seu lançamento de produção
-              </DialogDescription>
-            </DialogHeader>
-            {editingProduction && (
-              <DailyProductionForm 
-                barberId={barber.id}
-                organizationId={barber.organization_id}
-                onSuccess={handleFormSuccess}
-                initialData={editingProduction}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
+        {/* Modal de Edição por Cards */}
+        {editingProduction && barber && (
+          <BarberEditProductionModal
+            open={!!editingProduction}
+            onOpenChange={(open) => !open && handleCloseEditModal()}
+            barberId={barber.id}
+            organizationId={barber.organization_id}
+            productionId={editingProduction.id}
+            productionDate={editingProduction.date}
+            onSuccess={handleFormSuccess}
+          />
+        )}
 
         {/* Modal de Confirmação de Presença */}
         <ConfirmPresenceModal
