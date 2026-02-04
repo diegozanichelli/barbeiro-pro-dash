@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   Dialog,
   DialogContent,
@@ -10,12 +12,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Users, CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { getTodayString, getManausDate } from "@/lib/dateUtils";
 
 interface ConfirmPresenceModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (subscriptionClientsCount: number) => void;
+  onConfirm: (subscriptionClientsCount: number, date: string) => void;
   isLoading?: boolean;
 }
 
@@ -26,25 +36,27 @@ export default function ConfirmPresenceModal({
   isLoading = false,
 }: ConfirmPresenceModalProps) {
   const [clientsCount, setClientsCount] = useState(0);
+  const [selectedDate, setSelectedDate] = useState<Date>(getManausDate());
 
   const handleConfirm = () => {
-    onConfirm(clientsCount);
-    setClientsCount(0); // Reset para próxima vez
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+    onConfirm(clientsCount, dateStr);
+    setClientsCount(0);
+    setSelectedDate(getManausDate());
   };
 
   const handleCancel = () => {
     setClientsCount(0);
+    setSelectedDate(getManausDate());
     onOpenChange(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    // Se campo vazio ou só zeros, permitir edição limpa
     if (value === "" || value === "0") {
       setClientsCount(0);
       return;
     }
-    // Remover zeros à esquerda e converter
     const numValue = parseInt(value.replace(/^0+/, ""), 10);
     if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
       setClientsCount(numValue);
@@ -52,9 +64,11 @@ export default function ConfirmPresenceModal({
   };
 
   const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Selecionar todo o conteúdo ao focar
     e.target.select();
   };
+
+  // Desabilitar datas futuras
+  const today = getManausDate();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -65,12 +79,48 @@ export default function ConfirmPresenceModal({
             Confirmar Presença
           </DialogTitle>
           <DialogDescription>
-            Você trabalhou hoje mas não teve vendas diretas. Registre quantos
-            clientes de assinatura atendeu para contabilizar o dia.
+            Registre sua presença para um dia sem vendas diretas. Informe a data
+            e quantos clientes de assinatura atendeu.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Data do registro</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !selectedDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {selectedDate
+                    ? format(selectedDate, "dd 'de' MMMM 'de' yyyy", {
+                        locale: ptBR,
+                      })
+                    : "Selecione a data"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => date && setSelectedDate(date)}
+                  disabled={(date) => date > today}
+                  initialFocus
+                  locale={ptBR}
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+            <p className="text-xs text-muted-foreground">
+              Selecione a data em que você trabalhou sem vendas
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="clients-count">
               Clientes de assinatura atendidos
@@ -87,7 +137,7 @@ export default function ConfirmPresenceModal({
               className="text-lg"
             />
             <p className="text-xs text-muted-foreground">
-              Informe quantos clientes com assinatura você atendeu hoje (0-100)
+              Informe quantos clientes com assinatura você atendeu (0-100)
             </p>
           </div>
         </div>

@@ -420,23 +420,33 @@ const [todayProduction, setTodayProduction] = useState<{
     setPresenceModalOpen(true);
   };
 
-  const handleConfirmPresence = async (subscriptionClientsCount: number) => {
+  const handleConfirmPresence = async (subscriptionClientsCount: number, selectedDate?: string) => {
     if (!barber) return;
     
     setConfirmingPresence(true);
     
-    const todayStr = getTodayString();
+    // Usar data selecionada ou hoje como fallback
+    const dateStr = selectedDate || getTodayString();
     let error = null;
 
-    if (todayProduction?.exists && todayProduction.id) {
+    // Buscar se já existe produção para a data selecionada
+    const { data: existingProd } = await supabase
+      .from("daily_productions")
+      .select("id")
+      .eq("barber_id", barber.id)
+      .eq("date", dateStr)
+      .maybeSingle();
+
+    if (existingProd?.id) {
       // Registro EXISTE: fazer UPDATE com o número de clientes
       const result = await supabase
         .from("daily_productions")
         .update({ 
           confirmed_presence: true,
-          clients_count: subscriptionClientsCount
+          clients_count: subscriptionClientsCount,
+          manual_clients_count: subscriptionClientsCount
         })
-        .eq("id", todayProduction.id);
+        .eq("id", existingProd.id);
       error = result.error;
     } else {
       // Registro NÃO EXISTE: fazer INSERT com valores zerados e clientes informados
@@ -445,12 +455,13 @@ const [todayProduction, setTodayProduction] = useState<{
         .insert({
           barber_id: barber.id,
           organization_id: barber.organization_id,
-          date: todayStr,
+          date: dateStr,
           services_basic_total: 0,
           services_extra_total: 0,
           products_total: 0,
           services_total: 0,
           clients_count: subscriptionClientsCount,
+          manual_clients_count: subscriptionClientsCount,
           services_count: 0,
           products_count: 0,
           confirmed_presence: true
@@ -467,24 +478,29 @@ const [todayProduction, setTodayProduction] = useState<{
       return;
     }
 
-    // Mensagem contextual baseada no número de clientes
+    // Mensagem contextual baseada no número de clientes e data
+    const isToday = dateStr === getTodayString();
+    const dateLabel = isToday ? "hoje" : `em ${dateStr.split("-").reverse().join("/")}`;
+    
     if (subscriptionClientsCount > 0) {
-      toast.success(`Registrado! Você atendeu ${subscriptionClientsCount} cliente${subscriptionClientsCount > 1 ? 's' : ''} de assinatura hoje.`, {
+      toast.success(`Registrado! Você atendeu ${subscriptionClientsCount} cliente${subscriptionClientsCount > 1 ? 's' : ''} de assinatura ${dateLabel}.`, {
         description: "Dia contabilizado na sua meta.",
         duration: 4000,
       });
     } else {
-      toast.success("Dia contabilizado. Foco total amanhã!", {
-        description: "Sua presença foi registrada para o cálculo de metas.",
+      toast.success(`Presença registrada ${dateLabel}. Foco total!`, {
+        description: "Dia contabilizado para o cálculo de metas.",
         duration: 4000,
       });
     }
 
-    // Atualizar estado local
-    setTodayProduction(prev => prev 
-      ? { ...prev, confirmed_presence: true, exists: true } 
-      : null
-    );
+    // Atualizar estado local se for hoje
+    if (isToday) {
+      setTodayProduction(prev => prev 
+        ? { ...prev, confirmed_presence: true, exists: true } 
+        : null
+      );
+    }
     
     // Recarregar estatísticas para refletir o novo cálculo
     fetchMonthlyStats();
