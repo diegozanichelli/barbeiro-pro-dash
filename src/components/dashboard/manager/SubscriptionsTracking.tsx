@@ -4,17 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Crown, TrendingUp, Users, Calendar } from "lucide-react";
+import { Crown, TrendingUp, Users, Calendar, Building2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
 
 interface BarberSubscriptions {
-  barber_id: string;
+  barber_id: string | null;
   barber_name: string;
   unit_name: string;
   today_count: number;
   month_count: number;
+  is_reception?: boolean;
 }
 
 export default function SubscriptionsTracking() {
@@ -52,7 +53,7 @@ export default function SubscriptionsTracking() {
         return;
       }
 
-      // Buscar assinaturas do mês
+      // Buscar assinaturas do mês (incluindo as da recepção onde barber_id é null)
       const { data: transactions } = await supabase
         .from("sale_transactions")
         .select("barber_id, created_at")
@@ -61,29 +62,44 @@ export default function SubscriptionsTracking() {
         .gte("created_at", monthStart)
         .lte("created_at", monthEnd + "T23:59:59");
 
-      // Agrupar por barbeiro
+      // Agrupar por barbeiro (usando "reception" como key para barber_id nulo)
       const subscriptionsByBarber: Record<string, { today: number; month: number }> = {};
 
       (transactions || []).forEach((tx) => {
-        if (!subscriptionsByBarber[tx.barber_id]) {
-          subscriptionsByBarber[tx.barber_id] = { today: 0, month: 0 };
+        const key = tx.barber_id || "reception";
+        if (!subscriptionsByBarber[key]) {
+          subscriptionsByBarber[key] = { today: 0, month: 0 };
         }
-        subscriptionsByBarber[tx.barber_id].month += 1;
+        subscriptionsByBarber[key].month += 1;
         
         const txDate = tx.created_at.split("T")[0];
         if (txDate === today) {
-          subscriptionsByBarber[tx.barber_id].today += 1;
+          subscriptionsByBarber[key].today += 1;
         }
       });
 
-      // Combinar dados
+      // Combinar dados dos barbeiros
       const result: BarberSubscriptions[] = barbers.map((barber) => ({
         barber_id: barber.id,
         barber_name: barber.name,
         unit_name: (barber.units as any)?.name || "Sem unidade",
         today_count: subscriptionsByBarber[barber.id]?.today || 0,
         month_count: subscriptionsByBarber[barber.id]?.month || 0,
+        is_reception: false,
       }));
+
+      // Adicionar linha de Recepção se houver vendas
+      const receptionData = subscriptionsByBarber["reception"];
+      if (receptionData && receptionData.month > 0) {
+        result.push({
+          barber_id: null,
+          barber_name: "🏢 Recepção / Loja",
+          unit_name: "—",
+          today_count: receptionData.today,
+          month_count: receptionData.month,
+          is_reception: true,
+        });
+      }
 
       // Ordenar por quantidade no mês
       result.sort((a, b) => b.month_count - a.month_count);
@@ -183,8 +199,16 @@ export default function SubscriptionsTracking() {
               </TableHeader>
               <TableBody>
                 {data.map((barber) => (
-                  <TableRow key={barber.barber_id}>
-                    <TableCell className="font-medium">{barber.barber_name}</TableCell>
+                  <TableRow 
+                    key={barber.barber_id || "reception"} 
+                    className={barber.is_reception ? "bg-muted/50" : ""}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {barber.is_reception && <Building2 className="w-4 h-4 text-muted-foreground" />}
+                        {barber.barber_name}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{barber.unit_name}</TableCell>
                     <TableCell className="text-center">
                       {barber.today_count > 0 ? (
@@ -197,9 +221,15 @@ export default function SubscriptionsTracking() {
                     </TableCell>
                     <TableCell className="text-center font-medium">{barber.month_count}</TableCell>
                     <TableCell className="text-right">
-                      <Badge variant="outline" className="border-warning text-warning">
-                        {barber.month_count * 10} pts
-                      </Badge>
+                      {barber.is_reception ? (
+                        <Badge variant="outline" className="border-muted-foreground text-muted-foreground">
+                          — pts
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-warning text-warning">
+                          {barber.month_count * 10} pts
+                        </Badge>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
