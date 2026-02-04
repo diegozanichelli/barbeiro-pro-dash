@@ -252,6 +252,12 @@ export type Database = {
           created_at: string
           date: string
           id: string
+          manual_basic_total: number | null
+          manual_clients_count: number | null
+          manual_extra_total: number | null
+          manual_products_count: number | null
+          manual_products_total: number | null
+          manual_services_count: number | null
           organization_id: string
           products_count: number
           products_total: number
@@ -259,6 +265,13 @@ export type Database = {
           services_count: number
           services_extra_total: number | null
           services_total: number
+          tx_basic_total: number | null
+          tx_clients_count: number | null
+          tx_commission_earned: number | null
+          tx_extra_total: number | null
+          tx_products_count: number | null
+          tx_products_total: number | null
+          tx_services_count: number | null
           updated_at: string
         }
         Insert: {
@@ -269,6 +282,12 @@ export type Database = {
           created_at?: string
           date: string
           id?: string
+          manual_basic_total?: number | null
+          manual_clients_count?: number | null
+          manual_extra_total?: number | null
+          manual_products_count?: number | null
+          manual_products_total?: number | null
+          manual_services_count?: number | null
           organization_id: string
           products_count?: number
           products_total?: number
@@ -276,6 +295,13 @@ export type Database = {
           services_count?: number
           services_extra_total?: number | null
           services_total?: number
+          tx_basic_total?: number | null
+          tx_clients_count?: number | null
+          tx_commission_earned?: number | null
+          tx_extra_total?: number | null
+          tx_products_count?: number | null
+          tx_products_total?: number | null
+          tx_services_count?: number | null
           updated_at?: string
         }
         Update: {
@@ -286,6 +312,12 @@ export type Database = {
           created_at?: string
           date?: string
           id?: string
+          manual_basic_total?: number | null
+          manual_clients_count?: number | null
+          manual_extra_total?: number | null
+          manual_products_count?: number | null
+          manual_products_total?: number | null
+          manual_services_count?: number | null
           organization_id?: string
           products_count?: number
           products_total?: number
@@ -293,6 +325,13 @@ export type Database = {
           services_count?: number
           services_extra_total?: number | null
           services_total?: number
+          tx_basic_total?: number | null
+          tx_clients_count?: number | null
+          tx_commission_earned?: number | null
+          tx_extra_total?: number | null
+          tx_products_count?: number | null
+          tx_products_total?: number | null
+          tx_services_count?: number | null
           updated_at?: string
         }
         Relationships: [
