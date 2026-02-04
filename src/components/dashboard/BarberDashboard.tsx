@@ -926,7 +926,8 @@ const [todayProduction, setTodayProduction] = useState<{
             </DialogHeader>
             {editingProduction && (
               <DailyProductionForm 
-                barberId={barber.id} 
+                barberId={barber.id}
+                organizationId={barber.organization_id}
                 onSuccess={handleFormSuccess}
                 initialData={editingProduction}
               />

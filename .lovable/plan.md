@@ -1,121 +1,97 @@
 
-# Plano: Registrar Atendimentos de Assinatura (Trabalho sem Venda)
+# Plano: Sistema de Auditoria Oculta (Gestor vs Barbeiro)
 
-## Contexto do Problema
+## ✅ IMPLEMENTADO
 
-Atualmente, quando o barbeiro clica em **"Não vendi nada hoje"**, o sistema registra:
-- `clients_count: 0`
-- `confirmed_presence: true`
+### Contexto
 
-Porém, o cenário real é diferente: o barbeiro pode ter **atendido 10 clientes de assinatura** que já pagaram a mensalidade. Esses atendimentos representam **trabalho realizado** e devem ser contabilizados para métricas de produtividade (ranking por clientes atendidos), mesmo que o faturamento direto seja R$ 0,00.
+O sistema agora separa completamente os lançamentos do Gestor (Ao Vivo) dos lançamentos manuais do Barbeiro, mantendo o **caráter educativo** onde o barbeiro PRECISA lançar sua produção diariamente.
 
 ---
 
-## Solução Proposta
+## Arquitetura de Dados
 
-Evoluir o fluxo de **"Confirmar Presença"** para perguntar **quantos clientes de assinatura foram atendidos**.
+### Colunas na tabela `daily_productions`
 
-### Fluxo de UX
+| Prefixo | Descrição | Preenchido por |
+|---------|-----------|----------------|
+| `tx_*` | Dados do Ao Vivo (transações) | Trigger após QuickSaleModal |
+| `manual_*` | Dados declarados pelo barbeiro | DailyProductionForm |
+| Campos legados | Valor OFICIAL para comissão | = manual_* (declaração do barbeiro) |
 
-1. Barbeiro clica em **"Não vendi nada hoje"**
-2. Abre um **mini modal** perguntando:
-   - "Quantos clientes de assinatura você atendeu hoje?"
-   - Input numérico (default: 0)
-3. Ao confirmar:
-   - Sistema registra `confirmed_presence: true`
-   - Sistema registra `clients_count: [valor informado]`
-   - Opcionalmente: criar transações de "Atendimento Assinatura" para rastreio da IA
+### Campos Criados
+
+**Gestor (Ao Vivo):**
+- `tx_basic_total` - Serviços básicos via transações
+- `tx_extra_total` - Serviços extras via transações
+- `tx_products_total` - Produtos via transações
+- `tx_clients_count` - Clientes via transações
+- `tx_services_count` - Qtd serviços via transações
+- `tx_products_count` - Qtd produtos via transações
+- `tx_commission_earned` - Comissão calculada das transações
+
+**Barbeiro (Manual):**
+- `manual_basic_total` - Serviços básicos declarados
+- `manual_extra_total` - Serviços extras declarados
+- `manual_products_total` - Produtos declarados
+- `manual_clients_count` - Clientes declarados
+- `manual_services_count` - Qtd serviços declarados
+- `manual_products_count` - Qtd produtos declarados
 
 ---
 
-## Implementação Técnica
+## Fluxo de UX
 
-### 1. Criar Componente de Modal (`ConfirmPresenceModal.tsx`)
+### 1. Gestor Registra Venda no Ao Vivo
+```
+QuickSaleModal → sale_transactions → Trigger → tx_* atualizado
+```
+- Os campos `tx_*` são preenchidos automaticamente
+- O Ao Vivo mostra o valor em tempo real
+- **NÃO afeta os campos legados** (services_basic_total, etc.)
 
-```text
-src/components/dashboard/barber/ConfirmPresenceModal.tsx (NOVO)
+### 2. Barbeiro Lança Produção (DailyProductionForm)
+```
+Formulário ZERADO → Barbeiro digita → Grava em manual_* e campos legados
+```
+- Formulário sempre começa ZERADO (não pré-preenche com tx_*)
+- Barbeiro digita quanto produziu
+- Valor vai para `manual_*` E para campos legados (valor oficial)
+
+### 3. Feedback de Divergência
+Após salvar, o sistema compara:
+- **Total Manual** (declarado pelo barbeiro)
+- **Total TX** (registrado pelo gestor no Ao Vivo)
+
+Se divergência > 5%:
+```
+⚠️ MODAL DE ALERTA
+"O Gestor registrou R$ X, mas você declarou R$ Y. Confirme com a recepção."
 ```
 
-**Estrutura:**
-- Dialog/Modal simples
-- Título: "Confirmar Presença"
-- Descrição: "Você trabalhou hoje mas não teve vendas diretas. Registre quantos clientes de assinatura atendeu para contabilizar o dia."
-- Input numérico: "Clientes de assinatura atendidos"
-- Botões: "Cancelar" e "Confirmar"
-
-### 2. Atualizar Função `handleConfirmPresence`
-
-**Arquivo:** `src/components/dashboard/BarberDashboard.tsx`
-
-**Mudanças:**
-- Remover chamada direta ao clicar no botão
-- Abrir o modal de confirmação
-- Passar o número de clientes informado para a função de salvamento
-- Atualizar o INSERT/UPDATE para usar o `clients_count` do modal
-
-```typescript
-// Antes (linha 452):
-clients_count: 0,
-
-// Depois:
-clients_count: subscriptionClientsCount, // valor vindo do modal
+Se bateu:
 ```
-
-### 3. (Opcional) Registrar Transações para Rastreio da IA
-
-Para manter a inteligência da IA sobre "o que foi feito", podemos criar transações simbólicas:
-
-```text
-Item: "Atendimento Assinatura"
-Tipo: service
-Categoria: basic
-Valor: R$ 0,00
-Quantidade: [número informado pelo barbeiro]
+✅ MODAL DE SUCESSO
+"Fechamento Perfeito! Dados confirmados."
 ```
-
-**Benefício:** A IA conseguirá ver que o barbeiro atendeu X clientes de assinatura naquele dia, mesmo sem faturamento.
-
-**Desvantagem:** Aumenta complexidade. Se o gestor não quiser esse nível de rastreio, podemos pular essa etapa.
 
 ---
 
-## Arquivos a Modificar
+## Arquivos Modificados
 
-| Arquivo | Ação |
-|---------|------|
-| `src/components/dashboard/barber/ConfirmPresenceModal.tsx` | Criar novo componente |
-| `src/components/dashboard/BarberDashboard.tsx` | Integrar modal e atualizar lógica |
-
----
-
-## Detalhes Técnicos
-
-### Estado do Modal
-
-```typescript
-const [presenceModal, setPresenceModal] = useState<{
-  open: boolean;
-  clientsCount: number;
-}>({ open: false, clientsCount: 0 });
-```
-
-### Validação
-
-- Aceitar valores de 0 até 100 (limite razoável)
-- Se informar 0, comportamento igual ao atual (só confirma presença)
-- Se informar > 0, registra os clientes atendidos
-
-### Feedback Visual
-
-Após confirmar, mostrar mensagem contextual:
-- Se `clients_count = 0`: "Dia contabilizado. Foco total amanhã!"
-- Se `clients_count > 0`: "Registrado! Você atendeu X clientes de assinatura hoje."
+| Arquivo | Alteração |
+|---------|-----------|
+| **Migração SQL** | Colunas tx_* e manual_* criadas, trigger atualizado |
+| `DailyProductionForm.tsx` | Grava em manual_*, verifica divergência, mostra modal |
+| `DivergenceModal.tsx` | Novo componente de feedback visual |
+| `BarberDashboard.tsx` | Passa organizationId para o form |
 
 ---
 
-## Resultado Esperado
+## Benefícios
 
-- O barbeiro pode informar que **trabalhou** mesmo sem vender
-- O número de **clientes de assinatura atendidos** é contabilizado
-- O dia é contado para o cálculo de **meta diária** (dias trabalhados)
-- As métricas de **produtividade por cliente** ficam mais precisas
+✅ **Caráter Educativo**: Barbeiro PRECISA lançar manualmente  
+✅ **Auditoria Oculta**: Gestor monitora em tempo real sem interferir  
+✅ **Segurança**: Sistema detecta e alerta divergências  
+✅ **Sem Duplicação**: Dados paralelos, nunca somados  
+✅ **Valor Oficial**: Sempre o declarado pelo barbeiro (compromisso dele)  
