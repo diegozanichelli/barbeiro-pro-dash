@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, Crown, X, Check, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import BarberCombobox from "../manager/BarberCombobox";
 
 interface SubscriptionEntry {
   id: string;
@@ -30,21 +31,27 @@ interface SubscriptionConfirmModalProps {
   onComplete: () => void;
   /** If true, opens directly in form mode (for standalone subscription sales) */
   standaloneMode?: boolean;
+  /** If true, shows a barber selector (for manager use) */
+  showBarberSelector?: boolean;
 }
 
 export default function SubscriptionConfirmModal({
   open,
   onOpenChange,
-  barberId,
+  barberId: initialBarberId,
   organizationId,
   dailyProductionId,
   onComplete,
   standaloneMode = false,
+  showBarberSelector = false,
 }: SubscriptionConfirmModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"question" | "form">(standaloneMode ? "form" : "question");
   const [subscriptionPlan, setSubscriptionPlan] = useState("");
   const [clientNotes, setClientNotes] = useState("");
+  
+  // Barber selection for manager mode
+  const [selectedBarberId, setSelectedBarberId] = useState<string | null>(initialBarberId);
   
   // List of subscriptions to be saved
   const [subscriptionList, setSubscriptionList] = useState<SubscriptionEntry[]>([]);
@@ -56,8 +63,9 @@ export default function SubscriptionConfirmModal({
       setSubscriptionPlan("");
       setClientNotes("");
       setSubscriptionList([]);
+      setSelectedBarberId(initialBarberId);
     }
-  }, [open, standaloneMode]);
+  }, [open, standaloneMode, initialBarberId]);
 
   // Update step when standaloneMode changes while open
   useEffect(() => {
@@ -65,6 +73,11 @@ export default function SubscriptionConfirmModal({
       setStep("form");
     }
   }, [standaloneMode, open]);
+
+  // Update selectedBarberId when initialBarberId changes
+  useEffect(() => {
+    setSelectedBarberId(initialBarberId);
+  }, [initialBarberId]);
 
   const isFormValid = subscriptionPlan.trim().length > 0 && clientNotes.trim().length > 0;
   const hasSubscriptions = subscriptionList.length > 0;
@@ -116,17 +129,17 @@ export default function SubscriptionConfirmModal({
     setLoading(true);
 
     try {
-      // Get or create daily production if not provided (only if barberId exists)
-      // For reception sales (barberId = null), we don't need a daily_production
+      // Get or create daily production if not provided (only if selectedBarberId exists)
+      // For reception sales (selectedBarberId = null), we don't need a daily_production
       let productionId: string | null = dailyProductionId;
       
-      if (!productionId && barberId) {
+      if (!productionId && selectedBarberId) {
         const today = new Date().toISOString().split("T")[0];
         
         const { data: existingProd } = await supabase
           .from("daily_productions")
           .select("id")
-          .eq("barber_id", barberId)
+          .eq("barber_id", selectedBarberId)
           .eq("date", today)
           .maybeSingle();
         
@@ -136,7 +149,7 @@ export default function SubscriptionConfirmModal({
           const { data: newProd, error: createError } = await supabase
             .from("daily_productions")
             .insert({
-              barber_id: barberId,
+              barber_id: selectedBarberId,
               organization_id: organizationId,
               date: new Date().toISOString().split("T")[0],
               clients_count: 0,
@@ -155,10 +168,11 @@ export default function SubscriptionConfirmModal({
       }
 
       // Insert each subscription as a separate transaction
-      // barberId and productionId can be null for reception sales
-      // source='barber' para rastreabilidade do AI
+      // selectedBarberId and productionId can be null for reception sales
+      // source='barber' for barber self-registration, 'manager' for manager registration
+      const source = showBarberSelector ? "manager" : "barber";
       const transactions = subscriptionList.map(sub => ({
-        barber_id: barberId || null,
+        barber_id: selectedBarberId || null,
         organization_id: organizationId,
         daily_production_id: productionId || null,
         item_type: "subscription",
@@ -170,7 +184,7 @@ export default function SubscriptionConfirmModal({
         catalog_product_id: null,
         commission_rate_used: 0,
         commission_amount: 0,
-        source: "barber", // <- Diferencia do gestor
+        source, // 'barber' or 'manager'
       }));
 
       const { error } = await supabase.from("sale_transactions").insert(transactions);
@@ -238,6 +252,22 @@ export default function SubscriptionConfirmModal({
           </DialogFooter>
         ) : (
           <div className="flex-1 flex flex-col space-y-4 mt-4 overflow-hidden">
+            {/* Barber Selector (for manager mode) */}
+            {showBarberSelector && (
+              <div className="space-y-2">
+                <Label>
+                  Atribuir ao barbeiro
+                </Label>
+                <BarberCombobox
+                  organizationId={organizationId}
+                  value={selectedBarberId}
+                  onChange={setSelectedBarberId}
+                  placeholder="Selecionar barbeiro..."
+                  allowReception={true}
+                />
+              </div>
+            )}
+            
             {/* Form Fields */}
             <div className="space-y-3">
               <div className="space-y-2">
@@ -249,7 +279,7 @@ export default function SubscriptionConfirmModal({
                   placeholder="Ex: Gold, Prata, Duo..."
                   value={subscriptionPlan}
                   onChange={(e) => setSubscriptionPlan(e.target.value)}
-                  autoFocus
+                  autoFocus={!showBarberSelector}
                 />
               </div>
 

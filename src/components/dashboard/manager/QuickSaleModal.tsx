@@ -839,7 +839,7 @@ export default function QuickSaleModal({
         />
       )}
 
-      {/* Modal de Assinatura Avulsa (sem carrinho) */}
+      {/* Modal de Assinatura Avulsa (sem carrinho) com seletor de barbeiro */}
       <SubscriptionConfirmModal
         open={standaloneSubscriptionOpen}
         onOpenChange={setStandaloneSubscriptionOpen}
@@ -848,6 +848,7 @@ export default function QuickSaleModal({
         dailyProductionId={null}
         onComplete={handleSubscriptionComplete}
         standaloneMode
+        showBarberSelector
       />
     </>
   );
