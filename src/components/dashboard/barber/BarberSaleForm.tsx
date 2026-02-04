@@ -243,6 +243,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       }
 
       // 2. Batch insert de todas as transações - expandindo quantidade em múltiplas transações
+      // IMPORTANTE: source='barber' para diferenciar de lançamentos do gestor
       const transactions: any[] = [];
       cart.forEach(item => {
         for (let i = 0; i < item.quantity; i++) {
@@ -258,6 +259,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             catalog_product_id: item.type === "product" ? item.id : null,
             commission_rate_used: 0, // Trigger vai calcular
             commission_amount: 0, // Trigger vai calcular
+            source: "barber", // <- Diferencia do gestor
           });
         }
       });

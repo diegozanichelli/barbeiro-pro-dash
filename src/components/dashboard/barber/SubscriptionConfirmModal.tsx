@@ -156,6 +156,7 @@ export default function SubscriptionConfirmModal({
 
       // Insert each subscription as a separate transaction
       // barberId and productionId can be null for reception sales
+      // source='barber' para rastreabilidade do AI
       const transactions = subscriptionList.map(sub => ({
         barber_id: barberId || null,
         organization_id: organizationId,
@@ -169,6 +170,7 @@ export default function SubscriptionConfirmModal({
         catalog_product_id: null,
         commission_rate_used: 0,
         commission_amount: 0,
+        source: "barber", // <- Diferencia do gestor
       }));
 
       const { error } = await supabase.from("sale_transactions").insert(transactions);
