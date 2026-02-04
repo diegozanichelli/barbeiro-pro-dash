@@ -5,19 +5,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Check, Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Check, Minus, Plus, ShoppingCart, Trash2, Info } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
@@ -47,25 +47,19 @@ interface CartItem extends CatalogItem {
   quantity: number;
 }
 
-type CategoryTab = "services" | "products";
-
-function handleNumericInput(
-  currentValue: string,
-  newValue: string,
-  setter: (value: string) => void
-) {
-  if (newValue === "") {
-    setter("");
-    return;
-  }
-  const cleaned = newValue.replace(/[^\d,.\-]/g, "");
-  if ((currentValue === "0" || currentValue === "0,00") && /^\d/.test(cleaned)) {
-    const withoutLeadingZeros = cleaned.replace(/^0+(?=\d)/, "");
-    setter(withoutLeadingZeros || cleaned);
-    return;
-  }
-  setter(cleaned);
+interface ExistingProduction {
+  services_basic_total: number;
+  services_extra_total: number;
+  products_total: number;
+  clients_count: number;
+  services_count: number;
+  products_count: number;
+  tx_basic_total: number;
+  tx_extra_total: number;
+  tx_products_total: number;
 }
+
+type CategoryTab = "services" | "products";
 
 export default function BarberEditProductionModal({
   open,
@@ -82,6 +76,9 @@ export default function BarberEditProductionModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   
+  // Estado dos dados existentes
+  const [existingData, setExistingData] = useState<ExistingProduction | null>(null);
+  
   // Cart state (multi-select)
   const [cart, setCart] = useState<CartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
@@ -94,18 +91,18 @@ export default function BarberEditProductionModal({
     hasDivergence: boolean;
   }>({ open: false, manualTotal: 0, txTotal: 0, hasDivergence: false });
 
-  // Fetch catalog items when modal opens
+  // Fetch catalog items and existing production data when modal opens
   useEffect(() => {
-    if (open && organizationId) {
-      fetchCatalog();
+    if (open && organizationId && productionId) {
+      fetchData();
     }
-  }, [open, organizationId]);
+  }, [open, organizationId, productionId]);
 
-  const fetchCatalog = async () => {
+  const fetchData = async () => {
     setLoadingCatalog(true);
     
     try {
-      const [servicesRes, productsRes] = await Promise.all([
+      const [servicesRes, productsRes, productionRes] = await Promise.all([
         supabase
           .from("catalog_services")
           .select("id, name, default_price, fixed_commission, category")
@@ -118,6 +115,11 @@ export default function BarberEditProductionModal({
           .eq("organization_id", organizationId)
           .eq("is_active", true)
           .order("name"),
+        supabase
+          .from("daily_productions")
+          .select("services_basic_total, services_extra_total, products_total, clients_count, services_count, products_count, tx_basic_total, tx_extra_total, tx_products_total")
+          .eq("id", productionId)
+          .single(),
       ]);
 
       const services: CatalogItem[] = (servicesRes.data || []).map((s) => ({
@@ -130,8 +132,26 @@ export default function BarberEditProductionModal({
       }));
 
       setCatalogItems([...services, ...products]);
+      
+      // Carregar dados existentes
+      if (productionRes.data) {
+        const data = productionRes.data;
+        setExistingData({
+          services_basic_total: data.services_basic_total || 0,
+          services_extra_total: data.services_extra_total || 0,
+          products_total: data.products_total || 0,
+          clients_count: data.clients_count || 0,
+          services_count: data.services_count || 0,
+          products_count: data.products_count || 0,
+          tx_basic_total: data.tx_basic_total || 0,
+          tx_extra_total: data.tx_extra_total || 0,
+          tx_products_total: data.tx_products_total || 0,
+        });
+        // Inicializar contador de clientes com o valor existente
+        setClientsCount(data.clients_count || 1);
+      }
     } catch (error) {
-      console.error("Error fetching catalog:", error);
+      console.error("Error fetching data:", error);
     } finally {
       setLoadingCatalog(false);
     }
@@ -142,6 +162,7 @@ export default function BarberEditProductionModal({
     setClientsCount(1);
     setSearchQuery("");
     setActiveTab("services");
+    setExistingData(null);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -228,6 +249,12 @@ export default function BarberEditProductionModal({
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
 
+  // Existing totals
+  const existingTotal = useMemo(() => {
+    if (!existingData) return 0;
+    return existingData.services_basic_total + existingData.services_extra_total + existingData.products_total;
+  }, [existingData]);
+
   // Filter items based on search and active tab
   const filteredItems = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
@@ -278,16 +305,8 @@ export default function BarberEditProductionModal({
       const manualTotal = servicesBasicTotal + servicesExtraTotal + productsTotal;
 
       // Buscar dados tx_* para comparação
-      const { data: existingProduction } = await supabase
-        .from("daily_productions")
-        .select("tx_basic_total, tx_extra_total, tx_products_total")
-        .eq("id", productionId)
-        .single();
-
-      const txTotal = existingProduction 
-        ? (Number(existingProduction.tx_basic_total) || 0) + 
-          (Number(existingProduction.tx_extra_total) || 0) + 
-          (Number(existingProduction.tx_products_total) || 0)
+      const txTotal = existingData 
+        ? existingData.tx_basic_total + existingData.tx_extra_total + existingData.tx_products_total
         : 0;
 
       // Atualizar produção com valores MANUAIS
@@ -363,9 +382,31 @@ export default function BarberEditProductionModal({
               Editar Produção — {formattedDate}
             </DialogTitle>
             <DialogDescription>
-              Selecione os itens que você realizou neste dia
+              Selecione os itens que você realizou neste dia para substituir o lançamento atual
             </DialogDescription>
           </DialogHeader>
+
+          {/* Resumo do lançamento atual */}
+          {existingData && existingTotal > 0 && (
+            <div className="px-6 pt-4">
+              <Alert className="bg-muted/50 border-primary/20">
+                <Info className="h-4 w-4 text-primary" />
+                <AlertDescription className="text-sm">
+                  <span className="font-semibold">Lançamento atual:</span>{" "}
+                  <span className="text-primary font-bold">{formatCurrency(existingTotal)}</span>
+                  <span className="text-muted-foreground ml-2">
+                    (Básicos: {formatCurrency(existingData.services_basic_total)} • 
+                    Extras: {formatCurrency(existingData.services_extra_total)} • 
+                    Produtos: {formatCurrency(existingData.products_total)})
+                  </span>
+                  <br />
+                  <span className="text-xs text-muted-foreground">
+                    Selecione os itens abaixo para substituir este lançamento.
+                  </span>
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
 
           {/* Search */}
           <div className="px-6 pt-4">
@@ -558,6 +599,30 @@ export default function BarberEditProductionModal({
                         </Button>
                       </div>
                     </div>
+
+                    {/* Comparação de valores */}
+                    {existingTotal > 0 && (
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+                        <span className="text-muted-foreground">Anterior → Novo:</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground line-through">{formatCurrency(existingTotal)}</span>
+                          <span className="font-bold text-primary">{formatCurrency(cartTotal)}</span>
+                          {cartTotal !== existingTotal && (
+                            <Badge variant={cartTotal > existingTotal ? "default" : "secondary"} className="text-xs">
+                              {cartTotal > existingTotal ? "+" : ""}{formatCurrency(cartTotal - existingTotal)}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Empty state hint */}
+                {cart.length === 0 && (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
+                    <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>Selecione os serviços e produtos realizados</p>
                   </div>
                 )}
 
@@ -628,7 +693,7 @@ function CatalogCard({ item, isSelected, onSelect, formatCurrency }: CatalogCard
       {item.fixed_commission !== null && (
         <Badge 
           variant="secondary" 
-          className="absolute -top-2 -right-2 bg-amber-500 text-white border-0 shadow-md"
+          className="absolute -top-2 -right-2 bg-warning text-warning-foreground border-0 shadow-md"
         >
           <Zap className="h-3 w-3 mr-0.5" />
           {item.fixed_commission}%
