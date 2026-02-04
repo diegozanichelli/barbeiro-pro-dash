@@ -11,7 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { format, subDays, addDays, isToday, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -23,7 +25,7 @@ import { useOrganization } from "@/hooks/useOrganization";
 import LiveTop3Ranking from "./LiveTop3Ranking";
 import QuickSaleModal from "./QuickSaleModal";
 import TransactionManagerModal from "./TransactionManagerModal";
-import { calculateRemainingWorkDays } from "@/lib/dateUtils";
+import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
 
 interface Barber {
   id: string;
@@ -90,10 +92,14 @@ export default function LiveDashboard() {
     date: string;
   }>({ open: false, barberId: "", barberName: "", dailyProductionId: "", date: "" });
 
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
-  const currentMonth = today.getMonth() + 1;
-  const currentYear = today.getFullYear();
+  // Date navigation state
+  const todayManaus = getTodayString();
+  const [selectedDate, setSelectedDate] = useState(todayManaus);
+  const isViewingToday = selectedDate === todayManaus;
+  
+  const selectedDateObj = parseISO(selectedDate);
+  const currentMonth = selectedDateObj.getMonth() + 1;
+  const currentYear = selectedDateObj.getFullYear();
 
   const fetchData = useCallback(async () => {
     if (!organizationId) return;
@@ -123,12 +129,12 @@ export default function LiveDashboard() {
         setBarbers(mappedBarbers);
       }
 
-      // Fetch today's productions
+      // Fetch selected day's productions
       const { data: productionsData } = await supabase
         .from("daily_productions")
         .select("*")
         .eq("organization_id", organizationId)
-        .eq("date", todayStr);
+        .eq("date", selectedDate);
 
       if (productionsData) {
         setProductions(productionsData);
@@ -150,7 +156,7 @@ export default function LiveDashboard() {
         `)
         .eq("organization_id", organizationId)
         .gte("date", startOfMonth)
-        .lte("date", todayStr);
+        .lte("date", selectedDate);
 
       if (monthProductionsData) {
         setMonthProductions(monthProductionsData);
@@ -183,11 +189,29 @@ export default function LiveDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, todayStr, currentMonth, currentYear]);
+  }, [organizationId, selectedDate, currentMonth, currentYear]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Date navigation handlers
+  const goToPreviousDay = () => {
+    const prevDay = subDays(parseISO(selectedDate), 1);
+    setSelectedDate(format(prevDay, "yyyy-MM-dd"));
+  };
+
+  const goToNextDay = () => {
+    const nextDay = addDays(parseISO(selectedDate), 1);
+    const maxDate = todayManaus;
+    if (format(nextDay, "yyyy-MM-dd") <= maxDate) {
+      setSelectedDate(format(nextDay, "yyyy-MM-dd"));
+    }
+  };
+
+  const goToToday = () => {
+    setSelectedDate(todayManaus);
+  };
 
   // Calculate total revenue when productions change
   useEffect(() => {
@@ -213,9 +237,9 @@ export default function LiveDashboard() {
     setTotalRevenue(newTotal);
   }, [productions, selectedUnit, barbers, totalRevenue]);
 
-  // Realtime subscription for productions and transactions
+  // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
-    if (!organizationId) return;
+    if (!organizationId || !isViewingToday) return;
 
     const channel = supabase
       .channel("live-productions")
@@ -225,7 +249,7 @@ export default function LiveDashboard() {
           event: "*",
           schema: "public",
           table: "daily_productions",
-          filter: `date=eq.${todayStr}`,
+          filter: `date=eq.${selectedDate}`,
         },
         () => {
           fetchData();
@@ -248,7 +272,7 @@ export default function LiveDashboard() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [organizationId, todayStr, fetchData]);
+  }, [organizationId, selectedDate, isViewingToday, fetchData]);
 
   const getBarberRevenue = (barberId: string) => {
     const production = productions.find((p) => p.barber_id === barberId);
@@ -272,7 +296,7 @@ export default function LiveDashboard() {
       .from("daily_productions")
       .select("id")
       .eq("barber_id", barber.id)
-      .eq("date", todayStr)
+      .eq("date", selectedDate)
       .single();
     
     if (production) {
@@ -281,7 +305,7 @@ export default function LiveDashboard() {
         barberId: barber.id,
         barberName: barber.name,
         dailyProductionId: production.id,
-        date: todayStr,
+        date: selectedDate,
       });
     } else {
       toast.error("Nenhuma produção encontrada para editar");
@@ -439,37 +463,85 @@ export default function LiveDashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Radio className="w-6 h-6 text-red-500 animate-pulse" />
-          <h2 className="text-2xl font-bold text-foreground">AO VIVO</h2>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {isViewingToday ? (
+              <Radio className="w-6 h-6 text-red-500 animate-pulse" />
+            ) : (
+              <Calendar className="w-6 h-6 text-muted-foreground" />
+            )}
+            <h2 className="text-2xl font-bold text-foreground">
+              {isViewingToday ? "AO VIVO" : "HISTÓRICO"}
+            </h2>
+          </div>
+
+          <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+            <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectValue placeholder="Filtrar por unidade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as Unidades</SelectItem>
+              {units.map((unit) => (
+                <SelectItem key={unit.id} value={unit.id}>
+                  {unit.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-          <SelectTrigger className="w-full sm:w-[200px]">
-            <SelectValue placeholder="Filtrar por unidade" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as Unidades</SelectItem>
-            {units.map((unit) => (
-              <SelectItem key={unit.id} value={unit.id}>
-                {unit.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Date Navigation */}
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={goToPreviousDay}
+            className="h-9 w-9"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          
+          <div className="flex items-center gap-2 px-4 py-2 bg-muted rounded-lg min-w-[200px] justify-center">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium text-foreground capitalize">
+              {format(parseISO(selectedDate), "EEEE, dd/MM", { locale: ptBR })}
+            </span>
+          </div>
+          
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={goToNextDay}
+            disabled={isViewingToday}
+            className="h-9 w-9"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          
+          {!isViewingToday && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={goToToday}
+              className="ml-2"
+            >
+              Hoje
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Total Revenue Card */}
       <Card
         className={`bg-gradient-to-br from-primary/20 to-primary/5 border-primary/30 transition-all duration-500 ${
-          isGlowing ? "animate-glow shadow-[0_0_30px_hsl(38_92%_50%/0.6)]" : ""
+          isGlowing && isViewingToday ? "animate-glow shadow-[0_0_30px_hsl(38_92%_50%/0.6)]" : ""
         }`}
       >
         <CardContent className="pt-6">
           <div className="text-center">
             <p className="text-sm text-muted-foreground mb-2">
-              Faturamento Total Hoje
+              {isViewingToday ? "Faturamento Total Hoje" : `Faturamento em ${format(parseISO(selectedDate), "dd/MM/yyyy")}`}
             </p>
             <p className="text-4xl sm:text-5xl font-bold text-primary">
               {totalRevenue.toLocaleString("pt-BR", {
