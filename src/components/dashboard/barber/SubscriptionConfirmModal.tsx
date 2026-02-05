@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { getTodayString } from "@/lib/dateUtils";
 import {
   Dialog,
   DialogContent,
@@ -134,7 +135,7 @@ export default function SubscriptionConfirmModal({
       let productionId: string | null = dailyProductionId;
       
       if (!productionId && selectedBarberId) {
-        const today = new Date().toISOString().split("T")[0];
+        const today = getTodayString();
         
         const { data: existingProd } = await supabase
           .from("daily_productions")
@@ -151,7 +152,7 @@ export default function SubscriptionConfirmModal({
             .insert({
               barber_id: selectedBarberId,
               organization_id: organizationId,
-              date: new Date().toISOString().split("T")[0],
+              date: getTodayString(),
               clients_count: 0,
               services_count: 0,
               products_count: 0,

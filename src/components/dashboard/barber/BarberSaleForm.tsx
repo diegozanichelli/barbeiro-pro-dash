@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users, Crown, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
+import { getTodayString } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import SubscriptionConfirmModal from "./SubscriptionConfirmModal";
@@ -87,7 +88,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     const fetchCatalog = async () => {
       setLoadingCatalog(true);
       
-      const today = format(new Date(), "yyyy-MM-dd");
+      const today = getTodayString();
       
       const [servicesRes, productsRes, subscriptionsRes] = await Promise.all([
         supabase
@@ -296,7 +297,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const handleSubscriptionComplete = () => {
     // Recarregar contagem de assinaturas
     const fetchSubscriptions = async () => {
-      const today = format(new Date(), "yyyy-MM-dd");
+      const today = getTodayString();
       const { data } = await supabase
         .from("sale_transactions")
         .select("id")
@@ -365,7 +366,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const servicesCount = catalogItems.filter((i) => i.type === "service").length;
   const productsCount = catalogItems.filter((i) => i.type === "product").length;
 
-  const isToday = format(selectedDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+  const isToday = format(selectedDate, "yyyy-MM-dd") === getTodayString();
 
   return (
     <>

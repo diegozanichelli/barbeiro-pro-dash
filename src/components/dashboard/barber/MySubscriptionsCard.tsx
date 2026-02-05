@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Crown, Calendar, TrendingUp, AlertCircle } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
+import { getTodayString } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -25,7 +26,7 @@ export default function MySubscriptionsCard({ barberId }: MySubscriptionsCardPro
 
   const fetchMySubscriptions = async () => {
     setLoading(true);
-    const today = format(new Date(), "yyyy-MM-dd");
+    const today = getTodayString();
     const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
     const monthEnd = format(endOfMonth(new Date()), "yyyy-MM-dd");
 
