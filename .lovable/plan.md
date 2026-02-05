@@ -1,97 +1,68 @@
 
-# Plano: Sistema de Auditoria Oculta (Gestor vs Barbeiro)
+# Correção: Duplicação de Produtos na Comissão do Barbeiro
 
-## ✅ IMPLEMENTADO
+## Problema Identificado
 
-### Contexto
+O barbeiro **Renan Alves** está vendo R$ 200 a mais na comissão porque o trigger do banco de dados está **somando indevidamente** os valores do Gestor (Ao Vivo) com os valores do Barbeiro (lançamento manual).
 
-O sistema agora separa completamente os lançamentos do Gestor (Ao Vivo) dos lançamentos manuais do Barbeiro, mantendo o **caráter educativo** onde o barbeiro PRECISA lançar sua produção diariamente.
+### Exemplo do dia 04/02/2026:
+| Campo | Valor | Origem |
+|-------|-------|--------|
+| `tx_products_total` | R$ 252,00 | Gestor via Ao Vivo |
+| `manual_products_total` | R$ 252,00 | Barbeiro via lançamento |
+| `products_total` | **R$ 504,00** ❌ | ERRADO: está somando ambos |
+| Correto | **R$ 252,00** ✅ | Deveria ser apenas o manual |
 
----
-
-## Arquitetura de Dados
-
-### Colunas na tabela `daily_productions`
-
-| Prefixo | Descrição | Preenchido por |
-|---------|-----------|----------------|
-| `tx_*` | Dados do Ao Vivo (transações) | Trigger após QuickSaleModal |
-| `manual_*` | Dados declarados pelo barbeiro | DailyProductionForm |
-| Campos legados | Valor OFICIAL para comissão | = manual_* (declaração do barbeiro) |
-
-### Campos Criados
-
-**Gestor (Ao Vivo):**
-- `tx_basic_total` - Serviços básicos via transações
-- `tx_extra_total` - Serviços extras via transações
-- `tx_products_total` - Produtos via transações
-- `tx_clients_count` - Clientes via transações
-- `tx_services_count` - Qtd serviços via transações
-- `tx_products_count` - Qtd produtos via transações
-- `tx_commission_earned` - Comissão calculada das transações
-
-**Barbeiro (Manual):**
-- `manual_basic_total` - Serviços básicos declarados
-- `manual_extra_total` - Serviços extras declarados
-- `manual_products_total` - Produtos declarados
-- `manual_clients_count` - Clientes declarados
-- `manual_services_count` - Qtd serviços declarados
-- `manual_products_count` - Qtd produtos declarados
+O mesmo produto (Máscara de Hidratação, Balm Cavaleira, OLEO VIP) foi registrado duas vezes - uma pelo gestor e outra pelo barbeiro. Isso é esperado pelo sistema de auditoria oculta, mas o trigger não deveria somar os dois valores.
 
 ---
 
-## Fluxo de UX
+## Solução
 
-### 1. Gestor Registra Venda no Ao Vivo
-```
-QuickSaleModal → sale_transactions → Trigger → tx_* atualizado
-```
-- Os campos `tx_*` são preenchidos automaticamente
-- O Ao Vivo mostra o valor em tempo real
-- **NÃO afeta os campos legados** (services_basic_total, etc.)
+### 1. Corrigir o Trigger `recalculate_daily_production_from_transactions`
 
-### 2. Barbeiro Lança Produção (DailyProductionForm)
-```
-Formulário ZERADO → Barbeiro digita → Grava em manual_* e campos legados
-```
-- Formulário sempre começa ZERADO (não pré-preenche com tx_*)
-- Barbeiro digita quanto produziu
-- Valor vai para `manual_*` E para campos legados (valor oficial)
-
-### 3. Feedback de Divergência
-Após salvar, o sistema compara:
-- **Total Manual** (declarado pelo barbeiro)
-- **Total TX** (registrado pelo gestor no Ao Vivo)
-
-Se divergência > 5%:
-```
-⚠️ MODAL DE ALERTA
-"O Gestor registrou R$ X, mas você declarou R$ Y. Confirme com a recepção."
+O trigger atual faz:
+```sql
+products_total = v_tx_products_total + COALESCE(v_manual_products_total, 0)
 ```
 
-Se bateu:
+Precisa ser alterado para:
+```sql
+products_total = COALESCE(v_manual_products_total, 0)
 ```
-✅ MODAL DE SUCESSO
-"Fechamento Perfeito! Dados confirmados."
-```
+
+E o mesmo para todos os campos legados (`services_basic_total`, `services_extra_total`).
+
+### 2. Recalcular Produções Afetadas
+
+Após corrigir o trigger, rodar um script para recalcular todas as `daily_productions` onde `tx_* > 0` E `manual_* > 0` (casos de duplicação).
 
 ---
 
-## Arquivos Modificados
+## Detalhes Técnicos
 
-| Arquivo | Alteração |
-|---------|-----------|
-| **Migração SQL** | Colunas tx_* e manual_* criadas, trigger atualizado |
-| `DailyProductionForm.tsx` | Grava em manual_*, verifica divergência, mostra modal |
-| `DivergenceModal.tsx` | Novo componente de feedback visual |
-| `BarberDashboard.tsx` | Passa organizationId para o form |
+### Alteração do Trigger (resumo das mudanças)
+
+```sql
+-- ANTES (ERRADO - soma tx + manual):
+services_basic_total = v_tx_basic_total + COALESCE(v_manual_basic_total, 0),
+services_extra_total = v_tx_extra_total + COALESCE(v_manual_extra_total, 0),
+products_total = v_tx_products_total + COALESCE(v_manual_products_total, 0),
+
+-- DEPOIS (CORRETO - usa apenas manual):
+services_basic_total = COALESCE(v_manual_basic_total, 0),
+services_extra_total = COALESCE(v_manual_extra_total, 0),
+products_total = COALESCE(v_manual_products_total, 0),
+```
+
+### Script de Correção de Dados Históricos
+
+Recalcular as produções afetadas do Renan e de outros barbeiros que possam ter o mesmo problema.
 
 ---
 
-## Benefícios
+## Impacto
 
-✅ **Caráter Educativo**: Barbeiro PRECISA lançar manualmente  
-✅ **Auditoria Oculta**: Gestor monitora em tempo real sem interferir  
-✅ **Segurança**: Sistema detecta e alerta divergências  
-✅ **Sem Duplicação**: Dados paralelos, nunca somados  
-✅ **Valor Oficial**: Sempre o declarado pelo barbeiro (compromisso dele)  
+- **Renan Alves**: Comissão será corrigida de R$ 504 para R$ 252 em produtos no dia 04/02
+- **Outros barbeiros**: Potencialmente afetados se tiveram lançamentos duplicados (gestor + barbeiro no mesmo dia)
+- **Sistema de auditoria**: Continua funcionando - os campos `tx_*` ainda servem para comparação de divergência
