@@ -113,6 +113,7 @@ export type Database = {
           products_commission: number
           services_commission: number
           status: string
+          subscription_commission_rate: number | null
           unit_id: string
           updated_at: string
           user_id: string | null
@@ -125,6 +126,7 @@ export type Database = {
           products_commission?: number
           services_commission?: number
           status?: string
+          subscription_commission_rate?: number | null
           unit_id: string
           updated_at?: string
           user_id?: string | null
@@ -137,6 +139,7 @@ export type Database = {
           products_commission?: number
           services_commission?: number
           status?: string
+          subscription_commission_rate?: number | null
           unit_id?: string
           updated_at?: string
           user_id?: string | null

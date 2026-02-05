@@ -29,6 +29,7 @@ export default function BarbersManagement() {
     unit_id: "",
     services_commission: "50",
     products_commission: "15",
+    subscription_commission: "0",
     status: "active",
     email: "",
     password: "",
@@ -62,6 +63,7 @@ export default function BarbersManagement() {
         unit_id: formData.unit_id,
         services_commission: Number(formData.services_commission),
         products_commission: Number(formData.products_commission),
+        subscription_commission_rate: Number(formData.subscription_commission),
         status: formData.status,
       };
 
@@ -121,6 +123,7 @@ export default function BarbersManagement() {
             unit_id: formData.unit_id,
             services_commission: Number(formData.services_commission),
             products_commission: Number(formData.products_commission),
+            subscription_commission_rate: Number(formData.subscription_commission),
             status: formData.status,
           },
           headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
@@ -134,7 +137,7 @@ export default function BarbersManagement() {
       }
 
       setDialogOpen(false);
-      setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", status: "active", email: "", password: "" });
+      setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", subscription_commission: "0", status: "active", email: "", password: "" });
       setEditingBarber(null);
       fetchBarbers();
     } catch (error: any) {
@@ -151,6 +154,7 @@ export default function BarbersManagement() {
       unit_id: barber.unit_id,
       services_commission: String(barber.services_commission),
       products_commission: String(barber.products_commission),
+      subscription_commission: String(barber.subscription_commission_rate || 0),
       status: barber.status,
       email: "",
       password: "",
@@ -187,7 +191,7 @@ export default function BarbersManagement() {
               <Button
                 onClick={() => {
                   setEditingBarber(null);
-                  setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", status: "active", email: "", password: "" });
+                  setFormData({ name: "", unit_id: "", services_commission: "50", products_commission: "15", subscription_commission: "0", status: "active", email: "", password: "" });
                 }}
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -285,6 +289,22 @@ export default function BarbersManagement() {
                       required
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subscription_commission">Taxa de Comissão - Assinaturas (%)</Label>
+                  <Input
+                    id="subscription_commission"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                    value={formData.subscription_commission}
+                    onChange={(e) => setFormData({ ...formData, subscription_commission: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Altere manualmente quando quiser promover o barbeiro (ex: de 10% para 15%)
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="status">Status</Label>
