@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Check, ChevronsUpDown, Search, Building2 } from "lucide-react";
+import { Check, ChevronsUpDown, Building2, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -21,6 +21,7 @@ interface Barber {
   id: string;
   name: string;
   unit_name: string;
+  today_subscriptions: number;
 }
 
 interface BarberComboboxProps {
@@ -53,20 +54,41 @@ export default function BarberCombobox({
 
   const fetchBarbers = async () => {
     setLoading(true);
+    const today = new Date().toISOString().split("T")[0];
+
     try {
-      const { data, error } = await supabase
+      // Buscar barbeiros
+      const { data: barbersData, error: barbersError } = await supabase
         .from("barbers")
         .select("id, name, units(name)")
         .eq("organization_id", organizationId)
         .eq("status", "active")
         .order("name");
 
-      if (error) throw error;
+      if (barbersError) throw barbersError;
 
-      const formattedBarbers: Barber[] = (data || []).map((b) => ({
+      // Buscar assinaturas de hoje
+      const { data: subscriptionsData } = await supabase
+        .from("sale_transactions")
+        .select("barber_id")
+        .eq("organization_id", organizationId)
+        .eq("item_type", "subscription")
+        .gte("created_at", today)
+        .lte("created_at", today + "T23:59:59");
+
+      // Contar assinaturas por barbeiro
+      const subscriptionCounts: Record<string, number> = {};
+      (subscriptionsData || []).forEach((tx) => {
+        if (tx.barber_id) {
+          subscriptionCounts[tx.barber_id] = (subscriptionCounts[tx.barber_id] || 0) + 1;
+        }
+      });
+
+      const formattedBarbers: Barber[] = (barbersData || []).map((b) => ({
         id: b.id,
         name: b.name,
         unit_name: (b.units as any)?.name || "Sem unidade",
+        today_subscriptions: subscriptionCounts[b.id] || 0,
       }));
 
       setBarbers(formattedBarbers);
@@ -161,9 +183,17 @@ export default function BarberCombobox({
                   />
                   <div className="flex flex-col">
                     <span>{barber.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {barber.unit_name}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {barber.unit_name}
+                      </span>
+                      {barber.today_subscriptions > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-warning font-medium">
+                          <Crown className="w-3 h-3" />
+                          {barber.today_subscriptions}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </CommandItem>
               ))}
