@@ -472,15 +472,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
                 </p>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {filteredItems.map((item) => (
-                    <CatalogCard
-                      key={item.id}
-                      item={item}
-                      isSelected={isInCart(item.id)}
-                      onSelect={() => handleToggleCart(item)}
-                    />
-                  ))}
+                <div className="max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {filteredItems.map((item) => (
+                      <CatalogCard
+                        key={item.id}
+                        item={item}
+                        isSelected={isInCart(item.id)}
+                        onSelect={() => handleToggleCart(item)}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
             </TabsContent>
@@ -495,15 +497,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
                 </p>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {filteredItems.map((item) => (
-                    <CatalogCard
-                      key={item.id}
-                      item={item}
-                      isSelected={isInCart(item.id)}
-                      onSelect={() => handleToggleCart(item)}
-                    />
-                  ))}
+                <div className="max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {filteredItems.map((item) => (
+                      <CatalogCard
+                        key={item.id}
+                        item={item}
+                        isSelected={isInCart(item.id)}
+                        onSelect={() => handleToggleCart(item)}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
             </TabsContent>
