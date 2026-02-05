@@ -1,6 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
+// Função para obter a data de Manaus (GMT-4)
+function getManausDateString(): string {
+  const now = new Date();
+  const manausOffset = -4 * 60; // -4 horas em minutos
+  const localOffset = now.getTimezoneOffset();
+  const manausTime = new Date(now.getTime() + (localOffset + manausOffset) * 60000);
+  return manausTime.toISOString().split('T')[0];
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -234,7 +243,7 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
 }
 
 async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getManausDateString();
   
   // Buscar produção de hoje
   const { data: production } = await supabase

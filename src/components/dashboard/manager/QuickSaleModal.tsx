@@ -20,7 +20,7 @@ import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { format } from "date-fns";
+import { getTodayString } from "@/lib/dateUtils";
 import SubscriptionConfirmModal from "../barber/SubscriptionConfirmModal";
 
 interface QuickSaleModalProps {
@@ -112,7 +112,7 @@ export default function QuickSaleModal({
 
   const fetchCatalog = async () => {
     setLoadingCatalog(true);
-    const today = format(new Date(), "yyyy-MM-dd");
+    const today = getTodayString();
     
     try {
       const [servicesRes, productsRes, subscriptionsRes] = await Promise.all([
@@ -281,7 +281,7 @@ export default function QuickSaleModal({
     }
 
     setIsLoading(true);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayString();
     const effectiveBarberId = isReceptionSale ? null : barberId;
 
     try {
@@ -380,7 +380,7 @@ export default function QuickSaleModal({
     }
 
     setIsLoading(true);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayString();
 
     try {
       let productionId: string;
@@ -453,7 +453,7 @@ export default function QuickSaleModal({
 
   const handleSubscriptionComplete = () => {
     const fetchSubscriptions = async () => {
-      const today = format(new Date(), "yyyy-MM-dd");
+      const today = getTodayString();
       const { data } = await supabase
         .from("sale_transactions")
         .select("id")

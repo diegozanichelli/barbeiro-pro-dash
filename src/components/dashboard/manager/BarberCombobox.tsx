@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Check, ChevronsUpDown, Building2, Crown } from "lucide-react";
+import { getTodayString } from "@/lib/dateUtils";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -54,7 +55,7 @@ export default function BarberCombobox({
 
   const fetchBarbers = async () => {
     setLoading(true);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayString();
 
     try {
       // Buscar barbeiros
