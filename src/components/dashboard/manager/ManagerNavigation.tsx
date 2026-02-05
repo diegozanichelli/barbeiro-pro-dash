@@ -24,6 +24,7 @@ import {
   Briefcase,
   FileText,
   DollarSign,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +94,7 @@ export default function ManagerNavigation({
     label: "Relatórios",
     icon: FileText,
     items: [
+      { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
       { id: "evolution", label: "Evolução", icon: TrendingUp },
       { id: "leaderboard", label: "Rankings", icon: Trophy },
       { id: "subscriptions", label: "Assinaturas", icon: Repeat },

@@ -22,6 +22,7 @@ import AIUsageTracking from "./manager/AIUsageTracking";
 import CatalogManagement from "./manager/CatalogManagement";
 import ManagerNavigation from "./manager/ManagerNavigation";
 import SubscriptionsTracking from "./manager/SubscriptionsTracking";
+import MonthlyPayroll from "./manager/MonthlyPayroll";
 
 interface ManagerDashboardProps {
   user: User;
@@ -135,6 +136,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="leaderboard" className="mt-0">
             <Leaderboard />
+          </TabsContent>
+
+          <TabsContent value="payroll" className="mt-0">
+            <MonthlyPayroll />
           </TabsContent>
 
           <TabsContent value="ai-usage" className="mt-0">

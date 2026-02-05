@@ -88,6 +88,7 @@ serve(async (req: Request) => {
       unit_id,
       services_commission,
       products_commission,
+      subscription_commission_rate,
       status,
     } = body as {
       name: string;
@@ -96,6 +97,7 @@ serve(async (req: Request) => {
       unit_id: string;
       services_commission: number | string;
       products_commission: number | string;
+      subscription_commission_rate?: number | string;
       status: string;
     };
 
@@ -210,11 +212,13 @@ serve(async (req: Request) => {
     console.log("[CREATE-BARBER] Profile created");
 
     // 3) Create barber row linked to user with organization_id
+    const subscriptionCommNum = Number(subscription_commission_rate) || 0;
     const { error: barberErr } = await supabaseAdmin.from("barbers").insert({
       name: trimmedName,
       unit_id,
       services_commission: servicesCommNum,
       products_commission: productsCommNum,
+      subscription_commission_rate: subscriptionCommNum,
       status: status || "active",
       user_id: newUser.id,
       organization_id: organization_id,
