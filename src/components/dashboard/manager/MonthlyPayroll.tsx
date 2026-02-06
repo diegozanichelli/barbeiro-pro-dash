@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calculator, Calendar, DollarSign, TrendingUp, Users } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface BarberPayrollData {
   barberId: string;
@@ -27,7 +28,7 @@ interface BarberPayrollData {
 }
 
 export default function MonthlyPayroll() {
-  const now = new Date();
+  const now = getManausDate();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
@@ -66,12 +67,14 @@ export default function MonthlyPayroll() {
   const { data: subscriptionSales = [], isLoading: loadingSubscriptions } = useQuery({
     queryKey: ["payroll-subscriptions", selectedMonth, selectedYear],
     queryFn: async () => {
+      const startDateStr = format(startDate, "yyyy-MM-dd");
+      const endDateStr = format(endDate, "yyyy-MM-dd");
       const { data, error } = await supabase
         .from("sale_transactions")
         .select("barber_id, price_sold")
         .eq("item_type", "subscription")
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
+        .gte("created_at", startDateStr)
+        .lte("created_at", endDateStr + "T23:59:59");
       if (error) throw error;
       return data || [];
     },
