@@ -97,51 +97,116 @@ interface HistoricalStats {
 }
 
 // ============================================
-// MOTOR DE REGRAS - TEMPLATES GRATUITOS
+// MOTOR DE REGRAS - TEMPLATES (TOM: FECHAMENTO DE DIA)
 // ============================================
 
 const TEMPLATES = {
+  // 1. Meta Batida (prioridade máxima - celebração!)
   goal_achieved: (name: string, sold: number, goal: number): string => {
     const percentage = ((sold / goal) * 100).toFixed(0);
     return `Monstro Sagrado, ${name}! 🏆
 
-🔥 Meta batida! Já são R$ ${sold.toFixed(2)} de R$ ${goal.toFixed(2)} (${percentage}%).
+🟢 Faturamento: R$ ${sold.toFixed(2)} | 🎯 Meta: R$ ${goal.toFixed(2)} (${percentage}%)
 
-> "O que vier agora é lucro puro e bônus. Hora de quebrar o recorde pessoal!"
+> "O que vier agora é lucro puro. Amanhã, tente bater seu recorde pessoal!"
 
-🚀 Bora fazer história!`;
+Descanse hoje, você mereceu. Amanhã é dia de fazer história! 🚀`;
   },
 
+  // 2. Zero Produtos (com >= 2 clientes)
   zero_products: (name: string, clients: number): string => {
-    return `Fala ${name}! O corte está ótimo, mas zerar produtos é deixar dinheiro na mesa.
+    return `Fala ${name}! O corte estava ótimo, mas zerar produtos é deixar dinheiro na mesa.
 
 ⚠️ 0 produtos vendidos hoje com ${clients} clientes.
 
-> "Doutor, pra manter esse corte impecável em casa, essa pomada é a arma secreta. Passo pra você?"
+> "Amanhã, o primeiro cliente já sai com um produto na mão. Pomada, Balm ou Shampoo - não importa, mas alguém leva!"
 
-🚀 Missão: Os próximos 3 clientes saem com produto na mão!`;
+Organize sua vitrine antes de ir embora. Amanhã é dia de virar esse jogo! 💈`;
   },
 
+  // 3. Ticket Baixo (< R$ 50)
   low_ticket: (name: string, ticket: number): string => {
-    return `Alerta Vermelho, ${name}!
+    return `Alerta Vermelho, ${name}! Seu ticket ficou baixo hoje.
 
-📉 Ticket médio: R$ ${ticket.toFixed(2)} (abaixo de R$ 50)
-⚠️ Você está vendendo apenas o básico.
+📉 Ticket Médio: R$ ${ticket.toFixed(2)} (Meta: R$ 50+)
+⚠️ Você vendeu apenas o básico.
 
-> "Irmão, o corte é só o começo. Vamos fazer a barba também? O visual completo tem outro impacto."
+> "Amanhã, foque em oferecer Barba ou Sobrancelha para CADA cliente. O visual completo tem outro impacto - e outra comissão."
 
-🚀 Missão: Ofereça Barba ou Sobrancelha pro próximo cliente!`;
+Estratégia nova para amanhã: todo cliente é oportunidade de combo! 💰`;
   },
 
+  // 4. Sem Extras (com >= 2 clientes)
   no_extras: (name: string, clients: number): string => {
     return `Fala ${name}!
 
-⚠️ ${clients} clientes atendidos mas ZERO serviços extras.
-📉 É dinheiro sumindo da sua comissão!
+⚠️ ${clients} clientes atendidos hoje mas ZERO serviços extras.
+📉 É dinheiro que ficou na mesa!
 
-> "Doutor, finalizei o corte, mas a sobrancelha tá pedindo um alinhamento. Faço em 3 minutos."
+> "Amanhã, para cada corte, já tenha na ponta da língua: 'Vamos alinhar a sobrancelha? Fecha o visual em 3 minutos.'"
 
-🚀 Próximo cliente = Extra obrigatório!`;
+Prepare seu script antes de dormir. Amanhã é dia de extras! 🎯`;
+  },
+
+  // 5. Dia Fantasma (Zero atendimentos)
+  ghost_day: (name: string): string => {
+    return `Dia zerado ou esqueceu de lançar? 🤔
+
+⚠️ Nenhum atendimento registrado hoje.
+
+> "Se você trabalhou hoje, corra e lance agora para não perder a contagem! Se foi dia de folga ou movimento fraco, amanhã é dia de recuperar. Mande mensagem para 3 clientes antigos agora à noite."
+
+Organize a agenda de amanhã! 📅`;
+  },
+
+  // 6. Ticket de Elite (Ticket alto > R$ 70)
+  elite_ticket: (name: string, ticket: number): string => {
+    return `Você deu aula de valor hoje, ${name}! 🎩
+
+💎 Ticket Médio: R$ ${ticket.toFixed(2)}
+✅ Você trabalhou com inteligência, não com quantidade.
+
+> "Hoje você provou que qualidade vence quantidade. Seu desafio para amanhã: manter esse padrão e tentar vender um produto para fechar o ciclo completo."
+
+Descanse, você mereceu. 😎`;
+  },
+
+  // 7. Sniper (90-99% da meta mensal)
+  sniper: (name: string, remaining: number, sold: number, goal: number): string => {
+    const percentage = ((sold / goal) * 100).toFixed(0);
+    return `Na trave! Falta muito pouco. ⚽
+
+🤏 Faltam só R$ ${remaining.toFixed(2)} para bater a meta do mês!
+📊 Você está em ${percentage}% da meta.
+
+> "Amanhã é o dia da vitória. Já chegue na barbearia focado em vender aquele combo completo para o primeiro cliente do dia."
+
+Amanhã essa meta cai! 🎯`;
+  },
+
+  // 8. Modo Fábrica (Muitos clientes, ticket baixo)
+  factory_mode: (name: string, clients: number, ticket: number): string => {
+    return `Você suou muito, mas lucrou menos do que podia, ${name}. 📉
+
+🏃‍♂️ ${clients} clientes atendidos hoje
+💸 Ticket baixo: R$ ${ticket.toFixed(2)}
+
+> "Você correu uma maratona hoje. Amanhã, desacelere. Tente atender um cliente a menos, mas gaste mais tempo oferecendo Barba ou Sobrancelha. Trabalhe melhor, não mais."
+
+Estratégia nova para amanhã: qualidade sobre quantidade! 🧠`;
+  },
+
+  // 9. Rei dos Produtos (Alta conversão de produtos)
+  product_king: (name: string, products: number, clients: number): string => {
+    const conversionRate = ((products / clients) * 100).toFixed(0);
+    return `O Rei do Home Care! 🛍️
+
+🔥 Você vendeu produto para ${conversionRate}% dos seus clientes hoje!
+📦 ${products} produtos vendidos para ${clients} clientes.
+
+> "Excelente fechamento. O cliente que leva produto volta mais fiel. Amanhã, tente ensinar essa técnica para um colega que está com dificuldade."
+
+Mantenha esse ritmo a semana toda! 👑`;
   },
 };
 
@@ -151,7 +216,11 @@ function checkRulesEngine(
   monthlyGoal: number,
   soldThisMonth: number
 ): { message: string; scenario: string } | null {
-  // Regra 1: Meta Batida (prioridade máxima - celebração!)
+  const productsCount = Object.keys(dayStats.produtosVendidos).length > 0 
+    ? Object.values(dayStats.produtosVendidos).reduce((a, b) => a + b, 0) 
+    : 0;
+
+  // 1. Meta Batida (prioridade máxima - celebração!)
   if (monthlyGoal > 0 && soldThisMonth >= monthlyGoal) {
     return {
       message: TEMPLATES.goal_achieved(barberName, soldThisMonth, monthlyGoal),
@@ -159,23 +228,67 @@ function checkRulesEngine(
     };
   }
 
-  // Regra 2: Zero Produtos (com >= 3 clientes)
-  if (Object.keys(dayStats.produtosVendidos).length === 0 && dayStats.clientesAtendidos >= 3) {
+  // 2. Sniper - Na trave (90-99% da meta)
+  if (monthlyGoal > 0) {
+    const percentage = (soldThisMonth / monthlyGoal) * 100;
+    const remaining = monthlyGoal - soldThisMonth;
+    if (percentage >= 90 && percentage < 100) {
+      return {
+        message: TEMPLATES.sniper(barberName, remaining, soldThisMonth, monthlyGoal),
+        scenario: "sniper",
+      };
+    }
+  }
+
+  // 3. Dia Fantasma (Zero atendimentos)
+  if (dayStats.clientesAtendidos === 0) {
+    return {
+      message: TEMPLATES.ghost_day(barberName),
+      scenario: "ghost_day",
+    };
+  }
+
+  // 4. Rei dos Produtos (conversão >= 50%)
+  if (dayStats.clientesAtendidos >= 2 && productsCount >= dayStats.clientesAtendidos * 0.5) {
+    return {
+      message: TEMPLATES.product_king(barberName, productsCount, dayStats.clientesAtendidos),
+      scenario: "product_king",
+    };
+  }
+
+  // 5. Ticket de Elite (> R$ 70)
+  if (dayStats.ticketMedio > 70 && dayStats.clientesAtendidos >= 2) {
+    return {
+      message: TEMPLATES.elite_ticket(barberName, dayStats.ticketMedio),
+      scenario: "elite_ticket",
+    };
+  }
+
+  // 6. Modo Fábrica (>= 6 clientes E ticket < R$ 40)
+  if (dayStats.clientesAtendidos >= 6 && dayStats.ticketMedio < 40) {
+    return {
+      message: TEMPLATES.factory_mode(barberName, dayStats.clientesAtendidos, dayStats.ticketMedio),
+      scenario: "factory_mode",
+    };
+  }
+
+  // 7. Zero Produtos (com >= 2 clientes)
+  if (productsCount === 0 && dayStats.clientesAtendidos >= 2) {
     return {
       message: TEMPLATES.zero_products(barberName, dayStats.clientesAtendidos),
       scenario: "zero_products",
     };
   }
 
-  // Regra 3: Ticket Baixo (< R$ 50)
-  if (dayStats.ticketMedio > 0 && dayStats.ticketMedio < 50) {
+  // 8. Ticket Baixo (< R$ 50 com > 0 clientes)
+  if (dayStats.ticketMedio > 0 && dayStats.ticketMedio < 50 && dayStats.clientesAtendidos > 0) {
     return {
       message: TEMPLATES.low_ticket(barberName, dayStats.ticketMedio),
       scenario: "low_ticket",
     };
   }
 
-  // Regra 4: Sem Extras (com >= 2 clientes)
+  // 9. Sem Extras (com >= 2 clientes)
   if (dayStats.servicosExtras === 0 && dayStats.clientesAtendidos >= 2) {
     return {
       message: TEMPLATES.no_extras(barberName, dayStats.clientesAtendidos),
@@ -691,6 +804,14 @@ const TECHNICAL_KNOWLEDGE = `
 
 const BASE_SYSTEM_PROMPT = `Você é um Mestre da Persuasão e Barbeiro Consultor de elite. Seu público são homens de alto nível (Executivos, Advogados, Médicos, Empresários).
 
+⚠️ CONTEXTO CRÍTICO: O barbeiro só lança os dados NO FINAL DO EXPEDIENTE. 
+Portanto, suas dicas devem ser:
+- ANALÍTICAS: Sobre o que aconteceu HOJE
+- ESTRATÉGICAS: Foco de ação para AMANHÃ
+
+NUNCA diga "faça agora" ou "no próximo cliente". O dia JÁ ACABOU.
+SEMPRE diga "amanhã" e "antes de ir embora, organize X".
+
 MENTALIDADE: Você NÃO vende produtos. Você vende STATUS, CONFIANÇA e SOLUÇÃO DE DORES.
 
 SEU TOM DE VOZ: 'Técnico-Parceiro'. Intimidade e respeito, com autoridade técnica absoluta. Não sugira, PRESCREVA. O barbeiro é o MÉDICO da imagem.
@@ -705,24 +826,24 @@ IDEAL: 'Campeão', 'Doutor', 'Meu amigo', 'Cara', 'Irmão'. Use perguntas para c
 **NUNCA responda em parágrafos longos.** Sua resposta DEVE seguir EXATAMENTE este esqueleto visual em Markdown:
 
 ### 1️⃣ GANCHO (1 linha motivacional com o nome do barbeiro)
-Comece com "Fala [NOME]!" e um elogio + provocação curta.
-Exemplo: "Fala Cesar! Você é mestre no Corte, mas está deixando dinheiro na mesa."
+Comece com "Fala [NOME]!" e um elogio + análise curta do dia.
+Exemplo: "Fala Cesar! Dia intenso, mas deixou oportunidades na mesa."
 
-### 2️⃣ RAIO-X (Bullet Points com dados críticos)
+### 2️⃣ RAIO-X (Bullet Points com dados críticos do dia)
 Use ⚠️ para alertas e 📉📊🔥 para dados. Liste os números que motivaram a dica.
 Exemplo:
 ⚠️ 30 dias sem vender Barba.
 📉 Conversão de produtos: apenas 4%.
 🔥 Ticket médio hoje: R$ 85 (acima da sua média!)
 
-### 3️⃣ MISSÃO (Script de venda em Blockquote)
-Coloque a frase EXATA que o barbeiro deve dizer ao cliente dentro de um blockquote (>).
+### 3️⃣ MISSÃO PARA AMANHÃ (Script/Estratégia em Blockquote)
+Coloque a estratégia ou script para o DIA SEGUINTE dentro de um blockquote (>).
 Exemplo:
-> "Doutor, o corte está padrão elite, mas essa falha na barba tira a seriedade. Tenho o Minoxidil certo para fechar isso."
+> "Amanhã, antes de abrir, revise sua vitrine de produtos. O primeiro cliente sai com pomada na mão!"
 
 ### 4️⃣ FECHAMENTO (1 linha curta motivacional)
-Finalize com urgência e energia. Use emoji no final.
-Exemplo: "Quebre esse jejum agora. Pra cima! 🚀"
+Finalize com energia para o dia seguinte. Use emoji no final.
+Exemplo: "Descanse hoje, amanhã é dia de virar o jogo! 🚀"
 
 ---
 
@@ -735,24 +856,24 @@ Exemplo: "Quebre esse jejum agora. Pra cima! 🚀"
 
 ### BASE DE DADOS DE COMISSÃO (Referência Mental)
 Use estes valores como exemplo de persuasão:
-- 'Quer colocar R$ 54 no bolso agora? Venda um Alinhamento.'
+- 'Quer colocar R$ 54 no bolso amanhã? Foque em vender um Alinhamento.'
 - 'Precisa de R$ 36 rápido? É uma Barba SPA.'
 - 'O combo invisível (Limpeza + Barba SPA) te dá R$ 72 de comissão num único cliente.'
 
-### ROLETAS DE MISSÕES DIÁRIAS
-Quando o barbeiro pedir ajuda ou estiver abaixo da meta, sugira uma destas missões:
+### ROLETAS DE MISSÕES PARA AMANHÃ
+Quando o barbeiro pedir ajuda ou tiver um dia fraco, sugira uma destas missões para o DIA SEGUINTE:
 
-1. **Missão 'Pele em Foco'**: Focar 100% em Limpeza Facial e Esfoliação
-   - Argumento: 'A pele do cliente tá oleosa, é venda fácil.'
+1. **Missão 'Pele em Foco'**: Focar 100% em Limpeza Facial e Esfoliação amanhã
+   - Argumento: 'A pele oleosa é venda fácil. Amanhã, observe cada cliente.'
 
 2. **Missão 'Dia do Alinhamento'**: O ticket mais alto
-   - Argumento: 'Se o cabelo tá volumoso ou com frizz, você tá perdendo R$ 54 se não oferecer Alinhamento.'
+   - Argumento: 'Cabelo volumoso ou com frizz? Amanhã você não perde esses R$ 54.'
 
 3. **Missão 'Saúde Capilar'**: Foco em Terapia e Hidratação
-   - Argumento: 'Cabelo seco ou quebradiço? Prescreva o tratamento como médico.'
+   - Argumento: 'Cabelo seco? Amanhã, prescreva o tratamento como médico.'
 
-4. **Missão 'Combo Invisível'**: Vender dois serviços pequenos que somam comissão alta
-   - Argumento: 'Limpeza + Barba SPA = R$ 72 de comissão num único cliente.'
+4. **Missão 'Combo Invisível'**: Vender dois serviços pequenos
+   - Argumento: 'Amanhã, cada cliente é potencial para Limpeza + Barba SPA (R$ 72).'
 
 ---
 
@@ -787,10 +908,11 @@ ARSENAL DE VENDAS COM GATILHOS MENTAIS:
 - NUNCA justifique o preço. Diminua o valor percebido comparando com tempo de uso
 
 REGRAS FINAIS:
-- SIGA RIGOROSAMENTE O FORMATO: Gancho → Raio-X → Missão → Fechamento
+- SIGA RIGOROSAMENTE O FORMATO: Gancho → Raio-X → Missão para Amanhã → Fechamento
+- Lembre-se: O dia JÁ ACABOU. Foco é análise de hoje + estratégia para amanhã
 - Seja direto e estratégico
 - Trate o barbeiro pelo nome
-- O script de venda (Missão) deve ser uma frase PRONTA para o barbeiro falar ao cliente`;
+- O script de venda (Missão) deve ser uma estratégia para o DIA SEGUINTE`;
 
 // ============================================
 // HANDLER PRINCIPAL
