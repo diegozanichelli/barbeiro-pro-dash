@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getManausDate } from "@/lib/dateUtils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,14 +32,15 @@ interface SubscriptionEarning {
 }
 
 export default function SubscriptionEarningsForm() {
+  const manausNow = useMemo(() => getManausDate(), []);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [earnings, setEarnings] = useState<SubscriptionEarning[]>([]);
   
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [selectedBarber, setSelectedBarber] = useState<string>("");
-  const [selectedMonth, setSelectedMonth] = useState<string>((new Date().getMonth() + 1).toString());
-  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+  const [selectedMonth, setSelectedMonth] = useState<string>((manausNow.getMonth() + 1).toString());
+  const [selectedYear, setSelectedYear] = useState<string>(manausNow.getFullYear().toString());
   const [amount, setAmount] = useState<string>("");
   const [saving, setSaving] = useState(false);
   
@@ -61,7 +63,7 @@ export default function SubscriptionEarningsForm() {
   ];
 
   const years = Array.from({ length: 5 }, (_, i) => {
-    const year = new Date().getFullYear() - 2 + i;
+    const year = getManausDate().getFullYear() - 2 + i;
     return { value: year.toString(), label: year.toString() };
   });
 

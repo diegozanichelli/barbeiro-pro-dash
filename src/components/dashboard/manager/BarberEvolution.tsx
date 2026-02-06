@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
+import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { TrendingUp, Building2, User, GitCompare } from "lucide-react";
 import ShopEvolution from "./ShopEvolution";
@@ -20,9 +21,10 @@ interface MonthlyData {
 }
 
 function BarberEvolutionChart() {
+  const manausNow = useMemo(() => getManausDate(), []);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -31,7 +33,7 @@ function BarberEvolutionChart() {
     "Jul", "Ago", "Set", "Out", "Nov", "Dez"
   ];
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
+  const years = Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i);
 
   useEffect(() => {
     fetchBarbers();
