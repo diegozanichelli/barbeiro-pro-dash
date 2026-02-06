@@ -250,11 +250,13 @@ export type Database = {
         Row: {
           barber_id: string
           clients_count: number
+          coach_message: string | null
           commission_earned: number
           confirmed_presence: boolean
           created_at: string
           date: string
           id: string
+          last_coach_at: string | null
           manual_basic_total: number | null
           manual_clients_count: number | null
           manual_extra_total: number | null
@@ -280,11 +282,13 @@ export type Database = {
         Insert: {
           barber_id: string
           clients_count?: number
+          coach_message?: string | null
           commission_earned?: number
           confirmed_presence?: boolean
           created_at?: string
           date: string
           id?: string
+          last_coach_at?: string | null
           manual_basic_total?: number | null
           manual_clients_count?: number | null
           manual_extra_total?: number | null
@@ -310,11 +314,13 @@ export type Database = {
         Update: {
           barber_id?: string
           clients_count?: number
+          coach_message?: string | null
           commission_earned?: number
           confirmed_presence?: boolean
           created_at?: string
           date?: string
           id?: string
+          last_coach_at?: string | null
           manual_basic_total?: number | null
           manual_clients_count?: number | null
           manual_extra_total?: number | null

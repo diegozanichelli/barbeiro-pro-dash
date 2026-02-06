@@ -1,20 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
-// Função para obter a data de Manaus (GMT-4) como Date
+// ============================================
+// UTILIDADES DE DATA (MANAUS GMT-4)
+// ============================================
+
 function getManausDate(): Date {
   const now = new Date();
-  const manausOffset = -4 * 60; // -4 horas em minutos
+  const manausOffset = -4 * 60;
   const localOffset = now.getTimezoneOffset();
   return new Date(now.getTime() + (localOffset + manausOffset) * 60000);
 }
 
-// Função para formatar data de Manaus como string yyyy-MM-dd
 function getManausDateString(): string {
   return formatManausDate(getManausDate());
 }
 
-// Função para formatar qualquer data como yyyy-MM-dd (sem usar toISOString que pode rolar para próximo dia)
 function formatManausDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -22,10 +23,18 @@ function formatManausDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// ============================================
+// CORS
+// ============================================
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// ============================================
+// TIPOS
+// ============================================
 
 interface DailyInsightRequest {
   type: 'daily_insight';
@@ -37,6 +46,7 @@ interface DailyInsightRequest {
   soldThisMonth: number;
   daysRemaining: number;
   dailyTarget: number;
+  forceRefresh?: boolean;
 }
 
 interface SalesHelpRequest {
@@ -86,16 +96,149 @@ interface HistoricalStats {
   barberTransactionsCount: number;
 }
 
+// ============================================
+// MOTOR DE REGRAS - TEMPLATES GRATUITOS
+// ============================================
+
+const TEMPLATES = {
+  goal_achieved: (name: string, sold: number, goal: number): string => {
+    const percentage = ((sold / goal) * 100).toFixed(0);
+    return `Monstro Sagrado, ${name}! 🏆
+
+🔥 Meta batida! Já são R$ ${sold.toFixed(2)} de R$ ${goal.toFixed(2)} (${percentage}%).
+
+> "O que vier agora é lucro puro e bônus. Hora de quebrar o recorde pessoal!"
+
+🚀 Bora fazer história!`;
+  },
+
+  zero_products: (name: string, clients: number): string => {
+    return `Fala ${name}! O corte está ótimo, mas zerar produtos é deixar dinheiro na mesa.
+
+⚠️ 0 produtos vendidos hoje com ${clients} clientes.
+
+> "Doutor, pra manter esse corte impecável em casa, essa pomada é a arma secreta. Passo pra você?"
+
+🚀 Missão: Os próximos 3 clientes saem com produto na mão!`;
+  },
+
+  low_ticket: (name: string, ticket: number): string => {
+    return `Alerta Vermelho, ${name}!
+
+📉 Ticket médio: R$ ${ticket.toFixed(2)} (abaixo de R$ 50)
+⚠️ Você está vendendo apenas o básico.
+
+> "Irmão, o corte é só o começo. Vamos fazer a barba também? O visual completo tem outro impacto."
+
+🚀 Missão: Ofereça Barba ou Sobrancelha pro próximo cliente!`;
+  },
+
+  no_extras: (name: string, clients: number): string => {
+    return `Fala ${name}!
+
+⚠️ ${clients} clientes atendidos mas ZERO serviços extras.
+📉 É dinheiro sumindo da sua comissão!
+
+> "Doutor, finalizei o corte, mas a sobrancelha tá pedindo um alinhamento. Faço em 3 minutos."
+
+🚀 Próximo cliente = Extra obrigatório!`;
+  },
+};
+
+function checkRulesEngine(
+  dayStats: DayStats,
+  barberName: string,
+  monthlyGoal: number,
+  soldThisMonth: number
+): { message: string; scenario: string } | null {
+  // Regra 1: Meta Batida (prioridade máxima - celebração!)
+  if (monthlyGoal > 0 && soldThisMonth >= monthlyGoal) {
+    return {
+      message: TEMPLATES.goal_achieved(barberName, soldThisMonth, monthlyGoal),
+      scenario: "goal_achieved",
+    };
+  }
+
+  // Regra 2: Zero Produtos (com >= 3 clientes)
+  if (Object.keys(dayStats.produtosVendidos).length === 0 && dayStats.clientesAtendidos >= 3) {
+    return {
+      message: TEMPLATES.zero_products(barberName, dayStats.clientesAtendidos),
+      scenario: "zero_products",
+    };
+  }
+
+  // Regra 3: Ticket Baixo (< R$ 50)
+  if (dayStats.ticketMedio > 0 && dayStats.ticketMedio < 50) {
+    return {
+      message: TEMPLATES.low_ticket(barberName, dayStats.ticketMedio),
+      scenario: "low_ticket",
+    };
+  }
+
+  // Regra 4: Sem Extras (com >= 2 clientes)
+  if (dayStats.servicosExtras === 0 && dayStats.clientesAtendidos >= 2) {
+    return {
+      message: TEMPLATES.no_extras(barberName, dayStats.clientesAtendidos),
+      scenario: "no_extras",
+    };
+  }
+
+  // Nenhuma regra ativada - fallback para IA
+  return null;
+}
+
+// ============================================
+// FUNÇÕES DE CACHE
+// ============================================
+
+async function getCachedCoachMessage(
+  barberId: string,
+  today: string,
+  supabase: any
+): Promise<{ message: string; lastCoachAt: Date } | null> {
+  const { data } = await supabase
+    .from("daily_productions")
+    .select("coach_message, last_coach_at")
+    .eq("barber_id", barberId)
+    .eq("date", today)
+    .single();
+
+  if (data?.coach_message && data?.last_coach_at) {
+    return {
+      message: data.coach_message,
+      lastCoachAt: new Date(data.last_coach_at),
+    };
+  }
+  return null;
+}
+
+async function saveCoachMessageToCache(
+  barberId: string,
+  today: string,
+  message: string,
+  supabase: any
+): Promise<void> {
+  await supabase
+    .from("daily_productions")
+    .update({
+      coach_message: message,
+      last_coach_at: new Date().toISOString(),
+    })
+    .eq("barber_id", barberId)
+    .eq("date", today);
+}
+
+// ============================================
+// ESTATÍSTICAS HISTÓRICAS (30 DIAS)
+// ============================================
+
 async function fetchHistoricalStats(barberId: string, organizationId: string, supabase: any): Promise<HistoricalStats> {
-  // Usar data de Manaus para cálculo correto dos últimos 30 dias
   const today = getManausDate();
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const startDate = formatManausDate(thirtyDaysAgo);
   const endDate = formatManausDate(today);
 
-  // Buscar transações DECLARADAS PELO BARBEIRO dos últimos 30 dias (source='barber')
-  // Isso fornece dados itemizados precisos do que o barbeiro realmente declara vender
   const { data: barberTransactions } = await supabase
     .from("sale_transactions")
     .select("item_type, item_name, price_sold, commission_amount, service_category, created_at")
@@ -104,7 +247,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     .gte("created_at", `${startDate}T00:00:00`)
     .lte("created_at", `${endDate}T23:59:59`);
 
-  // Também buscar transações do gerente para comparação silenciosa
   const { data: managerTransactions } = await supabase
     .from("sale_transactions")
     .select("item_type, item_name, price_sold, commission_amount, service_category")
@@ -113,7 +255,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     .gte("created_at", `${startDate}T00:00:00`)
     .lte("created_at", `${endDate}T23:59:59`);
 
-  // Buscar produções dos últimos 30 dias
   const { data: productions } = await supabase
     .from("daily_productions")
     .select("clients_count, commission_earned, date, manual_clients_count")
@@ -121,21 +262,18 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     .gte("date", startDate)
     .lte("date", endDate);
 
-  // Buscar catálogo de serviços ativos
   const { data: catalogServices } = await supabase
     .from("catalog_services")
     .select("name, category")
     .eq("organization_id", organizationId)
     .eq("is_active", true);
 
-  // Buscar catálogo de produtos ativos
   const { data: catalogProducts } = await supabase
     .from("catalog_products")
     .select("name")
     .eq("organization_id", organizationId)
     .eq("is_active", true);
 
-  // Contagem de serviços e produtos vendidos pelo barbeiro (dados itemizados)
   const serviceCount: Record<string, number> = {};
   const productCount: Record<string, number> = {};
   const categoryCount: Record<string, number> = {};
@@ -148,7 +286,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
       if (tx.item_type === 'service') {
         serviceCount[tx.item_name] = (serviceCount[tx.item_name] || 0) + 1;
         totalServices++;
-        // Agrupar por categoria (basico/extra)
         const cat = tx.service_category || 'basico';
         categoryCount[cat] = (categoryCount[cat] || 0) + 1;
       } else if (tx.item_type === 'product') {
@@ -159,7 +296,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
-  // Análise de padrões - dias da semana com mais vendas
   const dayOfWeekSales: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
   if (barberTransactions) {
     for (const tx of barberTransactions) {
@@ -169,7 +305,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
-  // Top serviço vendido
   let topService: { name: string; count: number } | null = null;
   for (const [name, count] of Object.entries(serviceCount)) {
     if (!topService || count > topService.count) {
@@ -177,7 +312,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
-  // Top produto vendido
   let topProduct: { name: string; count: number } | null = null;
   for (const [name, count] of Object.entries(productCount)) {
     if (!topProduct || count > topProduct.count) {
@@ -185,7 +319,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
-  // Serviços esquecidos (no catálogo mas nunca vendidos nos últimos 30 dias)
   const forgottenServices: string[] = [];
   if (catalogServices) {
     for (const service of catalogServices) {
@@ -195,7 +328,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
-  // Produtos esquecidos
   const forgottenProducts: string[] = [];
   if (catalogProducts) {
     for (const product of catalogProducts) {
@@ -205,7 +337,6 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
     }
   }
 
-  // Estatísticas de produção
   let totalClients30d = 0;
   let totalCommission30d = 0;
   let daysWorked = 0;
@@ -223,13 +354,8 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
 
   const avgTicket30d = totalClients30d > 0 ? totalRevenue30d / totalClients30d : 0;
   const avgDailyCommission = daysWorked > 0 ? totalCommission30d / daysWorked : 0;
-
-  // Calcular taxa de conversão de produtos (quantos clientes compram produtos)
   const productConversionRate = totalClients30d > 0 ? (totalProducts / totalClients30d) * 100 : 0;
-
-  // Calcular mix de serviços extras vs básicos
   const extrasCount = categoryCount['extra'] || 0;
-  const basicCount = categoryCount['basico'] || 0;
   const extrasRatio = totalServices > 0 ? (extrasCount / totalServices) * 100 : 0;
 
   return {
@@ -255,10 +381,13 @@ async function fetchHistoricalStats(barberId: string, organizationId: string, su
   };
 }
 
+// ============================================
+// ESTATÍSTICAS DO DIA
+// ============================================
+
 async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats> {
   const today = getManausDateString();
   
-  // Buscar produção de hoje
   const { data: production } = await supabase
     .from("daily_productions")
     .select("*")
@@ -266,8 +395,6 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
     .eq("date", today)
     .single();
 
-  // Buscar transações DECLARADAS PELO BARBEIRO de hoje (source='barber')
-  // Isso fornece dados itemizados precisos do que o barbeiro declara ter vendido
   const { data: barberTransactions } = await supabase
     .from("sale_transactions")
     .select("item_type, item_name, price_sold, commission_amount, service_category, created_at")
@@ -292,14 +419,12 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
         servicosVendidos[tx.item_name] = (servicosVendidos[tx.item_name] || 0) + 1;
         totalServicos += tx.price_sold;
         
-        // Rastrear categoria do serviço
         if (tx.service_category === 'extra') {
           servicosExtras++;
         } else {
           servicosBasicos++;
         }
         
-        // Capturar último serviço vendido
         if (!ultimoServicoVendido) {
           ultimoServicoVendido = tx.item_name;
         }
@@ -307,7 +432,6 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
         produtosVendidos[tx.item_name] = (produtosVendidos[tx.item_name] || 0) + 1;
         totalProdutos += tx.price_sold;
         
-        // Capturar último produto vendido
         if (!ultimoProdutoVendido) {
           ultimoProdutoVendido = tx.item_name;
         }
@@ -315,7 +439,6 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
     }
   }
 
-  // Usar clients_count manual se disponível, senão o consolidado
   const clientesAtendidos = production?.manual_clients_count || production?.clients_count || 0;
   const comissaoTotal = production?.commission_earned || 0;
   const totalVendas = totalServicos + totalProdutos;
@@ -337,6 +460,10 @@ async function fetchDayStats(barberId: string, supabase: any): Promise<DayStats>
     ultimoProdutoVendido,
   };
 }
+
+// ============================================
+// CONTEXTOS PARA IA
+// ============================================
 
 function buildDayStatsContext(stats: DayStats): string {
   const servicosList = Object.entries(stats.servicosVendidos)
@@ -398,7 +525,6 @@ function buildHistoricalContext(stats: HistoricalStats, dayStats: DayStats): str
     ? `✅ Hoje está ${ticketComparison}% ACIMA da média histórica` 
     : `⚠️ Hoje está ${Math.abs(Number(ticketComparison))}% ABAIXO da média histórica`;
 
-  // Analisar dias da semana com melhor performance
   const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   let bestDay = 0;
   let bestDaySales = 0;
@@ -409,14 +535,12 @@ function buildHistoricalContext(stats: HistoricalStats, dayStats: DayStats): str
     }
   }
 
-  // Top 3 serviços vendidos
   const topServices = Object.entries(stats.serviceCount)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([name, count]) => `${name}: ${count}x`)
     .join(', ') || 'Sem dados';
 
-  // Top 3 produtos vendidos
   const topProducts = Object.entries(stats.productCount)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
@@ -494,6 +618,10 @@ ${stats.topProduct
 `;
 }
 
+// ============================================
+// LOG DE USO
+// ============================================
+
 async function logUsage(barberId: string, organizationId: string, usageType: string, scenario?: string) {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -516,6 +644,10 @@ async function logUsage(barberId: string, organizationId: string, usageType: str
     console.error("Error logging AI usage:", error);
   }
 }
+
+// ============================================
+// CONHECIMENTO TÉCNICO
+// ============================================
 
 const TECHNICAL_KNOWLEDGE = `
 ## 📚 CONHECIMENTO TÉCNICO E CONFLITOS DE SERVIÇOS
@@ -552,6 +684,10 @@ const TECHNICAL_KNOWLEDGE = `
 2. Sugira serviços COMPLEMENTARES, nunca redundantes
 3. Se for químico (Alinhamento, Relaxamento, Progressiva), NÃO sugira outro químico
 `;
+
+// ============================================
+// SYSTEM PROMPT BASE
+// ============================================
 
 const BASE_SYSTEM_PROMPT = `Você é um Mestre da Persuasão e Barbeiro Consultor de elite. Seu público são homens de alto nível (Executivos, Advogados, Médicos, Empresários).
 
@@ -656,18 +792,16 @@ REGRAS FINAIS:
 - Trate o barbeiro pelo nome
 - O script de venda (Missão) deve ser uma frase PRONTA para o barbeiro falar ao cliente`;
 
+// ============================================
+// HANDLER PRINCIPAL
+// ============================================
+
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
@@ -676,29 +810,76 @@ serve(async (req) => {
     }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
     const body: RequestBody = await req.json();
-    let systemPrompt = BASE_SYSTEM_PROMPT;
-    let userPrompt = "";
+    const today = getManausDateString();
 
-    // Buscar estatísticas do dia para contextualizar a IA
-    const dayStats = await fetchDayStats(body.barberId, supabase);
-    const dayStatsContext = buildDayStatsContext(dayStats);
-
-    // Buscar estatísticas históricas dos últimos 30 dias
-    const historicalStats = await fetchHistoricalStats(body.barberId, body.organizationId, supabase);
-    const historicalContext = buildHistoricalContext(historicalStats, dayStats);
-
+    // ============================================
+    // FLUXO PARA DAILY INSIGHT (COM CACHE + REGRAS)
+    // ============================================
     if (body.type === 'daily_insight') {
-      const { barberId, organizationId, barberName, monthlyGoal, soldToday, soldThisMonth, daysRemaining, dailyTarget } = body;
+      const { barberId, organizationId, barberName, monthlyGoal, soldToday, soldThisMonth, daysRemaining, dailyTarget, forceRefresh } = body;
       
-      // Log usage
-      await logUsage(barberId, organizationId, 'daily_insight');
+      // PASSO 1: Verificar cache (4 horas) - apenas se não for forceRefresh
+      if (!forceRefresh) {
+        const cached = await getCachedCoachMessage(barberId, today, supabase);
+        if (cached) {
+          const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+          if (cached.lastCoachAt > fourHoursAgo) {
+            console.log(`[CACHE HIT] Returning cached message for barber ${barberId}`);
+            return new Response(JSON.stringify({ 
+              message: cached.message, 
+              type: body.type, 
+              source: "cache" 
+            }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
+
+      // Buscar estatísticas do dia
+      const dayStats = await fetchDayStats(barberId, supabase);
+
+      // PASSO 2: Motor de Regras (Templates Gratuitos)
+      const ruleResult = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth);
+      if (ruleResult) {
+        console.log(`[RULES ENGINE] Scenario: ${ruleResult.scenario} for barber ${barberId}`);
+        
+        // Salvar no cache
+        await saveCoachMessageToCache(barberId, today, ruleResult.message, supabase);
+        
+        // Log usage com scenario específico
+        await logUsage(barberId, organizationId, 'daily_insight_rules', ruleResult.scenario);
+        
+        return new Response(JSON.stringify({ 
+          message: ruleResult.message, 
+          type: body.type, 
+          source: "rules_engine",
+          scenario: ruleResult.scenario,
+          stats: dayStats 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // PASSO 3: Fallback - Chamar IA (cenários complexos)
+      console.log(`[AI FALLBACK] Calling AI for barber ${barberId}`);
+      
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY) {
+        throw new Error("LOVABLE_API_KEY is not configured");
+      }
+
+      const dayStatsContext = buildDayStatsContext(dayStats);
+      const historicalStats = await fetchHistoricalStats(barberId, organizationId, supabase);
+      const historicalContext = buildHistoricalContext(historicalStats, dayStats);
+      
+      await logUsage(barberId, organizationId, 'daily_insight_ai');
       
       const percentageAchieved = monthlyGoal > 0 ? ((soldThisMonth / monthlyGoal) * 100).toFixed(1) : 0;
       const remaining = Math.max(0, monthlyGoal - soldThisMonth);
       
-      userPrompt = `${dayStatsContext}
+      const userPrompt = `${dayStatsContext}
 
 ${historicalContext}
 
@@ -718,10 +899,75 @@ IMPORTANTE:
 - Se precisar recuperar vendas, sugira usar o Arsenal com os Gatilhos Mentais apropriados
 - Demonstre que você CONHECE a carreira do barbeiro, não apenas o dia de hoje`;
 
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            { role: "system", content: BASE_SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 350,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          return new Response(JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }), {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (response.status === 402) {
+          return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Entre em contato com o suporte." }), {
+            status: 402,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const errorText = await response.text();
+        console.error("AI gateway error:", response.status, errorText);
+        return new Response(JSON.stringify({ error: "Erro ao processar requisição de IA" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const data = await response.json();
+      const aiMessage = data.choices?.[0]?.message?.content || "Não foi possível gerar uma resposta.";
+
+      // Salvar no cache
+      await saveCoachMessageToCache(barberId, today, aiMessage, supabase);
+
+      return new Response(JSON.stringify({ 
+        message: aiMessage, 
+        type: body.type, 
+        source: "ai",
+        stats: dayStats 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
+    // ============================================
+    // FLUXO PARA SALES HELP (SEM CACHE - SEMPRE IA)
+    // ============================================
     } else if (body.type === 'sales_help') {
       const { barberId, organizationId, scenario } = body;
       
-      // Log usage
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY) {
+        throw new Error("LOVABLE_API_KEY is not configured");
+      }
+
+      const dayStats = await fetchDayStats(barberId, supabase);
+      const dayStatsContext = buildDayStatsContext(dayStats);
+      const historicalStats = await fetchHistoricalStats(barberId, organizationId, supabase);
+      const historicalContext = buildHistoricalContext(historicalStats, dayStats);
+      
       await logUsage(barberId, organizationId, 'sales_help', scenario);
       
       const scenarioPrompts: Record<string, string> = {
@@ -733,7 +979,7 @@ IMPORTANTE:
         'fidelizacao': `Cliente satisfeito pagando. Ofereça ASSINATURA com Gatilho de AVERSÃO À PERDA e STATUS: 'Doutor, um cara da sua posição não pode ter "dia ruim" de cabelo. Na Assinatura, você não paga por visita. Você vem toda sexta, faz o ritual completo e tá sempre pronto pra qualquer reunião. É blindagem de imagem. Vamos migrar hoje?'`,
       };
 
-      userPrompt = `${dayStatsContext}
+      const userPrompt = `${dayStatsContext}
 
 ${historicalContext}
 
@@ -746,54 +992,54 @@ IMPORTANTE:
 - Verifique o CONHECIMENTO TÉCNICO para não sugerir serviços redundantes ou conflitantes
 - Máximo de 3 frases que o barbeiro pode falar diretamente ao cliente`;
 
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            { role: "system", content: BASE_SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 350,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          return new Response(JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }), {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (response.status === 402) {
+          return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Entre em contato com o suporte." }), {
+            status: 402,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const errorText = await response.text();
+        console.error("AI gateway error:", response.status, errorText);
+        return new Response(JSON.stringify({ error: "Erro ao processar requisição de IA" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const data = await response.json();
+      const aiMessage = data.choices?.[0]?.message?.content || "Não foi possível gerar uma resposta.";
+
+      return new Response(JSON.stringify({ message: aiMessage, type: body.type, stats: dayStats }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     } else {
       throw new Error("Tipo de requisição inválido");
     }
-
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 350,
-        temperature: 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Entre em contato com o suporte." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "Erro ao processar requisição de IA" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const data = await response.json();
-    const aiMessage = data.choices?.[0]?.message?.content || "Não foi possível gerar uma resposta.";
-
-    return new Response(JSON.stringify({ message: aiMessage, type: body.type, stats: dayStats }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
 
   } catch (error) {
     console.error("barber-ai-assistant error:", error);
