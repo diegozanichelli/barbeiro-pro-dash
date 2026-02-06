@@ -5,7 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { TrendingUp, TrendingDown, Minus, BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import { getManausDate } from "@/lib/dateUtils";
 interface Barber {
   id: string;
   name: string;
@@ -80,10 +81,9 @@ export default function EarningsComparison() {
   const fetchEarningsData = async () => {
     setLoading(true);
 
-    const now = new Date();
+    const now = getManausDate();
     const currentMonth = now.getMonth() + 1;
     const currentYear = now.getFullYear();
-
     // Calcular os últimos 3 meses
     const months: { month: number; year: number; label: string }[] = [];
     for (let i = 2; i >= 0; i--) {
@@ -117,15 +117,16 @@ export default function EarningsComparison() {
       for (const m of months) {
         const firstDay = new Date(m.year, m.month - 1, 1);
         const lastDay = new Date(m.year, m.month, 0);
+        const firstDayStr = format(firstDay, "yyyy-MM-dd");
+        const lastDayStr = format(lastDay, "yyyy-MM-dd");
 
         // Buscar produções do mês (comissões avulsas)
         const { data: productions } = await supabase
           .from("daily_productions")
           .select("commission_earned")
           .eq("barber_id", barber.id)
-          .gte("date", firstDay.toISOString().split("T")[0])
-          .lte("date", lastDay.toISOString().split("T")[0]);
-
+          .gte("date", firstDayStr)
+          .lte("date", lastDayStr);
         const avulso = productions?.reduce((sum, p) => sum + Number(p.commission_earned), 0) || 0;
 
         // Buscar ganhos de assinatura do mês

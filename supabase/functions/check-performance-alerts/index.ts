@@ -14,6 +14,13 @@ function getManausDate(): Date {
   return new Date(utc + (MANAUS_OFFSET * 60000));
 }
 
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function logStep(step: string, data?: any) {
   console.log(`[CHECK-ALERTS] ${step}`, data ? JSON.stringify(data) : '');
 }
@@ -45,7 +52,7 @@ Deno.serve(async (req) => {
     
     // Primeira data do mês para referência
     const mesReferencia = new Date(anoAtual, mesAtual - 1, 1);
-    const mesReferenciaStr = mesReferencia.toISOString().split('T')[0];
+    const mesReferenciaStr = formatDate(mesReferencia);
 
     logStep('Processing month (Manaus timezone)', { mes: mesAtual, ano: anoAtual, dia: diaAtual, timezone: 'America/Manaus (GMT-4)' });
 
@@ -106,13 +113,15 @@ Deno.serve(async (req) => {
         // Buscar produções acumuladas do barbeiro no mês
         const primeiroDiaMes = new Date(anoAtual, mesAtual - 1, 1);
         const ultimoDiaMes = new Date(anoAtual, mesAtual, 0);
+        const primeiroDiaMesStr = formatDate(primeiroDiaMes);
+        const ultimoDiaMesStr = formatDate(ultimoDiaMes);
         
         const { data: producoes, error: producoesError } = await supabaseClient
           .from('daily_productions')
           .select('commission_earned')
           .eq('barber_id', barber.id)
-          .gte('date', primeiroDiaMes.toISOString().split('T')[0])
-          .lte('date', ultimoDiaMes.toISOString().split('T')[0]);
+          .gte('date', primeiroDiaMesStr)
+          .lte('date', ultimoDiaMesStr);
 
         if (producoesError) {
           logStep('Error fetching productions', { barberId: barber.id, error: producoesError.message });

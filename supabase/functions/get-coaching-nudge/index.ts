@@ -74,11 +74,19 @@ serve(async (req) => {
     const utcTime = nowUTC.getTime() + (nowUTC.getTimezoneOffset() * 60000);
     const now = new Date(utcTime + (MANAUS_OFFSET * 60000));
     
+    // Helper to format date as yyyy-MM-dd
+    const formatDate = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
     // Get current month dates (using Manaus timezone)
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const firstDayStr = firstDay.toISOString().split("T")[0];
-    const lastDayStr = lastDay.toISOString().split("T")[0];
+    const firstDayStr = formatDate(firstDay);
+    const lastDayStr = formatDate(lastDay);
 
     console.log("[COACHING-NUDGE] Date range (Manaus timezone):", firstDayStr, "to", lastDayStr);
 

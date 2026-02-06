@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useState } from "react";
+import { format, startOfMonth } from "date-fns";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface PerformanceAlert {
   id: string;
@@ -29,9 +31,9 @@ export function PerformanceAlerts() {
     queryKey: ['performance-alerts'],
     queryFn: async () => {
       // Calcular primeiro dia do mês atual para filtrar apenas alertas do mês vigente
-      const hoje = new Date();
-      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const mesReferenciaStr = primeiroDiaMes.toISOString().split('T')[0];
+      const hoje = getManausDate();
+      const primeiroDiaMes = startOfMonth(hoje);
+      const mesReferenciaStr = format(primeiroDiaMes, "yyyy-MM-dd");
 
       const { data, error } = await supabase
         .from('performance_alerts')
