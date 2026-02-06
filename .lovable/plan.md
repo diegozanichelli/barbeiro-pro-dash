@@ -1,247 +1,160 @@
 
-# Plano: Sistema de Cache e Motor de Regras para barber-ai-assistant
+# Plano: Seletor Global de "Tipo de Cliente" + Relatório de Conversão
 
-## Objetivo
-Reduzir **80%+ dos custos de API** implementando:
-1. **Cache de 4 horas** no banco de dados
-2. **Motor de Regras** com templates gratuitos para cenários comuns
-3. **Fallback para IA** apenas quando necessário
+## Resumo Executivo
+
+Adicionar um seletor visual obrigatório (Cliente Novo vs Cliente da Casa) em todos os pontos de venda para capturar métricas de conversão precisas. Em seguida, criar um relatório de Performance de Assinaturas que mostre a taxa de conversão real (Assinaturas / Clientes Novos Atendidos).
 
 ---
 
-## Arquitetura da Solução
+## Parte 1: Seletor no Painel do Gestor
+
+### Arquivo: `QuickSaleModal.tsx`
+
+**Localização**: No topo do modal, logo abaixo do toggle "Venda Recepção / Loja" (linha ~458)
+
+**Componente**:
+- Usar ToggleGroup com dois botões:
+  - "🏠 Cliente da Casa" (default selecionado)
+  - "🆕 Cliente Novo"
+- Estado: `isNewClient: boolean` (default: `false`)
+
+**Integração no Submit** (função `handleCartCheckout`):
+- Adicionar `is_new_client: isNewClient` em cada transação do array `transactions[]`
+- Resetar estado no `resetForm()`
+
+---
+
+## Parte 2: Seletor no App do Barbeiro
+
+### Arquivo: `BarberSaleForm.tsx`
+
+**Localização A - Card Principal**: Após o Date Picker (linha ~378), adicionar o mesmo ToggleGroup
+
+**Localização B - Modal de Checkout**: Mostrar o tipo selecionado como informação visual no resumo (linha ~564)
+
+**Integração no Submit** (função `handleConfirmCheckout`):
+- Adicionar `is_new_client: isNewClient` em cada transação
+- Estado: `isNewClient: boolean` (default: `false`)
+
+---
+
+## Parte 3: Relatório de Conversão
+
+### Arquivo: `BarberEvolution.tsx`
+
+**Adicionar Nova Tab**: "Assinaturas" com ícone Crown
+
+**Novo Componente**: `SubscriptionPerformanceChart`
+
+**Dados a Buscar** (da tabela `sale_transactions`):
+```text
+Por Barbeiro:
+1. oportunidades = COUNT(*) WHERE is_new_client = true
+2. assinaturas = COUNT(*) WHERE item_type = 'subscription'
+3. conversao = (assinaturas / oportunidades) * 100
+```
+
+**Colunas da Tabela**:
+| Barbeiro | Unidade | Clientes Novos | Assinaturas | Conversão |
+|----------|---------|----------------|-------------|-----------|
+| Ageu     | Centro  | 10             | 3           | 30% ⭐    |
+| João     | Norte   | 5              | 0           | 0% 🔴     |
+
+**Regras Visuais**:
+- `0%` = Badge vermelha (alerta)
+- `1-29%` = Badge amarela
+- `30%+` = Badge verde com estrela
+
+---
+
+## Fluxo Visual dos Componentes
 
 ```text
-REQUISIÇÃO DO BARBEIRO
-         │
-         ▼
-┌────────────────────────────────────────┐
-│ 1️⃣ VERIFICAR CACHE (4 horas)          │
-│    → daily_productions.coach_message   │
-│    → daily_productions.last_coach_at   │
-└────────────────────────────────────────┘
-         │
-    Cache Válido?
-    ┌────┴────┐
-    │ SIM    │ NÃO
-    ▼         ▼
-  RETORNAR  ┌────────────────────────────┐
-  CACHE     │ 2️⃣ MOTOR DE REGRAS        │
-  (R$ 0)    │    → Zero Produtos?        │
-            │    → Ticket Baixo?         │
-            │    → Meta Batida?          │
-            │    → Sem Extras?           │
-            └────────────────────────────┘
-                      │
-               Regra Ativada?
-               ┌────┴────┐
-               │ SIM    │ NÃO
-               ▼         ▼
-             RETORNAR  ┌────────────────┐
-             TEMPLATE  │ 3️⃣ CHAMAR IA  │
-             (R$ 0)    │    (Fallback)  │
-                       └────────────────┘
-                              │
-                              ▼
-                       SALVAR EM CACHE
-                       RETORNAR RESPOSTA
+┌─────────────────────────────────────────┐
+│  QuickSaleModal (Gestor)                │
+├─────────────────────────────────────────┤
+│  ┌───────────────────────────────────┐  │
+│  │ Toggle: Venda Recepção / Loja     │  │
+│  └───────────────────────────────────┘  │
+│                                         │
+│  ┌───────────────────────────────────┐  │
+│  │  TIPO DE CLIENTE (NOVO!)          │  │
+│  │  ┌──────────┐  ┌──────────────┐   │  │
+│  │  │🏠 Da Casa│  │🆕 Novo       │   │  │
+│  │  │(default) │  │              │   │  │
+│  │  └──────────┘  └──────────────┘   │  │
+│  └───────────────────────────────────┘  │
+│                                         │
+│  [Serviços] [Produtos] [Manual]         │
+│  ... grid de itens ...                  │
+└─────────────────────────────────────────┘
+```
+
+```text
+┌─────────────────────────────────────────┐
+│  BarberEvolution                        │
+├─────────────────────────────────────────┤
+│  [Barbearia] [Comparativo] [Barbeiro]   │
+│                           [Assinaturas] │ ← NOVA TAB
+│                                         │
+│  ┌───────────────────────────────────┐  │
+│  │  📊 Performance de Conversão      │  │
+│  ├───────────────────────────────────┤  │
+│  │  Barbeiro │ Novos │ Vendas │ %    │  │
+│  │  Ageu     │  10   │   3    │ 30%⭐ │  │
+│  │  João     │   5   │   0    │ 0% 🔴 │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## Mudanças Necessárias
+## Detalhes Técnicos
 
-### 1. Migração do Banco de Dados
-Adicionar 2 colunas à tabela `daily_productions`:
+### Alterações por Arquivo
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `coach_message` | TEXT | A última dica gerada pela IA |
-| `last_coach_at` | TIMESTAMPTZ | Quando a dica foi gerada |
+| Arquivo | Alteração |
+|---------|-----------|
+| `QuickSaleModal.tsx` | Adicionar estado `isNewClient`, ToggleGroup visual, incluir no insert |
+| `BarberSaleForm.tsx` | Adicionar estado `isNewClient`, ToggleGroup visual, incluir no insert |
+| `BarberEvolution.tsx` | Adicionar 4ª tab "Assinaturas" com novo componente |
 
-```sql
-ALTER TABLE daily_productions 
-ADD COLUMN IF NOT EXISTS coach_message TEXT,
-ADD COLUMN IF NOT EXISTS last_coach_at TIMESTAMPTZ;
-```
+### Novo Componente a Criar
 
-### 2. Motor de Regras (Templates Gratuitos)
-Cenários detectados automaticamente antes de chamar a IA:
+**`SubscriptionPerformanceReport.tsx`**:
+- Query para buscar:
+  - Clientes novos atendidos por barbeiro (`is_new_client = true`)
+  - Assinaturas vendidas por barbeiro (`item_type = 'subscription'`)
+- Cálculo de conversão
+- Tabela com cores condicionais
 
-| Cenário | Condição | Template |
-|---------|----------|----------|
-| **Zero Produtos** | `products_count == 0 AND clients > 2` | "Fala [Nome]! O corte está ótimo, mas zerar produtos é deixar dinheiro na mesa. ⚠️ 0 produtos vendidos hoje com X clientes. > 'Doutor, pra manter esse corte impecável em casa, essa pomada é a arma secreta. Passo pra você?' 🚀 Missão: Os próximos 3 clientes saem com produto na mão!" |
-| **Ticket Baixo** | `ticket_medio < 50` | "Alerta Vermelho, [Nome]! 📉 Seu ticket está em R$ X, abaixo de R$ 50. Você está vendendo apenas o básico. > 'Irmão, o corte é só o começo. Vamos fazer a barba também? O visual completo tem outro impacto.' 🚀 Missão: Ofereça Barba ou Sobrancelha pro próximo cliente!" |
-| **Meta Batida** | `soldThisMonth >= monthlyGoal` | "Monstro Sagrado! 🚀 🔥 Meta batida, [Nome]! Já são R$ X de R$ Y (XXX%). > 'O que vier agora é lucro puro e bônus. Tente bater seu recorde pessoal hoje!' 🏆 Hora de fazer história!" |
-| **Sem Extras** | `servicosExtras == 0 AND clientesAtendidos >= 2` | "Fala [Nome]! ⚠️ Você atendeu X clientes mas ZERO serviços extras. É dinheiro sumindo! > 'Doutor, finalizei o corte, mas a sobrancelha tá pedindo um alinhamento. Faço em 3 minutos e fecha o visual.' 🚀 Próximo cliente = Extra obrigatório!" |
-
-### 3. Lógica da Edge Function (barber-ai-assistant)
+### Imports Necessários
 
 ```typescript
-// PASSO 1: Verificar Cache (4 horas)
-const { data: cachedProduction } = await supabase
-  .from("daily_productions")
-  .select("coach_message, last_coach_at")
-  .eq("barber_id", barberId)
-  .eq("date", today)
-  .single();
-
-const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
-if (cachedProduction?.coach_message && 
-    new Date(cachedProduction.last_coach_at) > fourHoursAgo) {
-  // CACHE HIT - Retorna sem custo!
-  return Response(JSON.stringify({ 
-    message: cachedProduction.coach_message,
-    source: "cache" 
-  }));
-}
-
-// PASSO 2: Motor de Regras (Templates)
-const template = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth);
-if (template) {
-  // REGRA ATIVADA - Retorna template sem custo!
-  await saveToCache(barberId, today, template);
-  return Response(JSON.stringify({ 
-    message: template,
-    source: "rules_engine" 
-  }));
-}
-
-// PASSO 3: Fallback - Chamar IA (cenários complexos)
-const aiResponse = await callLovableAI(...);
-await saveToCache(barberId, today, aiResponse);
-return Response(JSON.stringify({ 
-  message: aiResponse,
-  source: "ai" 
-}));
-```
-
-### 4. Frontend (Indicador de Fonte)
-Opcional: Mostrar badge se a resposta veio do cache ou template:
-
-```tsx
-{data?.source === "cache" && (
-  <Badge variant="outline" className="text-xs">
-    💾 Dica salva
-  </Badge>
-)}
+// Em QuickSaleModal.tsx e BarberSaleForm.tsx
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Home, UserPlus } from "lucide-react";
 ```
 
 ---
 
-## Estimativa de Economia
+## Considerações
 
-| Cenário | Frequência Estimada | Custo API |
-|---------|---------------------|-----------|
-| Cache Hit (4h) | ~40% das requisições | R$ 0,00 |
-| Template (Regras) | ~35% das requisições | R$ 0,00 |
-| IA (Fallback) | ~25% das requisições | Normal |
+1. **Valor Padrão**: "Cliente da Casa" vem selecionado para agilizar o fluxo (maioria dos atendimentos são recorrentes)
 
-**Resultado**: Economia de **~75-80%** nos custos de API mantendo respostas personalizadas.
+2. **Retroatividade**: Atendimentos antigos terão `is_new_client = false` (null tratado como false)
 
----
+3. **Venda Manual**: O modo manual no BarberSaleForm também deve capturar o tipo de cliente (inserir na daily_productions como referência visual, já que não gera transaction)
 
-## Arquivos a Modificar
-
-1. **Migração SQL** - Adicionar colunas `coach_message` e `last_coach_at`
-2. **`supabase/functions/barber-ai-assistant/index.ts`** - Implementar cache + motor de regras
-3. **`src/components/dashboard/barber/AIDailyCoachCard.tsx`** - (Opcional) Badge indicador de fonte
+4. **Denominador Correto**: A fórmula de conversão usa apenas clientes novos como denominador, não o total de atendimentos
 
 ---
 
-## Seção Técnica
+## Sequência de Implementação
 
-### Templates com Formatação Markdown (Escaneável)
-Cada template seguirá a estrutura visual já implementada:
-
-```typescript
-const TEMPLATES = {
-  zero_products: (name: string, clients: number) => `
-Fala ${name}! O corte está ótimo, mas zerar produtos é deixar dinheiro na mesa.
-
-⚠️ 0 produtos vendidos hoje com ${clients} clientes.
-
-> "Doutor, pra manter esse corte impecável em casa, essa pomada é a arma secreta. Passo pra você?"
-
-🚀 Missão: Os próximos 3 clientes saem com produto na mão!`,
-
-  low_ticket: (name: string, ticket: number) => `
-Alerta Vermelho, ${name}!
-
-📉 Ticket médio: R$ ${ticket.toFixed(2)} (abaixo de R$ 50)
-⚠️ Você está vendendo apenas o básico.
-
-> "Irmão, o corte é só o começo. Vamos fazer a barba também? O visual completo tem outro impacto."
-
-🚀 Missão: Ofereça Barba ou Sobrancelha pro próximo cliente!`,
-
-  goal_achieved: (name: string, sold: number, goal: number) => `
-Monstro Sagrado! 🏆
-
-🔥 Meta batida, ${name}! Já são R$ ${sold.toFixed(2)} de R$ ${goal.toFixed(2)} (${((sold/goal)*100).toFixed(0)}%).
-
-> "O que vier agora é lucro puro e bônus. Hora de quebrar o recorde pessoal!"
-
-🚀 Bora fazer história!`,
-
-  no_extras: (name: string, clients: number) => `
-Fala ${name}!
-
-⚠️ ${clients} clientes atendidos mas ZERO serviços extras.
-📉 É dinheiro sumindo da sua comissão!
-
-> "Doutor, finalizei o corte, mas a sobrancelha tá pedindo um alinhamento. Faço em 3 minutos."
-
-🚀 Próximo cliente = Extra obrigatório!`
-};
-```
-
-### Função de Verificação de Regras
-```typescript
-function checkRulesEngine(
-  dayStats: DayStats,
-  barberName: string,
-  monthlyGoal: number,
-  soldThisMonth: number
-): string | null {
-  // Regra 1: Meta Batida (prioridade máxima - celebração!)
-  if (monthlyGoal > 0 && soldThisMonth >= monthlyGoal) {
-    return TEMPLATES.goal_achieved(barberName, soldThisMonth, monthlyGoal);
-  }
-
-  // Regra 2: Zero Produtos (com >= 3 clientes)
-  if (Object.keys(dayStats.produtosVendidos).length === 0 && 
-      dayStats.clientesAtendidos >= 3) {
-    return TEMPLATES.zero_products(barberName, dayStats.clientesAtendidos);
-  }
-
-  // Regra 3: Ticket Baixo (< R$ 50)
-  if (dayStats.ticketMedio > 0 && dayStats.ticketMedio < 50) {
-    return TEMPLATES.low_ticket(barberName, dayStats.ticketMedio);
-  }
-
-  // Regra 4: Sem Extras (com >= 2 clientes)
-  if (dayStats.servicosExtras === 0 && dayStats.clientesAtendidos >= 2) {
-    return TEMPLATES.no_extras(barberName, dayStats.clientesAtendidos);
-  }
-
-  // Nenhuma regra ativada - fallback para IA
-  return null;
-}
-```
-
-### Parâmetro forceRefresh para "Nova dica"
-O botão "Nova dica" enviará `forceRefresh: true` para ignorar cache e gerar nova resposta:
-
-```typescript
-// Frontend
-await supabase.functions.invoke("barber-ai-assistant", {
-  body: { ...payload, forceRefresh: true }
-});
-
-// Edge Function
-const forceRefresh = body.forceRefresh === true;
-if (!forceRefresh && cachedProduction?.coach_message && ...) {
-  return cached response;
-}
-```
+1. Adicionar seletor no `QuickSaleModal.tsx` (gestor)
+2. Adicionar seletor no `BarberSaleForm.tsx` (barbeiro)
+3. Criar componente `SubscriptionPerformanceReport.tsx`
+4. Integrar nova tab no `BarberEvolution.tsx`
+5. Testar fluxo completo
