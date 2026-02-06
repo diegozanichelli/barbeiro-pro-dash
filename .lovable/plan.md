@@ -1,195 +1,247 @@
 
-# Plano: Correção Completa de Timezone - Todos os Arquivos Restantes
+# Plano: Sistema de Cache e Motor de Regras para barber-ai-assistant
 
-## Diagnóstico Expandido
-
-Após auditoria completa, encontrei **mais 4 arquivos** que ainda precisam de correção para garantir que o problema de timezone não afete **nenhuma barbearia cadastrada**:
-
-| Arquivo | Código Problemático | Impacto |
-|---------|---------------------|---------|
-| `ManagerReports.tsx` | `startOfMonth(new Date())` e `endOfMonth(new Date())` na linha 59-60 | Relatórios inicializam com mês errado após 20h |
-| `ShopEvolution.tsx` | `new Date().getFullYear()` e `new Date().getMonth()` nas linhas 28, 40, 166 | Seleção de ano/mês atual errada após 20h |
-| `UnitsComparison.tsx` | `new Date().getFullYear()` e `new Date().getMonth()` nas linhas 34-35, 40 | Comparativos de unidades com mês errado |
-| `barber-ai-assistant` (Edge) | `new Date()` nas linhas 78-82 | IA calcula últimos 30 dias usando UTC |
-
-### Arquivos Já Corrigidos Anteriormente
-- `QuickSaleModal.tsx` ✅
-- `BarberSaleForm.tsx` ✅
-- `BarberCombobox.tsx` ✅
-- `SubscriptionConfirmModal.tsx` ✅
-- `MySubscriptionsCard.tsx` ✅
-- `SubscriptionsTracking.tsx` ✅
-- `EarningsComparison.tsx` ✅
-- `PerformanceAlerts.tsx` ✅
-- `MonthlyPayroll.tsx` ✅
-- `get-coaching-nudge` ✅
-- `check-performance-alerts` ✅
+## Objetivo
+Reduzir **80%+ dos custos de API** implementando:
+1. **Cache de 4 horas** no banco de dados
+2. **Motor de Regras** com templates gratuitos para cenários comuns
+3. **Fallback para IA** apenas quando necessário
 
 ---
 
-## Arquivos com Uso Aceitável de `new Date()`
-
-Alguns usos de `new Date()` são **aceitáveis** e não precisam de correção:
-
-| Arquivo | Uso | Por que está OK |
-|---------|-----|-----------------|
-| `BarberDashboard.tsx` | `format(new Date(), "EEEE, dd 'de' MMMM")` (linha 773) | Apenas para exibição de texto, não afeta dados |
-| `MySubscriptionsCard.tsx` | `format(new Date(), "MMMM")` (linha 63) | Apenas para exibição de nome do mês |
-| `SubscriptionsTracking.tsx` | `format(new Date(), "MMMM 'de' yyyy")` (linha 118) | Apenas para exibição |
-| `BarberSaleForm.tsx` | `useState<Date>(new Date())` (linha 71) | Date picker, mas já usa `format(selectedDate, ...)` |
-| `AIUsageTracking.tsx` | `startOfDay(new Date())` (linha 74) | Compara datas, não afeta registros |
-| `SubscriptionEarningsForm.tsx` | `new Date().getMonth()` (linha 40-41) | Seletor de mês, usa `getCurrentMonthYear()` seria melhor mas não crítico |
-
----
-
-## Alterações Necessárias
-
-### 1. ManagerReports.tsx
-**Problema:** Estado inicial do dateRange usa UTC
-
-```typescript
-// ANTES (linhas 58-61)
-const [dateRange, setDateRange] = useState<DateRange | undefined>({
-  from: startOfMonth(new Date()),
-  to: endOfMonth(new Date()),
-});
-
-// DEPOIS
-import { getManausDate } from "@/lib/dateUtils";
-const manausNow = getManausDate();
-const [dateRange, setDateRange] = useState<DateRange | undefined>({
-  from: startOfMonth(manausNow),
-  to: endOfMonth(manausNow),
-});
-```
-
-### 2. ShopEvolution.tsx
-**Problema:** Seleção inicial de ano/mês usa UTC
-
-```typescript
-// ANTES (linhas 28, 40, 166)
-const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
-const currentMonth = new Date().getMonth();
-
-// DEPOIS
-import { getManausDate } from "@/lib/dateUtils";
-const manausNow = getManausDate();
-const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
-const years = Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i);
-const currentMonth = getManausDate().getMonth();
-```
-
-### 3. UnitsComparison.tsx
-**Problema:** Seleção inicial de ano/mês usa UTC
-
-```typescript
-// ANTES (linhas 34-35, 40)
-const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
-
-// DEPOIS
-import { getManausDate } from "@/lib/dateUtils";
-const manausNow = getManausDate();
-const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
-const [selectedMonth, setSelectedMonth] = useState<number>(manausNow.getMonth() + 1);
-const years = Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i);
-```
-
-### 4. barber-ai-assistant (Edge Function)
-**Problema:** Cálculo dos últimos 30 dias usa UTC
-
-```typescript
-// ANTES (linhas 78-82)
-const today = new Date();
-const thirtyDaysAgo = new Date(today);
-thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-const startDate = thirtyDaysAgo.toISOString().split('T')[0];
-const endDate = today.toISOString().split('T')[0];
-
-// DEPOIS
-// Usar a função getManausDateString() já existente no topo do arquivo
-// e criar uma função para obter a data de Manaus como Date
-function getManausDate(): Date {
-  const now = new Date();
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  return new Date(utc + (-4 * 60 * 60000));
-}
-
-const today = getManausDate();
-const thirtyDaysAgo = new Date(today);
-thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-// Formatar como yyyy-MM-dd sem usar toISOString()
-function formatDateStr(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-const startDate = formatDateStr(thirtyDaysAgo);
-const endDate = formatDateStr(today);
-```
-
----
-
-## Resumo Visual
+## Arquitetura da Solução
 
 ```text
-PROBLEMA IDENTIFICADO:
-┌─────────────────────────────────────────────────────┐
-│ Manaus 22:00 (31/01) → UTC 02:00 (01/02)           │
-│                                                     │
-│ ManagerReports: Abre com fevereiro selecionado     │
-│ ShopEvolution: Mostra "mês atual" como fevereiro   │
-│ UnitsComparison: Compara fevereiro, não janeiro    │
-│ barber-ai-assistant: IA vê 30 dias errados         │
-└─────────────────────────────────────────────────────┘
-
-APÓS CORREÇÃO:
-┌─────────────────────────────────────────────────────┐
-│ Manaus 22:00 (31/01) → getManausDate()             │
-│                                                     │
-│ Todos os componentes: Janeiro (CORRETO!)           │
-│ Todas as barbearias: Dados consistentes            │
-└─────────────────────────────────────────────────────┘
+REQUISIÇÃO DO BARBEIRO
+         │
+         ▼
+┌────────────────────────────────────────┐
+│ 1️⃣ VERIFICAR CACHE (4 horas)          │
+│    → daily_productions.coach_message   │
+│    → daily_productions.last_coach_at   │
+└────────────────────────────────────────┘
+         │
+    Cache Válido?
+    ┌────┴────┐
+    │ SIM    │ NÃO
+    ▼         ▼
+  RETORNAR  ┌────────────────────────────┐
+  CACHE     │ 2️⃣ MOTOR DE REGRAS        │
+  (R$ 0)    │    → Zero Produtos?        │
+            │    → Ticket Baixo?         │
+            │    → Meta Batida?          │
+            │    → Sem Extras?           │
+            └────────────────────────────┘
+                      │
+               Regra Ativada?
+               ┌────┴────┐
+               │ SIM    │ NÃO
+               ▼         ▼
+             RETORNAR  ┌────────────────┐
+             TEMPLATE  │ 3️⃣ CHAMAR IA  │
+             (R$ 0)    │    (Fallback)  │
+                       └────────────────┘
+                              │
+                              ▼
+                       SALVAR EM CACHE
+                       RETORNAR RESPOSTA
 ```
 
 ---
 
-## Resultado Esperado
+## Mudanças Necessárias
 
-Após as correções:
-- **Todas as barbearias** terão dados consistentes
-- O barbeiro **Jhon** e todos os outros terão lançamentos no dia correto
-- Relatórios do gestor inicializarão com o mês correto
-- Evolução da loja mostrará o mês atual de Manaus
-- Comparativos de unidades usarão o mês atual de Manaus
-- A IA analisará os últimos 30 dias corretos
+### 1. Migração do Banco de Dados
+Adicionar 2 colunas à tabela `daily_productions`:
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `coach_message` | TEXT | A última dica gerada pela IA |
+| `last_coach_at` | TIMESTAMPTZ | Quando a dica foi gerada |
+
+```sql
+ALTER TABLE daily_productions 
+ADD COLUMN IF NOT EXISTS coach_message TEXT,
+ADD COLUMN IF NOT EXISTS last_coach_at TIMESTAMPTZ;
+```
+
+### 2. Motor de Regras (Templates Gratuitos)
+Cenários detectados automaticamente antes de chamar a IA:
+
+| Cenário | Condição | Template |
+|---------|----------|----------|
+| **Zero Produtos** | `products_count == 0 AND clients > 2` | "Fala [Nome]! O corte está ótimo, mas zerar produtos é deixar dinheiro na mesa. ⚠️ 0 produtos vendidos hoje com X clientes. > 'Doutor, pra manter esse corte impecável em casa, essa pomada é a arma secreta. Passo pra você?' 🚀 Missão: Os próximos 3 clientes saem com produto na mão!" |
+| **Ticket Baixo** | `ticket_medio < 50` | "Alerta Vermelho, [Nome]! 📉 Seu ticket está em R$ X, abaixo de R$ 50. Você está vendendo apenas o básico. > 'Irmão, o corte é só o começo. Vamos fazer a barba também? O visual completo tem outro impacto.' 🚀 Missão: Ofereça Barba ou Sobrancelha pro próximo cliente!" |
+| **Meta Batida** | `soldThisMonth >= monthlyGoal` | "Monstro Sagrado! 🚀 🔥 Meta batida, [Nome]! Já são R$ X de R$ Y (XXX%). > 'O que vier agora é lucro puro e bônus. Tente bater seu recorde pessoal hoje!' 🏆 Hora de fazer história!" |
+| **Sem Extras** | `servicosExtras == 0 AND clientesAtendidos >= 2` | "Fala [Nome]! ⚠️ Você atendeu X clientes mas ZERO serviços extras. É dinheiro sumindo! > 'Doutor, finalizei o corte, mas a sobrancelha tá pedindo um alinhamento. Faço em 3 minutos e fecha o visual.' 🚀 Próximo cliente = Extra obrigatório!" |
+
+### 3. Lógica da Edge Function (barber-ai-assistant)
+
+```typescript
+// PASSO 1: Verificar Cache (4 horas)
+const { data: cachedProduction } = await supabase
+  .from("daily_productions")
+  .select("coach_message, last_coach_at")
+  .eq("barber_id", barberId)
+  .eq("date", today)
+  .single();
+
+const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+if (cachedProduction?.coach_message && 
+    new Date(cachedProduction.last_coach_at) > fourHoursAgo) {
+  // CACHE HIT - Retorna sem custo!
+  return Response(JSON.stringify({ 
+    message: cachedProduction.coach_message,
+    source: "cache" 
+  }));
+}
+
+// PASSO 2: Motor de Regras (Templates)
+const template = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth);
+if (template) {
+  // REGRA ATIVADA - Retorna template sem custo!
+  await saveToCache(barberId, today, template);
+  return Response(JSON.stringify({ 
+    message: template,
+    source: "rules_engine" 
+  }));
+}
+
+// PASSO 3: Fallback - Chamar IA (cenários complexos)
+const aiResponse = await callLovableAI(...);
+await saveToCache(barberId, today, aiResponse);
+return Response(JSON.stringify({ 
+  message: aiResponse,
+  source: "ai" 
+}));
+```
+
+### 4. Frontend (Indicador de Fonte)
+Opcional: Mostrar badge se a resposta veio do cache ou template:
+
+```tsx
+{data?.source === "cache" && (
+  <Badge variant="outline" className="text-xs">
+    💾 Dica salva
+  </Badge>
+)}
+```
+
+---
+
+## Estimativa de Economia
+
+| Cenário | Frequência Estimada | Custo API |
+|---------|---------------------|-----------|
+| Cache Hit (4h) | ~40% das requisições | R$ 0,00 |
+| Template (Regras) | ~35% das requisições | R$ 0,00 |
+| IA (Fallback) | ~25% das requisições | Normal |
+
+**Resultado**: Economia de **~75-80%** nos custos de API mantendo respostas personalizadas.
+
+---
+
+## Arquivos a Modificar
+
+1. **Migração SQL** - Adicionar colunas `coach_message` e `last_coach_at`
+2. **`supabase/functions/barber-ai-assistant/index.ts`** - Implementar cache + motor de regras
+3. **`src/components/dashboard/barber/AIDailyCoachCard.tsx`** - (Opcional) Badge indicador de fonte
 
 ---
 
 ## Seção Técnica
 
-### Arquivos a Modificar
-1. `src/components/dashboard/manager/ManagerReports.tsx`
-2. `src/components/dashboard/manager/ShopEvolution.tsx`
-3. `src/components/dashboard/manager/UnitsComparison.tsx`
-4. `supabase/functions/barber-ai-assistant/index.ts`
+### Templates com Formatação Markdown (Escaneável)
+Cada template seguirá a estrutura visual já implementada:
 
-### Import a Adicionar (Frontend)
 ```typescript
-import { getManausDate } from "@/lib/dateUtils";
+const TEMPLATES = {
+  zero_products: (name: string, clients: number) => `
+Fala ${name}! O corte está ótimo, mas zerar produtos é deixar dinheiro na mesa.
+
+⚠️ 0 produtos vendidos hoje com ${clients} clientes.
+
+> "Doutor, pra manter esse corte impecável em casa, essa pomada é a arma secreta. Passo pra você?"
+
+🚀 Missão: Os próximos 3 clientes saem com produto na mão!`,
+
+  low_ticket: (name: string, ticket: number) => `
+Alerta Vermelho, ${name}!
+
+📉 Ticket médio: R$ ${ticket.toFixed(2)} (abaixo de R$ 50)
+⚠️ Você está vendendo apenas o básico.
+
+> "Irmão, o corte é só o começo. Vamos fazer a barba também? O visual completo tem outro impacto."
+
+🚀 Missão: Ofereça Barba ou Sobrancelha pro próximo cliente!`,
+
+  goal_achieved: (name: string, sold: number, goal: number) => `
+Monstro Sagrado! 🏆
+
+🔥 Meta batida, ${name}! Já são R$ ${sold.toFixed(2)} de R$ ${goal.toFixed(2)} (${((sold/goal)*100).toFixed(0)}%).
+
+> "O que vier agora é lucro puro e bônus. Hora de quebrar o recorde pessoal!"
+
+🚀 Bora fazer história!`,
+
+  no_extras: (name: string, clients: number) => `
+Fala ${name}!
+
+⚠️ ${clients} clientes atendidos mas ZERO serviços extras.
+📉 É dinheiro sumindo da sua comissão!
+
+> "Doutor, finalizei o corte, mas a sobrancelha tá pedindo um alinhamento. Faço em 3 minutos."
+
+🚀 Próximo cliente = Extra obrigatório!`
+};
 ```
 
-### Helper para Edge Function (barber-ai-assistant)
+### Função de Verificação de Regras
 ```typescript
-// Adicionar logo após getManausDateString()
-function getManausDate(): Date {
-  const now = new Date();
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  return new Date(utc + (-4 * 60 * 60000));
-}
+function checkRulesEngine(
+  dayStats: DayStats,
+  barberName: string,
+  monthlyGoal: number,
+  soldThisMonth: number
+): string | null {
+  // Regra 1: Meta Batida (prioridade máxima - celebração!)
+  if (monthlyGoal > 0 && soldThisMonth >= monthlyGoal) {
+    return TEMPLATES.goal_achieved(barberName, soldThisMonth, monthlyGoal);
+  }
 
-function formatManausDate(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  // Regra 2: Zero Produtos (com >= 3 clientes)
+  if (Object.keys(dayStats.produtosVendidos).length === 0 && 
+      dayStats.clientesAtendidos >= 3) {
+    return TEMPLATES.zero_products(barberName, dayStats.clientesAtendidos);
+  }
+
+  // Regra 3: Ticket Baixo (< R$ 50)
+  if (dayStats.ticketMedio > 0 && dayStats.ticketMedio < 50) {
+    return TEMPLATES.low_ticket(barberName, dayStats.ticketMedio);
+  }
+
+  // Regra 4: Sem Extras (com >= 2 clientes)
+  if (dayStats.servicosExtras === 0 && dayStats.clientesAtendidos >= 2) {
+    return TEMPLATES.no_extras(barberName, dayStats.clientesAtendidos);
+  }
+
+  // Nenhuma regra ativada - fallback para IA
+  return null;
+}
+```
+
+### Parâmetro forceRefresh para "Nova dica"
+O botão "Nova dica" enviará `forceRefresh: true` para ignorar cache e gerar nova resposta:
+
+```typescript
+// Frontend
+await supabase.functions.invoke("barber-ai-assistant", {
+  body: { ...payload, forceRefresh: true }
+});
+
+// Edge Function
+const forceRefresh = body.forceRefresh === true;
+if (!forceRefresh && cachedProduction?.coach_message && ...) {
+  return cached response;
 }
 ```
