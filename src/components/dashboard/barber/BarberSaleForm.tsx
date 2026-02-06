@@ -12,7 +12,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import { toast } from "sonner";
-import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
+import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users, Home, UserPlus } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { format } from "date-fns";
 import { getTodayString } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
@@ -75,6 +76,9 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   // Campos do modo manual
   const [manualValue, setManualValue] = useState("0");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
+  
+  // New client tracking (for conversion metrics)
+  const [isNewClient, setIsNewClient] = useState(false);
 
   // Buscar catálogo da organização + assinaturas de hoje
   useEffect(() => {
@@ -246,6 +250,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             commission_rate_used: 0, // Trigger vai calcular
             commission_amount: 0, // Trigger vai calcular
             source: "barber", // <- Diferencia do gestor
+            is_new_client: isNewClient,
           });
         }
       });
@@ -264,6 +269,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       setCart([]);
       setCheckoutOpen(false);
       setClientsCount(1);
+      setIsNewClient(false);
       onSuccess();
     } catch (error: any) {
       console.error("Erro ao registrar venda:", error);
@@ -373,7 +379,35 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   initialFocus
                 />
               </PopoverContent>
-            </Popover>
+          </Popover>
+          </div>
+          
+          {/* Client Type Selector (New vs Existing) */}
+          <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+            <Label className="text-sm font-medium text-muted-foreground">Tipo de Cliente</Label>
+            <ToggleGroup 
+              type="single" 
+              value={isNewClient ? "new" : "existing"} 
+              onValueChange={(v) => setIsNewClient(v === "new")}
+              className="justify-start"
+            >
+              <ToggleGroupItem 
+                value="existing" 
+                aria-label="Cliente da Casa"
+                className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              >
+                <Home className="w-4 h-4" />
+                Da Casa
+              </ToggleGroupItem>
+              <ToggleGroupItem 
+                value="new" 
+                aria-label="Cliente Novo"
+                className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
+              >
+                <UserPlus className="w-4 h-4" />
+                Novo
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
 
           {/* Barra de Busca */}
@@ -560,12 +594,20 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             </DialogDescription>
           </DialogHeader>
 
-          {/* Data da venda */}
-          <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-md">
-            <span className="text-sm text-muted-foreground">Data:</span>
-            <span className={cn("font-medium", !isToday && "text-warning")}>
-              {isToday ? "Hoje" : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
-            </span>
+          {/* Data da venda e Tipo de Cliente */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-md">
+              <span className="text-sm text-muted-foreground">Data:</span>
+              <span className={cn("font-medium", !isToday && "text-warning")}>
+                {isToday ? "Hoje" : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-md">
+              <span className="text-sm text-muted-foreground">Tipo de Cliente:</span>
+              <Badge variant={isNewClient ? "default" : "secondary"} className={isNewClient ? "bg-success" : ""}>
+                {isNewClient ? "🆕 Cliente Novo" : "🏠 Cliente da Casa"}
+              </Badge>
+            </div>
           </div>
 
           {/* Lista de itens com edição de preço e quantidade */}
