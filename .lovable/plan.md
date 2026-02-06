@@ -1,171 +1,129 @@
 
-# Plano: Nova Aba "Dicas da IA" no Dashboard do Barbeiro
+# Plano: Relatório de Vendas de Assinaturas por Recepção/Unidade
 
-## Resumo Executivo
+## Problema Identificado
 
-Criar uma nova aba dedicada chamada "Dicas da IA" no painel do barbeiro para consolidar todas as funcionalidades de inteligência artificial. Isso vai limpar o painel principal ("Meu Painel") e melhorar significativamente a experiência do usuário.
+Atualmente, quando a recepção vende uma assinatura **sem atribuir a um barbeiro**, o registro fica com `barber_id = null` e **não há como saber de qual unidade foi a venda**. A tabela `sale_transactions` não possui uma coluna `unit_id`.
 
 ---
 
-## Situação Atual (Problema)
+## Solução em 3 Partes
 
-O painel principal do barbeiro está poluído com múltiplos cards de IA:
+### Parte 1: Adicionar Coluna `unit_id` na Tabela
+
+**Migração SQL necessária:**
+- Adicionar coluna `unit_id` (uuid, nullable) na tabela `sale_transactions`
+- Criar foreign key referenciando `units.id`
+
+Isso permitirá rastrear de qual unidade cada venda foi realizada, especialmente para vendas da recepção.
+
+---
+
+### Parte 2: Atualizar o Wizard de Assinaturas
+
+**Arquivo:** `SubscriptionWizardModal.tsx`
+
+Quando o gestor selecionar **"Recepção"** como atribuição, adicionar um passo ou campo para selecionar a **unidade** onde a venda ocorreu.
 
 ```text
-┌─────────────────────────────────────────┐
-│  "Meu Painel" (atual - poluído)         │
-├─────────────────────────────────────────┤
-│  [Meta de Produção]                     │
-│  [Faturamento Hoje]                     │
-│  [AIDailyCoachCard] ← POLUIÇÃO          │
-│  [CoachingNudgeCard] ← POLUIÇÃO         │
-│  [SubscriptionEarningsCard]             │
-│  [Progresso Mensal]                     │
-│  [Métricas]                             │
-│  [PDV]                                  │
-│                                         │
-│  + Botão flutuante SalesHelpModal       │
-└─────────────────────────────────────────┘
+Fluxo Atualizado do Wizard:
+
+Passo 1: Tipo de Cliente (Novo vs Da Casa)
+Passo 2: Atribuição (Recepção vs Barbeiro)
+         └─ Se Recepção: Mostrar seletor de Unidade
+         └─ Se Barbeiro: Usa a unidade do barbeiro automaticamente
+Passo 3: Detalhes do Plano
 ```
+
+**No insert da transação:**
+- Se atribuído a um barbeiro: buscar o `unit_id` do barbeiro
+- Se recepção: usar o `unit_id` selecionado pelo gestor
 
 ---
 
-## Solução Proposta
+### Parte 3: Criar o Relatório de Performance da Recepção
 
-Criar uma 4ª aba "Dicas da IA" com todas as funcionalidades agrupadas:
+**Novo Componente:** `ReceptionPerformanceReport.tsx`
+
+**Localização:** Adicionar como nova aba no `BarberEvolution.tsx` (junto com Barbearia, Comparativo, Barbeiro, Assinaturas)
+
+**Nova aba:** "👩‍💼 Recepção" (ícone Building2)
+
+**Conteúdo da Aba:**
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│  [Meu Painel] [Histórico] [Rankings] [Dicas da IA]      │
-└─────────────────────────────────────────────────────────┘
-
-Nova Aba "Dicas da IA":
-┌─────────────────────────────────────────┐
-│  🤖 DICA DO COACH                       │
-│  ┌───────────────────────────────────┐  │
-│  │ AIDailyCoachCard (completo)       │  │
-│  │ - Briefing tático personalizado   │  │
-│  │ - Botão "Nova dica"               │  │
-│  └───────────────────────────────────┘  │
-│                                         │
-│  💡 DICA DE VENDAS                      │
-│  ┌───────────────────────────────────┐  │
-│  │ CoachingNudgeCard (completo)      │  │
-│  │ - Comparativo com a unidade       │  │
-│  │ - Botão "Atualizar dica"          │  │
-│  └───────────────────────────────────┘  │
-│                                         │
-│  🎯 SCRIPTS DE VENDA (Ajuda Rápida)     │
-│  ┌───────────────────────────────────┐  │
-│  │ Grid de cenários clicáveis:       │  │
-│  │ [Cliente achou caro]              │  │
-│  │ [Oferecer pomada]                 │  │
-│  │ [Mudança de visual]               │  │
-│  │ [Cliente com caspa]               │  │
-│  │ [Serviço extra]                   │  │
-│  │ [Fidelização]                     │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-
-"Meu Painel" (limpo):
-┌─────────────────────────────────────────┐
-│  [Meta de Produção]                     │
-│  [Faturamento Hoje]                     │
-│  [SubscriptionEarningsCard]             │ ← SEM AI CARDS!
-│  [Progresso Mensal]                     │
-│  [Métricas]                             │
-│  [PDV]                                  │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  📊 Performance de Vendas por Recepção              │
+├─────────────────────────────────────────────────────┤
+│  Filtros: [Mês ▼] [Ano ▼]                           │
+│                                                     │
+│  Cards de Resumo:                                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │ Total    │ │ Média    │ │ Melhor   │            │
+│  │ Vendas   │ │ por Und. │ │ Unidade  │            │
+│  │ 45       │ │ 9        │ │ Centro   │            │
+│  └──────────┘ └──────────┘ └──────────┘            │
+│                                                     │
+│  Tabela:                                            │
+│  ┌───────────────────────────────────────────────┐  │
+│  │ Unidade  │ Assinaturas │ Novas │ Casa │ Trend │  │
+│  ├──────────┼─────────────┼───────┼──────┼───────┤  │
+│  │ Centro   │     15      │   8   │  7   │  ⬆️   │  │
+│  │ Norte    │     12      │   5   │  7   │  ⬇️   │  │
+│  │ Sul      │      8      │   3   │  5   │  ➡️   │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
 ```
 
----
-
-## Alterações Técnicas
-
-### Arquivo: `BarberDashboard.tsx`
-
-**1. Adicionar nova aba na TabsList (linha 676-680):**
-```tsx
-<TabsList className="grid w-full grid-cols-4">
-  <TabsTrigger value="daily">Meu Painel</TabsTrigger>
-  <TabsTrigger value="history">Histórico</TabsTrigger>
-  <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
-  <TabsTrigger value="ai-tips">Dicas da IA</TabsTrigger>
-</TabsList>
-```
-
-**2. Remover do "Meu Painel" (TabsContent value="daily"):**
-- Remover `AIDailyCoachCard` (linhas 814-825)
-- Remover `CoachingNudgeCard` (linha 828)
-
-**3. Remover botão flutuante `SalesHelpModal` (linha 969):**
-- O conteúdo do SalesHelpModal será integrado diretamente na nova aba
-
-**4. Criar novo `TabsContent value="ai-tips"`:**
-- Renderizar `AIDailyCoachCard`
-- Renderizar `CoachingNudgeCard`
-- Criar seção com grid de cenários de venda (reutilizando lógica do SalesHelpModal)
-
-### Novo Componente: `AITipsTab.tsx`
-
-Componente dedicado para organizar o conteúdo da aba:
-
+**Query para o Relatório:**
 ```text
-src/components/dashboard/barber/AITipsTab.tsx
-├── Props: barberId, organizationId, barberName, monthlyGoal, stats...
-├── Seções:
-│   ├── AIDailyCoachCard (existente, reutilizado)
-│   ├── CoachingNudgeCard (existente, reutilizado)
-│   └── SalesScriptsGrid (novo, baseado no SalesHelpModal)
-```
-
-**SalesScriptsGrid** - Grid de cards clicáveis:
-- Mostra os 6 cenários como cards (sem modal flutuante)
-- Ao clicar, expande inline ou abre dialog para mostrar o script
-- Usa a mesma lógica de `SalesHelpModal` para chamar a edge function
-
----
-
-## Fluxo de Dados
-
-```text
-AITipsTab
-├── Recebe props do BarberDashboard
-├── Renderiza:
-│   ├── AIDailyCoachCard
-│   │   └── Chama: barber-ai-assistant (type: daily_insight)
-│   ├── CoachingNudgeCard
-│   │   └── Chama: get-coaching-nudge
-│   └── SalesScriptsGrid
-│       └── Chama: barber-ai-assistant (type: sales_help)
+SELECT 
+  unit_id,
+  COUNT(*) as total_subscriptions,
+  SUM(CASE WHEN is_new_client = true THEN 1 ELSE 0 END) as new_clients,
+  SUM(CASE WHEN is_new_client = false THEN 1 ELSE 0 END) as existing_clients
+FROM sale_transactions
+WHERE 
+  item_type = 'subscription'
+  AND barber_id IS NULL  -- Vendas da Recepção
+  AND created_at BETWEEN start_date AND end_date
+GROUP BY unit_id
+ORDER BY total_subscriptions DESC
 ```
 
 ---
 
-## Arquivos a Modificar
+## Arquivos a Modificar/Criar
 
 | Arquivo | Ação |
 |---------|------|
-| `BarberDashboard.tsx` | Adicionar 4ª aba, mover AI cards, remover SalesHelpModal |
-| Novo: `AITipsTab.tsx` | Componente que agrupa todas as dicas de IA |
+| Migração SQL | Adicionar coluna `unit_id` em `sale_transactions` |
+| `SubscriptionWizardModal.tsx` | Adicionar seletor de unidade quando atribuição = recepção |
+| `QuickSaleModal.tsx` | Incluir `unit_id` nas transações (buscar do barbeiro ou seletor) |
+| `ReceptionPerformanceReport.tsx` | **NOVO** - Relatório de vendas por unidade/recepção |
+| `BarberEvolution.tsx` | Adicionar 5ª aba "Recepção" com o novo componente |
 
 ---
 
-## Considerações de UX
+## Fluxo Visual da Nova Aba
 
-1. **Ícone da Aba**: Usar ícone `Bot` ou `Sparkles` para identificar claramente a aba de IA
+```text
+BarberEvolution.tsx (atualizado):
 
-2. **Badge de Notificação** (opcional): Se houver nova dica disponível, mostrar um ponto de notificação na aba
-
-3. **Mensagem Vazia**: Se o barbeiro não tiver meta cadastrada, mostrar mensagem orientando a solicitar ao gerente
-
-4. **Responsividade**: Grid de scripts deve funcionar bem em mobile (1 coluna) e desktop (2-3 colunas)
+┌───────────────────────────────────────────────────────────────────┐
+│  [Barbearia] [Comparativo] [Barbeiro] [Assinaturas] [Recepção]   │
+│                                                        ↑ NOVA    │
+└───────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Benefícios
+## Considerações Importantes
 
-- **Painel Limpo**: Meu Painel focado apenas em métricas e lançamentos
-- **Descobrimento**: Usuário pode explorar todas as ferramentas de IA em um só lugar
-- **Performance**: Componentes de IA só carregam quando a aba é acessada
-- **Escalabilidade**: Facilita adicionar novas funcionalidades de IA no futuro
+1. **Retrocompatibilidade**: Vendas antigas com `unit_id = null` serão exibidas como "Unidade não informada"
+
+2. **Vendas com Barbeiro**: Quando uma assinatura é atribuída a um barbeiro, o `unit_id` será preenchido automaticamente a partir do cadastro do barbeiro
+
+3. **Vendas da Recepção**: O gestor será obrigado a selecionar a unidade para permitir o rastreamento correto
+
+4. **Filtro por Unidade**: O relatório permitirá que gestores com múltiplas unidades vejam o desempenho de cada recepção separadamente
