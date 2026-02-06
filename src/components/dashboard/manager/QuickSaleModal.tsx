@@ -12,16 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, Crown, AlertCircle, Building2 } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, AlertCircle, Building2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getTodayString } from "@/lib/dateUtils";
-import SubscriptionConfirmModal from "../barber/SubscriptionConfirmModal";
+
 
 interface QuickSaleModalProps {
   open: boolean;
@@ -92,14 +91,6 @@ export default function QuickSaleModal({
   const [manualValue, setManualValue] = useState("");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
   
-  // Subscription modal
-  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
-  const [lastDailyProductionId, setLastDailyProductionId] = useState<string | null>(null);
-  const [todaySubscriptionsCount, setTodaySubscriptionsCount] = useState(0);
-  
-  // Standalone subscription modal
-  const [standaloneSubscriptionOpen, setStandaloneSubscriptionOpen] = useState(false);
-  
   // Reception mode (no barber attribution)
   const [isReceptionSale, setIsReceptionSale] = useState(false);
 
@@ -115,7 +106,7 @@ export default function QuickSaleModal({
     const today = getTodayString();
     
     try {
-      const [servicesRes, productsRes, subscriptionsRes] = await Promise.all([
+      const [servicesRes, productsRes] = await Promise.all([
         supabase
           .from("catalog_services")
           .select("id, name, default_price, fixed_commission, category")
@@ -128,13 +119,6 @@ export default function QuickSaleModal({
           .eq("organization_id", organizationId)
           .eq("is_active", true)
           .order("name"),
-        supabase
-          .from("sale_transactions")
-          .select("id")
-          .eq("barber_id", barberId)
-          .eq("item_type", "subscription")
-          .gte("created_at", today)
-          .lte("created_at", today + "T23:59:59"),
       ]);
 
       const services: CatalogItem[] = (servicesRes.data || []).map((s) => ({
@@ -147,7 +131,6 @@ export default function QuickSaleModal({
       }));
 
       setCatalogItems([...services, ...products]);
-      setTodaySubscriptionsCount(subscriptionsRes.data?.length || 0);
     } catch (error) {
       console.error("Error fetching catalog:", error);
     } finally {
@@ -352,18 +335,9 @@ export default function QuickSaleModal({
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
 
-      // Save for subscription modal (only if not reception sale)
-      if (!isReceptionSale) {
-        setLastDailyProductionId(productionId);
-        resetForm();
-        onOpenChange(false);
-        // Open subscription modal
-        setSubscriptionModalOpen(true);
-      } else {
-        resetForm();
-        onOpenChange(false);
-        onSuccess();
-      }
+      resetForm();
+      onOpenChange(false);
+      onSuccess();
     } catch (error) {
       console.error("Error registering sale:", error);
       toast.error("Erro ao registrar venda");
@@ -439,32 +413,15 @@ export default function QuickSaleModal({
 
       toast.success(`Venda manual registrada para ${barberName}`);
       
-      setLastDailyProductionId(productionId);
       resetForm();
       onOpenChange(false);
-      setSubscriptionModalOpen(true);
+      onSuccess();
     } catch (error) {
       console.error("Error registering manual sale:", error);
       toast.error("Erro ao registrar venda");
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSubscriptionComplete = () => {
-    const fetchSubscriptions = async () => {
-      const today = getTodayString();
-      const { data } = await supabase
-        .from("sale_transactions")
-        .select("id")
-        .eq("barber_id", barberId)
-        .eq("item_type", "subscription")
-        .gte("created_at", today)
-        .lte("created_at", today + "T23:59:59");
-      setTodaySubscriptionsCount(data?.length || 0);
-    };
-    fetchSubscriptions();
-    onSuccess();
   };
 
   const formatCurrency = (value: number) => {
@@ -495,19 +452,6 @@ export default function QuickSaleModal({
                   }
                 </DialogDescription>
               </div>
-              {/* Botão de Assinatura Avulsa */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 border-warning text-warning hover:bg-warning/10"
-                onClick={() => {
-                  onOpenChange(false);
-                  setStandaloneSubscriptionOpen(true);
-                }}
-              >
-                <Crown className="w-4 h-4" />
-                Assinatura
-              </Button>
             </div>
             
             {/* Toggle Venda Recepção */}
@@ -782,16 +726,6 @@ export default function QuickSaleModal({
                         {formatCurrency(cartTotal)}
                       </span>
                     </div>
-
-                    {/* Subscription count */}
-                    {todaySubscriptionsCount > 0 && (
-                      <Alert variant="default" className="bg-warning/10 border-warning/30 py-2">
-                        <Crown className="h-4 w-4 text-warning" />
-                        <AlertDescription className="text-xs">
-                          {barberName} tem <strong>{todaySubscriptionsCount}</strong> {todaySubscriptionsCount === 1 ? 'assinatura' : 'assinaturas'} hoje
-                        </AlertDescription>
-                      </Alert>
-                    )}
                   </div>
                 )}
 
@@ -826,30 +760,6 @@ export default function QuickSaleModal({
           </Tabs>
         </DialogContent>
       </Dialog>
-
-      {/* Subscription Confirm Modal */}
-      {lastDailyProductionId && (
-        <SubscriptionConfirmModal
-          open={subscriptionModalOpen}
-          onOpenChange={setSubscriptionModalOpen}
-          barberId={barberId}
-          organizationId={organizationId}
-          dailyProductionId={lastDailyProductionId}
-          onComplete={handleSubscriptionComplete}
-        />
-      )}
-
-      {/* Modal de Assinatura Avulsa (sem carrinho) com seletor de barbeiro */}
-      <SubscriptionConfirmModal
-        open={standaloneSubscriptionOpen}
-        onOpenChange={setStandaloneSubscriptionOpen}
-        barberId={isReceptionSale ? null : barberId}
-        organizationId={organizationId}
-        dailyProductionId={null}
-        onComplete={handleSubscriptionComplete}
-        standaloneMode
-        showBarberSelector
-      />
     </>
   );
 }

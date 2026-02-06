@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -26,6 +26,7 @@ import { useOrganization } from "@/hooks/useOrganization";
 import LiveTop3Ranking from "./LiveTop3Ranking";
 import QuickSaleModal from "./QuickSaleModal";
 import TransactionManagerModal from "./TransactionManagerModal";
+import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
 
 interface Barber {
@@ -92,6 +93,9 @@ export default function LiveDashboard() {
     dailyProductionId: string;
     date: string;
   }>({ open: false, barberId: "", barberName: "", dailyProductionId: "", date: "" });
+
+  // Subscription wizard modal
+  const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
 
   // Date navigation state
   const todayManaus = getTodayString();
@@ -553,29 +557,42 @@ export default function LiveDashboard() {
         </div>
       </div>
 
-      {/* Total Revenue Card */}
-      <Card
-        className={`bg-gradient-to-br from-primary/20 to-primary/5 border-primary/30 transition-all duration-500 ${
-          isGlowing && isViewingToday ? "animate-glow shadow-[0_0_30px_hsl(38_92%_50%/0.6)]" : ""
-        }`}
-      >
-        <CardContent className="pt-6">
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground mb-2">
-              {isViewingToday ? "Faturamento Total Hoje" : `Faturamento em ${format(parseISO(selectedDate), "dd/MM/yyyy")}`}
-            </p>
-            <p className="text-4xl sm:text-5xl font-bold text-primary">
-              {totalRevenue.toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              })}
-            </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              {filteredBarbers.length} barbeiros ativos
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Subscription Button + Total Revenue */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        {/* Destacar botão de Assinatura */}
+        <Button
+          size="lg"
+          className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg"
+          onClick={() => setSubscriptionWizardOpen(true)}
+        >
+          <Crown className="w-5 h-5" />
+          Vender Assinatura
+        </Button>
+
+        {/* Total Revenue Card */}
+        <Card
+          className={`flex-1 bg-gradient-to-br from-primary/20 to-primary/5 border-primary/30 transition-all duration-500 ${
+            isGlowing && isViewingToday ? "animate-glow shadow-[0_0_30px_hsl(38_92%_50%/0.6)]" : ""
+          }`}
+        >
+          <CardContent className="py-4">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground mb-1">
+                {isViewingToday ? "Faturamento Total Hoje" : `Faturamento em ${format(parseISO(selectedDate), "dd/MM/yyyy")}`}
+              </p>
+              <p className="text-3xl sm:text-4xl font-bold text-primary">
+                {totalRevenue.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {filteredBarbers.length} barbeiros ativos
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Top 3 Ranking */}
       {rankingData.some((b) => b.revenue > 0) && (
@@ -726,6 +743,14 @@ export default function LiveDashboard() {
         dailyProductionId={editModal.dailyProductionId}
         date={editModal.date}
         onSuccess={fetchData}
+      />
+
+      {/* Subscription Wizard Modal */}
+      <SubscriptionWizardModal
+        open={subscriptionWizardOpen}
+        onOpenChange={setSubscriptionWizardOpen}
+        organizationId={organizationId || ""}
+        onComplete={fetchData}
       />
     </div>
   );

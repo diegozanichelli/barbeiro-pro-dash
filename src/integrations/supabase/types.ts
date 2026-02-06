@@ -614,6 +614,7 @@ export type Database = {
           daily_production_id: string | null
           description: string | null
           id: string
+          is_new_client: boolean | null
           item_name: string
           item_type: string
           organization_id: string
@@ -631,6 +632,7 @@ export type Database = {
           daily_production_id?: string | null
           description?: string | null
           id?: string
+          is_new_client?: boolean | null
           item_name: string
           item_type: string
           organization_id: string
@@ -648,6 +650,7 @@ export type Database = {
           daily_production_id?: string | null
           description?: string | null
           id?: string
+          is_new_client?: boolean | null
           item_name?: string
           item_type?: string
           organization_id?: string
