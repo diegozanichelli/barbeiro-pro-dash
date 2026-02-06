@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target, MapPin } from "lucide-react";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface Unit {
   id: string;
@@ -25,7 +26,9 @@ interface MonthlyShopData {
 }
 
 export default function ShopEvolution() {
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  // Usar data de Manaus para inicializar ano e calcular mês atual
+  const manausNow = useMemo(() => getManausDate(), []);
+  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [units, setUnits] = useState<Unit[]>([]);
   const [chartData, setChartData] = useState<MonthlyShopData[]>([]);
@@ -37,7 +40,7 @@ export default function ShopEvolution() {
     "Jul", "Ago", "Set", "Out", "Nov", "Dez"
   ];
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
+  const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
   useEffect(() => {
     fetchUnits();
@@ -162,8 +165,8 @@ export default function ShopEvolution() {
     setLoading(false);
   };
 
-  // Calcular totais e comparativos
-  const currentMonth = new Date().getMonth();
+  // Calcular totais e comparativos - usar data de Manaus
+  const currentMonth = manausNow.getMonth();
   const defaultMonthData = { receita: 0, ticketMedio: 0, performance: 0, clientes: 0, receitaBasica: 0, receitaExtra: 0, receitaProdutos: 0, comissaoTotal: 0, metaTotal: 0 };
   const currentMonthData = chartData.length > 0 ? (chartData[currentMonth] || defaultMonthData) : defaultMonthData;
   const previousMonthData = chartData.length > 0 && currentMonth > 0 ? (chartData[currentMonth - 1] || defaultMonthData) : defaultMonthData;

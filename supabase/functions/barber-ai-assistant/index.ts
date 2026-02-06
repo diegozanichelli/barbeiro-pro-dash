@@ -1,13 +1,25 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
-// Função para obter a data de Manaus (GMT-4)
-function getManausDateString(): string {
+// Função para obter a data de Manaus (GMT-4) como Date
+function getManausDate(): Date {
   const now = new Date();
   const manausOffset = -4 * 60; // -4 horas em minutos
   const localOffset = now.getTimezoneOffset();
-  const manausTime = new Date(now.getTime() + (localOffset + manausOffset) * 60000);
-  return manausTime.toISOString().split('T')[0];
+  return new Date(now.getTime() + (localOffset + manausOffset) * 60000);
+}
+
+// Função para formatar data de Manaus como string yyyy-MM-dd
+function getManausDateString(): string {
+  return formatManausDate(getManausDate());
+}
+
+// Função para formatar qualquer data como yyyy-MM-dd (sem usar toISOString que pode rolar para próximo dia)
+function formatManausDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 const corsHeaders = {
@@ -75,11 +87,12 @@ interface HistoricalStats {
 }
 
 async function fetchHistoricalStats(barberId: string, organizationId: string, supabase: any): Promise<HistoricalStats> {
-  const today = new Date();
+  // Usar data de Manaus para cálculo correto dos últimos 30 dias
+  const today = getManausDate();
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const startDate = thirtyDaysAgo.toISOString().split('T')[0];
-  const endDate = today.toISOString().split('T')[0];
+  const startDate = formatManausDate(thirtyDaysAgo);
+  const endDate = formatManausDate(today);
 
   // Buscar transações DECLARADAS PELO BARBEIRO dos últimos 30 dias (source='barber')
   // Isso fornece dados itemizados precisos do que o barbeiro realmente declara vender
