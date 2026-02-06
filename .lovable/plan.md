@@ -1,122 +1,113 @@
 
-# Plano: Corrigir Timezone - Vendas Após 20h Indo Para o Dia Seguinte
 
-## Diagnóstico do Problema
+# Plano: Correção Completa de Timezone - Vendas Após 20h Indo Para o Dia Seguinte
 
-O sistema foi configurado para usar o fuso horário de Manaus (GMT-4), mas **nem todos os arquivos estão usando a função centralizada `getTodayString()`**. Isso causa o seguinte problema:
+## Problema Identificado
+
+A gerente relatou que os lançamentos do barbeiro **Jhon** (e potencialmente de todos os barbeiros) feitos **depois das 20h de Manaus** estão sendo registrados no **dia seguinte**. Isso acontece porque:
 
 - **Manaus está 4 horas atrás de UTC** (GMT-4)
 - Quando são **20h em Manaus**, são **00h UTC do dia seguinte**
-- Usar `new Date().toISOString()` ou `format(new Date(), "yyyy-MM-dd")` retorna a data em **UTC**, não em Manaus
-- Resultado: vendas feitas após 20h em Manaus são registradas no dia seguinte
+- Vários arquivos ainda usam `new Date().toISOString()` que retorna data em **UTC**, não em Manaus
 
-### Arquivos com o Problema
+## Arquivos com Problemas Encontrados
+
+Após auditoria completa, encontrei **5 arquivos no frontend + 2 edge functions** que ainda usam padrões problemáticos:
 
 | Arquivo | Código Problemático | Impacto |
 |---------|---------------------|---------|
-| `QuickSaleModal.tsx` (Gestor) | `new Date().toISOString().split("T")[0]` | Vendas rápidas após 20h vão para dia errado |
-| `QuickSaleModal.tsx` (Gestor) | `format(new Date(), "yyyy-MM-dd")` | Busca de assinaturas com data errada |
-| `BarberSaleForm.tsx` (Barbeiro) | `format(new Date(), "yyyy-MM-dd")` | Busca de catálogo/assinaturas com data errada |
-| `BarberCombobox.tsx` | `new Date().toISOString().split("T")[0]` | Filtro de barbeiros com data errada |
-| `SubscriptionConfirmModal.tsx` | `new Date().toISOString().split("T")[0]` | Assinaturas após 20h vão para dia errado |
-| `MySubscriptionsCard.tsx` | `format(new Date(), "yyyy-MM-dd")` | Exibição de assinaturas com data errada |
-| `SubscriptionsTracking.tsx` | `format(new Date(), "yyyy-MM-dd")` | Tracking de assinaturas com data errada |
-| `barber-ai-assistant` (Edge Function) | `new Date().toISOString().split('T')[0]` | IA vê dados do dia errado |
+| `EarningsComparison.tsx` | `firstDay.toISOString().split("T")[0]` | Comparativos com datas UTC |
+| `PerformanceAlerts.tsx` | `primeiroDiaMes.toISOString().split('T')[0]` | Alertas buscam mês errado após 20h |
+| `MonthlyPayroll.tsx` | `startDate.toISOString()` | Fechamento mensal com range UTC |
+| `MySubscriptionsCard.tsx` | `format(startOfMonth(new Date()), "yyyy-MM-dd")` | Início de mês em UTC |
+| `SubscriptionsTracking.tsx` | `format(startOfMonth(new Date()), "yyyy-MM-dd")` | Início de mês em UTC |
+| `get-coaching-nudge` (Edge) | `firstDay.toISOString().split("T")[0]` | IA busca dados do mês errado |
+| `check-performance-alerts` (Edge) | `primeiroDiaMes.toISOString().split('T')[0]` | Alertas processam mês errado |
 
 ---
 
-## Solução
+## Solução Proposta
 
-Substituir **todas** as ocorrências de:
-- `new Date().toISOString().split("T")[0]`
-- `format(new Date(), "yyyy-MM-dd")`
+### 1. Frontend: Usar `getManausDate()` Para Criar Datas Base
 
-Por:
-- `getTodayString()` (importado de `@/lib/dateUtils`)
+Para calcular início/fim de mês corretamente no fuso de Manaus, precisamos:
 
-Esta função já existe e usa corretamente o fuso de Manaus:
+1. Obter a data atual no fuso de Manaus via `getManausDate()`
+2. Usar essa data para criar `startOfMonth` e `endOfMonth`
+3. Formatar com `format(data, "yyyy-MM-dd")`
+
+Isso garante que **às 22h de dia 31** o sistema entenda que ainda é dia 31 (não dia 01 do próximo mês).
+
+### 2. Edge Functions: Criar Helper Local
+
+Edge functions não têm acesso ao `dateUtils.ts` do frontend, então criaremos uma função local em cada uma:
+
 ```typescript
-export function getTodayString(): string {
-  return formatInTimeZone(new Date(), TIMEZONE, "yyyy-MM-dd");
+function getManausDateStr(date: Date = new Date()): string {
+  const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+  const manaus = new Date(utc + (-4 * 60 * 60000)); // GMT-4
+  return manaus.toISOString().split('T')[0];
 }
 ```
 
 ---
 
-## Alterações Necessárias
+## Alterações Detalhadas
 
-### 1. QuickSaleModal.tsx (Gestor)
-**4 correções:**
-- Linha 115: `const today = format(new Date(), "yyyy-MM-dd")` → `getTodayString()`
-- Linha 284: `const today = new Date().toISOString().split("T")[0]` → `getTodayString()`
-- Linha 383: `const today = new Date().toISOString().split("T")[0]` → `getTodayString()`
-- Linha 456: `const today = format(new Date(), "yyyy-MM-dd")` → `getTodayString()`
-- Adicionar import de `getTodayString` no topo
+### 1. EarningsComparison.tsx
+**Problema:** Linhas 126-127 usam `firstDay.toISOString()` e `lastDay.toISOString()`
 
-### 2. BarberSaleForm.tsx (Barbeiro)
-**3 correções:**
-- Linha 90: `const today = format(new Date(), "yyyy-MM-dd")` → `getTodayString()`
-- Linha 299: `const today = format(new Date(), "yyyy-MM-dd")` → `getTodayString()`
-- Linha 368: Comparação de data usar `getTodayString()` em vez de `format(new Date(), ...)`
-- Adicionar import de `getTodayString` no topo
+**Solução:** Importar `getManausDate` e usar `format()` para formatar as datas
 
-### 3. BarberCombobox.tsx
-**1 correção:**
-- Linha 57: `const today = new Date().toISOString().split("T")[0]` → `getTodayString()`
-- Adicionar import
+### 2. PerformanceAlerts.tsx
+**Problema:** Linha 34 usa `primeiroDiaMes.toISOString().split('T')[0]`
 
-### 4. SubscriptionConfirmModal.tsx
-**2 correções:**
-- Linha 137: `const today = new Date().toISOString().split("T")[0]` → `getTodayString()`
-- Linha 154: `date: new Date().toISOString().split("T")[0]` → `date: getTodayString()`
-- Adicionar import
+**Solução:** Importar `getManausDate` e criar o primeiro dia do mês baseado na data de Manaus
 
-### 5. MySubscriptionsCard.tsx
-**1 correção:**
-- Linha 28: `const today = format(new Date(), "yyyy-MM-dd")` → `getTodayString()`
-- Adicionar import
+### 3. MonthlyPayroll.tsx
+**Problema:** Linhas 73-74 usam `startDate.toISOString()` e `endDate.toISOString()`
 
-### 6. SubscriptionsTracking.tsx
-**1 correção:**
-- Linha 38: `const today = format(new Date(), "yyyy-MM-dd")` → `getTodayString()`
-- Adicionar import
+**Solução:** Usar `format()` para formatar em yyyy-MM-dd antes de enviar para query
 
-### 7. Edge Function: barber-ai-assistant
-**1 correção:**
-- Linha 237: `const today = new Date().toISOString().split('T')[0]` → usar lógica de Manaus
+### 4. MySubscriptionsCard.tsx
+**Problema:** Linhas 30-31 usam `startOfMonth(new Date())` em UTC
 
-Para Edge Functions, precisamos replicar a lógica pois não têm acesso ao arquivo de utilitários do frontend:
-```typescript
-// No topo da edge function
-const TIMEZONE_OFFSET = -4; // Manaus GMT-4
-function getManausDateString(): string {
-  const now = new Date();
-  now.setHours(now.getUTCHours() + TIMEZONE_OFFSET);
-  return now.toISOString().split('T')[0];
-}
-```
+**Solução:** Já usa `getTodayString()`, mas precisa usar `getManausDate()` para calcular início/fim do mês
+
+### 5. SubscriptionsTracking.tsx
+**Problema:** Linhas 40-41 usam `startOfMonth(new Date())` em UTC
+
+**Solução:** Usar `getManausDate()` como base para `startOfMonth` e `endOfMonth`
+
+### 6. Edge Function: get-coaching-nudge
+**Problema:** Linhas 80-81 usam `firstDay.toISOString()` e `lastDay.toISOString()`
+
+**Solução:** Criar helper `getManausDateStr()` e usar `format()` com a data de Manaus
+
+### 7. Edge Function: check-performance-alerts
+**Problema:** Linhas 48 e 114-115 usam `toISOString()` para datas
+
+**Solução:** Criar helper `formatManausDate()` que retorna string yyyy-MM-dd correta
 
 ---
 
-## Resumo Visual
+## Resumo Visual da Correção
 
 ```text
 ANTES (Problema):
 ┌─────────────────────────────────────────────────────┐
-│ Manaus 21:00 (05/02) → UTC 01:00 (06/02)           │
+│ Manaus 22:00 (31/01) → UTC 02:00 (01/02)           │
 │                                                     │
-│ new Date().toISOString() = "2026-02-06T01:00:00Z"  │
-│                        ↓                            │
-│ Venda registrada em 06/02 (ERRADO!)                │
+│ startOfMonth(new Date()) → 01/02 (ERRADO!)         │
+│ Sistema acha que é fevereiro quando ainda é janeiro│
 └─────────────────────────────────────────────────────┘
 
 DEPOIS (Correção):
 ┌─────────────────────────────────────────────────────┐
-│ Manaus 21:00 (05/02) → getTodayString()            │
+│ Manaus 22:00 (31/01) → getManausDate()             │
 │                                                     │
-│ formatInTimeZone(..., "America/Manaus") = "2026-02-05" │
-│                        ↓                            │
-│ Venda registrada em 05/02 (CORRETO!)               │
+│ startOfMonth(getManausDate()) → 01/01 (CORRETO!)   │
+│ Sistema sabe que ainda é janeiro em Manaus         │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -125,44 +116,61 @@ DEPOIS (Correção):
 ## Resultado Esperado
 
 Após as correções:
-- Vendas feitas às 21h, 22h, 23h em Manaus serão registradas no dia correto
-- O dashboard mostrará os dados do dia civil de Manaus, não UTC
-- A IA do barbeiro verá estatísticas do dia correto
-- O sistema ficará 100% consistente com o fuso de Manaus
+- Lançamentos feitos às 21h, 22h, 23h em Manaus serão registrados no dia correto
+- O fechamento mensal (payroll) calculará datas corretamente
+- Alertas de performance buscarão o mês correto
+- A IA (coaching nudge) verá estatísticas do mês correto
+- Comparativos de ganhos usarão períodos corretos
 
 ---
 
 ## Seção Técnica
 
-### Arquivos a Modificar
-1. `src/components/dashboard/manager/QuickSaleModal.tsx`
-2. `src/components/dashboard/barber/BarberSaleForm.tsx`
-3. `src/components/dashboard/manager/BarberCombobox.tsx`
-4. `src/components/dashboard/barber/SubscriptionConfirmModal.tsx`
-5. `src/components/dashboard/barber/MySubscriptionsCard.tsx`
-6. `src/components/dashboard/manager/SubscriptionsTracking.tsx`
-7. `supabase/functions/barber-ai-assistant/index.ts`
+### Arquivos a Modificar (Frontend)
+1. `src/components/dashboard/manager/EarningsComparison.tsx`
+2. `src/components/dashboard/manager/PerformanceAlerts.tsx`
+3. `src/components/dashboard/manager/MonthlyPayroll.tsx`
+4. `src/components/dashboard/barber/MySubscriptionsCard.tsx`
+5. `src/components/dashboard/manager/SubscriptionsTracking.tsx`
 
-### Padrão a Seguir
+### Arquivos a Modificar (Edge Functions)
+6. `supabase/functions/get-coaching-nudge/index.ts`
+7. `supabase/functions/check-performance-alerts/index.ts`
+
+### Import a Adicionar (Frontend)
 ```typescript
-// ANTES
-const today = new Date().toISOString().split("T")[0];
-// ou
-const today = format(new Date(), "yyyy-MM-dd");
-
-// DEPOIS
-import { getTodayString } from "@/lib/dateUtils";
-const today = getTodayString();
+import { getManausDate, getTodayString } from "@/lib/dateUtils";
 ```
 
-### Edge Functions (Sem Acesso ao dateUtils)
+### Padrão de Correção para Início/Fim de Mês
 ```typescript
-// Adicionar no topo da função
-function getManausDateString(): string {
+// ANTES (problema)
+const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
+const monthEnd = format(endOfMonth(new Date()), "yyyy-MM-dd");
+
+// DEPOIS (correto)
+import { getManausDate } from "@/lib/dateUtils";
+const manausNow = getManausDate();
+const monthStart = format(startOfMonth(manausNow), "yyyy-MM-dd");
+const monthEnd = format(endOfMonth(manausNow), "yyyy-MM-dd");
+```
+
+### Helper para Edge Functions
+```typescript
+// Adicionar no topo de cada edge function
+const MANAUS_OFFSET = -4 * 60; // -4 horas em minutos
+
+function getManausDate(): Date {
   const now = new Date();
-  const manausOffset = -4 * 60; // -4 horas em minutos
-  const localOffset = now.getTimezoneOffset();
-  const manausTime = new Date(now.getTime() + (localOffset + manausOffset) * 60000);
-  return manausTime.toISOString().split('T')[0];
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  return new Date(utc + (MANAUS_OFFSET * 60000));
+}
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 ```
+
