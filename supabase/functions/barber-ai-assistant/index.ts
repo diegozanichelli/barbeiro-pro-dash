@@ -74,6 +74,25 @@ interface DayStats {
   ultimoProdutoVendido: string | null;
 }
 
+interface RecentDay {
+  date: string;
+  commission_earned: number;
+  clients_count: number;
+}
+
+interface TrendAnalysis {
+  recentDays: RecentDay[];
+  todayCommission: number;
+  dailyGoal: number;
+  avgDailyCommission: number;
+  // Análise de tendência
+  isBelowAverage: boolean;       // Hoje < 70% da meta/média
+  isConsecutiveLows: boolean;    // 3 dias seguidos abaixo da meta
+  isConsecutiveHighs: boolean;   // 3 dias seguidos acima da meta
+  streakType: 'high' | 'low' | 'neutral';
+  streakDays: number;
+}
+
 interface HistoricalStats {
   topService: { name: string; count: number } | null;
   topProduct: { name: string; count: number } | null;
@@ -208,19 +227,59 @@ Estratégia nova para amanhã: qualidade sobre quantidade! 🧠`;
 
 Mantenha esse ritmo a semana toda! 👑`;
   },
+
+  // 10. High Performer (3 dias consecutivos acima da meta)
+  high_performer: (name: string, streakDays: number): string => {
+    return `Você está "on fire", ${name}! 🔥🔥🔥
+
+🚀 ${streakDays} dias seguidos de meta batida!
+🏆 Consistência de campeão.
+
+> "Você encontrou o ritmo perfeito. Não mude nada. Continue focado no atendimento e a meta do mês virá antes do esperado."
+
+Você é a referência da semana! ⭐`;
+  },
+
+  // 11. Alerta de Tendência (3 dias consecutivos abaixo da meta)
+  consecutive_lows: (name: string, streakDays: number): string => {
+    return `Luz Amarela acesa, ${name}! ⚠️
+
+📉 ${streakDays} dias seguidos abaixo da meta.
+🚨 A produção vem caindo. Precisamos quebrar esse ciclo.
+
+> "Vamos estancar esse sangramento. Esqueça a meta do mês por enquanto. Seu foco para amanhã é um só: GANHAR O DIA. Faça o básico bem feito e garanta a meta diária."
+
+Quebre esse ciclo amanhã a todo custo! 💪`;
+  },
+
+  // 12. Dia Off (Hoje abaixo de 70% da média/meta)
+  day_off: (name: string, todayValue: number, expectedValue: number): string => {
+    const percentage = ((todayValue / expectedValue) * 100).toFixed(0);
+    return `Hoje o ritmo foi mais lento, ${name}. 🐢
+
+📉 Faturamento de R$ ${todayValue.toFixed(2)} (${percentage}% do esperado)
+⚠️ Ficou bem abaixo do seu potencial.
+
+> "Todo atleta tem dias ruins. O segredo é não deixar isso virar rotina. Amanhã, chegue 10 minutos mais cedo, organize sua bancada e comece o dia atacando."
+
+Cabeça erguida. Amanhã recuperamos isso! 💪`;
+  },
 };
 
 function checkRulesEngine(
   dayStats: DayStats,
   barberName: string,
   monthlyGoal: number,
-  soldThisMonth: number
+  soldThisMonth: number,
+  trend?: TrendAnalysis
 ): { message: string; scenario: string } | null {
   const productsCount = Object.keys(dayStats.produtosVendidos).length > 0 
     ? Object.values(dayStats.produtosVendidos).reduce((a, b) => a + b, 0) 
     : 0;
 
-  // 1. Meta Batida (prioridade máxima - celebração!)
+  // ========================================
+  // PRIORIDADE 1: META MENSAL BATIDA
+  // ========================================
   if (monthlyGoal > 0 && soldThisMonth >= monthlyGoal) {
     return {
       message: TEMPLATES.goal_achieved(barberName, soldThisMonth, monthlyGoal),
@@ -228,7 +287,41 @@ function checkRulesEngine(
     };
   }
 
-  // 2. Sniper - Na trave (90-99% da meta)
+  // ========================================
+  // PRIORIDADE 2: TENDÊNCIAS (Se tiver histórico)
+  // ========================================
+  if (trend) {
+    // 2a. High Performer (3+ dias consecutivos acima da meta)
+    if (trend.isConsecutiveHighs && trend.streakDays >= 3) {
+      return {
+        message: TEMPLATES.high_performer(barberName, trend.streakDays),
+        scenario: "high_performer",
+      };
+    }
+
+    // 2b. Alerta Crítico (3+ dias consecutivos abaixo da meta)
+    if (trend.isConsecutiveLows && trend.streakDays >= 3) {
+      return {
+        message: TEMPLATES.consecutive_lows(barberName, trend.streakDays),
+        scenario: "consecutive_lows",
+      };
+    }
+
+    // 2c. Dia Off (Hoje < 70% da meta/média esperada)
+    if (trend.isBelowAverage && dayStats.clientesAtendidos > 0) {
+      const expectedValue = trend.dailyGoal > 0 ? trend.dailyGoal : trend.avgDailyCommission;
+      if (expectedValue > 0) {
+        return {
+          message: TEMPLATES.day_off(barberName, trend.todayCommission, expectedValue),
+          scenario: "day_off",
+        };
+      }
+    }
+  }
+
+  // ========================================
+  // PRIORIDADE 3: SNIPER (90-99% da meta mensal)
+  // ========================================
   if (monthlyGoal > 0) {
     const percentage = (soldThisMonth / monthlyGoal) * 100;
     const remaining = monthlyGoal - soldThisMonth;
@@ -240,7 +333,11 @@ function checkRulesEngine(
     }
   }
 
-  // 3. Dia Fantasma (Zero atendimentos)
+  // ========================================
+  // PRIORIDADE 4: SITUAÇÕES DO DIA
+  // ========================================
+
+  // 4a. Dia Fantasma (Zero atendimentos)
   if (dayStats.clientesAtendidos === 0) {
     return {
       message: TEMPLATES.ghost_day(barberName),
@@ -248,7 +345,7 @@ function checkRulesEngine(
     };
   }
 
-  // 4. Rei dos Produtos (conversão >= 50%)
+  // 4b. Rei dos Produtos (conversão >= 50%)
   if (dayStats.clientesAtendidos >= 2 && productsCount >= dayStats.clientesAtendidos * 0.5) {
     return {
       message: TEMPLATES.product_king(barberName, productsCount, dayStats.clientesAtendidos),
@@ -256,7 +353,7 @@ function checkRulesEngine(
     };
   }
 
-  // 5. Ticket de Elite (> R$ 70)
+  // 4c. Ticket de Elite (> R$ 70)
   if (dayStats.ticketMedio > 70 && dayStats.clientesAtendidos >= 2) {
     return {
       message: TEMPLATES.elite_ticket(barberName, dayStats.ticketMedio),
@@ -264,7 +361,7 @@ function checkRulesEngine(
     };
   }
 
-  // 6. Modo Fábrica (>= 6 clientes E ticket < R$ 40)
+  // 4d. Modo Fábrica (>= 6 clientes E ticket < R$ 40)
   if (dayStats.clientesAtendidos >= 6 && dayStats.ticketMedio < 40) {
     return {
       message: TEMPLATES.factory_mode(barberName, dayStats.clientesAtendidos, dayStats.ticketMedio),
@@ -272,7 +369,7 @@ function checkRulesEngine(
     };
   }
 
-  // 7. Zero Produtos (com >= 2 clientes)
+  // 4e. Zero Produtos (com >= 2 clientes)
   if (productsCount === 0 && dayStats.clientesAtendidos >= 2) {
     return {
       message: TEMPLATES.zero_products(barberName, dayStats.clientesAtendidos),
@@ -280,7 +377,7 @@ function checkRulesEngine(
     };
   }
 
-  // 8. Ticket Baixo (< R$ 50 com > 0 clientes)
+  // 4f. Ticket Baixo (< R$ 50 com > 0 clientes)
   if (dayStats.ticketMedio > 0 && dayStats.ticketMedio < 50 && dayStats.clientesAtendidos > 0) {
     return {
       message: TEMPLATES.low_ticket(barberName, dayStats.ticketMedio),
@@ -288,7 +385,7 @@ function checkRulesEngine(
     };
   }
 
-  // 9. Sem Extras (com >= 2 clientes)
+  // 4g. Sem Extras (com >= 2 clientes)
   if (dayStats.servicosExtras === 0 && dayStats.clientesAtendidos >= 2) {
     return {
       message: TEMPLATES.no_extras(barberName, dayStats.clientesAtendidos),
@@ -298,6 +395,114 @@ function checkRulesEngine(
 
   // Nenhuma regra ativada - fallback para IA
   return null;
+}
+
+// ============================================
+// ANÁLISE DE TENDÊNCIA (Últimos 3 dias)
+// ============================================
+
+async function fetchTrendAnalysis(
+  barberId: string,
+  dailyGoal: number,
+  supabase: any
+): Promise<TrendAnalysis> {
+  const today = getManausDate();
+  const threeDaysAgo = new Date(today);
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+  // Buscar últimos 4 dias (inclui hoje)
+  const { data: recentProductions } = await supabase
+    .from("daily_productions")
+    .select("date, commission_earned, clients_count, manual_clients_count")
+    .eq("barber_id", barberId)
+    .gte("date", formatManausDate(threeDaysAgo))
+    .lte("date", formatManausDate(today))
+    .order("date", { ascending: false });
+
+  const recentDays: RecentDay[] = (recentProductions || []).map((p: any) => ({
+    date: p.date,
+    commission_earned: p.commission_earned || 0,
+    clients_count: p.manual_clients_count || p.clients_count || 0,
+  }));
+
+  // Buscar média histórica (30 dias)
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const { data: monthlyProductions } = await supabase
+    .from("daily_productions")
+    .select("commission_earned, clients_count")
+    .eq("barber_id", barberId)
+    .gte("date", formatManausDate(thirtyDaysAgo))
+    .lt("date", formatManausDate(today));
+
+  let totalCommission30d = 0;
+  let daysWorked = 0;
+
+  if (monthlyProductions) {
+    for (const prod of monthlyProductions) {
+      if (prod.commission_earned > 0 || prod.clients_count > 0) {
+        daysWorked++;
+        totalCommission30d += prod.commission_earned || 0;
+      }
+    }
+  }
+
+  const avgDailyCommission = daysWorked > 0 ? totalCommission30d / daysWorked : 0;
+  const referenceValue = dailyGoal > 0 ? dailyGoal : avgDailyCommission;
+
+  // Dados de hoje
+  const todayData = recentDays.find(d => d.date === formatManausDate(today));
+  const todayCommission = todayData?.commission_earned || 0;
+
+  // Análise: Hoje está abaixo de 70% do esperado?
+  const isBelowAverage = referenceValue > 0 && todayCommission < referenceValue * 0.7;
+
+  // Análise de sequência (últimos 3 dias, excluindo hoje se não tem dados)
+  const pastDays = recentDays.filter(d => d.date !== formatManausDate(today)).slice(0, 3);
+  
+  let consecutiveHighs = 0;
+  let consecutiveLows = 0;
+
+  // Contar sequência incluindo hoje
+  const allDaysToCheck = [todayData, ...pastDays].filter(Boolean);
+  
+  for (const day of allDaysToCheck) {
+    if (!day) break;
+    if (day.commission_earned >= referenceValue) {
+      if (consecutiveLows > 0) break; // Quebrou a sequência de baixas
+      consecutiveHighs++;
+    } else {
+      if (consecutiveHighs > 0) break; // Quebrou a sequência de altas
+      consecutiveLows++;
+    }
+  }
+
+  const isConsecutiveHighs = consecutiveHighs >= 3;
+  const isConsecutiveLows = consecutiveLows >= 3;
+
+  let streakType: 'high' | 'low' | 'neutral' = 'neutral';
+  let streakDays = 0;
+
+  if (isConsecutiveHighs) {
+    streakType = 'high';
+    streakDays = consecutiveHighs;
+  } else if (isConsecutiveLows) {
+    streakType = 'low';
+    streakDays = consecutiveLows;
+  }
+
+  return {
+    recentDays,
+    todayCommission,
+    dailyGoal,
+    avgDailyCommission,
+    isBelowAverage,
+    isConsecutiveHighs,
+    isConsecutiveLows,
+    streakType,
+    streakDays,
+  };
 }
 
 // ============================================
@@ -959,11 +1164,16 @@ serve(async (req) => {
         }
       }
 
-      // Buscar estatísticas do dia
-      const dayStats = await fetchDayStats(barberId, supabase);
+      // Buscar estatísticas do dia E análise de tendência em paralelo
+      const [dayStats, trendAnalysis] = await Promise.all([
+        fetchDayStats(barberId, supabase),
+        fetchTrendAnalysis(barberId, dailyTarget, supabase),
+      ]);
 
-      // PASSO 2: Motor de Regras (Templates Gratuitos)
-      const ruleResult = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth);
+      console.log(`[TREND] Barber ${barberId}: streak=${trendAnalysis.streakType} (${trendAnalysis.streakDays} days), belowAvg=${trendAnalysis.isBelowAverage}`);
+
+      // PASSO 2: Motor de Regras (Templates Gratuitos) - Agora com análise de tendência
+      const ruleResult = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth, trendAnalysis);
       if (ruleResult) {
         console.log(`[RULES ENGINE] Scenario: ${ruleResult.scenario} for barber ${barberId}`);
         
