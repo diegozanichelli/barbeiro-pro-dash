@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
+import { getManausDate } from "@/lib/dateUtils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +29,9 @@ export default function GoalsManagement() {
   const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<any[]>([]);
   const [goals, setGoals] = useState<MonthlyGoal[]>([]);
-  const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
-  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const manausNow = useMemo(() => getManausDate(), []);
+  const [filterMonth, setFilterMonth] = useState(manausNow.getMonth() + 1);
+  const [filterYear, setFilterYear] = useState(manausNow.getFullYear());
   const [loading, setLoading] = useState(false);
   
   // Dialog states
