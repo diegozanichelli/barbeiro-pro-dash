@@ -34,6 +34,11 @@ interface SubscriptionWizardModalProps {
   onComplete: () => void;
 }
 
+interface Unit {
+  id: string;
+  name: string;
+}
+
 type WizardStep = "client_type" | "attribution" | "details";
 
 export default function SubscriptionWizardModal({
@@ -51,10 +56,28 @@ export default function SubscriptionWizardModal({
   // Pergunta 2: Atribuição (Gamificação)
   const [attributionType, setAttributionType] = useState<"reception" | "barber" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
   
   // Pergunta 3: Detalhes
   const [subscriptionPlan, setSubscriptionPlan] = useState("");
   const [clientName, setClientName] = useState("");
+
+  // Fetch units on mount
+  useEffect(() => {
+    const fetchUnits = async () => {
+      const { data, error } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("status", "active")
+        .order("name");
+      
+      if (!error && data) {
+        setUnits(data);
+      }
+    };
+    fetchUnits();
+  }, []);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -63,6 +86,7 @@ export default function SubscriptionWizardModal({
       setIsNewClient(null);
       setAttributionType(null);
       setSelectedBarberId(null);
+      setSelectedUnitId(null);
       setSubscriptionPlan("");
       setClientName("");
     }
@@ -80,7 +104,7 @@ export default function SubscriptionWizardModal({
     if (step === "client_type" && isNewClient !== null) {
       setStep("attribution");
     } else if (step === "attribution") {
-      if (attributionType === "reception") {
+      if (attributionType === "reception" && selectedUnitId) {
         setSelectedBarberId(null);
         setStep("details");
       } else if (attributionType === "barber" && selectedBarberId) {
@@ -94,7 +118,7 @@ export default function SubscriptionWizardModal({
       return isNewClient !== null;
     }
     if (step === "attribution") {
-      if (attributionType === "reception") return true;
+      if (attributionType === "reception") return !!selectedUnitId;
       if (attributionType === "barber") return !!selectedBarberId;
       return false;
     }
@@ -113,8 +137,20 @@ export default function SubscriptionWizardModal({
     try {
       // Get or create daily production if barber is selected
       let productionId: string | null = null;
+      let unitIdToSave: string | null = selectedUnitId;
       
       if (selectedBarberId) {
+        // Get barber's unit_id for the transaction
+        const { data: barberData } = await supabase
+          .from("barbers")
+          .select("unit_id")
+          .eq("id", selectedBarberId)
+          .single();
+        
+        if (barberData) {
+          unitIdToSave = barberData.unit_id;
+        }
+
         const { data: existingProd } = await supabase
           .from("daily_productions")
           .select("id")
@@ -146,11 +182,12 @@ export default function SubscriptionWizardModal({
         }
       }
 
-      // Insert subscription transaction
+      // Insert subscription transaction with unit_id
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
         organization_id: organizationId,
         daily_production_id: productionId,
+        unit_id: unitIdToSave,
         item_type: "subscription",
         item_name: `Assinatura ${subscriptionPlan.trim()}`,
         description: clientName.trim(),
@@ -162,7 +199,7 @@ export default function SubscriptionWizardModal({
         commission_amount: 0,
         source: "manager",
         is_new_client: isNewClient,
-      });
+      } as any);
 
       if (error) throw error;
 
@@ -291,6 +328,28 @@ export default function SubscriptionWizardModal({
                   <span className="text-xs text-muted-foreground">Indicou/vendeu</span>
                 </Button>
               </div>
+
+              {/* Unit Selector (if reception attribution) */}
+              {attributionType === "reception" && (
+                <div className="space-y-2 pt-2">
+                  <Label>Selecione a unidade: <span className="text-destructive">*</span></Label>
+                  <select
+                    value={selectedUnitId || ""}
+                    onChange={(e) => setSelectedUnitId(e.target.value || null)}
+                    className="w-full h-10 px-3 py-2 bg-secondary border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    <option value="">Selecione a unidade...</option>
+                    {units.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Isso permite rastrear qual recepção vendeu mais assinaturas
+                  </p>
+                </div>
+              )}
 
               {/* Barber Selector (if barber attribution) */}
               {attributionType === "barber" && (

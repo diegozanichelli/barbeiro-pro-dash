@@ -621,6 +621,7 @@ export type Database = {
           price_sold: number
           service_category: string | null
           source: string
+          unit_id: string | null
         }
         Insert: {
           barber_id?: string | null
@@ -639,6 +640,7 @@ export type Database = {
           price_sold: number
           service_category?: string | null
           source?: string
+          unit_id?: string | null
         }
         Update: {
           barber_id?: string | null
@@ -657,6 +659,7 @@ export type Database = {
           price_sold?: number
           service_category?: string | null
           source?: string
+          unit_id?: string | null
         }
         Relationships: [
           {
@@ -692,6 +695,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_transactions_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]

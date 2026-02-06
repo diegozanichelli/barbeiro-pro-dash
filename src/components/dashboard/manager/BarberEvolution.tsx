@@ -5,10 +5,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Building2, User, GitCompare, Crown } from "lucide-react";
+import { TrendingUp, Building2, User, GitCompare, Crown, Users2 } from "lucide-react";
 import ShopEvolution from "./ShopEvolution";
 import UnitsComparison from "./UnitsComparison";
 import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
+import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
 
 interface Barber {
   id: string;
@@ -241,22 +242,26 @@ function BarberEvolutionChart() {
 export default function BarberEvolution() {
   return (
     <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full max-w-2xl grid-cols-4">
-        <TabsTrigger value="barbearia" className="flex items-center gap-2">
+      <TabsList className="grid w-full max-w-3xl grid-cols-5">
+        <TabsTrigger value="barbearia" className="flex items-center gap-1">
           <Building2 className="w-4 h-4" />
           <span className="hidden sm:inline">Barbearia</span>
         </TabsTrigger>
-        <TabsTrigger value="comparativo" className="flex items-center gap-2">
+        <TabsTrigger value="comparativo" className="flex items-center gap-1">
           <GitCompare className="w-4 h-4" />
           <span className="hidden sm:inline">Comparativo</span>
         </TabsTrigger>
-        <TabsTrigger value="barbeiro" className="flex items-center gap-2">
+        <TabsTrigger value="barbeiro" className="flex items-center gap-1">
           <User className="w-4 h-4" />
           <span className="hidden sm:inline">Barbeiro</span>
         </TabsTrigger>
-        <TabsTrigger value="assinaturas" className="flex items-center gap-2">
+        <TabsTrigger value="assinaturas" className="flex items-center gap-1">
           <Crown className="w-4 h-4" />
           <span className="hidden sm:inline">Assinaturas</span>
+        </TabsTrigger>
+        <TabsTrigger value="recepcao" className="flex items-center gap-1">
+          <Users2 className="w-4 h-4" />
+          <span className="hidden sm:inline">Recepção</span>
         </TabsTrigger>
       </TabsList>
       
@@ -274,6 +279,10 @@ export default function BarberEvolution() {
       
       <TabsContent value="assinaturas">
         <SubscriptionPerformanceReport />
+      </TabsContent>
+
+      <TabsContent value="recepcao">
+        <ReceptionPerformanceReport />
       </TabsContent>
     </Tabs>
   );
