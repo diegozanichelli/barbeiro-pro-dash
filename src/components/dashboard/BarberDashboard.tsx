@@ -7,18 +7,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import DailyProductionForm from "./barber/DailyProductionForm";
 import BarberSaleForm from "./barber/BarberSaleForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
-import CoachingNudgeCard from "./barber/CoachingNudgeCard";
 import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
-import AIDailyCoachCard from "./barber/AIDailyCoachCard";
-import SalesHelpModal from "./barber/SalesHelpModal";
+import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import BarberEditProductionModal from "./barber/BarberEditProductionModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
@@ -673,10 +671,15 @@ const [todayProduction, setTodayProduction] = useState<{
         )}
 
         <Tabs defaultValue="daily" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
+            <TabsTrigger value="ai-tips" className="flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              <span className="hidden sm:inline">Dicas da IA</span>
+              <span className="sm:hidden">IA</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="daily" className="space-y-6">
@@ -810,22 +813,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
-            {/* Card do Coach IA - Dica Diária Personalizada */}
-            {isCurrentMonth && monthlyGoal && (
-              <AIDailyCoachCard
-                barberId={barber.id}
-                organizationId={barber.organization_id}
-                barberName={barber.name}
-                monthlyGoal={monthlyGoal.target_commission}
-                soldToday={todayProduction?.total || 0}
-                soldThisMonth={stats.accumulated_commission}
-                daysRemaining={daysLeft}
-                dailyTarget={dailyTarget}
-              />
-            )}
-
-            {/* Card de Dica de Vendas - Coaching Nudge (legado) */}
-            {isCurrentMonth && <CoachingNudgeCard barberId={barber.id} />}
 
             {/* Card de Ganhos de Assinatura */}
             {hasSubscriptionModule && (
@@ -942,6 +929,33 @@ const [todayProduction, setTodayProduction] = useState<{
           <TabsContent value="leaderboard">
             <Leaderboard viewerRole="barber" />
           </TabsContent>
+
+          <TabsContent value="ai-tips" className="space-y-6">
+            {monthlyGoal ? (
+              <AITipsTab
+                barberId={barber.id}
+                organizationId={barber.organization_id}
+                barberName={barber.name}
+                monthlyGoal={monthlyGoal.target_commission}
+                soldToday={todayProduction?.total || 0}
+                soldThisMonth={stats.accumulated_commission}
+                daysRemaining={daysLeft}
+                dailyTarget={dailyTarget}
+              />
+            ) : (
+              <Card className="bg-card border-border">
+                <CardContent className="py-8 text-center">
+                  <Bot className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                    Dicas Indisponíveis
+                  </h3>
+                  <p className="text-muted-foreground">
+                    Peça ao gerente para cadastrar sua meta mensal para desbloquear as dicas da IA.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
         </Tabs>
 
         {/* Modal de Edição por Cards */}
@@ -965,8 +979,6 @@ const [todayProduction, setTodayProduction] = useState<{
           isLoading={confirmingPresence}
         />
 
-        {/* Botão Flutuante de Assistente de Vendas IA */}
-        {isCurrentMonth && barber && <SalesHelpModal barberId={barber.id} organizationId={barber.organization_id} />}
       </div>
     </div>
   );
