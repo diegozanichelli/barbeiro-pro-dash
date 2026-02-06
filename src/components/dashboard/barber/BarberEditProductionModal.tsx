@@ -15,7 +15,7 @@ import { Loader2, Search, Scissors, Package, Zap, Check, Minus, Plus, ShoppingCa
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { format } from "date-fns";
@@ -479,66 +479,69 @@ export default function BarberEditProductionModal({
               </TabsList>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-              {/* Services Grid */}
-              <TabsContent value="services" className="flex-1 m-0 overflow-hidden">
-                {loadingCatalog ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <Scissors className="h-12 w-12 mb-4 opacity-50" />
-                    <p className="font-medium">
-                      {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
-                    </p>
-                  </div>
-                ) : (
-                  <ScrollArea className="flex-1 px-6 py-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {filteredItems.map((item) => (
-                        <CatalogCard
-                          key={item.id}
-                          item={item}
-                          isSelected={isInCart(item.id)}
-                          onSelect={() => handleToggleCart(item)}
-                          formatCurrency={formatCurrency}
-                        />
-                      ))}
+            <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
+              {/* Scrollable Content Area */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                {/* Services Grid */}
+                <TabsContent value="services" className="mt-0">
+                  {loadingCatalog ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
-                  </ScrollArea>
-                )}
-              </TabsContent>
+                  ) : filteredItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Scissors className="h-12 w-12 mb-4 opacity-50" />
+                      <p className="font-medium">
+                        {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="px-6 py-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 touch-pan-y">
+                        {filteredItems.map((item) => (
+                          <CatalogCard
+                            key={item.id}
+                            item={item}
+                            isSelected={isInCart(item.id)}
+                            onSelect={() => handleToggleCart(item)}
+                            formatCurrency={formatCurrency}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
 
               {/* Products Grid */}
-              <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
-                {loadingCatalog ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <Package className="h-12 w-12 mb-4 opacity-50" />
-                    <p className="font-medium">
-                      {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
-                    </p>
-                  </div>
-                ) : (
-                  <ScrollArea className="flex-1 px-6 py-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {filteredItems.map((item) => (
-                        <CatalogCard
-                          key={item.id}
-                          item={item}
-                          isSelected={isInCart(item.id)}
-                          onSelect={() => handleToggleCart(item)}
-                          formatCurrency={formatCurrency}
-                        />
-                      ))}
+                <TabsContent value="products" className="mt-0">
+                  {loadingCatalog ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
-                  </ScrollArea>
-                )}
-              </TabsContent>
+                  ) : filteredItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Package className="h-12 w-12 mb-4 opacity-50" />
+                      <p className="font-medium">
+                        {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="px-6 py-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 touch-pan-y">
+                        {filteredItems.map((item) => (
+                          <CatalogCard
+                            key={item.id}
+                            item={item}
+                            isSelected={isInCart(item.id)}
+                            onSelect={() => handleToggleCart(item)}
+                            formatCurrency={formatCurrency}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </div>
 
               {/* Footer */}
               <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
