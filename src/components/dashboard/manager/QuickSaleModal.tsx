@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, AlertCircle, Building2 } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, AlertCircle, Building2, Home, UserPlus } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,9 @@ export default function QuickSaleModal({
   
   // Reception mode (no barber attribution)
   const [isReceptionSale, setIsReceptionSale] = useState(false);
+  
+  // New client tracking (for conversion metrics)
+  const [isNewClient, setIsNewClient] = useState(false);
 
   // Fetch catalog items
   useEffect(() => {
@@ -146,6 +150,7 @@ export default function QuickSaleModal({
     setSearchQuery("");
     setActiveTab("services");
     setIsReceptionSale(false);
+    setIsNewClient(false);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -323,6 +328,7 @@ export default function QuickSaleModal({
             price_sold: item.customPrice,
             commission_rate_used: 0,
             commission_amount: 0,
+            is_new_client: isNewClient,
           });
         }
       });
@@ -467,6 +473,34 @@ export default function QuickSaleModal({
                 checked={isReceptionSale}
                 onCheckedChange={setIsReceptionSale}
               />
+            </div>
+            
+            {/* Client Type Selector (New vs Existing) */}
+            <div className="mt-3 p-3 rounded-lg border bg-muted/30 space-y-2">
+              <Label className="text-sm font-medium">Tipo de Cliente</Label>
+              <ToggleGroup 
+                type="single" 
+                value={isNewClient ? "new" : "existing"} 
+                onValueChange={(v) => setIsNewClient(v === "new")}
+                className="justify-start"
+              >
+                <ToggleGroupItem 
+                  value="existing" 
+                  aria-label="Cliente da Casa"
+                  className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                >
+                  <Home className="w-4 h-4" />
+                  Cliente da Casa
+                </ToggleGroupItem>
+                <ToggleGroupItem 
+                  value="new" 
+                  aria-label="Cliente Novo"
+                  className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Cliente Novo
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
           </DialogHeader>
 
