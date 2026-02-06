@@ -12,8 +12,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import { toast } from "sonner";
-import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users, Home, UserPlus } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
 import { format } from "date-fns";
 import { getTodayString } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
@@ -77,8 +76,8 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [manualValue, setManualValue] = useState("0");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
   
-  // New client tracking (for conversion metrics)
-  const [isNewClient, setIsNewClient] = useState(false);
+  // Note: is_new_client tracking is manager-only (reception/PDV)
+  // Barber transactions default to false
 
   // Buscar catálogo da organização + assinaturas de hoje
   useEffect(() => {
@@ -250,7 +249,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             commission_rate_used: 0, // Trigger vai calcular
             commission_amount: 0, // Trigger vai calcular
             source: "barber", // <- Diferencia do gestor
-            is_new_client: isNewClient,
+            is_new_client: false, // Barbeiro não define - métrica é exclusiva do gestor
           });
         }
       });
@@ -269,7 +268,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       setCart([]);
       setCheckoutOpen(false);
       setClientsCount(1);
-      setIsNewClient(false);
       onSuccess();
     } catch (error: any) {
       console.error("Erro ao registrar venda:", error);
@@ -382,34 +380,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           </Popover>
           </div>
           
-          {/* Client Type Selector (New vs Existing) */}
-          <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
-            <Label className="text-sm font-medium text-muted-foreground">Tipo de Cliente</Label>
-            <ToggleGroup 
-              type="single" 
-              value={isNewClient ? "new" : "existing"} 
-              onValueChange={(v) => setIsNewClient(v === "new")}
-              className="justify-start"
-            >
-              <ToggleGroupItem 
-                value="existing" 
-                aria-label="Cliente da Casa"
-                className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-              >
-                <Home className="w-4 h-4" />
-                Da Casa
-              </ToggleGroupItem>
-              <ToggleGroupItem 
-                value="new" 
-                aria-label="Cliente Novo"
-                className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
-              >
-                <UserPlus className="w-4 h-4" />
-                Novo
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-
           {/* Barra de Busca */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -601,12 +571,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
               <span className={cn("font-medium", !isToday && "text-warning")}>
                 {isToday ? "Hoje" : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
               </span>
-            </div>
-            <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-md">
-              <span className="text-sm text-muted-foreground">Tipo de Cliente:</span>
-              <Badge variant={isNewClient ? "default" : "secondary"} className={isNewClient ? "bg-success" : ""}>
-                {isNewClient ? "🆕 Cliente Novo" : "🏠 Cliente da Casa"}
-              </Badge>
             </div>
           </div>
 
