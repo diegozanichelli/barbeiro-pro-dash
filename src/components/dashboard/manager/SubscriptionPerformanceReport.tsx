@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
-import { Crown, TrendingUp, Users, Target, Loader2 } from "lucide-react";
+import { Crown, TrendingUp, Users, Target, Loader2, Star, AlertTriangle, Trophy } from "lucide-react";
 
 interface BarberPerformance {
   barberId: string;
@@ -123,17 +124,57 @@ export default function SubscriptionPerformanceReport() {
     }
   };
 
-  const getConversionBadge = (rate: number, hasOpportunities: boolean) => {
-    if (!hasOpportunities) {
-      return <Badge variant="secondary" className="text-xs">N/A</Badge>;
+  const getConversionBadge = (rate: number, opportunities: number) => {
+    // If no opportunities, show N/A
+    if (opportunities === 0) {
+      return (
+        <Badge variant="secondary" className="text-xs gap-1">
+          <span>N/A</span>
+        </Badge>
+      );
     }
-    if (rate === 0) {
-      return <Badge variant="destructive" className="text-xs">0% 🔴</Badge>;
+
+    // Elite: > 30%
+    if (rate >= 30) {
+      return (
+        <Badge className="bg-success text-white text-xs gap-1 font-semibold">
+          <Trophy className="w-3 h-3" />
+          <span>Elite ({rate.toFixed(0)}%)</span>
+        </Badge>
+      );
     }
-    if (rate < 30) {
-      return <Badge className="bg-warning text-warning-foreground text-xs">{rate.toFixed(0)}%</Badge>;
+
+    // Regular: 10-29%
+    if (rate >= 10) {
+      return (
+        <Badge className="bg-warning text-warning-foreground text-xs gap-1 font-medium">
+          <Star className="w-3 h-3" />
+          <span>Na Média ({rate.toFixed(0)}%)</span>
+        </Badge>
+      );
     }
-    return <Badge className="bg-success text-white text-xs">{rate.toFixed(0)}% ⭐</Badge>;
+
+    // Critical: < 10%
+    return (
+      <Badge variant="destructive" className="text-xs gap-1 font-medium">
+        <AlertTriangle className="w-3 h-3" />
+        <span>Baixo ({rate.toFixed(0)}%)</span>
+      </Badge>
+    );
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Highlight critical cases: many opportunities, few sales
+  const isCriticalCase = (opportunities: number, sales: number) => {
+    return opportunities >= 5 && sales === 0;
   };
 
   // Summary stats
@@ -150,9 +191,9 @@ export default function SubscriptionPerformanceReport() {
               <Crown className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <CardTitle>Performance de Conversão</CardTitle>
+              <CardTitle>Relatório de Conversão de Assinaturas</CardTitle>
               <CardDescription>
-                Taxa de conversão de clientes novos em assinantes
+                Taxa de conversão: Clientes Novos → Assinantes
               </CardDescription>
             </div>
           </div>
@@ -209,29 +250,32 @@ export default function SubscriptionPerformanceReport() {
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-1">
                   <Users className="w-4 h-4" />
-                  <span className="text-xs">Clientes Novos</span>
+                  <span className="text-xs">🎯 Oportunidades</span>
                 </div>
                 <p className="text-2xl font-bold">{totalNewClients}</p>
+                <p className="text-xs text-muted-foreground">Clientes Novos</p>
               </CardContent>
             </Card>
             <Card className="bg-muted/50">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-1">
                   <Crown className="w-4 h-4" />
-                  <span className="text-xs">Assinaturas</span>
+                  <span className="text-xs">👑 Vendas</span>
                 </div>
                 <p className="text-2xl font-bold">{totalSubscriptions}</p>
+                <p className="text-xs text-muted-foreground">Assinaturas</p>
               </CardContent>
             </Card>
             <Card className="bg-muted/50">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-1">
                   <Target className="w-4 h-4" />
-                  <span className="text-xs">Conversão Geral</span>
+                  <span className="text-xs">📉 Conversão Geral</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {overallConversion.toFixed(1)}%
                 </p>
+                <p className="text-xs text-muted-foreground">Vendas / Oportunidades</p>
               </CardContent>
             </Card>
           </div>
@@ -253,21 +297,47 @@ export default function SubscriptionPerformanceReport() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Barbeiro</TableHead>
-                    <TableHead>Unidade</TableHead>
-                    <TableHead className="text-center">Clientes Novos</TableHead>
-                    <TableHead className="text-center">Assinaturas</TableHead>
-                    <TableHead className="text-center">Conversão</TableHead>
+                    <TableHead className="text-center">🎯 Oportunidades</TableHead>
+                    <TableHead className="text-center">👑 Vendas</TableHead>
+                    <TableHead className="text-center">📉 Taxa de Conversão</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {performanceData.map((barber) => (
-                    <TableRow key={barber.barberId}>
-                      <TableCell className="font-medium">{barber.barberName}</TableCell>
-                      <TableCell className="text-muted-foreground">{barber.unitName}</TableCell>
-                      <TableCell className="text-center">{barber.newClientsCount}</TableCell>
-                      <TableCell className="text-center">{barber.subscriptionsSold}</TableCell>
+                    <TableRow 
+                      key={barber.barberId}
+                      className={isCriticalCase(barber.newClientsCount, barber.subscriptionsSold) 
+                        ? "bg-destructive/10" 
+                        : ""
+                      }
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 border-2 border-primary/20">
+                            <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                              {getInitials(barber.barberName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{barber.barberName}</p>
+                            <p className="text-xs text-muted-foreground">{barber.unitName}</p>
+                          </div>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-center">
-                        {getConversionBadge(barber.conversionRate, barber.newClientsCount > 0)}
+                        <span className={`font-semibold text-lg ${
+                          isCriticalCase(barber.newClientsCount, barber.subscriptionsSold)
+                            ? "text-destructive"
+                            : ""
+                        }`}>
+                          {barber.newClientsCount}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-semibold text-lg">{barber.subscriptionsSold}</span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {getConversionBadge(barber.conversionRate, barber.newClientsCount)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -277,18 +347,27 @@ export default function SubscriptionPerformanceReport() {
           )}
 
           {/* Legend */}
-          <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
-              <Badge variant="destructive" className="text-xs">0%</Badge>
-              <span>Alerta</span>
+              <Badge className="bg-success text-white text-xs gap-1">
+                <Trophy className="w-3 h-3" />
+                Elite
+              </Badge>
+              <span>&gt; 30%</span>
             </div>
             <div className="flex items-center gap-1">
-              <Badge className="bg-warning text-warning-foreground text-xs">1-29%</Badge>
-              <span>Melhorar</span>
+              <Badge className="bg-warning text-warning-foreground text-xs gap-1">
+                <Star className="w-3 h-3" />
+                Na Média
+              </Badge>
+              <span>10-29%</span>
             </div>
             <div className="flex items-center gap-1">
-              <Badge className="bg-success text-white text-xs">30%+</Badge>
-              <span>Excelente</span>
+              <Badge variant="destructive" className="text-xs gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Baixo
+              </Badge>
+              <span>&lt; 10%</span>
             </div>
           </div>
         </CardContent>
