@@ -1,160 +1,171 @@
 
-# Plano: Seletor Global de "Tipo de Cliente" + Relatório de Conversão
+# Plano: Nova Aba "Dicas da IA" no Dashboard do Barbeiro
 
 ## Resumo Executivo
 
-Adicionar um seletor visual obrigatório (Cliente Novo vs Cliente da Casa) em todos os pontos de venda para capturar métricas de conversão precisas. Em seguida, criar um relatório de Performance de Assinaturas que mostre a taxa de conversão real (Assinaturas / Clientes Novos Atendidos).
+Criar uma nova aba dedicada chamada "Dicas da IA" no painel do barbeiro para consolidar todas as funcionalidades de inteligência artificial. Isso vai limpar o painel principal ("Meu Painel") e melhorar significativamente a experiência do usuário.
 
 ---
 
-## Parte 1: Seletor no Painel do Gestor
+## Situação Atual (Problema)
 
-### Arquivo: `QuickSaleModal.tsx`
-
-**Localização**: No topo do modal, logo abaixo do toggle "Venda Recepção / Loja" (linha ~458)
-
-**Componente**:
-- Usar ToggleGroup com dois botões:
-  - "🏠 Cliente da Casa" (default selecionado)
-  - "🆕 Cliente Novo"
-- Estado: `isNewClient: boolean` (default: `false`)
-
-**Integração no Submit** (função `handleCartCheckout`):
-- Adicionar `is_new_client: isNewClient` em cada transação do array `transactions[]`
-- Resetar estado no `resetForm()`
-
----
-
-## Parte 2: Seletor no App do Barbeiro
-
-### Arquivo: `BarberSaleForm.tsx`
-
-**Localização A - Card Principal**: Após o Date Picker (linha ~378), adicionar o mesmo ToggleGroup
-
-**Localização B - Modal de Checkout**: Mostrar o tipo selecionado como informação visual no resumo (linha ~564)
-
-**Integração no Submit** (função `handleConfirmCheckout`):
-- Adicionar `is_new_client: isNewClient` em cada transação
-- Estado: `isNewClient: boolean` (default: `false`)
-
----
-
-## Parte 3: Relatório de Conversão
-
-### Arquivo: `BarberEvolution.tsx`
-
-**Adicionar Nova Tab**: "Assinaturas" com ícone Crown
-
-**Novo Componente**: `SubscriptionPerformanceChart`
-
-**Dados a Buscar** (da tabela `sale_transactions`):
-```text
-Por Barbeiro:
-1. oportunidades = COUNT(*) WHERE is_new_client = true
-2. assinaturas = COUNT(*) WHERE item_type = 'subscription'
-3. conversao = (assinaturas / oportunidades) * 100
-```
-
-**Colunas da Tabela**:
-| Barbeiro | Unidade | Clientes Novos | Assinaturas | Conversão |
-|----------|---------|----------------|-------------|-----------|
-| Ageu     | Centro  | 10             | 3           | 30% ⭐    |
-| João     | Norte   | 5              | 0           | 0% 🔴     |
-
-**Regras Visuais**:
-- `0%` = Badge vermelha (alerta)
-- `1-29%` = Badge amarela
-- `30%+` = Badge verde com estrela
-
----
-
-## Fluxo Visual dos Componentes
+O painel principal do barbeiro está poluído com múltiplos cards de IA:
 
 ```text
 ┌─────────────────────────────────────────┐
-│  QuickSaleModal (Gestor)                │
+│  "Meu Painel" (atual - poluído)         │
 ├─────────────────────────────────────────┤
-│  ┌───────────────────────────────────┐  │
-│  │ Toggle: Venda Recepção / Loja     │  │
-│  └───────────────────────────────────┘  │
+│  [Meta de Produção]                     │
+│  [Faturamento Hoje]                     │
+│  [AIDailyCoachCard] ← POLUIÇÃO          │
+│  [CoachingNudgeCard] ← POLUIÇÃO         │
+│  [SubscriptionEarningsCard]             │
+│  [Progresso Mensal]                     │
+│  [Métricas]                             │
+│  [PDV]                                  │
 │                                         │
-│  ┌───────────────────────────────────┐  │
-│  │  TIPO DE CLIENTE (NOVO!)          │  │
-│  │  ┌──────────┐  ┌──────────────┐   │  │
-│  │  │🏠 Da Casa│  │🆕 Novo       │   │  │
-│  │  │(default) │  │              │   │  │
-│  │  └──────────┘  └──────────────┘   │  │
-│  └───────────────────────────────────┘  │
-│                                         │
-│  [Serviços] [Produtos] [Manual]         │
-│  ... grid de itens ...                  │
-└─────────────────────────────────────────┘
-```
-
-```text
-┌─────────────────────────────────────────┐
-│  BarberEvolution                        │
-├─────────────────────────────────────────┤
-│  [Barbearia] [Comparativo] [Barbeiro]   │
-│                           [Assinaturas] │ ← NOVA TAB
-│                                         │
-│  ┌───────────────────────────────────┐  │
-│  │  📊 Performance de Conversão      │  │
-│  ├───────────────────────────────────┤  │
-│  │  Barbeiro │ Novos │ Vendas │ %    │  │
-│  │  Ageu     │  10   │   3    │ 30%⭐ │  │
-│  │  João     │   5   │   0    │ 0% 🔴 │  │
-│  └───────────────────────────────────┘  │
+│  + Botão flutuante SalesHelpModal       │
 └─────────────────────────────────────────┘
 ```
 
 ---
 
-## Detalhes Técnicos
+## Solução Proposta
 
-### Alterações por Arquivo
+Criar uma 4ª aba "Dicas da IA" com todas as funcionalidades agrupadas:
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `QuickSaleModal.tsx` | Adicionar estado `isNewClient`, ToggleGroup visual, incluir no insert |
-| `BarberSaleForm.tsx` | Adicionar estado `isNewClient`, ToggleGroup visual, incluir no insert |
-| `BarberEvolution.tsx` | Adicionar 4ª tab "Assinaturas" com novo componente |
+```text
+┌─────────────────────────────────────────────────────────┐
+│  [Meu Painel] [Histórico] [Rankings] [Dicas da IA]      │
+└─────────────────────────────────────────────────────────┘
 
-### Novo Componente a Criar
+Nova Aba "Dicas da IA":
+┌─────────────────────────────────────────┐
+│  🤖 DICA DO COACH                       │
+│  ┌───────────────────────────────────┐  │
+│  │ AIDailyCoachCard (completo)       │  │
+│  │ - Briefing tático personalizado   │  │
+│  │ - Botão "Nova dica"               │  │
+│  └───────────────────────────────────┘  │
+│                                         │
+│  💡 DICA DE VENDAS                      │
+│  ┌───────────────────────────────────┐  │
+│  │ CoachingNudgeCard (completo)      │  │
+│  │ - Comparativo com a unidade       │  │
+│  │ - Botão "Atualizar dica"          │  │
+│  └───────────────────────────────────┘  │
+│                                         │
+│  🎯 SCRIPTS DE VENDA (Ajuda Rápida)     │
+│  ┌───────────────────────────────────┐  │
+│  │ Grid de cenários clicáveis:       │  │
+│  │ [Cliente achou caro]              │  │
+│  │ [Oferecer pomada]                 │  │
+│  │ [Mudança de visual]               │  │
+│  │ [Cliente com caspa]               │  │
+│  │ [Serviço extra]                   │  │
+│  │ [Fidelização]                     │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
 
-**`SubscriptionPerformanceReport.tsx`**:
-- Query para buscar:
-  - Clientes novos atendidos por barbeiro (`is_new_client = true`)
-  - Assinaturas vendidas por barbeiro (`item_type = 'subscription'`)
-- Cálculo de conversão
-- Tabela com cores condicionais
-
-### Imports Necessários
-
-```typescript
-// Em QuickSaleModal.tsx e BarberSaleForm.tsx
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Home, UserPlus } from "lucide-react";
+"Meu Painel" (limpo):
+┌─────────────────────────────────────────┐
+│  [Meta de Produção]                     │
+│  [Faturamento Hoje]                     │
+│  [SubscriptionEarningsCard]             │ ← SEM AI CARDS!
+│  [Progresso Mensal]                     │
+│  [Métricas]                             │
+│  [PDV]                                  │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## Considerações
+## Alterações Técnicas
 
-1. **Valor Padrão**: "Cliente da Casa" vem selecionado para agilizar o fluxo (maioria dos atendimentos são recorrentes)
+### Arquivo: `BarberDashboard.tsx`
 
-2. **Retroatividade**: Atendimentos antigos terão `is_new_client = false` (null tratado como false)
+**1. Adicionar nova aba na TabsList (linha 676-680):**
+```tsx
+<TabsList className="grid w-full grid-cols-4">
+  <TabsTrigger value="daily">Meu Painel</TabsTrigger>
+  <TabsTrigger value="history">Histórico</TabsTrigger>
+  <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
+  <TabsTrigger value="ai-tips">Dicas da IA</TabsTrigger>
+</TabsList>
+```
 
-3. **Venda Manual**: O modo manual no BarberSaleForm também deve capturar o tipo de cliente (inserir na daily_productions como referência visual, já que não gera transaction)
+**2. Remover do "Meu Painel" (TabsContent value="daily"):**
+- Remover `AIDailyCoachCard` (linhas 814-825)
+- Remover `CoachingNudgeCard` (linha 828)
 
-4. **Denominador Correto**: A fórmula de conversão usa apenas clientes novos como denominador, não o total de atendimentos
+**3. Remover botão flutuante `SalesHelpModal` (linha 969):**
+- O conteúdo do SalesHelpModal será integrado diretamente na nova aba
+
+**4. Criar novo `TabsContent value="ai-tips"`:**
+- Renderizar `AIDailyCoachCard`
+- Renderizar `CoachingNudgeCard`
+- Criar seção com grid de cenários de venda (reutilizando lógica do SalesHelpModal)
+
+### Novo Componente: `AITipsTab.tsx`
+
+Componente dedicado para organizar o conteúdo da aba:
+
+```text
+src/components/dashboard/barber/AITipsTab.tsx
+├── Props: barberId, organizationId, barberName, monthlyGoal, stats...
+├── Seções:
+│   ├── AIDailyCoachCard (existente, reutilizado)
+│   ├── CoachingNudgeCard (existente, reutilizado)
+│   └── SalesScriptsGrid (novo, baseado no SalesHelpModal)
+```
+
+**SalesScriptsGrid** - Grid de cards clicáveis:
+- Mostra os 6 cenários como cards (sem modal flutuante)
+- Ao clicar, expande inline ou abre dialog para mostrar o script
+- Usa a mesma lógica de `SalesHelpModal` para chamar a edge function
 
 ---
 
-## Sequência de Implementação
+## Fluxo de Dados
 
-1. Adicionar seletor no `QuickSaleModal.tsx` (gestor)
-2. Adicionar seletor no `BarberSaleForm.tsx` (barbeiro)
-3. Criar componente `SubscriptionPerformanceReport.tsx`
-4. Integrar nova tab no `BarberEvolution.tsx`
-5. Testar fluxo completo
+```text
+AITipsTab
+├── Recebe props do BarberDashboard
+├── Renderiza:
+│   ├── AIDailyCoachCard
+│   │   └── Chama: barber-ai-assistant (type: daily_insight)
+│   ├── CoachingNudgeCard
+│   │   └── Chama: get-coaching-nudge
+│   └── SalesScriptsGrid
+│       └── Chama: barber-ai-assistant (type: sales_help)
+```
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Ação |
+|---------|------|
+| `BarberDashboard.tsx` | Adicionar 4ª aba, mover AI cards, remover SalesHelpModal |
+| Novo: `AITipsTab.tsx` | Componente que agrupa todas as dicas de IA |
+
+---
+
+## Considerações de UX
+
+1. **Ícone da Aba**: Usar ícone `Bot` ou `Sparkles` para identificar claramente a aba de IA
+
+2. **Badge de Notificação** (opcional): Se houver nova dica disponível, mostrar um ponto de notificação na aba
+
+3. **Mensagem Vazia**: Se o barbeiro não tiver meta cadastrada, mostrar mensagem orientando a solicitar ao gerente
+
+4. **Responsividade**: Grid de scripts deve funcionar bem em mobile (1 coluna) e desktop (2-3 colunas)
+
+---
+
+## Benefícios
+
+- **Painel Limpo**: Meu Painel focado apenas em métricas e lançamentos
+- **Descobrimento**: Usuário pode explorar todas as ferramentas de IA em um só lugar
+- **Performance**: Componentes de IA só carregam quando a aba é acessada
+- **Escalabilidade**: Facilita adicionar novas funcionalidades de IA no futuro
