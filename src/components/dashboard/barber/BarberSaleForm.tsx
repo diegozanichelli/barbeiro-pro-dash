@@ -10,14 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+
 import { toast } from "sonner";
-import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users, Crown, AlertCircle } from "lucide-react";
+import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
 import { format } from "date-fns";
 import { getTodayString } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import SubscriptionConfirmModal from "./SubscriptionConfirmModal";
+
 
 interface BarberSaleFormProps {
   barberId: string;
@@ -71,13 +71,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   
-  // Modal de confirmação de assinatura
-  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
-  const [lastDailyProductionId, setLastDailyProductionId] = useState<string | null>(null);
-  const [todaySubscriptionsCount, setTodaySubscriptionsCount] = useState(0);
-  
-  // Standalone subscription modal
-  const [standaloneSubscriptionOpen, setStandaloneSubscriptionOpen] = useState(false);
   
   // Campos do modo manual
   const [manualValue, setManualValue] = useState("0");
@@ -90,7 +83,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       
       const today = getTodayString();
       
-      const [servicesRes, productsRes, subscriptionsRes] = await Promise.all([
+      const [servicesRes, productsRes] = await Promise.all([
         supabase
           .from("catalog_services")
           .select("*")
@@ -103,13 +96,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           .eq("organization_id", organizationId)
           .eq("is_active", true)
           .order("name"),
-        supabase
-          .from("sale_transactions")
-          .select("id")
-          .eq("barber_id", barberId)
-          .eq("item_type", "subscription")
-          .gte("created_at", today)
-          .lte("created_at", today + "T23:59:59"),
       ]);
 
       const services: CatalogItem[] = (servicesRes.data || []).map((s) => ({
@@ -130,7 +116,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       }));
 
       setCatalogItems([...services, ...products]);
-      setTodaySubscriptionsCount(subscriptionsRes.data?.length || 0);
       setLoadingCatalog(false);
     };
 
@@ -275,40 +260,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
 
-      // Salvar ID para o modal de assinatura
-      setLastDailyProductionId(dailyProductionId);
-      
       // Limpar carrinho e fechar modal de checkout
       setCart([]);
       setCheckoutOpen(false);
       setClientsCount(1);
-      
-      // Abrir modal de assinatura
-      setSubscriptionModalOpen(true);
+      onSuccess();
     } catch (error: any) {
       console.error("Erro ao registrar venda:", error);
       toast.error(error.message || "Erro ao registrar venda");
     } finally {
       setLoading(false);
     }
-  };
-  
-  // Callback após modal de assinatura
-  const handleSubscriptionComplete = () => {
-    // Recarregar contagem de assinaturas
-    const fetchSubscriptions = async () => {
-      const today = getTodayString();
-      const { data } = await supabase
-        .from("sale_transactions")
-        .select("id")
-        .eq("barber_id", barberId)
-        .eq("item_type", "subscription")
-        .gte("created_at", today)
-        .lte("created_at", today + "T23:59:59");
-      setTodaySubscriptionsCount(data?.length || 0);
-    };
-    fetchSubscriptions();
-    onSuccess();
   };
 
   const handleConfirmManualSale = async () => {
@@ -377,16 +339,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
               <DollarSign className="w-5 h-5 text-primary" />
               REGISTRAR VENDA
             </CardTitle>
-            {/* Botão de Assinatura Avulsa */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 border-warning text-warning hover:bg-warning/10"
-              onClick={() => setStandaloneSubscriptionOpen(true)}
-            >
-              <Crown className="w-4 h-4" />
-              <span className="hidden sm:inline">Assinatura Avulsa</span>
-            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -742,20 +694,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             </span>
           </div>
 
-          {/* Conferência de Assinaturas */}
-          {todaySubscriptionsCount > 0 && (
-            <Alert variant="default" className="bg-warning/10 border-warning/30">
-              <Crown className="h-4 w-4 text-warning" />
-              <AlertDescription className="text-sm">
-                Você tem <strong>{todaySubscriptionsCount}</strong> {todaySubscriptionsCount === 1 ? 'Assinatura vendida' : 'Assinaturas vendidas'} hoje. Confere?
-                <br />
-                <span className="text-xs text-muted-foreground">
-                  Divergência? Chame o Gestor para corrigir.
-                </span>
-              </AlertDescription>
-            </Alert>
-          )}
-
           <DialogFooter>
             <Button variant="outline" onClick={() => setCheckoutOpen(false)}>
               Cancelar
@@ -776,29 +714,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Modal de Confirmação de Assinatura */}
-      {lastDailyProductionId && (
-        <SubscriptionConfirmModal
-          open={subscriptionModalOpen}
-          onOpenChange={setSubscriptionModalOpen}
-          barberId={barberId}
-          organizationId={organizationId}
-          dailyProductionId={lastDailyProductionId}
-          onComplete={handleSubscriptionComplete}
-        />
-      )}
-
-      {/* Modal de Assinatura Avulsa (sem carrinho) */}
-      <SubscriptionConfirmModal
-        open={standaloneSubscriptionOpen}
-        onOpenChange={setStandaloneSubscriptionOpen}
-        barberId={barberId}
-        organizationId={organizationId}
-        dailyProductionId={null}
-        onComplete={handleSubscriptionComplete}
-        standaloneMode
-      />
     </>
   );
 }
