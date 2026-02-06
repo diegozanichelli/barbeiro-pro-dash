@@ -53,7 +53,8 @@ export default function SubscriptionPerformanceReport() {
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split("T")[0];
 
     try {
-      // Fetch all transactions for the period
+      // Fetch ONLY manager transactions for the period (source='manager')
+      // This ensures we use the official reception/PDV data for conversion metrics
       const { data: transactions, error: txError } = await supabase
         .from("sale_transactions")
         .select(`
@@ -62,6 +63,7 @@ export default function SubscriptionPerformanceReport() {
           item_type,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
+        .eq("source", "manager") // CRITICAL: Only manager data for accurate metrics
         .gte("created_at", `${startDate}T00:00:00`)
         .lte("created_at", `${endDate}T23:59:59`)
         .not("barber_id", "is", null);
