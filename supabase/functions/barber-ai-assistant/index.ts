@@ -23,6 +23,14 @@ function formatManausDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Retorna a hora atual em Manaus (0-23)
+ */
+function getManausHour(): number {
+  const manausDate = getManausDate();
+  return manausDate.getHours();
+}
+
 // ============================================
 // CORS
 // ============================================
@@ -167,15 +175,26 @@ Estratégia nova para amanhã: todo cliente é oportunidade de combo! 💰`;
 Prepare seu script antes de dormir. Amanhã é dia de extras! 🎯`;
   },
 
-  // 5. Dia Fantasma (Zero atendimentos)
-  ghost_day: (name: string): string => {
-    return `Dia zerado ou esqueceu de lançar? 🤔
+  // 5a. Turno Ativo (Zero dados, mas é cedo - antes das 19h)
+  active_shift: (name: string): string => {
+    return `Foco total na cadeira, ${name}! 💈
 
-⚠️ Nenhum atendimento registrado hoje.
+⏳ O dia está rolando. Mantenha o foco em aumentar o ticket de quem senta agora.
 
-> "Se você trabalhou hoje, corra e lance agora para não perder a contagem! Se foi dia de folga ou movimento fraco, amanhã é dia de recuperar. Mande mensagem para 3 clientes antigos agora à noite."
+> "Eu sei que você lança tudo no final do dia. Enquanto isso, não deixe o cliente sair só com o Básico. Ofereça um acabamento ou produto agora à tarde!"
 
-Organize a agenda de amanhã! 📅`;
+Anote tudo para lançar mais tarde! 📝`;
+  },
+
+  // 5b. Alerta de Esquecimento (Zero dados, pós-expediente - após 19h)
+  forgot_to_log: (name: string): string => {
+    return `Dia de folga ou esqueceu de lançar? 🤔
+
+⚠️ O sistema ainda não recebeu sua produção de hoje.
+
+> "Se você trabalhou hoje, corra e lance agora para garantir sua pontuação no ranking! Se foi folga, prepare a agenda de amanhã mandando mensagem para 3 clientes."
+
+Não perca a contagem do dia! 📅`;
   },
 
   // 6. Ticket de Elite (Ticket alto > R$ 70)
@@ -271,7 +290,8 @@ function checkRulesEngine(
   barberName: string,
   monthlyGoal: number,
   soldThisMonth: number,
-  trend?: TrendAnalysis
+  trend?: TrendAnalysis,
+  currentHour?: number
 ): { message: string; scenario: string } | null {
   const productsCount = Object.keys(dayStats.produtosVendidos).length > 0 
     ? Object.values(dayStats.produtosVendidos).reduce((a, b) => a + b, 0) 
@@ -337,11 +357,22 @@ function checkRulesEngine(
   // PRIORIDADE 4: SITUAÇÕES DO DIA
   // ========================================
 
-  // 4a. Dia Fantasma (Zero atendimentos)
+  // 4a. Zero Atendimentos - Dividido por horário
   if (dayStats.clientesAtendidos === 0) {
+    const hour = currentHour ?? getManausHour();
+    
+    // Antes das 19h: Assumir que está trabalhando e vai lançar depois
+    if (hour < 19) {
+      return {
+        message: TEMPLATES.active_shift(barberName),
+        scenario: "active_shift",
+      };
+    }
+    
+    // Após 19h: Alerta de esquecimento
     return {
-      message: TEMPLATES.ghost_day(barberName),
-      scenario: "ghost_day",
+      message: TEMPLATES.forgot_to_log(barberName),
+      scenario: "forgot_to_log",
     };
   }
 
@@ -1172,8 +1203,11 @@ serve(async (req) => {
 
       console.log(`[TREND] Barber ${barberId}: streak=${trendAnalysis.streakType} (${trendAnalysis.streakDays} days), belowAvg=${trendAnalysis.isBelowAverage}`);
 
-      // PASSO 2: Motor de Regras (Templates Gratuitos) - Agora com análise de tendência
-      const ruleResult = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth, trendAnalysis);
+      // PASSO 2: Motor de Regras (Templates Gratuitos) - Agora com análise de tendência e hora atual
+      const currentHour = getManausHour();
+      console.log(`[TIME] Current Manaus hour: ${currentHour}`);
+      
+      const ruleResult = checkRulesEngine(dayStats, barberName, monthlyGoal, soldThisMonth, trendAnalysis, currentHour);
       if (ruleResult) {
         console.log(`[RULES ENGINE] Scenario: ${ruleResult.scenario} for barber ${barberId}`);
         
