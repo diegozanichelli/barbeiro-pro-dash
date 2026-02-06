@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { GitCompare, TrendingUp, TrendingDown, Medal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface Unit {
   id: string;
@@ -31,13 +32,15 @@ const monthNames = [
 ];
 
 export default function UnitsComparison() {
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
+  // Usar data de Manaus para inicializar ano e mês corretamente
+  const manausNow = useMemo(() => getManausDate(), []);
+  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(manausNow.getMonth() + 1);
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitsMetrics, setUnitsMetrics] = useState<UnitMetrics[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
+  const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
   useEffect(() => {
     fetchUnits();

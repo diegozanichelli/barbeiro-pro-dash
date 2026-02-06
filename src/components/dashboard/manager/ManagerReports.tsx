@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parse } from "date-fns";
+import { getManausDate } from "@/lib/dateUtils";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -55,9 +56,11 @@ export default function ManagerReports() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  // Usar data de Manaus para inicializar o período corretamente
+  const manausNow = useMemo(() => getManausDate(), []);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
+    from: startOfMonth(manausNow),
+    to: endOfMonth(manausNow),
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
