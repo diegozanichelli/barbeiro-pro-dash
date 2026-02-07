@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -87,6 +87,13 @@ export default function LiveDashboard() {
     barberName: string;
   }>({ open: false, barberId: "", barberName: "" });
   const [editModal, setEditModal] = useState<{
+    open: boolean;
+    barberId: string;
+    barberName: string;
+    dailyProductionId: string;
+    date: string;
+  }>({ open: false, barberId: "", barberName: "", dailyProductionId: "", date: "" });
+  const [viewTransactionsModal, setViewTransactionsModal] = useState<{
     open: boolean;
     barberId: string;
     barberName: string;
@@ -314,6 +321,27 @@ export default function LiveDashboard() {
       });
     } else {
       toast.error("Nenhuma produção encontrada para editar");
+    }
+  };
+
+  const handleViewTransactions = async (barber: Barber) => {
+    const { data: production } = await supabase
+      .from("daily_productions")
+      .select("id")
+      .eq("barber_id", barber.id)
+      .eq("date", selectedDate)
+      .maybeSingle();
+    
+    if (production) {
+      setViewTransactionsModal({
+        open: true,
+        barberId: barber.id,
+        barberName: barber.name,
+        dailyProductionId: production.id,
+        date: selectedDate,
+      });
+    } else {
+      toast.info("Nenhuma comanda registrada para este barbeiro hoje");
     }
   };
 
@@ -641,6 +669,15 @@ export default function LiveDashboard() {
                     </div>
                   </div>
                   <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      onClick={() => handleViewTransactions(barber)}
+                      title="Ver comandas do gestor"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
                     {revenue > 0 && (
                       <Button
                         size="sm"
@@ -751,6 +788,18 @@ export default function LiveDashboard() {
         onOpenChange={setSubscriptionWizardOpen}
         organizationId={organizationId || ""}
         onComplete={fetchData}
+      />
+
+      {/* View Transactions Modal */}
+      <TransactionManagerModal
+        open={viewTransactionsModal.open}
+        onOpenChange={(open) => setViewTransactionsModal((prev) => ({ ...prev, open }))}
+        barberId={viewTransactionsModal.barberId}
+        barberName={viewTransactionsModal.barberName}
+        organizationId={organizationId || ""}
+        dailyProductionId={viewTransactionsModal.dailyProductionId}
+        date={viewTransactionsModal.date}
+        onSuccess={fetchData}
       />
     </div>
   );
