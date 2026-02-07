@@ -135,6 +135,7 @@ export default function TransactionManagerModal({
         .from("sale_transactions")
         .select("id, item_name, item_type, service_category, price_sold, commission_amount, description")
         .eq("daily_production_id", dailyProductionId)
+        .eq("source", "manager")
         .order("created_at", { ascending: true });
 
       if (error) throw error;
