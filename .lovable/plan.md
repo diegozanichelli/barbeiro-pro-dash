@@ -1,139 +1,188 @@
 
-# Plano: Corrigir Layout do Grid de Cards no Modal de Venda Rápida
+# Plano: Adicionar Botao "Ver Comandas" por Barbeiro
 
-## Problema Identificado
+## Objetivo
 
-Quando o gestor seleciona um serviço no modal de venda rápida ("AO VIVO"), os cards ficam "espremidos" e não é possível selecionar mais itens. Isso acontece porque:
-
-1. O footer do modal cresce dinamicamente quando itens são adicionados ao carrinho
-2. O grid de itens tem `max-h-[50vh]` fixo que não se adapta ao espaço disponível
-3. A combinação de `flex-1` com altura fixa causa conflito de layout
-4. O espaço para os cards diminui drasticamente quando o resumo do carrinho aparece
+Adicionar um botao com icone de olho em cada card de barbeiro no "AO VIVO" que abre o modal de transacoes mostrando **apenas as comandas lancadas pelo gestor** para aquele barbeiro no dia selecionado.
 
 ---
 
-## Estrutura Atual (Problemática)
+## Visao do Resultado
 
 ```text
-┌──────────────────────────────────────────┐
-│  DialogContent (max-h-[90vh])            │
-│  ┌────────────────────────────────────┐  │
-│  │  Header (altura fixa ~200px)       │  │
-│  │  - Toggle Recepção                 │  │
-│  │  - Toggle Tipo Cliente             │  │
-│  └────────────────────────────────────┘  │
-│  ┌────────────────────────────────────┐  │
-│  │  Search Bar (altura fixa)          │  │
-│  └────────────────────────────────────┘  │
-│  ┌────────────────────────────────────┐  │
-│  │  Tabs + Grid (flex-1)              │  │
-│  │  └── max-h-[50vh] ← CONFLITO!      │  │
-│  └────────────────────────────────────┘  │
-│  ┌────────────────────────────────────┐  │
-│  │  Footer (cresce com carrinho)      │  │
-│  │  - Cart Summary (dinâmico)         │  │← CRESCE!
-│  │  - Botões                          │  │
-│  └────────────────────────────────────┘  │
-└──────────────────────────────────────────┘
+Card do Barbeiro (atualizado):
+┌─────────────────────────────────────────────────┐
+│  [Avatar] Gabriel Peter                         │
+│           Unidade Centro                        │
+│                                    [👁] [✏] [+] │ ← Novo botao de olho
+│                                                 │
+│  Progresso: ████████░░░░ 75%                   │
+│  R$ 280,00 / R$ 380,00                         │
+│                                                 │
+│  Faltam 2 cortes para bater a meta             │
+└─────────────────────────────────────────────────┘
+```
+
+Ao clicar no botao de olho:
+- Abre o `TransactionManagerModal` existente
+- Mostra **apenas** transacoes com `source = 'manager'`
+- Permite visualizar e editar/excluir itens
+
+---
+
+## Alteracoes Necessarias
+
+### 1. Arquivo: `TransactionManagerModal.tsx`
+
+**Adicionar filtro por source na query:**
+
+Linha 137, adicionar `.eq("source", "manager")`:
+
+```typescript
+const { data, error } = await supabase
+  .from("sale_transactions")
+  .select("id, item_name, item_type, service_category, price_sold, commission_amount, description")
+  .eq("daily_production_id", dailyProductionId)
+  .eq("source", "manager")  // ← NOVO: filtrar apenas transacoes do gestor
+  .order("created_at", { ascending: true });
+```
+
+Isso garante que:
+- Apenas comandas lancadas pelo gestor (via "AO VIVO") sao exibidas
+- Lancamentos manuais do barbeiro (`source = 'barber'`) nao aparecem
+- Nao ha risco de duplicacao ou conflito
+
+### 2. Arquivo: `LiveDashboard.tsx`
+
+**Adicionar import do icone Eye:**
+
+Linha 14, atualizar imports:
+```typescript
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye } from "lucide-react";
+```
+
+**Adicionar novo estado para modal de visualizacao:**
+
+Apos linha 95 (estado editModal), adicionar:
+```typescript
+const [viewTransactionsModal, setViewTransactionsModal] = useState<{
+  open: boolean;
+  barberId: string;
+  barberName: string;
+  dailyProductionId: string;
+  date: string;
+}>({ open: false, barberId: "", barberName: "", dailyProductionId: "", date: "" });
+```
+
+**Adicionar handler para abrir modal de visualizacao:**
+
+Apos a funcao `handleEditClick` (linha 318), adicionar:
+```typescript
+const handleViewTransactions = async (barber: Barber) => {
+  const { data: production } = await supabase
+    .from("daily_productions")
+    .select("id")
+    .eq("barber_id", barber.id)
+    .eq("date", selectedDate)
+    .single();
+  
+  if (production) {
+    setViewTransactionsModal({
+      open: true,
+      barberId: barber.id,
+      barberName: barber.name,
+      dailyProductionId: production.id,
+      date: selectedDate,
+    });
+  } else {
+    toast.info("Nenhuma comanda registrada para este barbeiro hoje");
+  }
+};
+```
+
+**Adicionar botao de olho no card do barbeiro:**
+
+Entre linhas 643-668 (area de botoes), adicionar o botao antes do Pencil:
+
+```tsx
+<div className="flex gap-1">
+  {/* Novo botao de visualizacao */}
+  <Button
+    size="sm"
+    variant="ghost"
+    className="h-8 w-8 p-0"
+    onClick={() => handleViewTransactions(barber)}
+    title="Ver comandas do gestor"
+  >
+    <Eye className="w-4 h-4" />
+  </Button>
+  
+  {revenue > 0 && (
+    <Button
+      size="sm"
+      variant="outline"
+      className="h-8 w-8 p-0"
+      onClick={() => handleEditClick(barber)}
+      title="Editar lançamento"
+    >
+      <Pencil className="w-4 h-4" />
+    </Button>
+  )}
+  {/* ... botao de + existente */}
+</div>
+```
+
+**Adicionar segundo TransactionManagerModal:**
+
+Apos linha 746, adicionar:
+```tsx
+{/* View Transactions Modal - Read-only view */}
+<TransactionManagerModal
+  open={viewTransactionsModal.open}
+  onOpenChange={(open) => setViewTransactionsModal((prev) => ({ ...prev, open }))}
+  barberId={viewTransactionsModal.barberId}
+  barberName={viewTransactionsModal.barberName}
+  organizationId={organizationId || ""}
+  dailyProductionId={viewTransactionsModal.dailyProductionId}
+  date={viewTransactionsModal.date}
+  onSuccess={fetchData}
+/>
 ```
 
 ---
 
-## Solução Proposta
-
-Reestruturar o layout do modal para:
-1. Remover a altura fixa `max-h-[50vh]` do grid de itens
-2. Usar layout flex correto para que o grid ocupe o espaço restante
-3. Limitar o tamanho do cart summary com scroll interno
-4. Garantir que o grid seja sempre scrollável e visível
-
----
-
-## Alterações no Arquivo `QuickSaleModal.tsx`
-
-### 1. Ajustar o Grid de Serviços (linha 571-583)
-
-**Antes:**
-```tsx
-<div className="flex-1 px-6 py-4 overflow-y-auto max-h-[50vh] overscroll-contain touch-pan-y">
-```
-
-**Depois:**
-```tsx
-<div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto overscroll-contain touch-pan-y">
-```
-
-O truque é usar `min-h-0` para permitir que o container flexível encolha, e remover o `max-h-[50vh]` fixo.
-
-### 2. Ajustar o Grid de Produtos (linha 601-613)
-
-Mesma correção aplicada à aba de produtos.
-
-### 3. Limitar o Tamanho do Cart Summary (linha 666-763)
-
-Adicionar altura máxima e scroll interno no resumo do carrinho quando há muitos itens:
-
-```tsx
-{cart.length > 0 && activeTab !== "manual" && (
-  <div className="space-y-3 max-h-[30vh] overflow-y-auto overscroll-contain">
-    {cart.map((item) => (
-      // ... item cards
-    ))}
-  </div>
-)}
-```
-
-### 4. Ajustar TabsContent para Flex Correto
-
-Garantir que o `TabsContent` tenha `min-h-0` para funcionar corretamente em flex containers:
-
-```tsx
-<TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
-```
-
----
-
-## Estrutura Corrigida
+## Estrutura Visual Final dos Botoes
 
 ```text
-┌──────────────────────────────────────────┐
-│  DialogContent (max-h-[90vh])            │
-│  ┌────────────────────────────────────┐  │
-│  │  Header (altura fixa)              │  │
-│  └────────────────────────────────────┘  │
-│  ┌────────────────────────────────────┐  │
-│  │  Search Bar (altura fixa)          │  │
-│  └────────────────────────────────────┘  │
-│  ┌────────────────────────────────────┐  │
-│  │  Tabs + Grid (flex-1 min-h-0)      │  │ ← ADAPTA!
-│  │  └── overflow-y-auto               │  │
-│  └────────────────────────────────────┘  │
-│  ┌────────────────────────────────────┐  │
-│  │  Footer (altura limitada)          │  │
-│  │  - Cart Summary (max-h-[30vh])     │  │ ← SCROLL!
-│  │  - Botões (fixo)                   │  │
-│  └────────────────────────────────────┘  │
-└──────────────────────────────────────────┘
+Ordem dos botoes no card:
+[👁 Ver]  [✏ Editar*]  [+ Adicionar]
+   ↓          ↓            ↓
+  ghost    outline      default
+ (sempre)  (se revenue>0) (sempre)
+
+* O botao de editar so aparece se ha faturamento
 ```
 
 ---
 
-## Resumo das Alterações
+## Seguranca e Integridade
 
-| Linha | Alteração |
-|-------|-----------|
-| 558 | Adicionar `min-h-0 flex flex-col` ao TabsContent de serviços |
-| 571 | Trocar `max-h-[50vh]` por `min-h-0` no grid de serviços |
-| 588 | Adicionar `min-h-0 flex flex-col` ao TabsContent de produtos |
-| 601 | Trocar `max-h-[50vh]` por `min-h-0` no grid de produtos |
-| 667 | Adicionar `max-h-[30vh] overflow-y-auto` no cart summary |
+| Aspecto | Garantia |
+|---------|----------|
+| Isolamento de dados | Query filtra `source = 'manager'` |
+| Conflito com barbeiro | Impossivel - dados completamente separados |
+| Auditoria | Gestor ve apenas suas proprias entradas |
+| Edicao segura | Excluir item recalcula totais via trigger |
 
 ---
 
-## Resultado Esperado
+## Resumo das Alteracoes
 
-Após as correções:
-- Os cards de serviços/produtos sempre terão espaço adequado para scroll
-- O cart summary terá scroll próprio se houver muitos itens
-- Selecionar múltiplos itens não irá comprimir o grid
-- A experiência de uso será fluida em dispositivos móveis e desktop
+| Arquivo | Linha | Alteracao |
+|---------|-------|-----------|
+| `TransactionManagerModal.tsx` | 137 | Adicionar `.eq("source", "manager")` |
+| `LiveDashboard.tsx` | 14 | Importar icone `Eye` |
+| `LiveDashboard.tsx` | ~96 | Novo estado `viewTransactionsModal` |
+| `LiveDashboard.tsx` | ~319 | Nova funcao `handleViewTransactions` |
+| `LiveDashboard.tsx` | ~644 | Novo botao com icone Eye |
+| `LiveDashboard.tsx` | ~747 | Novo `TransactionManagerModal` para visualizacao |
