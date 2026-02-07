@@ -568,7 +568,7 @@ export default function QuickSaleModal({
                     </p>
                   </div>
                 ) : (
-                  <ScrollArea className="flex-1 px-6 py-4">
+                  <div className="flex-1 px-6 py-4 overflow-y-auto max-h-[50vh] overscroll-contain touch-pan-y">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {filteredItems.map((item) => (
                         <CatalogCard
@@ -580,7 +580,7 @@ export default function QuickSaleModal({
                         />
                       ))}
                     </div>
-                  </ScrollArea>
+                  </div>
                 )}
               </TabsContent>
 
@@ -598,7 +598,7 @@ export default function QuickSaleModal({
                     </p>
                   </div>
                 ) : (
-                  <ScrollArea className="flex-1 px-6 py-4">
+                  <div className="flex-1 px-6 py-4 overflow-y-auto max-h-[50vh] overscroll-contain touch-pan-y">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {filteredItems.map((item) => (
                         <CatalogCard
@@ -610,7 +610,7 @@ export default function QuickSaleModal({
                         />
                       ))}
                     </div>
-                  </ScrollArea>
+                  </div>
                 )}
               </TabsContent>
 
