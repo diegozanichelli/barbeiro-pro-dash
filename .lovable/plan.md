@@ -1,129 +1,139 @@
 
-# Plano: Relatório de Vendas de Assinaturas por Recepção/Unidade
+# Plano: Corrigir Layout do Grid de Cards no Modal de Venda Rápida
 
 ## Problema Identificado
 
-Atualmente, quando a recepção vende uma assinatura **sem atribuir a um barbeiro**, o registro fica com `barber_id = null` e **não há como saber de qual unidade foi a venda**. A tabela `sale_transactions` não possui uma coluna `unit_id`.
+Quando o gestor seleciona um serviço no modal de venda rápida ("AO VIVO"), os cards ficam "espremidos" e não é possível selecionar mais itens. Isso acontece porque:
+
+1. O footer do modal cresce dinamicamente quando itens são adicionados ao carrinho
+2. O grid de itens tem `max-h-[50vh]` fixo que não se adapta ao espaço disponível
+3. A combinação de `flex-1` com altura fixa causa conflito de layout
+4. O espaço para os cards diminui drasticamente quando o resumo do carrinho aparece
 
 ---
 
-## Solução em 3 Partes
-
-### Parte 1: Adicionar Coluna `unit_id` na Tabela
-
-**Migração SQL necessária:**
-- Adicionar coluna `unit_id` (uuid, nullable) na tabela `sale_transactions`
-- Criar foreign key referenciando `units.id`
-
-Isso permitirá rastrear de qual unidade cada venda foi realizada, especialmente para vendas da recepção.
-
----
-
-### Parte 2: Atualizar o Wizard de Assinaturas
-
-**Arquivo:** `SubscriptionWizardModal.tsx`
-
-Quando o gestor selecionar **"Recepção"** como atribuição, adicionar um passo ou campo para selecionar a **unidade** onde a venda ocorreu.
+## Estrutura Atual (Problemática)
 
 ```text
-Fluxo Atualizado do Wizard:
-
-Passo 1: Tipo de Cliente (Novo vs Da Casa)
-Passo 2: Atribuição (Recepção vs Barbeiro)
-         └─ Se Recepção: Mostrar seletor de Unidade
-         └─ Se Barbeiro: Usa a unidade do barbeiro automaticamente
-Passo 3: Detalhes do Plano
-```
-
-**No insert da transação:**
-- Se atribuído a um barbeiro: buscar o `unit_id` do barbeiro
-- Se recepção: usar o `unit_id` selecionado pelo gestor
-
----
-
-### Parte 3: Criar o Relatório de Performance da Recepção
-
-**Novo Componente:** `ReceptionPerformanceReport.tsx`
-
-**Localização:** Adicionar como nova aba no `BarberEvolution.tsx` (junto com Barbearia, Comparativo, Barbeiro, Assinaturas)
-
-**Nova aba:** "👩‍💼 Recepção" (ícone Building2)
-
-**Conteúdo da Aba:**
-
-```text
-┌─────────────────────────────────────────────────────┐
-│  📊 Performance de Vendas por Recepção              │
-├─────────────────────────────────────────────────────┤
-│  Filtros: [Mês ▼] [Ano ▼]                           │
-│                                                     │
-│  Cards de Resumo:                                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐            │
-│  │ Total    │ │ Média    │ │ Melhor   │            │
-│  │ Vendas   │ │ por Und. │ │ Unidade  │            │
-│  │ 45       │ │ 9        │ │ Centro   │            │
-│  └──────────┘ └──────────┘ └──────────┘            │
-│                                                     │
-│  Tabela:                                            │
-│  ┌───────────────────────────────────────────────┐  │
-│  │ Unidade  │ Assinaturas │ Novas │ Casa │ Trend │  │
-│  ├──────────┼─────────────┼───────┼──────┼───────┤  │
-│  │ Centro   │     15      │   8   │  7   │  ⬆️   │  │
-│  │ Norte    │     12      │   5   │  7   │  ⬇️   │  │
-│  │ Sul      │      8      │   3   │  5   │  ➡️   │  │
-│  └───────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────┘
-```
-
-**Query para o Relatório:**
-```text
-SELECT 
-  unit_id,
-  COUNT(*) as total_subscriptions,
-  SUM(CASE WHEN is_new_client = true THEN 1 ELSE 0 END) as new_clients,
-  SUM(CASE WHEN is_new_client = false THEN 1 ELSE 0 END) as existing_clients
-FROM sale_transactions
-WHERE 
-  item_type = 'subscription'
-  AND barber_id IS NULL  -- Vendas da Recepção
-  AND created_at BETWEEN start_date AND end_date
-GROUP BY unit_id
-ORDER BY total_subscriptions DESC
+┌──────────────────────────────────────────┐
+│  DialogContent (max-h-[90vh])            │
+│  ┌────────────────────────────────────┐  │
+│  │  Header (altura fixa ~200px)       │  │
+│  │  - Toggle Recepção                 │  │
+│  │  - Toggle Tipo Cliente             │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  Search Bar (altura fixa)          │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  Tabs + Grid (flex-1)              │  │
+│  │  └── max-h-[50vh] ← CONFLITO!      │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  Footer (cresce com carrinho)      │  │
+│  │  - Cart Summary (dinâmico)         │  │← CRESCE!
+│  │  - Botões                          │  │
+│  └────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
 ```
 
 ---
 
-## Arquivos a Modificar/Criar
+## Solução Proposta
 
-| Arquivo | Ação |
-|---------|------|
-| Migração SQL | Adicionar coluna `unit_id` em `sale_transactions` |
-| `SubscriptionWizardModal.tsx` | Adicionar seletor de unidade quando atribuição = recepção |
-| `QuickSaleModal.tsx` | Incluir `unit_id` nas transações (buscar do barbeiro ou seletor) |
-| `ReceptionPerformanceReport.tsx` | **NOVO** - Relatório de vendas por unidade/recepção |
-| `BarberEvolution.tsx` | Adicionar 5ª aba "Recepção" com o novo componente |
+Reestruturar o layout do modal para:
+1. Remover a altura fixa `max-h-[50vh]` do grid de itens
+2. Usar layout flex correto para que o grid ocupe o espaço restante
+3. Limitar o tamanho do cart summary com scroll interno
+4. Garantir que o grid seja sempre scrollável e visível
 
 ---
 
-## Fluxo Visual da Nova Aba
+## Alterações no Arquivo `QuickSaleModal.tsx`
 
-```text
-BarberEvolution.tsx (atualizado):
+### 1. Ajustar o Grid de Serviços (linha 571-583)
 
-┌───────────────────────────────────────────────────────────────────┐
-│  [Barbearia] [Comparativo] [Barbeiro] [Assinaturas] [Recepção]   │
-│                                                        ↑ NOVA    │
-└───────────────────────────────────────────────────────────────────┘
+**Antes:**
+```tsx
+<div className="flex-1 px-6 py-4 overflow-y-auto max-h-[50vh] overscroll-contain touch-pan-y">
+```
+
+**Depois:**
+```tsx
+<div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto overscroll-contain touch-pan-y">
+```
+
+O truque é usar `min-h-0` para permitir que o container flexível encolha, e remover o `max-h-[50vh]` fixo.
+
+### 2. Ajustar o Grid de Produtos (linha 601-613)
+
+Mesma correção aplicada à aba de produtos.
+
+### 3. Limitar o Tamanho do Cart Summary (linha 666-763)
+
+Adicionar altura máxima e scroll interno no resumo do carrinho quando há muitos itens:
+
+```tsx
+{cart.length > 0 && activeTab !== "manual" && (
+  <div className="space-y-3 max-h-[30vh] overflow-y-auto overscroll-contain">
+    {cart.map((item) => (
+      // ... item cards
+    ))}
+  </div>
+)}
+```
+
+### 4. Ajustar TabsContent para Flex Correto
+
+Garantir que o `TabsContent` tenha `min-h-0` para funcionar corretamente em flex containers:
+
+```tsx
+<TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
 ```
 
 ---
 
-## Considerações Importantes
+## Estrutura Corrigida
 
-1. **Retrocompatibilidade**: Vendas antigas com `unit_id = null` serão exibidas como "Unidade não informada"
+```text
+┌──────────────────────────────────────────┐
+│  DialogContent (max-h-[90vh])            │
+│  ┌────────────────────────────────────┐  │
+│  │  Header (altura fixa)              │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  Search Bar (altura fixa)          │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  Tabs + Grid (flex-1 min-h-0)      │  │ ← ADAPTA!
+│  │  └── overflow-y-auto               │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  Footer (altura limitada)          │  │
+│  │  - Cart Summary (max-h-[30vh])     │  │ ← SCROLL!
+│  │  - Botões (fixo)                   │  │
+│  └────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
+```
 
-2. **Vendas com Barbeiro**: Quando uma assinatura é atribuída a um barbeiro, o `unit_id` será preenchido automaticamente a partir do cadastro do barbeiro
+---
 
-3. **Vendas da Recepção**: O gestor será obrigado a selecionar a unidade para permitir o rastreamento correto
+## Resumo das Alterações
 
-4. **Filtro por Unidade**: O relatório permitirá que gestores com múltiplas unidades vejam o desempenho de cada recepção separadamente
+| Linha | Alteração |
+|-------|-----------|
+| 558 | Adicionar `min-h-0 flex flex-col` ao TabsContent de serviços |
+| 571 | Trocar `max-h-[50vh]` por `min-h-0` no grid de serviços |
+| 588 | Adicionar `min-h-0 flex flex-col` ao TabsContent de produtos |
+| 601 | Trocar `max-h-[50vh]` por `min-h-0` no grid de produtos |
+| 667 | Adicionar `max-h-[30vh] overflow-y-auto` no cart summary |
+
+---
+
+## Resultado Esperado
+
+Após as correções:
+- Os cards de serviços/produtos sempre terão espaço adequado para scroll
+- O cart summary terá scroll próprio se houver muitos itens
+- Selecionar múltiplos itens não irá comprimir o grid
+- A experiência de uso será fluida em dispositivos móveis e desktop
