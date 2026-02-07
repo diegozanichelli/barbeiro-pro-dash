@@ -555,7 +555,7 @@ export default function QuickSaleModal({
 
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
               {/* Services Grid */}
-              <TabsContent value="services" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
                 {loadingCatalog ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -568,7 +568,7 @@ export default function QuickSaleModal({
                     </p>
                   </div>
                 ) : (
-                  <div className="flex-1 px-6 py-4 overflow-y-auto max-h-[50vh] overscroll-contain touch-pan-y">
+                  <div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto overscroll-contain touch-pan-y">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {filteredItems.map((item) => (
                         <CatalogCard
@@ -585,7 +585,7 @@ export default function QuickSaleModal({
               </TabsContent>
 
               {/* Products Grid */}
-              <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="products" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
                 {loadingCatalog ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -598,7 +598,7 @@ export default function QuickSaleModal({
                     </p>
                   </div>
                 ) : (
-                  <div className="flex-1 px-6 py-4 overflow-y-auto max-h-[50vh] overscroll-contain touch-pan-y">
+                  <div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto overscroll-contain touch-pan-y">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {filteredItems.map((item) => (
                         <CatalogCard
@@ -664,7 +664,7 @@ export default function QuickSaleModal({
               <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
                 {/* Cart Summary */}
                 {cart.length > 0 && activeTab !== "manual" && (
-                  <div className="space-y-3">
+                  <div className="space-y-3 max-h-[30vh] overflow-y-auto overscroll-contain">
                     {cart.map((item) => (
                       <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-background border text-sm">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
