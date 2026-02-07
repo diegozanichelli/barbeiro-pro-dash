@@ -12,13 +12,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Hash, Check, Minus, Plus, ShoppingCart, Users, AlertCircle, Building2, Home, UserPlus } from "lucide-react";
+import {
+  Loader2,
+  Search,
+  Scissors,
+  Package,
+  Zap,
+  Hash,
+  Check,
+  Minus,
+  Plus,
+  Users,
+  Building2,
+  Home,
+  UserPlus,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { getTodayString } from "@/lib/dateUtils";
 
@@ -94,9 +109,18 @@ export default function QuickSaleModal({
   
   // Reception mode (no barber attribution)
   const [isReceptionSale, setIsReceptionSale] = useState(false);
-  
+
   // New client tracking (for conversion metrics)
   const [isNewClient, setIsNewClient] = useState(false);
+
+  // Compact header to free space for the grid after selecting items
+  const shouldAutoCompactHeader = cart.length > 0 && activeTab !== "manual";
+  const [headerExpanded, setHeaderExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    setHeaderExpanded(!shouldAutoCompactHeader);
+  }, [open, shouldAutoCompactHeader]);
 
   // Fetch catalog items
   useEffect(() => {
@@ -151,6 +175,7 @@ export default function QuickSaleModal({
     setActiveTab("services");
     setIsReceptionSale(false);
     setIsNewClient(false);
+    setHeaderExpanded(true);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -444,75 +469,112 @@ export default function QuickSaleModal({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
-            <div className="flex items-center justify-between">
-              <div>
-                <DialogTitle className="text-lg font-semibold">
-                  Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
-                </DialogTitle>
-                <DialogDescription>
-                  {isReceptionSale 
-                    ? "Venda sem atribuição de barbeiro (pontos vão para a loja)"
-                    : "Selecione múltiplos itens para registrar"
-                  }
-                </DialogDescription>
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+            <DialogHeader
+              className={cn(
+                "px-6 border-b transition-[padding] duration-200",
+                headerExpanded ? "pt-6 pb-4" : "pt-3 pb-3",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <DialogTitle className="text-lg font-semibold">
+                    Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {isReceptionSale
+                      ? "Venda sem atribuição de barbeiro (pontos vão para a loja)"
+                      : "Selecione múltiplos itens para registrar"}
+                  </DialogDescription>
+                </div>
+
+                {shouldAutoCompactHeader && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 gap-1"
+                    onClick={() => setHeaderExpanded((v) => !v)}
+                    aria-label={headerExpanded ? "Ocultar ajustes" : "Mostrar ajustes"}
+                  >
+                    {headerExpanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {headerExpanded ? "Ocultar" : "Ajustes"}
+                    </span>
+                  </Button>
+                )}
               </div>
-            </div>
-            
-            {/* Toggle Venda Recepção */}
-            <div className="flex items-center justify-between mt-3 p-3 rounded-lg border bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-muted-foreground" />
-                <Label htmlFor="reception-mode" className="text-sm font-medium cursor-pointer">
-                  Venda Recepção / Loja
-                </Label>
-              </div>
-              <Switch
-                id="reception-mode"
-                checked={isReceptionSale}
-                onCheckedChange={setIsReceptionSale}
-              />
-            </div>
-            
-            {/* Client Type Selector (New vs Existing) */}
-            <div className="mt-3 p-3 rounded-lg border bg-muted/30 space-y-2">
-              <Label className="text-sm font-medium">Tipo de Cliente</Label>
-              <ToggleGroup 
-                type="single" 
-                value={isNewClient ? "new" : "existing"} 
-                onValueChange={(v) => setIsNewClient(v === "new")}
-                className="justify-start"
+
+              {/* Options (collapses automatically after selecting items) */}
+              <div
+                className={cn(
+                  "mt-3 space-y-3 transition-all duration-200",
+                  headerExpanded
+                    ? "max-h-[240px] opacity-100"
+                    : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
+                )}
               >
-                <ToggleGroupItem 
-                  value="existing" 
-                  aria-label="Cliente da Casa"
-                  className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                >
-                  <Home className="w-4 h-4" />
-                  Cliente da Casa
-                </ToggleGroupItem>
-                <ToggleGroupItem 
-                  value="new" 
-                  aria-label="Cliente Novo"
-                  className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Cliente Novo
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-          </DialogHeader>
+                {/* Toggle Venda Recepção */}
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-muted-foreground" />
+                    <Label htmlFor="reception-mode" className="text-sm font-medium cursor-pointer">
+                      Venda Recepção / Loja
+                    </Label>
+                  </div>
+                  <Switch
+                    id="reception-mode"
+                    checked={isReceptionSale}
+                    onCheckedChange={setIsReceptionSale}
+                  />
+                </div>
+
+                {/* Client Type Selector (New vs Existing) */}
+                <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                  <Label className="text-sm font-medium">Tipo de Cliente</Label>
+                  <ToggleGroup
+                    type="single"
+                    value={isNewClient ? "new" : "existing"}
+                    onValueChange={(v) => setIsNewClient(v === "new")}
+                    className="justify-start"
+                  >
+                    <ToggleGroupItem
+                      value="existing"
+                      aria-label="Cliente da Casa"
+                      className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                    >
+                      <Home className="w-4 h-4" />
+                      Cliente da Casa
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="new"
+                      aria-label="Cliente Novo"
+                      className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Cliente Novo
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </div>
+            </DialogHeader>
 
           {/* Search Bar */}
-          <div className="px-6 pt-4">
+          <div className={cn("px-6", shouldAutoCompactHeader ? "pt-2" : "pt-4")}>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar serviço ou produto..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-11"
+                className={cn(
+                  "pl-10 transition-[height] duration-200",
+                  shouldAutoCompactHeader ? "h-10" : "h-11",
+                )}
                 autoFocus
               />
             </div>
@@ -526,8 +588,13 @@ export default function QuickSaleModal({
             }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            <div className="px-6 pt-4">
-              <TabsList className="grid w-full grid-cols-3 h-12">
+            <div className={cn("px-6", shouldAutoCompactHeader ? "pt-2" : "pt-4")}>
+              <TabsList
+                className={cn(
+                  "grid w-full grid-cols-3",
+                  shouldAutoCompactHeader ? "h-11" : "h-12",
+                )}
+              >
                 <TabsTrigger value="services" className="gap-2 text-sm">
                   <Scissors className="h-4 w-4" />
                   Serviços
