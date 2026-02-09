@@ -198,12 +198,13 @@ export default function BarbersManagement() {
                 Novo Barbeiro
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] flex flex-col">
               <DialogHeader>
                 <DialogTitle>{editingBarber ? "Editar" : "Novo"} Barbeiro</DialogTitle>
                 <DialogDescription>Preencha os dados do barbeiro</DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome</Label>
                   <Input
@@ -318,9 +319,12 @@ export default function BarbersManagement() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Salvando..." : "Salvar"}
-                </Button>
+                </div>
+                <div className="pt-4 border-t mt-4">
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? "Salvando..." : "Salvar"}
+                  </Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
