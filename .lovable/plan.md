@@ -1,81 +1,53 @@
 
-# Editar Movimentacoes de Assinatura na Aba Inteligencia
 
-## Resumo
-Adicionar um botao de edicao em cada linha da tabela "Movimentacoes Recentes" no `SubscriptionAnalytics.tsx`. Ao clicar, abre um modal compacto que permite ao gestor corrigir/complementar os dados de assinaturas antigas (principalmente as cadastradas antes do novo Wizard).
+# Correção no Fluxo de Fechamento de Assinatura
 
----
+## Situação Atual
+O Wizard de Assinaturas (`SubscriptionWizardModal`) **ja bloqueia** a progressão se o gestor não escolher "Recepção" ou "Barbeiro", e já resolve automaticamente a unidade do barbeiro selecionado. Porém existem dois problemas reais:
 
-## O Problema
-Transacoes de assinatura registradas antes da implementacao do Wizard nao possuem:
-- `subscription_action` (new/renew/upgrade/downgrade)
-- `subscription_plan_id` (vinculo ao plano do catalogo)
-- `downgrade_reason` (motivo, quando aplicavel)
-- `client_name` (nome do cliente)
+1. **Bug de segurança**: A lista de unidades (para Recepção) não filtra por `organization_id` -- pode mostrar unidades de outras organizações
+2. **Falta de feedback visual**: Quando o barbeiro é selecionado, o gestor não vê qual unidade será atribuída à assinatura, o que gera insegurança
 
-Sem esses campos, os cards de resumo, graficos e metricas ficam incompletos.
+## Correções
 
----
+### 1. Filtrar unidades por organização
+Na query de unidades (linha 92), adicionar `.eq("organization_id", organizationId)` para mostrar apenas as unidades da organização do gestor.
 
-## Solucao: Modal de Edicao de Assinatura
+### 2. Mostrar unidade do barbeiro selecionado
+Ao selecionar um barbeiro no passo 2 (Atribuição), exibir abaixo do seletor um badge informativo tipo:
+"Unidade: Centro" -- mostrando que a assinatura será direcionada para aquela unidade automaticamente.
 
-### Novo componente: `SubscriptionEditModal.tsx`
-Um modal simples (Dialog) que recebe uma transacao e permite editar:
+Essa informação já está disponível no `BarberCombobox` (o campo `unit_name` aparece abaixo do nome do barbeiro na lista), mas ao fechar o combobox, a informação se perde.
 
-1. **Nome do Cliente** -- Input de texto
-2. **Acao** -- Select com as 4 opcoes (Nova / Renovacao / Upgrade / Downgrade)
-3. **Plano** -- Select buscando planos ativos de `subscription_plans`
-4. **Motivo do Downgrade** -- Textarea, visivel apenas quando acao = "downgrade"
-
-Ao salvar, faz UPDATE na `sale_transactions` com os campos corrigidos.
-
-### Alteracoes no `SubscriptionAnalytics.tsx`
-- Adicionar coluna "Acoes" na tabela com um botao de edicao (icone de lapis) em cada linha
-- Ao clicar, abre o `SubscriptionEditModal` com os dados atuais da transacao pre-preenchidos
-- Apos salvar com sucesso, recarrega os dados (chama `fetchData()` novamente)
+### 3. Limpar `SubscriptionConfirmModal` (código morto)
+O componente antigo `SubscriptionConfirmModal.tsx` não é mais importado em nenhum lugar. Pode ser removido para evitar confusão futura.
 
 ---
 
-## Detalhes Tecnicos
+## Detalhes Técnicos
 
-### Arquivos a criar
-- `src/components/dashboard/manager/SubscriptionEditModal.tsx`
+### Arquivo a modificar
+- `src/components/dashboard/manager/SubscriptionWizardModal.tsx`
 
-### Arquivos a modificar
-- `src/components/dashboard/manager/SubscriptionAnalytics.tsx` -- adicionar botao de edicao e state do modal
+### Mudanças no código
 
-### Interface do Modal
+**Query de unidades (linha 92):**
+Adicionar filtro por organização:
 ```text
-+----------------------------------+
-|  Editar Movimentacao             |
-|                                  |
-|  Nome do Cliente: [__________]   |
-|  Acao:  [v Nova          ]       |
-|  Plano: [v Plano Mensal  ]       |
-|  Motivo: [_______________]       |
-|  (so aparece se acao=downgrade)  |
-|                                  |
-|         [Cancelar]  [Salvar]     |
-+----------------------------------+
+supabase.from("units").select("id, name")
+  .eq("organization_id", organizationId)
+  .eq("status", "active")
+  .order("name")
 ```
 
-### Query de UPDATE
+**Feedback visual do barbeiro selecionado (passo 2):**
+Após o `BarberCombobox`, quando `selectedBarberId` estiver preenchido, buscar o nome da unidade do barbeiro e exibir um texto informativo como:
 ```text
-supabase
-  .from("sale_transactions")
-  .update({
-    client_name,
-    subscription_action,
-    subscription_plan_id,
-    downgrade_reason,
-    item_name: `Assinatura ${planName}`  // atualiza o nome do item tambem
-  })
-  .eq("id", transactionId)
+"Assinatura será registrada na unidade: [Nome da Unidade]"
 ```
 
-### Seguranca
-- A RLS existente ja permite que managers facam UPDATE em `sale_transactions` da sua organizacao
-- Nenhuma alteracao de banco necessaria
+Para isso, salvar o `unit_name` junto ao `selectedBarberId` (usando os dados já disponíveis no `BarberCombobox`, ou fazendo uma consulta rápida ao selecionar).
 
-### Remocao do limite de 10 linhas
-- Trocar `transactions.slice(0, 10)` por paginacao simples ou scroll, para que o gestor consiga acessar todos os registros antigos do periodo selecionado
+### Arquivo a remover (opcional)
+- `src/components/dashboard/barber/SubscriptionConfirmModal.tsx` -- código morto, não é mais usado
+
