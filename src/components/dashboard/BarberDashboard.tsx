@@ -248,12 +248,13 @@ const [todayProduction, setTodayProduction] = useState<{
       const recalculatedCommission = (totalServicesRevenue * (barber.services_commission / 100)) + 
                                       (totalProductsRevenue * (barber.products_commission / 100));
 
-      // Contar dias com produção real OU com presença confirmada
+      // Contar dias com produção real OU com presença confirmada (present/null)
+      // day_off e absence NÃO contam como dia trabalhado
       const daysWithProduction = productions.filter(p => {
         const total = (Number(p.services_basic_total) || 0) + 
                       (Number(p.services_extra_total) || 0) + 
                       (Number(p.products_total) || 0);
-        return total > 0 || p.confirmed_presence === true;
+        return total > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
       }).length;
 
       // Identificar produção de hoje para o card de confirmação de presença
@@ -418,7 +419,7 @@ const [todayProduction, setTodayProduction] = useState<{
     setPresenceModalOpen(true);
   };
 
-  const handleConfirmPresence = async (subscriptionClientsCount: number, selectedDate?: string) => {
+  const handleConfirmPresence = async (subscriptionClientsCount: number, selectedDate?: string, presenceType?: string) => {
     if (!barber) return;
     
     setConfirmingPresence(true);
@@ -453,19 +454,20 @@ const [todayProduction, setTodayProduction] = useState<{
       }
     }
 
+    const pType = presenceType || "present";
+
     if (existingProd?.id) {
-      // Registro EXISTE (com faturamento zero): fazer UPDATE com o número de clientes
       const result = await supabase
         .from("daily_productions")
         .update({ 
           confirmed_presence: true,
-          clients_count: subscriptionClientsCount,
-          manual_clients_count: subscriptionClientsCount
+          presence_type: pType,
+          clients_count: pType === "present" ? subscriptionClientsCount : 0,
+          manual_clients_count: pType === "present" ? subscriptionClientsCount : 0
         })
         .eq("id", existingProd.id);
       error = result.error;
     } else {
-      // Registro NÃO EXISTE: fazer INSERT com valores zerados e clientes informados
       const result = await supabase
         .from("daily_productions")
         .insert({
@@ -476,11 +478,12 @@ const [todayProduction, setTodayProduction] = useState<{
           services_extra_total: 0,
           products_total: 0,
           services_total: 0,
-          clients_count: subscriptionClientsCount,
-          manual_clients_count: subscriptionClientsCount,
+          clients_count: pType === "present" ? subscriptionClientsCount : 0,
+          manual_clients_count: pType === "present" ? subscriptionClientsCount : 0,
           services_count: 0,
           products_count: 0,
-          confirmed_presence: true
+          confirmed_presence: true,
+          presence_type: pType
         });
       error = result.error;
     }
@@ -494,18 +497,28 @@ const [todayProduction, setTodayProduction] = useState<{
       return;
     }
 
-    // Mensagem contextual baseada no número de clientes e data
     const isToday = dateStr === getTodayString();
     const dateLabel = isToday ? "hoje" : `em ${dateStr.split("-").reverse().join("/")}`;
     
-    if (subscriptionClientsCount > 0) {
-      toast.success(`Registrado! Você atendeu ${subscriptionClientsCount} cliente${subscriptionClientsCount > 1 ? 's' : ''} de assinatura ${dateLabel}.`, {
-        description: "Dia contabilizado na sua meta.",
+    if (pType === "present") {
+      if (subscriptionClientsCount > 0) {
+        toast.success(`Registrado! Você atendeu ${subscriptionClientsCount} cliente${subscriptionClientsCount > 1 ? 's' : ''} de assinatura ${dateLabel}.`, {
+          description: "Presença registrada. Dia contabilizado na meta.",
+          duration: 4000,
+        });
+      } else {
+        toast.success(`Presença registrada ${dateLabel}. Foco total!`, {
+          description: "Dia contabilizado na meta.",
+          duration: 4000,
+        });
+      }
+    } else if (pType === "day_off") {
+      toast.success(`Folga registrada ${dateLabel}.`, {
+        description: "Você terá que compensar nos dias restantes.",
         duration: 4000,
       });
-    } else {
-      toast.success(`Presença registrada ${dateLabel}. Foco total!`, {
-        description: "Dia contabilizado para o cálculo de metas.",
+    } else if (pType === "absence") {
+      toast.success(`Falta registrada ${dateLabel}.`, {
         duration: 4000,
       });
     }

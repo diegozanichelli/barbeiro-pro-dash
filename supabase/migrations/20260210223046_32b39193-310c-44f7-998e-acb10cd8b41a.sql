@@ -1,0 +1,1 @@
+ALTER TABLE daily_productions ADD COLUMN presence_type TEXT DEFAULT NULL;

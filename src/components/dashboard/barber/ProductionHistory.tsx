@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Pencil, History } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Pencil, History, UserCheck, CalendarOff, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -25,6 +26,8 @@ interface DailyProduction {
   clients_count: number;
   services_count: number;
   products_count: number;
+  confirmed_presence?: boolean;
+  presence_type?: string | null;
 }
 
 export default function ProductionHistory({ 
@@ -127,7 +130,24 @@ export default function ProductionHistory({
                 {productions.map((production) => (
                   <TableRow key={production.id}>
                     <TableCell className="font-medium">
-                      {format(new Date(production.date + "T00:00:00"), "dd/MM/yyyy", { locale: ptBR })}
+                      <div className="flex items-center gap-2">
+                        {format(new Date(production.date + "T00:00:00"), "dd/MM/yyyy", { locale: ptBR })}
+                        {production.confirmed_presence && production.commission_earned === 0 && (
+                          production.presence_type === 'day_off' ? (
+                            <Badge className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">
+                              <CalendarOff className="w-3 h-3 mr-1" />Folga
+                            </Badge>
+                          ) : production.presence_type === 'absence' ? (
+                            <Badge className="text-xs bg-red-500/20 text-red-500 border-red-500/30">
+                              <XCircle className="w-3 h-3 mr-1" />Falta
+                            </Badge>
+                          ) : (
+                            <Badge className="text-xs bg-orange-500/20 text-orange-500 border-orange-500/30">
+                              <UserCheck className="w-3 h-3 mr-1" />Presente
+                            </Badge>
+                          )
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(production.services_basic_total || 0)}

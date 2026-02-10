@@ -18,16 +18,45 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Users, CalendarIcon } from "lucide-react";
+import { UserCheck, CalendarOff, XCircle, CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getTodayString, getManausDate } from "@/lib/dateUtils";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface ConfirmPresenceModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (subscriptionClientsCount: number, date: string) => void;
+  onConfirm: (subscriptionClientsCount: number, date: string, presenceType: string) => void;
   isLoading?: boolean;
 }
+
+type PresenceType = "present" | "day_off" | "absence";
+
+const presenceOptions: { value: PresenceType; label: string; description: string; icon: typeof UserCheck; colorClass: string; selectedClass: string }[] = [
+  {
+    value: "present",
+    label: "Trabalhei mas não vendi",
+    description: "Conta como dia trabalhado. A média de vendas será impactada.",
+    icon: UserCheck,
+    colorClass: "text-orange-500",
+    selectedClass: "border-orange-500 bg-orange-500/10",
+  },
+  {
+    value: "day_off",
+    label: "Folga / Troca de escala",
+    description: "Não conta como dia trabalhado. A meta diária sobe nos dias restantes.",
+    icon: CalendarOff,
+    colorClass: "text-blue-500",
+    selectedClass: "border-blue-500 bg-blue-500/10",
+  },
+  {
+    value: "absence",
+    label: "Falta / Atestado",
+    description: "Ausência não planejada registrada.",
+    icon: XCircle,
+    colorClass: "text-red-500",
+    selectedClass: "border-red-500 bg-red-500/10",
+  },
+];
 
 export default function ConfirmPresenceModal({
   open,
@@ -37,17 +66,20 @@ export default function ConfirmPresenceModal({
 }: ConfirmPresenceModalProps) {
   const [clientsCount, setClientsCount] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date>(getManausDate());
+  const [presenceType, setPresenceType] = useState<PresenceType>("present");
 
   const handleConfirm = () => {
     const dateStr = format(selectedDate, "yyyy-MM-dd");
-    onConfirm(clientsCount, dateStr);
+    onConfirm(presenceType === "present" ? clientsCount : 0, dateStr, presenceType);
     setClientsCount(0);
     setSelectedDate(getManausDate());
+    setPresenceType("present");
   };
 
   const handleCancel = () => {
     setClientsCount(0);
     setSelectedDate(getManausDate());
+    setPresenceType("present");
     onOpenChange(false);
   };
 
@@ -67,7 +99,6 @@ export default function ConfirmPresenceModal({
     e.target.select();
   };
 
-  // Desabilitar datas futuras
   const today = getManausDate();
 
   return (
@@ -75,16 +106,44 @@ export default function ConfirmPresenceModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Confirmar Presença
+            <CalendarIcon className="h-5 w-5 text-primary" />
+            Registro de Ocorrência
           </DialogTitle>
           <DialogDescription>
-            Registre sua presença para um dia sem vendas diretas. Informe a data
-            e quantos clientes de assinatura atendeu.
+            Classifique o que aconteceu neste dia sem vendas diretas.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Classificação */}
+          <div className="space-y-2">
+            <Label>O que aconteceu?</Label>
+            <div className="space-y-2">
+              {presenceOptions.map((option) => {
+                const Icon = option.icon;
+                const isSelected = presenceType === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPresenceType(option.value)}
+                    className={cn(
+                      "w-full flex items-start gap-3 p-3 rounded-lg border-2 transition-all text-left",
+                      isSelected ? option.selectedClass : "border-border hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <Icon className={cn("h-5 w-5 mt-0.5 shrink-0", option.colorClass)} />
+                    <div>
+                      <p className="font-medium text-sm text-foreground">{option.label}</p>
+                      <p className="text-xs text-muted-foreground">{option.description}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Data */}
           <div className="space-y-2">
             <Label>Data do registro</Label>
             <Popover>
@@ -98,9 +157,7 @@ export default function ConfirmPresenceModal({
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {selectedDate
-                    ? format(selectedDate, "dd 'de' MMMM 'de' yyyy", {
-                        locale: ptBR,
-                      })
+                    ? format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
                     : "Selecione a data"}
                 </Button>
               </PopoverTrigger>
@@ -116,30 +173,30 @@ export default function ConfirmPresenceModal({
                 />
               </PopoverContent>
             </Popover>
-            <p className="text-xs text-muted-foreground">
-              Selecione a data em que você trabalhou sem vendas
-            </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="clients-count">
-              Clientes de assinatura atendidos
-            </Label>
-            <Input
-              id="clients-count"
-              type="number"
-              min="0"
-              max="100"
-              value={clientsCount}
-              onChange={handleInputChange}
-              onFocus={handleInputFocus}
-              placeholder="0"
-              className="text-lg"
-            />
-            <p className="text-xs text-muted-foreground">
-              Informe quantos clientes com assinatura você atendeu (0-100)
-            </p>
-          </div>
+          {/* Clientes de assinatura - só para "present" */}
+          {presenceType === "present" && (
+            <div className="space-y-2">
+              <Label htmlFor="clients-count">
+                Clientes de assinatura atendidos
+              </Label>
+              <Input
+                id="clients-count"
+                type="number"
+                min="0"
+                max="100"
+                value={clientsCount}
+                onChange={handleInputChange}
+                onFocus={handleInputFocus}
+                placeholder="0"
+                className="text-lg"
+              />
+              <p className="text-xs text-muted-foreground">
+                Informe quantos clientes com assinatura você atendeu (0-100)
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">

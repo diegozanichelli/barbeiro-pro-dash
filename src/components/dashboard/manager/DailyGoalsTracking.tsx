@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle, UserCheck } from "lucide-react";
+import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, XCircle, UserCheck, CalendarOff } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
@@ -25,6 +25,7 @@ interface BarberDailyGoal {
   expectedProgress: number;
   status: "ahead" | "on-track" | "behind" | "critical";
   confirmedPresenceToday: boolean;
+  presenceType: string | null;
 }
 
 export default function DailyGoalsTracking() {
@@ -100,7 +101,7 @@ export default function DailyGoalsTracking() {
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
-        .select("barber_id, date, commission_earned, confirmed_presence")
+        .select("barber_id, date, commission_earned, confirmed_presence, presence_type")
         .gte("date", startOfMonth)
         .lte("date", todayStr);
 
@@ -124,12 +125,13 @@ export default function DailyGoalsTracking() {
           ? Number(todayProduction.commission_earned)
           : 0;
         
-        // Verifica se confirmou presença hoje sem vendas
+        // Verifica se confirmou presença hoje sem vendas e qual tipo
         const confirmedPresenceToday = todayProduction?.confirmed_presence === true && totalEarnedToday === 0;
+        const todayPresenceType = (todayProduction as any)?.presence_type as string | null;
 
-        // Contar dias com produção real OU com presença confirmada
+        // Contar dias com produção real OU com presença confirmada (present/null)
         const daysWorked = barberProductions.filter(p => 
-          Number(p.commission_earned) > 0 || p.confirmed_presence === true
+          Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null))
         ).length;
         
         // Calculate remaining commission to achieve
@@ -184,6 +186,7 @@ export default function DailyGoalsTracking() {
           expectedProgress: Math.min(expectedProgress, 100),
           status,
           confirmedPresenceToday,
+          presenceType: todayPresenceType,
         };
       });
 
@@ -338,13 +341,30 @@ export default function DailyGoalsTracking() {
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <Badge className="bg-orange-500/20 text-orange-500 border-orange-500/30">
-                                    <UserCheck className="w-3 h-3 mr-1" />
-                                    Presente s/ vendas
-                                  </Badge>
+                                  {(!goal.presenceType || goal.presenceType === 'present') ? (
+                                    <Badge className="bg-orange-500/20 text-orange-500 border-orange-500/30">
+                                      <UserCheck className="w-3 h-3 mr-1" />
+                                      Presente s/ vendas
+                                    </Badge>
+                                  ) : goal.presenceType === 'day_off' ? (
+                                    <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">
+                                      <CalendarOff className="w-3 h-3 mr-1" />
+                                      Folga
+                                    </Badge>
+                                  ) : goal.presenceType === 'absence' ? (
+                                    <Badge className="bg-red-500/20 text-red-500 border-red-500/30">
+                                      <XCircle className="w-3 h-3 mr-1" />
+                                      Falta
+                                    </Badge>
+                                  ) : null}
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Confirmou presença hoje, mas não registrou vendas</p>
+                                  {(!goal.presenceType || goal.presenceType === 'present')
+                                    ? <p>Confirmou presença hoje, mas não registrou vendas</p>
+                                    : goal.presenceType === 'day_off'
+                                    ? <p>Folga registrada para hoje</p>
+                                    : <p>Falta/atestado registrado para hoje</p>
+                                  }
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
