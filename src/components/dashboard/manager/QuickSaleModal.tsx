@@ -45,6 +45,7 @@ interface QuickSaleModalProps {
   barberName: string;
   organizationId: string;
   onSuccess: () => void;
+  initialIsNewClient?: boolean;
 }
 
 interface CatalogItem {
@@ -92,6 +93,7 @@ export default function QuickSaleModal({
   barberName,
   organizationId,
   onSuccess,
+  initialIsNewClient,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
@@ -111,7 +113,7 @@ export default function QuickSaleModal({
   const [isReceptionSale, setIsReceptionSale] = useState(false);
 
   // New client tracking (for conversion metrics)
-  const [isNewClient, setIsNewClient] = useState(false);
+  const [isNewClient, setIsNewClient] = useState(initialIsNewClient ?? false);
   const [clientName, setClientName] = useState("");
 
   // Compact header to free space for the grid after selecting items
@@ -175,7 +177,7 @@ export default function QuickSaleModal({
     setSearchQuery("");
     setActiveTab("services");
     setIsReceptionSale(false);
-    setIsNewClient(false);
+    setIsNewClient(initialIsNewClient ?? false);
     setClientName("");
     setHeaderExpanded(true);
   };
