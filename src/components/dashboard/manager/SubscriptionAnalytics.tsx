@@ -48,6 +48,7 @@ interface SubscriptionTransaction {
   barbers: { name: string } | null;
   subscription_plans: { name: string } | null;
   subscription_plan_id: string | null;
+  units: { name: string } | null;
 }
 
 export default function SubscriptionAnalytics() {
@@ -75,7 +76,7 @@ export default function SubscriptionAnalytics() {
     const [subRes, newClientsRes] = await Promise.all([
       supabase
         .from("sale_transactions")
-        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, subscription_plan_id, barbers(name), subscription_plans(name)")
+        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, subscription_plan_id, barbers(name), subscription_plans(name), units(name)")
         .eq("item_type", "subscription")
         .gte("created_at", start)
         .lte("created_at", end)
@@ -242,8 +243,9 @@ export default function SubscriptionAnalytics() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Cliente</TableHead>
+                     <TableHead>Data</TableHead>
+                     <TableHead>Unidade</TableHead>
+                     <TableHead>Cliente</TableHead>
                     <TableHead>Ação</TableHead>
                     <TableHead>Plano</TableHead>
                     <TableHead>Motivo</TableHead>
@@ -257,6 +259,7 @@ export default function SubscriptionAnalytics() {
                     return (
                       <TableRow key={t.id}>
                         <TableCell className="text-xs whitespace-nowrap">{format(zonedDate, "dd/MM HH:mm")}</TableCell>
+                        <TableCell className="text-sm">{t.units?.name || "—"}</TableCell>
                         <TableCell className="text-sm">{t.client_name || "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={ACTION_BADGE_CLASS[action] || ""}>
