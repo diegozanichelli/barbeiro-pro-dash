@@ -1,37 +1,40 @@
 
-# Corrigir Data Retroativa no SubscriptionWizardModal
+# Corrigir Edicao de Comanda do Barbeiro pelo Gestor
 
-## Problema
-O `SubscriptionWizardModal` usa `getTodayString()` fixo no `handleSubmit` (linha 164). Quando o gestor seleciona uma data passada no calendario do painel Ao Vivo, a assinatura e salva com a data de hoje, ignorando a escolha.
+## Problema Identificado
+
+Na funcao `handleEditClick` do `LiveDashboard.tsx` (linha 315), o codigo usa `.single()` para buscar a producao diaria do barbeiro. Quando nao existe producao para aquele barbeiro naquela data, o `.single()` lanca um erro do PostgREST que impede o modal de abrir. O gestor ve "Nenhuma producao encontrada para editar" e nao consegue prosseguir.
+
+**Diferenca critica:** o `handleViewTransactions` (linha 336) ja usa `.maybeSingle()` corretamente, mas o `handleEditClick` nao.
+
+Alem disso, quando o gestor navega para um dia sem producao registrada (ex: barbeiro novo ou dia retroativo), nao existe `daily_production` e o modal nunca abre -- o gestor nao consegue editar.
 
 ## Solucao
-Passar a data selecionada do `LiveDashboard` para o `SubscriptionWizardModal` como prop e usa-la no lugar de `getTodayString()`.
 
----
+### 1. Trocar `.single()` por `.maybeSingle()` no `handleEditClick`
 
-## Alteracoes
+No arquivo `src/components/dashboard/manager/LiveDashboard.tsx`, linha 315:
+- Trocar `.single()` por `.maybeSingle()`
 
-### 1. `src/components/dashboard/manager/SubscriptionWizardModal.tsx`
+### 2. Criar producao automaticamente se nao existir
 
-- Adicionar prop `selectedDate?: Date` na interface `SubscriptionWizardModalProps`
-- No `handleSubmit`, substituir:
-  - `const today = getTodayString()` por `const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : getTodayString()`
-- Adicionar `created_at: (selectedDate || new Date()).toISOString()` no payload do `sale_transactions.insert`
-- Usar `dateStr` nas queries de `daily_productions` (`.eq("date", dateStr)` e no insert)
-- Adicionar import de `format` do `date-fns`
+Quando o gestor tenta editar a comanda de um barbeiro e nao existe `daily_production` para aquele dia:
+- Criar automaticamente um registro de `daily_production` com valores zerados
+- Usar o ID gerado para abrir o `TransactionManagerModal`
+- Isso permite que o gestor adicione itens retroativos mesmo sem producao previa
 
-### 2. `src/components/dashboard/manager/LiveDashboard.tsx`
+### 3. Fluxo corrigido
 
-- Passar a prop `selectedDate` do estado de data do painel Ao Vivo para o `SubscriptionWizardModal`:
 ```text
-<SubscriptionWizardModal
-  ...
-  selectedDate={selectedDate}  // data do calendario do Ao Vivo
-/>
+Gestor clica "Editar" no card do barbeiro
+  -> Busca daily_production com .maybeSingle()
+  -> Se existe: abre o modal com o ID existente
+  -> Se NAO existe: cria nova daily_production zerada, usa o novo ID
+  -> Modal abre normalmente em ambos os casos
+  -> Gestor adiciona/remove itens
+  -> Trigger recalcula totais automaticamente
 ```
 
-### Impacto
-- Assinaturas retroativas serao registradas no dia correto
-- A producao diaria sera criada/vinculada ao dia selecionado
-- O `created_at` da transacao refletira o dia escolhido
-- Comportamento padrao (sem data passada) permanece inalterado
+## Arquivo Alterado
+
+- `src/components/dashboard/manager/LiveDashboard.tsx` -- funcao `handleEditClick` (linhas 308-328)
