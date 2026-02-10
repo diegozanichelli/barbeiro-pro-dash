@@ -24,6 +24,7 @@ import ManagerNavigation from "./manager/ManagerNavigation";
 import SubscriptionsTracking from "./manager/SubscriptionsTracking";
 import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
+import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 
 interface ManagerDashboardProps {
   user: User;
@@ -108,6 +109,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="overview" className="space-y-6 mt-0">
             <PerformanceAlerts />
+            <MonthlyOccurrencesSummary />
             <ManagerReports />
           </TabsContent>
 
