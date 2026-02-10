@@ -1,188 +1,110 @@
 
-# Plano: Adicionar Botao "Ver Comandas" por Barbeiro
+# Profissionalizar Modulo de Assinaturas
 
-## Objetivo
-
-Adicionar um botao com icone de olho em cada card de barbeiro no "AO VIVO" que abre o modal de transacoes mostrando **apenas as comandas lancadas pelo gestor** para aquele barbeiro no dia selecionado.
+## Resumo
+Criar um catalogo de planos de assinatura, adicionar campos de acao/motivo nas transacoes, uma tela de gestao de planos e atualizar o Wizard de venda para usar dados estruturados.
 
 ---
 
-## Visao do Resultado
+## Etapa 1 -- Banco de Dados
 
+### 1a. Nova tabela `subscription_plans`
+- `id` (uuid, PK)
+- `organization_id` (uuid, FK para organizations)
+- `name` (text) -- Ex: "Plano Gold"
+- `price` (numeric) -- Ex: 90.00
+- `active` (boolean, default true)
+- `created_at`, `updated_at` (timestamps)
+- RLS: Gestores podem CRUD na sua organizacao, barbeiros podem SELECT
+
+### 1b. Novas colunas em `sale_transactions`
+- `subscription_plan_id` (uuid, nullable, FK para subscription_plans)
+- `subscription_action` (text, nullable) -- valores: 'new', 'renew', 'upgrade', 'downgrade'
+- `downgrade_reason` (text, nullable)
+
+---
+
+## Etapa 2 -- Tela de Gestao de Planos
+
+Criar componente `SubscriptionPlansManagement.tsx` com:
+- Tabela listando planos (Nome, Preco, Ativo)
+- Botao "Novo Plano" abrindo modal simples (Nome + Preco)
+- Switch para ativar/desativar planos
+- Botao de editar cada plano
+
+Adicionar na navegacao:
+- No grupo **Gestao** do `ManagerNavigation`, adicionar item "Planos" (visivel apenas se `hasSubscriptionModule`)
+- No `ManagerDashboard`, adicionar `TabsContent` para a nova aba "plans"
+
+---
+
+## Etapa 3 -- Atualizar o Wizard (SubscriptionWizardModal)
+
+### Passo 1 -- Tipo de Cliente (expandido)
+- Quando o usuario selecionar **"Ja e Cliente"**, exibir 3 sub-opcoes:
+  - Renovacao
+  - Upgrade
+  - Downgrade
+- Se **Downgrade** for selecionado, mostrar campo de texto "Motivo do Downgrade"
+- Se **"Novo Cliente"**, a acao sera automaticamente `'new'`
+
+### Passo 3 -- Selecao do Plano (substituir input)
+- Buscar planos ativos da tabela `subscription_plans`
+- Substituir o `Input` de texto por um `Select` com os planos cadastrados
+- Ao selecionar um plano, gravar `subscription_plan_id` e `price_sold` automaticamente
+- Manter campo "Nome do Cliente"
+
+### Submit -- Gravar novos campos
+- Enviar `subscription_plan_id`, `subscription_action` e `downgrade_reason` na transacao
+
+---
+
+## Etapa 4 -- Detalhes Tecnicos
+
+### Migracao SQL
 ```text
-Card do Barbeiro (atualizado):
-┌─────────────────────────────────────────────────┐
-│  [Avatar] Gabriel Peter                         │
-│           Unidade Centro                        │
-│                                    [👁] [✏] [+] │ ← Novo botao de olho
-│                                                 │
-│  Progresso: ████████░░░░ 75%                   │
-│  R$ 280,00 / R$ 380,00                         │
-│                                                 │
-│  Faltam 2 cortes para bater a meta             │
-└─────────────────────────────────────────────────┘
+CREATE TABLE subscription_plans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  name text NOT NULL,
+  price numeric NOT NULL DEFAULT 0,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE subscription_plans ENABLE ROW LEVEL SECURITY;
+-- Politicas RLS para gestores e barbeiros
+
+ALTER TABLE sale_transactions
+  ADD COLUMN subscription_plan_id uuid REFERENCES subscription_plans(id),
+  ADD COLUMN subscription_action text,
+  ADD COLUMN downgrade_reason text;
 ```
 
-Ao clicar no botao de olho:
-- Abre o `TransactionManagerModal` existente
-- Mostra **apenas** transacoes com `source = 'manager'`
-- Permite visualizar e editar/excluir itens
+### Arquivos a criar
+- `src/components/dashboard/manager/SubscriptionPlansManagement.tsx` -- CRUD de planos
+- `src/components/dashboard/manager/SubscriptionPlanModal.tsx` -- Modal de criar/editar plano
 
----
+### Arquivos a modificar
+- `src/components/dashboard/manager/ManagerNavigation.tsx` -- adicionar item "Planos" no grupo Gestao
+- `src/components/dashboard/ManagerDashboard.tsx` -- adicionar TabsContent "plans"
+- `src/components/dashboard/manager/SubscriptionWizardModal.tsx` -- logica expandida do wizard
+- `src/integrations/supabase/types.ts` -- sera atualizado automaticamente
 
-## Alteracoes Necessarias
-
-### 1. Arquivo: `TransactionManagerModal.tsx`
-
-**Adicionar filtro por source na query:**
-
-Linha 137, adicionar `.eq("source", "manager")`:
-
-```typescript
-const { data, error } = await supabase
-  .from("sale_transactions")
-  .select("id, item_name, item_type, service_category, price_sold, commission_amount, description")
-  .eq("daily_production_id", dailyProductionId)
-  .eq("source", "manager")  // ← NOVO: filtrar apenas transacoes do gestor
-  .order("created_at", { ascending: true });
-```
-
-Isso garante que:
-- Apenas comandas lancadas pelo gestor (via "AO VIVO") sao exibidas
-- Lancamentos manuais do barbeiro (`source = 'barber'`) nao aparecem
-- Nao ha risco de duplicacao ou conflito
-
-### 2. Arquivo: `LiveDashboard.tsx`
-
-**Adicionar import do icone Eye:**
-
-Linha 14, atualizar imports:
-```typescript
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye } from "lucide-react";
-```
-
-**Adicionar novo estado para modal de visualizacao:**
-
-Apos linha 95 (estado editModal), adicionar:
-```typescript
-const [viewTransactionsModal, setViewTransactionsModal] = useState<{
-  open: boolean;
-  barberId: string;
-  barberName: string;
-  dailyProductionId: string;
-  date: string;
-}>({ open: false, barberId: "", barberName: "", dailyProductionId: "", date: "" });
-```
-
-**Adicionar handler para abrir modal de visualizacao:**
-
-Apos a funcao `handleEditClick` (linha 318), adicionar:
-```typescript
-const handleViewTransactions = async (barber: Barber) => {
-  const { data: production } = await supabase
-    .from("daily_productions")
-    .select("id")
-    .eq("barber_id", barber.id)
-    .eq("date", selectedDate)
-    .single();
-  
-  if (production) {
-    setViewTransactionsModal({
-      open: true,
-      barberId: barber.id,
-      barberName: barber.name,
-      dailyProductionId: production.id,
-      date: selectedDate,
-    });
-  } else {
-    toast.info("Nenhuma comanda registrada para este barbeiro hoje");
-  }
-};
-```
-
-**Adicionar botao de olho no card do barbeiro:**
-
-Entre linhas 643-668 (area de botoes), adicionar o botao antes do Pencil:
-
-```tsx
-<div className="flex gap-1">
-  {/* Novo botao de visualizacao */}
-  <Button
-    size="sm"
-    variant="ghost"
-    className="h-8 w-8 p-0"
-    onClick={() => handleViewTransactions(barber)}
-    title="Ver comandas do gestor"
-  >
-    <Eye className="w-4 h-4" />
-  </Button>
-  
-  {revenue > 0 && (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-8 w-8 p-0"
-      onClick={() => handleEditClick(barber)}
-      title="Editar lançamento"
-    >
-      <Pencil className="w-4 h-4" />
-    </Button>
-  )}
-  {/* ... botao de + existente */}
-</div>
-```
-
-**Adicionar segundo TransactionManagerModal:**
-
-Apos linha 746, adicionar:
-```tsx
-{/* View Transactions Modal - Read-only view */}
-<TransactionManagerModal
-  open={viewTransactionsModal.open}
-  onOpenChange={(open) => setViewTransactionsModal((prev) => ({ ...prev, open }))}
-  barberId={viewTransactionsModal.barberId}
-  barberName={viewTransactionsModal.barberName}
-  organizationId={organizationId || ""}
-  dailyProductionId={viewTransactionsModal.dailyProductionId}
-  date={viewTransactionsModal.date}
-  onSuccess={fetchData}
-/>
-```
-
----
-
-## Estrutura Visual Final dos Botoes
-
+### Fluxo do Wizard atualizado
 ```text
-Ordem dos botoes no card:
-[👁 Ver]  [✏ Editar*]  [+ Adicionar]
-   ↓          ↓            ↓
-  ghost    outline      default
- (sempre)  (se revenue>0) (sempre)
+Passo 1: Tipo de Cliente
+  [Novo Cliente] --> action = 'new'
+  [Ja e Cliente] --> mostra sub-opcoes:
+    [Renovacao] --> action = 'renew'
+    [Upgrade]   --> action = 'upgrade'
+    [Downgrade] --> action = 'downgrade' + input motivo
 
-* O botao de editar so aparece se ha faturamento
+Passo 2: Atribuicao (sem mudancas)
+
+Passo 3: Detalhes
+  Select com planos cadastrados (busca subscription_plans)
+  Nome do Cliente
+  Resumo com acao + plano + preco
 ```
-
----
-
-## Seguranca e Integridade
-
-| Aspecto | Garantia |
-|---------|----------|
-| Isolamento de dados | Query filtra `source = 'manager'` |
-| Conflito com barbeiro | Impossivel - dados completamente separados |
-| Auditoria | Gestor ve apenas suas proprias entradas |
-| Edicao segura | Excluir item recalcula totais via trigger |
-
----
-
-## Resumo das Alteracoes
-
-| Arquivo | Linha | Alteracao |
-|---------|-------|-----------|
-| `TransactionManagerModal.tsx` | 137 | Adicionar `.eq("source", "manager")` |
-| `LiveDashboard.tsx` | 14 | Importar icone `Eye` |
-| `LiveDashboard.tsx` | ~96 | Novo estado `viewTransactionsModal` |
-| `LiveDashboard.tsx` | ~319 | Nova funcao `handleViewTransactions` |
-| `LiveDashboard.tsx` | ~644 | Novo botao com icone Eye |
-| `LiveDashboard.tsx` | ~747 | Novo `TransactionManagerModal` para visualizacao |
