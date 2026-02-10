@@ -28,6 +28,78 @@ interface DailyProductionFormProps {
   };
 }
 
+// Helper component for mobile-friendly numeric input
+function MobileNumericInput({
+  value,
+  onChange,
+  placeholder,
+  isDecimal = false,
+  ...props
+}: {
+  value: number;
+  onChange: (val: number) => void;
+  placeholder?: string;
+  isDecimal?: boolean;
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const [displayValue, setDisplayValue] = useState(value === 0 ? "" : isDecimal ? value.toFixed(2) : String(value));
+
+  useEffect(() => {
+    // Sync when external value changes (e.g. form reset)
+    setDisplayValue(value === 0 ? "" : isDecimal ? value.toFixed(2) : String(value));
+  }, [value, isDecimal]);
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Select all text on focus for easy replacement
+    setTimeout(() => e.target.select(), 0);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+
+    if (raw === "") {
+      setDisplayValue("");
+      onChange(0);
+      return;
+    }
+
+    // Allow digits, comma, dot
+    const cleaned = raw.replace(/[^\d.,]/g, "");
+    setDisplayValue(cleaned);
+
+    const parsed = parseFloat(cleaned.replace(",", "."));
+    if (!isNaN(parsed)) {
+      onChange(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    // Format on blur
+    if (displayValue === "" || displayValue === "0") {
+      setDisplayValue("");
+      onChange(0);
+      return;
+    }
+    const parsed = parseFloat(displayValue.replace(",", ".")) || 0;
+    onChange(parsed);
+    setDisplayValue(parsed === 0 ? "" : isDecimal ? parsed.toFixed(2) : String(parsed));
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode={isDecimal ? "decimal" : "numeric"}
+      pattern={isDecimal ? "[0-9]*[.,]?[0-9]*" : "[0-9]*"}
+      value={displayValue}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      placeholder={placeholder || (isDecimal ? "0,00" : "0")}
+      autoComplete="off"
+      {...props}
+    />
+  );
+}
+
 export default function DailyProductionForm({ barberId, organizationId, onSuccess, initialData }: DailyProductionFormProps) {
   const [loading, setLoading] = useState(false);
   const [divergenceModal, setDivergenceModal] = useState<{
@@ -37,14 +109,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
     hasDivergence: boolean;
   }>({ open: false, manualTotal: 0, txTotal: 0, hasDivergence: false });
 
-  // Formulário sempre começa ZERADO (caráter educativo)
-  // Os valores do gestor (tx_*) NÃO são pré-preenchidos
   const form = useForm<DailyProductionFormData>({
     resolver: zodResolver(dailyProductionSchema),
     defaultValues: {
       date: initialData?.date || getTodayString(),
-      // Quando editando, mostrar valores MANUAIS existentes
-      // Quando criando novo, sempre começar zerado
       servicesBasicTotal: initialData ? Number(initialData.servicesBasicTotal) || 0 : 0,
       servicesExtraTotal: initialData ? Number(initialData.servicesExtraTotal) || 0 : 0,
       productsTotal: initialData ? Number(initialData.productsTotal) || 0 : 0,
@@ -54,7 +122,6 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
     },
   });
 
-  // Atualizar form quando initialData mudar (edição)
   useEffect(() => {
     if (initialData) {
       form.reset({
@@ -73,10 +140,8 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
     setLoading(true);
 
     try {
-      // Calcular total MANUAL declarado pelo barbeiro
       const manualTotal = data.servicesBasicTotal + data.servicesExtraTotal + data.productsTotal;
 
-      // Buscar dados existentes para comparar com tx_* (Ao Vivo)
       const { data: existingProduction } = await supabase
         .from("daily_productions")
         .select("tx_basic_total, tx_extra_total, tx_products_total")
@@ -84,29 +149,24 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
         .eq("date", data.date)
         .maybeSingle();
 
-      // Calcular total do gestor (Ao Vivo)
       const txTotal = existingProduction 
         ? (Number(existingProduction.tx_basic_total) || 0) + 
           (Number(existingProduction.tx_extra_total) || 0) + 
           (Number(existingProduction.tx_products_total) || 0)
         : 0;
 
-      // Gravar nos campos MANUAIS (o valor OFICIAL para comissão)
-      // E também atualizar os campos legados para exibição em dashboards
       const { error } = await supabase
         .from("daily_productions")
         .upsert({
           date: data.date,
           barber_id: barberId,
           organization_id: organizationId,
-          // Campos MANUAIS (declaração do barbeiro)
           manual_basic_total: data.servicesBasicTotal,
           manual_extra_total: data.servicesExtraTotal,
           manual_products_total: data.productsTotal,
           manual_clients_count: data.clientsCount,
           manual_services_count: data.servicesCount,
           manual_products_count: data.productsCount,
-          // Campos legados (valor OFICIAL = manual)
           services_basic_total: data.servicesBasicTotal,
           services_extra_total: data.servicesExtraTotal,
           products_total: data.productsTotal,
@@ -119,8 +179,7 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
 
       if (error) throw error;
 
-      // Verificar divergência (> 5% de diferença)
-      const divergenceThreshold = 0.05; // 5%
+      const divergenceThreshold = 0.05;
       let hasDivergence = false;
 
       if (txTotal > 0) {
@@ -128,7 +187,6 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
         hasDivergence = percentDiff > divergenceThreshold;
       }
 
-      // Mostrar modal de feedback (divergência ou fechamento perfeito)
       if (txTotal > 0) {
         setDivergenceModal({
           open: true,
@@ -137,11 +195,9 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
           hasDivergence
         });
       } else {
-        // Sem dados do gestor para comparar - sucesso simples
         toast.success(initialData ? "Produção atualizada com sucesso!" : "Produção registrada com sucesso!");
       }
       
-      // Limpar apenas se não está editando
       if (!initialData) {
         form.reset({
           date: getTodayString(),
@@ -206,12 +262,11 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Total em Serviços Básicos (R$)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
+                        <MobileNumericInput
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="0,00"
+                          isDecimal
                         />
                       </FormControl>
                       <FormMessage />
@@ -225,12 +280,11 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Total em Serviços Extras (R$)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
+                        <MobileNumericInput
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="0,00"
+                          isDecimal
                         />
                       </FormControl>
                       <FormMessage />
@@ -246,12 +300,11 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                   <FormItem>
                     <FormLabel>Total em Produtos (R$)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      <MobileNumericInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="0,00"
+                        isDecimal
                       />
                     </FormControl>
                     <FormMessage />
@@ -267,11 +320,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Qtd. Clientes</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <MobileNumericInput
+                          value={field.value}
+                          onChange={field.onChange}
                           placeholder="0"
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -285,11 +337,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Qtd. Serviços Extras</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <MobileNumericInput
+                          value={field.value}
+                          onChange={field.onChange}
                           placeholder="0"
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -303,11 +354,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Qtd. Produtos</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <MobileNumericInput
+                          value={field.value}
+                          onChange={field.onChange}
                           placeholder="0"
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
