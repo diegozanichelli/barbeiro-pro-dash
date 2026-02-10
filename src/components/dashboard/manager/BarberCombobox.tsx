@@ -28,7 +28,7 @@ interface Barber {
 interface BarberComboboxProps {
   organizationId: string;
   value: string | null;
-  onChange: (barberId: string | null) => void;
+  onChange: (barberId: string | null, unitName?: string) => void;
   placeholder?: string;
   allowReception?: boolean;
   disabled?: boolean;
@@ -149,7 +149,7 @@ export default function BarberCombobox({
                 <CommandItem
                   value="reception"
                   onSelect={() => {
-                    onChange(null);
+                    onChange(null, undefined);
                     setOpen(false);
                     setSearch("");
                   }}
@@ -171,7 +171,7 @@ export default function BarberCombobox({
                   key={barber.id}
                   value={barber.id}
                   onSelect={() => {
-                    onChange(barber.id);
+                    onChange(barber.id, barber.unit_name);
                     setOpen(false);
                     setSearch("");
                   }}
