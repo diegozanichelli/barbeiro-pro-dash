@@ -1,110 +1,65 @@
 
-# Profissionalizar Modulo de Assinaturas
+# Adicionar Nome do Cliente na Comanda (Ao Vivo)
 
 ## Resumo
-Criar um catalogo de planos de assinatura, adicionar campos de acao/motivo nas transacoes, uma tela de gestao de planos e atualizar o Wizard de venda para usar dados estruturados.
+Adicionar um campo "Nome do Cliente" no QuickSaleModal para que o gestor identifique cada venda do dia. O dado e temporario (apagado apos 30 dias).
 
 ---
 
 ## Etapa 1 -- Banco de Dados
 
-### 1a. Nova tabela `subscription_plans`
-- `id` (uuid, PK)
-- `organization_id` (uuid, FK para organizations)
-- `name` (text) -- Ex: "Plano Gold"
-- `price` (numeric) -- Ex: 90.00
-- `active` (boolean, default true)
-- `created_at`, `updated_at` (timestamps)
-- RLS: Gestores podem CRUD na sua organizacao, barbeiros podem SELECT
+### Nova coluna em `sale_transactions`
+- `client_name` (text, nullable) -- nome do cliente da comanda
+- Nao precisa de indice especial, e apenas informativo
 
-### 1b. Novas colunas em `sale_transactions`
-- `subscription_plan_id` (uuid, nullable, FK para subscription_plans)
-- `subscription_action` (text, nullable) -- valores: 'new', 'renew', 'upgrade', 'downgrade'
-- `downgrade_reason` (text, nullable)
+### Limpeza automatica (30 dias)
+- Criar uma funcao SQL `cleanup_old_client_names()` que seta `client_name = NULL` em registros com mais de 30 dias
+- Criar um cron job via `pg_cron` (ou trigger simples) para rodar essa limpeza periodicamente
+- Alternativa mais simples: criar a funcao e o gestor pode chama-la manualmente, ou usar o `pg_cron` se disponivel
 
 ---
 
-## Etapa 2 -- Tela de Gestao de Planos
+## Etapa 2 -- Interface (QuickSaleModal)
 
-Criar componente `SubscriptionPlansManagement.tsx` com:
-- Tabela listando planos (Nome, Preco, Ativo)
-- Botao "Novo Plano" abrindo modal simples (Nome + Preco)
-- Switch para ativar/desativar planos
-- Botao de editar cada plano
+### Adicionar campo "Nome do Cliente"
+- Novo input de texto no cabecalho do modal (junto com "Clientes Atendidos" e "Cliente Novo")
+- Label: "Nome do Cliente (opcional)"
+- Placeholder: "Ex: Joao"
+- O campo aparece tanto no modo catalogo quanto no modo manual
+- O valor e gravado em todas as transacoes do carrinho daquela comanda
 
-Adicionar na navegacao:
-- No grupo **Gestao** do `ManagerNavigation`, adicionar item "Planos" (visivel apenas se `hasSubscriptionModule`)
-- No `ManagerDashboard`, adicionar `TabsContent` para a nova aba "plans"
-
----
-
-## Etapa 3 -- Atualizar o Wizard (SubscriptionWizardModal)
-
-### Passo 1 -- Tipo de Cliente (expandido)
-- Quando o usuario selecionar **"Ja e Cliente"**, exibir 3 sub-opcoes:
-  - Renovacao
-  - Upgrade
-  - Downgrade
-- Se **Downgrade** for selecionado, mostrar campo de texto "Motivo do Downgrade"
-- Se **"Novo Cliente"**, a acao sera automaticamente `'new'`
-
-### Passo 3 -- Selecao do Plano (substituir input)
-- Buscar planos ativos da tabela `subscription_plans`
-- Substituir o `Input` de texto por um `Select` com os planos cadastrados
-- Ao selecionar um plano, gravar `subscription_plan_id` e `price_sold` automaticamente
-- Manter campo "Nome do Cliente"
-
-### Submit -- Gravar novos campos
-- Enviar `subscription_plan_id`, `subscription_action` e `downgrade_reason` na transacao
+### Exibicao no TransactionManagerModal
+- Mostrar o nome do cliente na listagem de transacoes do dia (coluna ou badge ao lado do item)
+- Permite ao gestor identificar rapidamente qual venda pertence a qual cliente
 
 ---
 
-## Etapa 4 -- Detalhes Tecnicos
+## Detalhes Tecnicos
 
 ### Migracao SQL
 ```text
-CREATE TABLE subscription_plans (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id uuid NOT NULL REFERENCES organizations(id),
-  name text NOT NULL,
-  price numeric NOT NULL DEFAULT 0,
-  active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE subscription_plans ENABLE ROW LEVEL SECURITY;
--- Politicas RLS para gestores e barbeiros
-
 ALTER TABLE sale_transactions
-  ADD COLUMN subscription_plan_id uuid REFERENCES subscription_plans(id),
-  ADD COLUMN subscription_action text,
-  ADD COLUMN downgrade_reason text;
-```
+  ADD COLUMN client_name text;
 
-### Arquivos a criar
-- `src/components/dashboard/manager/SubscriptionPlansManagement.tsx` -- CRUD de planos
-- `src/components/dashboard/manager/SubscriptionPlanModal.tsx` -- Modal de criar/editar plano
+-- Funcao para limpar nomes antigos (>30 dias)
+CREATE OR REPLACE FUNCTION cleanup_old_client_names()
+RETURNS void AS $$
+BEGIN
+  UPDATE sale_transactions
+  SET client_name = NULL
+  WHERE client_name IS NOT NULL
+    AND created_at < now() - interval '30 days';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
 
 ### Arquivos a modificar
-- `src/components/dashboard/manager/ManagerNavigation.tsx` -- adicionar item "Planos" no grupo Gestao
-- `src/components/dashboard/ManagerDashboard.tsx` -- adicionar TabsContent "plans"
-- `src/components/dashboard/manager/SubscriptionWizardModal.tsx` -- logica expandida do wizard
-- `src/integrations/supabase/types.ts` -- sera atualizado automaticamente
+- `src/components/dashboard/manager/QuickSaleModal.tsx` -- adicionar state `clientName`, input no header, gravar na transacao
+- `src/components/dashboard/manager/TransactionManagerModal.tsx` -- exibir `client_name` na listagem
 
-### Fluxo do Wizard atualizado
-```text
-Passo 1: Tipo de Cliente
-  [Novo Cliente] --> action = 'new'
-  [Ja e Cliente] --> mostra sub-opcoes:
-    [Renovacao] --> action = 'renew'
-    [Upgrade]   --> action = 'upgrade'
-    [Downgrade] --> action = 'downgrade' + input motivo
-
-Passo 2: Atribuicao (sem mudancas)
-
-Passo 3: Detalhes
-  Select com planos cadastrados (busca subscription_plans)
-  Nome do Cliente
-  Resumo com acao + plano + preco
-```
+### Mudancas no QuickSaleModal
+- Novo state: `const [clientName, setClientName] = useState("")`
+- Reset no `resetForm()`
+- Input no cabecalho (area expansivel junto aos controles existentes)
+- No `handleCartCheckout`: adicionar `client_name: clientName || null` em cada transacao
+- No `handleManualSale`: mesma logica (se aplicavel)
