@@ -5,11 +5,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Building2, User, GitCompare, Crown, Users2 } from "lucide-react";
+import { TrendingUp, Building2, User, GitCompare, Crown, Users2, Brain } from "lucide-react";
 import ShopEvolution from "./ShopEvolution";
 import UnitsComparison from "./UnitsComparison";
 import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
 import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
+import SubscriptionAnalytics from "./SubscriptionAnalytics";
 
 interface Barber {
   id: string;
@@ -242,7 +243,7 @@ function BarberEvolutionChart() {
 export default function BarberEvolution() {
   return (
     <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full max-w-3xl grid-cols-5">
+      <TabsList className="grid w-full max-w-4xl grid-cols-6">
         <TabsTrigger value="barbearia" className="flex items-center gap-1">
           <Building2 className="w-4 h-4" />
           <span className="hidden sm:inline">Barbearia</span>
@@ -262,6 +263,10 @@ export default function BarberEvolution() {
         <TabsTrigger value="recepcao" className="flex items-center gap-1">
           <Users2 className="w-4 h-4" />
           <span className="hidden sm:inline">Recepção</span>
+        </TabsTrigger>
+        <TabsTrigger value="inteligencia" className="flex items-center gap-1">
+          <Brain className="w-4 h-4" />
+          <span className="hidden sm:inline">Inteligência</span>
         </TabsTrigger>
       </TabsList>
       
@@ -283,6 +288,10 @@ export default function BarberEvolution() {
 
       <TabsContent value="recepcao">
         <ReceptionPerformanceReport />
+      </TabsContent>
+
+      <TabsContent value="inteligencia">
+        <SubscriptionAnalytics />
       </TabsContent>
     </Tabs>
   );
