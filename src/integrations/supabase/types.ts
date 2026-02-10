@@ -613,6 +613,7 @@ export type Database = {
           created_at: string
           daily_production_id: string | null
           description: string | null
+          downgrade_reason: string | null
           id: string
           is_new_client: boolean | null
           item_name: string
@@ -621,6 +622,8 @@ export type Database = {
           price_sold: number
           service_category: string | null
           source: string
+          subscription_action: string | null
+          subscription_plan_id: string | null
           unit_id: string | null
         }
         Insert: {
@@ -632,6 +635,7 @@ export type Database = {
           created_at?: string
           daily_production_id?: string | null
           description?: string | null
+          downgrade_reason?: string | null
           id?: string
           is_new_client?: boolean | null
           item_name: string
@@ -640,6 +644,8 @@ export type Database = {
           price_sold: number
           service_category?: string | null
           source?: string
+          subscription_action?: string | null
+          subscription_plan_id?: string | null
           unit_id?: string | null
         }
         Update: {
@@ -651,6 +657,7 @@ export type Database = {
           created_at?: string
           daily_production_id?: string | null
           description?: string | null
+          downgrade_reason?: string | null
           id?: string
           is_new_client?: boolean | null
           item_name?: string
@@ -659,6 +666,8 @@ export type Database = {
           price_sold?: number
           service_category?: string | null
           source?: string
+          subscription_action?: string | null
+          subscription_plan_id?: string | null
           unit_id?: string | null
         }
         Relationships: [
@@ -698,10 +707,55 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "sale_transactions_subscription_plan_id_fkey"
+            columns: ["subscription_plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sale_transactions_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscription_plans: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          price: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          price?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_plans_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]

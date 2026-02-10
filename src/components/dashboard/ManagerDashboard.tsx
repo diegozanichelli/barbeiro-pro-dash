@@ -23,6 +23,7 @@ import CatalogManagement from "./manager/CatalogManagement";
 import ManagerNavigation from "./manager/ManagerNavigation";
 import SubscriptionsTracking from "./manager/SubscriptionsTracking";
 import MonthlyPayroll from "./manager/MonthlyPayroll";
+import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 
 interface ManagerDashboardProps {
   user: User;
@@ -149,6 +150,12 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsContent value="subscriptions" className="mt-0">
             <SubscriptionsTracking />
           </TabsContent>
+
+          {hasSubscriptionModule && (
+            <TabsContent value="plans" className="mt-0">
+              <SubscriptionPlansManagement />
+            </TabsContent>
+          )}
 
           {hasSubscriptionModule && (
             <>

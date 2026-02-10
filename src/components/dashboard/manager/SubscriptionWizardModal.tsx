@@ -10,18 +10,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { 
-  Loader2, 
-  Crown, 
-  ArrowLeft, 
-  ArrowRight, 
-  Check, 
-  UserPlus, 
-  Users, 
-  Building2, 
-  Scissors 
+import {
+  Loader2,
+  Crown,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  UserPlus,
+  Users,
+  Building2,
+  Scissors,
+  RefreshCw,
+  ArrowUpCircle,
+  ArrowDownCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import BarberCombobox from "./BarberCombobox";
@@ -39,7 +50,14 @@ interface Unit {
   name: string;
 }
 
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+}
+
 type WizardStep = "client_type" | "attribution" | "details";
+type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
 
 export default function SubscriptionWizardModal({
   open,
@@ -49,73 +67,66 @@ export default function SubscriptionWizardModal({
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
-  
-  // Pergunta 1: Tipo de Cliente (Conversão)
+
+  // Step 1
   const [isNewClient, setIsNewClient] = useState<boolean | null>(null);
-  
-  // Pergunta 2: Atribuição (Gamificação)
+  const [subscriptionAction, setSubscriptionAction] = useState<SubscriptionAction | null>(null);
+  const [downgradeReason, setDowngradeReason] = useState("");
+
+  // Step 2
   const [attributionType, setAttributionType] = useState<"reception" | "barber" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
-  
-  // Pergunta 3: Detalhes
-  const [subscriptionPlan, setSubscriptionPlan] = useState("");
+
+  // Step 3
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
 
-  // Fetch units on mount
   useEffect(() => {
-    const fetchUnits = async () => {
-      const { data, error } = await supabase
-        .from("units")
-        .select("id, name")
-        .eq("status", "active")
-        .order("name");
-      
-      if (!error && data) {
-        setUnits(data);
-      }
+    const fetchData = async () => {
+      const [unitsRes, plansRes] = await Promise.all([
+        supabase.from("units").select("id, name").eq("status", "active").order("name"),
+        supabase.from("subscription_plans").select("id, name, price").eq("active", true).eq("organization_id", organizationId).order("name"),
+      ]);
+      if (unitsRes.data) setUnits(unitsRes.data);
+      if (plansRes.data) setPlans(plansRes.data);
     };
-    fetchUnits();
-  }, []);
+    if (open) fetchData();
+  }, [open, organizationId]);
 
-  // Reset state when modal closes
   useEffect(() => {
     if (!open) {
       setStep("client_type");
       setIsNewClient(null);
+      setSubscriptionAction(null);
+      setDowngradeReason("");
       setAttributionType(null);
       setSelectedBarberId(null);
       setSelectedUnitId(null);
-      setSubscriptionPlan("");
+      setSelectedPlanId(null);
       setClientName("");
     }
   }, [open]);
 
+  const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+
   const handleBack = () => {
-    if (step === "attribution") {
-      setStep("client_type");
-    } else if (step === "details") {
-      setStep("attribution");
-    }
+    if (step === "attribution") setStep("client_type");
+    else if (step === "details") setStep("attribution");
   };
 
   const handleNext = () => {
-    if (step === "client_type" && isNewClient !== null) {
-      setStep("attribution");
-    } else if (step === "attribution") {
-      if (attributionType === "reception" && selectedUnitId) {
-        setSelectedBarberId(null);
-        setStep("details");
-      } else if (attributionType === "barber" && selectedBarberId) {
-        setStep("details");
-      }
-    }
+    if (step === "client_type" && canProceed()) setStep("attribution");
+    else if (step === "attribution" && canProceed()) setStep("details");
   };
 
   const canProceed = () => {
     if (step === "client_type") {
-      return isNewClient !== null;
+      if (isNewClient === null) return false;
+      if (isNewClient) return true; // action = 'new' automatically
+      return subscriptionAction !== null && (subscriptionAction !== "downgrade" || downgradeReason.trim().length > 0);
     }
     if (step === "attribution") {
       if (attributionType === "reception") return !!selectedUnitId;
@@ -123,33 +134,42 @@ export default function SubscriptionWizardModal({
       return false;
     }
     if (step === "details") {
-      return subscriptionPlan.trim().length > 0 && clientName.trim().length > 0;
+      return !!selectedPlanId && clientName.trim().length > 0;
     }
     return false;
   };
 
+  const handleSelectNewClient = (value: boolean) => {
+    setIsNewClient(value);
+    if (value) {
+      setSubscriptionAction("new");
+      setDowngradeReason("");
+    } else {
+      setSubscriptionAction(null);
+    }
+  };
+
+  const handleSelectAction = (action: SubscriptionAction) => {
+    setSubscriptionAction(action);
+    if (action !== "downgrade") setDowngradeReason("");
+  };
+
   const handleSubmit = async () => {
     if (!canProceed()) return;
-    
     setLoading(true);
     const today = getTodayString();
 
     try {
-      // Get or create daily production if barber is selected
       let productionId: string | null = null;
       let unitIdToSave: string | null = selectedUnitId;
-      
+
       if (selectedBarberId) {
-        // Get barber's unit_id for the transaction
         const { data: barberData } = await supabase
           .from("barbers")
           .select("unit_id")
           .eq("id", selectedBarberId)
           .single();
-        
-        if (barberData) {
-          unitIdToSave = barberData.unit_id;
-        }
+        if (barberData) unitIdToSave = barberData.unit_id;
 
         const { data: existingProd } = await supabase
           .from("daily_productions")
@@ -157,7 +177,7 @@ export default function SubscriptionWizardModal({
           .eq("barber_id", selectedBarberId)
           .eq("date", today)
           .maybeSingle();
-        
+
         if (existingProd) {
           productionId = existingProd.id;
         } else {
@@ -176,22 +196,22 @@ export default function SubscriptionWizardModal({
             })
             .select("id")
             .single();
-          
           if (createError) throw createError;
           productionId = newProd.id;
         }
       }
 
-      // Insert subscription transaction with unit_id
+      const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : "Downgrade";
+
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
         organization_id: organizationId,
         daily_production_id: productionId,
         unit_id: unitIdToSave,
         item_type: "subscription",
-        item_name: `Assinatura ${subscriptionPlan.trim()}`,
+        item_name: `Assinatura ${selectedPlan?.name || ""}`,
         description: clientName.trim(),
-        price_sold: 0,
+        price_sold: selectedPlan?.price || 0,
         service_category: null,
         catalog_service_id: null,
         catalog_product_id: null,
@@ -199,15 +219,16 @@ export default function SubscriptionWizardModal({
         commission_amount: 0,
         source: "manager",
         is_new_client: isNewClient,
+        subscription_plan_id: selectedPlanId,
+        subscription_action: subscriptionAction,
+        downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
       } as any);
 
       if (error) throw error;
 
       const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
-      const conversionLabel = isNewClient ? "🆕 Cliente Novo" : "🏠 Cliente da Casa";
-      
       toast.success(`Assinatura registrada!`, {
-        description: `${conversionLabel} • Pontos ${attribution} • +10 pts 🏆`,
+        description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
       });
 
       onOpenChange(false);
@@ -233,22 +254,19 @@ export default function SubscriptionWizardModal({
           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
             <Crown className="w-8 h-8 text-primary" />
           </div>
-          <DialogTitle className="text-xl">
-            Vender Assinatura
-          </DialogTitle>
+          <DialogTitle className="text-xl">Vender Assinatura</DialogTitle>
           <DialogDescription>
-            Passo {getStepNumber()} de 3 — {
-              step === "client_type" 
-                ? "Tipo de Cliente" 
-                : step === "attribution" 
-                  ? "Atribuição de Pontos"
-                  : "Detalhes do Plano"
-            }
+            Passo {getStepNumber()} de 3 —{" "}
+            {step === "client_type"
+              ? "Tipo de Cliente"
+              : step === "attribution"
+              ? "Atribuição de Pontos"
+              : "Detalhes do Plano"}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 space-y-6 py-4">
-          {/* STEP 1: Tipo de Cliente (Conversão) */}
+        <div className="flex-1 overflow-y-auto space-y-6 py-4">
+          {/* STEP 1 */}
           {step === "client_type" && (
             <div className="space-y-4">
               <Label className="text-base font-medium">
@@ -265,7 +283,7 @@ export default function SubscriptionWizardModal({
                     "h-auto py-4 flex flex-col items-center gap-2",
                     isNewClient === true && "ring-2 ring-primary ring-offset-2"
                   )}
-                  onClick={() => setIsNewClient(true)}
+                  onClick={() => handleSelectNewClient(true)}
                 >
                   <UserPlus className="w-6 h-6" />
                   <span className="font-medium">Novo Cliente</span>
@@ -278,22 +296,80 @@ export default function SubscriptionWizardModal({
                     "h-auto py-4 flex flex-col items-center gap-2",
                     isNewClient === false && "ring-2 ring-primary ring-offset-2"
                   )}
-                  onClick={() => setIsNewClient(false)}
+                  onClick={() => handleSelectNewClient(false)}
                 >
                   <Users className="w-6 h-6" />
                   <span className="font-medium">Já é Cliente</span>
                   <span className="text-xs text-muted-foreground">Cliente da casa</span>
                 </Button>
               </div>
+
+              {/* Sub-options for existing client */}
+              {isNewClient === false && (
+                <div className="space-y-3 pt-2">
+                  <Label className="text-sm font-medium text-muted-foreground">Qual a ação?</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button
+                      type="button"
+                      variant={subscriptionAction === "renew" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto py-3 flex flex-col items-center gap-1 text-xs",
+                        subscriptionAction === "renew" && "ring-2 ring-primary ring-offset-2"
+                      )}
+                      onClick={() => handleSelectAction("renew")}
+                    >
+                      <RefreshCw className="w-5 h-5" />
+                      <span className="font-medium">Renovação</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={subscriptionAction === "upgrade" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto py-3 flex flex-col items-center gap-1 text-xs",
+                        subscriptionAction === "upgrade" && "ring-2 ring-primary ring-offset-2"
+                      )}
+                      onClick={() => handleSelectAction("upgrade")}
+                    >
+                      <ArrowUpCircle className="w-5 h-5" />
+                      <span className="font-medium">Upgrade</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={subscriptionAction === "downgrade" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto py-3 flex flex-col items-center gap-1 text-xs",
+                        subscriptionAction === "downgrade" && "ring-2 ring-primary ring-offset-2"
+                      )}
+                      onClick={() => handleSelectAction("downgrade")}
+                    >
+                      <ArrowDownCircle className="w-5 h-5" />
+                      <span className="font-medium">Downgrade</span>
+                    </Button>
+                  </div>
+
+                  {subscriptionAction === "downgrade" && (
+                    <div className="space-y-2 pt-1">
+                      <Label htmlFor="downgrade-reason">
+                        Motivo do Downgrade <span className="text-destructive">*</span>
+                      </Label>
+                      <Textarea
+                        id="downgrade-reason"
+                        placeholder="Ex: Cliente quer reduzir gastos..."
+                        value={downgradeReason}
+                        onChange={(e) => setDowngradeReason(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* STEP 2: Atribuição (Gamificação) */}
+          {/* STEP 2 */}
           {step === "attribution" && (
             <div className="space-y-4">
-              <Label className="text-base font-medium">
-                Quem realizou essa venda?
-              </Label>
+              <Label className="text-base font-medium">Quem realizou essa venda?</Label>
               <p className="text-sm text-muted-foreground">
                 O profissional selecionado receberá +10 pontos no Campeonato.
               </p>
@@ -329,7 +405,6 @@ export default function SubscriptionWizardModal({
                 </Button>
               </div>
 
-              {/* Unit Selector (if reception attribution) */}
               {attributionType === "reception" && (
                 <div className="space-y-2 pt-2">
                   <Label>Selecione a unidade: <span className="text-destructive">*</span></Label>
@@ -340,18 +415,12 @@ export default function SubscriptionWizardModal({
                   >
                     <option value="">Selecione a unidade...</option>
                     {units.map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.name}
-                      </option>
+                      <option key={unit.id} value={unit.id}>{unit.name}</option>
                     ))}
                   </select>
-                  <p className="text-xs text-muted-foreground">
-                    Isso permite rastrear qual recepção vendeu mais assinaturas
-                  </p>
                 </div>
               )}
 
-              {/* Barber Selector (if barber attribution) */}
               {attributionType === "barber" && (
                 <div className="space-y-2 pt-2">
                   <Label>Selecione o barbeiro:</Label>
@@ -367,20 +436,31 @@ export default function SubscriptionWizardModal({
             </div>
           )}
 
-          {/* STEP 3: Detalhes */}
+          {/* STEP 3 */}
           {step === "details" && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="subscription-plan">
+                <Label htmlFor="subscription-plan-select">
                   Qual o plano vendido? <span className="text-destructive">*</span>
                 </Label>
-                <Input
-                  id="subscription-plan"
-                  placeholder="Ex: Gold, Prata, Black, Duo..."
-                  value={subscriptionPlan}
-                  onChange={(e) => setSubscriptionPlan(e.target.value)}
-                  autoFocus
-                />
+                {plans.length > 0 ? (
+                  <Select value={selectedPlanId || ""} onValueChange={(v) => setSelectedPlanId(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o plano..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {plans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name} — R$ {Number(plan.price).toFixed(2)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted-foreground p-3 border border-dashed rounded-md text-center">
+                    Nenhum plano cadastrado. Cadastre em Gestão → Planos.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -398,8 +478,12 @@ export default function SubscriptionWizardModal({
               {/* Summary */}
               <div className="mt-4 p-3 bg-muted rounded-lg space-y-1 text-sm">
                 <p><strong>Resumo:</strong></p>
-                <p>• Cliente: {isNewClient ? "🆕 Novo" : "🏠 Da casa"}</p>
-                <p>• Pontos para: {selectedBarberId ? "💈 Barbeiro selecionado" : "🏢 Recepção (sem pontos)"}</p>
+                <p>• Ação: {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : "🔽 Downgrade"}</p>
+                <p>• Plano: {selectedPlan ? `${selectedPlan.name} — R$ ${Number(selectedPlan.price).toFixed(2)}` : "—"}</p>
+                <p>• Pontos para: {selectedBarberId ? "💈 Barbeiro selecionado" : "🏢 Recepção"}</p>
+                {subscriptionAction === "downgrade" && downgradeReason && (
+                  <p>• Motivo: {downgradeReason}</p>
+                )}
               </div>
             </div>
           )}
@@ -407,47 +491,22 @@ export default function SubscriptionWizardModal({
 
         <DialogFooter className="flex-row gap-3 sm:flex-row">
           {step !== "client_type" ? (
-            <Button
-              variant="outline"
-              className="flex-1 gap-2"
-              onClick={handleBack}
-              disabled={loading}
-            >
+            <Button variant="outline" className="flex-1 gap-2" onClick={handleBack} disabled={loading}>
               <ArrowLeft className="w-4 h-4" />
               Voltar
             </Button>
           ) : (
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => onOpenChange(false)}
-              disabled={loading}
-            >
+            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={loading}>
               Cancelar
             </Button>
           )}
-          
+
           {step === "details" ? (
-            <Button
-              className="flex-1 gap-2"
-              onClick={handleSubmit}
-              disabled={loading || !canProceed()}
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Check className="w-4 h-4" />
-                  Registrar
-                </>
-              )}
+            <Button className="flex-1 gap-2" onClick={handleSubmit} disabled={loading || !canProceed()}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" />Registrar</>}
             </Button>
           ) : (
-            <Button
-              className="flex-1 gap-2"
-              onClick={handleNext}
-              disabled={!canProceed()}
-            >
+            <Button className="flex-1 gap-2" onClick={handleNext} disabled={!canProceed()}>
               Próximo
               <ArrowRight className="w-4 h-4" />
             </Button>
