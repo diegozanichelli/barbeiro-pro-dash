@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -163,6 +163,7 @@ export default function LiveDashboard() {
           barber_id, 
           commission_earned, 
           confirmed_presence,
+          presence_type,
           services_total,
           services_basic_total,
           services_extra_total,
@@ -388,9 +389,9 @@ export default function LiveDashboard() {
       0
     );
 
-    // Count days worked: production > 0 OR confirmed_presence === true
+    // Count days worked: production > 0 OR confirmed_presence with present/null type
     const daysWorked = barberMonthProductions.filter(
-      (p) => Number(p.commission_earned) > 0 || p.confirmed_presence === true
+      (p) => Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null))
     ).length;
 
     // Calculate remaining commission to achieve
@@ -703,6 +704,28 @@ export default function LiveDashboard() {
                             Aguardando
                           </Badge>
                         )}
+                        {(() => {
+                          const prod = getBarberProduction(barber.id);
+                          if (!prod || !(prod as any).confirmed_presence) return null;
+                          const rev = getBarberRevenue(barber.id);
+                          if (rev > 0) return null;
+                          const pt = (prod as any).presence_type;
+                          if (pt === 'day_off') return (
+                            <Badge className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">
+                              <CalendarOff className="w-3 h-3 mr-1" />Folga
+                            </Badge>
+                          );
+                          if (pt === 'absence') return (
+                            <Badge className="text-xs bg-red-500/20 text-red-500 border-red-500/30">
+                              <XCircle className="w-3 h-3 mr-1" />Falta
+                            </Badge>
+                          );
+                          return (
+                            <Badge className="text-xs bg-orange-500/20 text-orange-500 border-orange-500/30">
+                              <UserCheck className="w-3 h-3 mr-1" />Presente s/ vendas
+                            </Badge>
+                          );
+                        })()}
                       </div>
                       <p className="text-xs text-muted-foreground">{barber.unit_name}</p>
                     </div>

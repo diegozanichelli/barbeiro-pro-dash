@@ -264,6 +264,7 @@ export type Database = {
           manual_products_total: number | null
           manual_services_count: number | null
           organization_id: string
+          presence_type: string | null
           products_count: number
           products_total: number
           services_basic_total: number | null
@@ -296,6 +297,7 @@ export type Database = {
           manual_products_total?: number | null
           manual_services_count?: number | null
           organization_id: string
+          presence_type?: string | null
           products_count?: number
           products_total?: number
           services_basic_total?: number | null
@@ -328,6 +330,7 @@ export type Database = {
           manual_products_total?: number | null
           manual_services_count?: number | null
           organization_id?: string
+          presence_type?: string | null
           products_count?: number
           products_total?: number
           services_basic_total?: number | null
