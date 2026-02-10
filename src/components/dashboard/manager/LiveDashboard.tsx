@@ -803,6 +803,7 @@ export default function LiveDashboard() {
         onOpenChange={setSubscriptionWizardOpen}
         organizationId={organizationId || ""}
         onComplete={fetchData}
+        selectedDate={selectedDate}
         onBridgeToService={(barberId, _barberName) => {
           if (barberId) {
             const barber = barbers.find((b) => b.id === barberId);

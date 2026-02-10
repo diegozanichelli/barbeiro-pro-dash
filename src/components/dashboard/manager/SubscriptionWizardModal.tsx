@@ -37,6 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import BarberCombobox from "./BarberCombobox";
 import { getTodayString } from "@/lib/dateUtils";
+import { format } from "date-fns";
 
 interface SubscriptionWizardModalProps {
   open: boolean;
@@ -44,6 +45,7 @@ interface SubscriptionWizardModalProps {
   organizationId: string;
   onComplete: () => void;
   onBridgeToService?: (barberId: string | null, barberName: string) => void;
+  selectedDate?: string;
 }
 
 interface Unit {
@@ -66,6 +68,7 @@ export default function SubscriptionWizardModal({
   organizationId,
   onComplete,
   onBridgeToService,
+  selectedDate,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
@@ -161,7 +164,7 @@ export default function SubscriptionWizardModal({
   const handleSubmit = async () => {
     if (!canProceed()) return;
     setLoading(true);
-    const today = getTodayString();
+    const dateStr = selectedDate || getTodayString();
 
     try {
       let productionId: string | null = null;
@@ -179,7 +182,7 @@ export default function SubscriptionWizardModal({
           .from("daily_productions")
           .select("id")
           .eq("barber_id", selectedBarberId)
-          .eq("date", today)
+          .eq("date", dateStr)
           .maybeSingle();
 
         if (existingProd) {
@@ -190,7 +193,7 @@ export default function SubscriptionWizardModal({
             .insert({
               barber_id: selectedBarberId,
               organization_id: organizationId,
-              date: today,
+              date: dateStr,
               clients_count: 0,
               services_count: 0,
               products_count: 0,
@@ -207,6 +210,7 @@ export default function SubscriptionWizardModal({
 
       const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : "Downgrade";
 
+      const createdAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
         organization_id: organizationId,
@@ -222,6 +226,7 @@ export default function SubscriptionWizardModal({
         commission_rate_used: 0,
         commission_amount: 0,
         source: "manager",
+        created_at: createdAt,
         is_new_client: isNewClient,
         subscription_plan_id: selectedPlanId,
         subscription_action: subscriptionAction,
