@@ -1,65 +1,84 @@
 
-# Adicionar Nome do Cliente na Comanda (Ao Vivo)
+# Dashboard de Inteligencia de Assinaturas
 
 ## Resumo
-Adicionar um campo "Nome do Cliente" no QuickSaleModal para que o gestor identifique cada venda do dia. O dado e temporario (apagado apos 30 dias).
+Criar um novo componente `SubscriptionAnalytics.tsx` com metricas de movimentacao da carteira (new/renew/upgrade/downgrade), grafico de motivos de downgrade, funil de conversao e tabela de movimentacoes recentes. Sera integrado como nova sub-aba "Inteligencia" dentro da aba Evolucao.
 
 ---
 
-## Etapa 1 -- Banco de Dados
+## Componente: `src/components/dashboard/manager/SubscriptionAnalytics.tsx`
 
-### Nova coluna em `sale_transactions`
-- `client_name` (text, nullable) -- nome do cliente da comanda
-- Nao precisa de indice especial, e apenas informativo
+### Busca de Dados
+- Query na `sale_transactions` do mes/ano selecionado onde `item_type = 'subscription'`
+- Campos: `subscription_action`, `downgrade_reason`, `is_new_client`, `item_name`, `client_name`, `created_at`, `price_sold`, `subscription_plan_id`
+- Join com `barbers(name)` e `subscription_plans(name)` para exibir nomes
+- Query separada para total de clientes novos (todas transacoes com `is_new_client = true` e `source = 'manager'`)
 
-### Limpeza automatica (30 dias)
-- Criar uma funcao SQL `cleanup_old_client_names()` que seta `client_name = NULL` em registros com mais de 30 dias
-- Criar um cron job via `pg_cron` (ou trigger simples) para rodar essa limpeza periodicamente
-- Alternativa mais simples: criar a funcao e o gestor pode chama-la manualmente, ou usar o `pg_cron` se disponivel
+### Secao 1: Cards de Resumo (4 cards no topo)
+- **Novas Assinaturas**: count de `subscription_action = 'new'`
+- **Renovacoes**: count de `subscription_action = 'renew'`
+- **Upgrades**: count de `subscription_action = 'upgrade'` (icone verde TrendingUp)
+- **Downgrades**: count de `subscription_action = 'downgrade'` (icone vermelho TrendingDown)
+
+### Secao 2: Graficos de Analise
+
+**Grafico A - Motivos de Downgrade (PieChart/Donut)**
+- Agrupa por `downgrade_reason` das transacoes com `subscription_action = 'downgrade'`
+- Se nao houver dados, exibe mensagem "Sem downgrades registrados"
+- Usa Recharts `PieChart` com `innerRadius` para efeito donut
+
+**Grafico B - Funil de Conversao (BarChart Horizontal)**
+- Barra 1: Total de clientes novos atendidos (oportunidades) - `is_new_client = true` de qualquer transacao `source = 'manager'`
+- Barra 2: Assinaturas vendidas para novos - `subscription_action = 'new'` AND `is_new_client = true`
+- Label com % de conversao em destaque
+- Usa Recharts `BarChart` com `layout="vertical"`
+
+### Secao 3: Tabela de Movimentacoes Recentes
+- Ultimas 10 transacoes de assinatura ordenadas por `created_at DESC`
+- Colunas: Data | Cliente | Acao (Badge colorida) | Plano | Motivo
+- Badges: new=verde, renew=azul, upgrade=emerald, downgrade=vermelho
+
+### Filtros
+- Seletor de mes e ano (mesmo padrao do `SubscriptionPerformanceReport`)
 
 ---
 
-## Etapa 2 -- Interface (QuickSaleModal)
+## Integracao na Navegacao
 
-### Adicionar campo "Nome do Cliente"
-- Novo input de texto no cabecalho do modal (junto com "Clientes Atendidos" e "Cliente Novo")
-- Label: "Nome do Cliente (opcional)"
-- Placeholder: "Ex: Joao"
-- O campo aparece tanto no modo catalogo quanto no modo manual
-- O valor e gravado em todas as transacoes do carrinho daquela comanda
+Adicionar como nova sub-aba "Inteligencia" no componente `BarberEvolution.tsx` (aba Evolucao do gestor), ao lado das sub-abas existentes (Barbearia, Comparativo, Barbeiro, Assinaturas, Recepcao).
 
-### Exibicao no TransactionManagerModal
-- Mostrar o nome do cliente na listagem de transacoes do dia (coluna ou badge ao lado do item)
-- Permite ao gestor identificar rapidamente qual venda pertence a qual cliente
+- Nova TabsTrigger com icone `Brain` ou `BarChart3` e label "Inteligencia"
+- TabsContent renderiza `<SubscriptionAnalytics />`
+- O grid de tabs passa de `grid-cols-5` para `grid-cols-6`
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migracao SQL
-```text
-ALTER TABLE sale_transactions
-  ADD COLUMN client_name text;
-
--- Funcao para limpar nomes antigos (>30 dias)
-CREATE OR REPLACE FUNCTION cleanup_old_client_names()
-RETURNS void AS $$
-BEGIN
-  UPDATE sale_transactions
-  SET client_name = NULL
-  WHERE client_name IS NOT NULL
-    AND created_at < now() - interval '30 days';
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-```
+### Arquivos a criar
+- `src/components/dashboard/manager/SubscriptionAnalytics.tsx`
 
 ### Arquivos a modificar
-- `src/components/dashboard/manager/QuickSaleModal.tsx` -- adicionar state `clientName`, input no header, gravar na transacao
-- `src/components/dashboard/manager/TransactionManagerModal.tsx` -- exibir `client_name` na listagem
+- `src/components/dashboard/manager/BarberEvolution.tsx` - adicionar nova sub-aba
 
-### Mudancas no QuickSaleModal
-- Novo state: `const [clientName, setClientName] = useState("")`
-- Reset no `resetForm()`
-- Input no cabecalho (area expansivel junto aos controles existentes)
-- No `handleCartCheckout`: adicionar `client_name: clientName || null` em cada transacao
-- No `handleManualSale`: mesma logica (se aplicavel)
+### Dependencias utilizadas (ja instaladas)
+- `recharts` - PieChart, BarChart, ResponsiveContainer
+- `date-fns` + `date-fns-tz` - formatacao de datas
+- Componentes UI existentes: Card, Badge, Table, Select, Skeleton
+
+### Estrutura da Query Principal
+```text
+supabase
+  .from("sale_transactions")
+  .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, barbers(name), subscription_plans(name)")
+  .eq("item_type", "subscription")
+  .gte("created_at", startDate)
+  .lte("created_at", endDate)
+  .order("created_at", { ascending: false })
+```
+
+### Mapeamento de cores das acoes
+- new -> bg-green-500 (verde)
+- renew -> bg-blue-500 (azul)
+- upgrade -> bg-emerald-500 (emerald)
+- downgrade -> bg-red-500 (vermelho)
