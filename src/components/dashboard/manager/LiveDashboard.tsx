@@ -27,6 +27,7 @@ import LiveTop3Ranking from "./LiveTop3Ranking";
 import QuickSaleModal from "./QuickSaleModal";
 import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
+import SubscriptionAuditModal from "./SubscriptionAuditModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
 
 interface Barber {
@@ -104,6 +105,7 @@ export default function LiveDashboard() {
 
   // Subscription wizard modal
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
+  const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
 
   // Date navigation state
   const todayManaus = getTodayString();
@@ -589,14 +591,25 @@ export default function LiveDashboard() {
       {/* Subscription Button + Total Revenue */}
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Destacar botão de Assinatura */}
-        <Button
-          size="lg"
-          className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg"
-          onClick={() => setSubscriptionWizardOpen(true)}
-        >
-          <Crown className="w-5 h-5" />
-          Vender Assinatura
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="lg"
+            className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg"
+            onClick={() => setSubscriptionWizardOpen(true)}
+          >
+            <Crown className="w-5 h-5" />
+            Vender Assinatura
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-11 w-11 p-0"
+            onClick={() => setSubscriptionAuditOpen(true)}
+            title="Auditar Últimas Vendas"
+          >
+            <Eye className="w-5 h-5" />
+          </Button>
+        </div>
 
         {/* Total Revenue Card */}
         <Card
@@ -801,6 +814,14 @@ export default function LiveDashboard() {
             });
           }
         }}
+      />
+
+      {/* Subscription Audit Modal */}
+      <SubscriptionAuditModal
+        open={subscriptionAuditOpen}
+        onOpenChange={setSubscriptionAuditOpen}
+        organizationId={organizationId || ""}
+        onRefresh={fetchData}
       />
 
       {/* View Transactions Modal */}
