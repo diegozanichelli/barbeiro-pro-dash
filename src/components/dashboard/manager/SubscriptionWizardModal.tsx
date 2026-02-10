@@ -43,6 +43,7 @@ interface SubscriptionWizardModalProps {
   onOpenChange: (open: boolean) => void;
   organizationId: string;
   onComplete: () => void;
+  onBridgeToService?: (barberId: string | null, barberName: string) => void;
 }
 
 interface Unit {
@@ -56,7 +57,7 @@ interface SubscriptionPlan {
   price: number;
 }
 
-type WizardStep = "client_type" | "attribution" | "details";
+type WizardStep = "client_type" | "attribution" | "details" | "success";
 type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
 
 export default function SubscriptionWizardModal({
@@ -64,6 +65,7 @@ export default function SubscriptionWizardModal({
   onOpenChange,
   organizationId,
   onComplete,
+  onBridgeToService,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
@@ -231,8 +233,8 @@ export default function SubscriptionWizardModal({
         description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
       });
 
-      onOpenChange(false);
       onComplete();
+      setStep("success");
     } catch (error: any) {
       console.error("Erro ao registrar assinatura:", error);
       toast.error("Erro ao registrar assinatura");
@@ -241,10 +243,23 @@ export default function SubscriptionWizardModal({
     }
   };
 
+  const handleBridgeToService = () => {
+    const barberName = selectedBarberId
+      ? "Barbeiro" // Will be resolved by parent
+      : "Recepção";
+    onOpenChange(false);
+    onBridgeToService?.(selectedBarberId, barberName);
+  };
+
+  const handleFinish = () => {
+    onOpenChange(false);
+  };
+
   const getStepNumber = () => {
     if (step === "client_type") return 1;
     if (step === "attribution") return 2;
-    return 3;
+    if (step === "details") return 3;
+    return 4;
   };
 
   return (
@@ -254,15 +269,19 @@ export default function SubscriptionWizardModal({
           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
             <Crown className="w-8 h-8 text-primary" />
           </div>
-          <DialogTitle className="text-xl">Vender Assinatura</DialogTitle>
-          <DialogDescription>
-            Passo {getStepNumber()} de 3 —{" "}
-            {step === "client_type"
-              ? "Tipo de Cliente"
-              : step === "attribution"
-              ? "Atribuição de Pontos"
-              : "Detalhes do Plano"}
-          </DialogDescription>
+          <DialogTitle className="text-xl">
+            {step === "success" ? "✅ Assinatura Confirmada!" : "Vender Assinatura"}
+          </DialogTitle>
+          {step !== "success" && (
+            <DialogDescription>
+              Passo {getStepNumber()} de 3 —{" "}
+              {step === "client_type"
+                ? "Tipo de Cliente"
+                : step === "attribution"
+                ? "Atribuição de Pontos"
+                : "Detalhes do Plano"}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-6 py-4">
@@ -487,8 +506,44 @@ export default function SubscriptionWizardModal({
               </div>
             </div>
           )}
+
+          {/* SUCCESS STEP - Bridge */}
+          {step === "success" && (
+            <div className="space-y-6 text-center">
+              <div className="mx-auto w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center">
+                <Check className="w-10 h-10 text-green-500" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-lg font-semibold text-foreground">
+                  Assinatura registrada com sucesso!
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  O cliente vai realizar algum serviço agora?
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 pt-2">
+                {selectedBarberId && onBridgeToService && (
+                  <Button
+                    className="w-full gap-2"
+                    onClick={handleBridgeToService}
+                  >
+                    <Scissors className="w-4 h-4" />
+                    Sim, Lançar Serviço
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleFinish}
+                >
+                  Não, Finalizar
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
+        {step !== "success" && (
         <DialogFooter className="flex-row gap-3 sm:flex-row">
           {step !== "client_type" ? (
             <Button variant="outline" className="flex-1 gap-2" onClick={handleBack} disabled={loading}>
@@ -512,6 +567,7 @@ export default function SubscriptionWizardModal({
             </Button>
           )}
         </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

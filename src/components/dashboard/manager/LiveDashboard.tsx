@@ -85,6 +85,7 @@ export default function LiveDashboard() {
     open: boolean;
     barberId: string;
     barberName: string;
+    fromBridge?: boolean;
   }>({ open: false, barberId: "", barberName: "" });
   const [editModal, setEditModal] = useState<{
     open: boolean;
@@ -762,12 +763,13 @@ export default function LiveDashboard() {
       <QuickSaleModal
         open={quickSaleModal.open}
         onOpenChange={(open) =>
-          setQuickSaleModal((prev) => ({ ...prev, open }))
+          setQuickSaleModal((prev) => ({ ...prev, open, fromBridge: open ? prev.fromBridge : false }))
         }
         barberId={quickSaleModal.barberId}
         barberName={quickSaleModal.barberName}
         organizationId={organizationId || ""}
         onSuccess={fetchData}
+        initialIsNewClient={quickSaleModal.fromBridge ? false : undefined}
       />
 
       {/* Edit Production Modal - Transaction Manager */}
@@ -788,6 +790,17 @@ export default function LiveDashboard() {
         onOpenChange={setSubscriptionWizardOpen}
         organizationId={organizationId || ""}
         onComplete={fetchData}
+        onBridgeToService={(barberId, _barberName) => {
+          if (barberId) {
+            const barber = barbers.find((b) => b.id === barberId);
+            setQuickSaleModal({
+              open: true,
+              barberId,
+              barberName: barber?.name || "Barbeiro",
+              fromBridge: true,
+            });
+          }
+        }}
       />
 
       {/* View Transactions Modal */}
