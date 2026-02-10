@@ -1,53 +1,30 @@
 
+# Adicionar Coluna "Unidade" na Tabela de Movimentacoes Recentes
 
-# Correção no Fluxo de Fechamento de Assinatura
-
-## Situação Atual
-O Wizard de Assinaturas (`SubscriptionWizardModal`) **ja bloqueia** a progressão se o gestor não escolher "Recepção" ou "Barbeiro", e já resolve automaticamente a unidade do barbeiro selecionado. Porém existem dois problemas reais:
-
-1. **Bug de segurança**: A lista de unidades (para Recepção) não filtra por `organization_id` -- pode mostrar unidades de outras organizações
-2. **Falta de feedback visual**: Quando o barbeiro é selecionado, o gestor não vê qual unidade será atribuída à assinatura, o que gera insegurança
-
-## Correções
-
-### 1. Filtrar unidades por organização
-Na query de unidades (linha 92), adicionar `.eq("organization_id", organizationId)` para mostrar apenas as unidades da organização do gestor.
-
-### 2. Mostrar unidade do barbeiro selecionado
-Ao selecionar um barbeiro no passo 2 (Atribuição), exibir abaixo do seletor um badge informativo tipo:
-"Unidade: Centro" -- mostrando que a assinatura será direcionada para aquela unidade automaticamente.
-
-Essa informação já está disponível no `BarberCombobox` (o campo `unit_name` aparece abaixo do nome do barbeiro na lista), mas ao fechar o combobox, a informação se perde.
-
-### 3. Limpar `SubscriptionConfirmModal` (código morto)
-O componente antigo `SubscriptionConfirmModal.tsx` não é mais importado em nenhum lugar. Pode ser removido para evitar confusão futura.
+## Resumo
+Adicionar uma coluna "Unidade" na tabela de Movimentacoes Recentes do dashboard de Inteligencia de Assinaturas, para que o gestor saiba a qual unidade cada assinatura pertence.
 
 ---
 
-## Detalhes Técnicos
+## Alteracoes
 
-### Arquivo a modificar
-- `src/components/dashboard/manager/SubscriptionWizardModal.tsx`
+### Arquivo: `src/components/dashboard/manager/SubscriptionAnalytics.tsx`
 
-### Mudanças no código
+**1. Atualizar a query para buscar o nome da unidade**
+Adicionar `units(name)` no select da query principal via o campo `unit_id` que ja existe em `sale_transactions`:
 
-**Query de unidades (linha 92):**
-Adicionar filtro por organização:
 ```text
-supabase.from("units").select("id, name")
-  .eq("organization_id", organizationId)
-  .eq("status", "active")
-  .order("name")
+.select("..., units(name)")
 ```
 
-**Feedback visual do barbeiro selecionado (passo 2):**
-Após o `BarberCombobox`, quando `selectedBarberId` estiver preenchido, buscar o nome da unidade do barbeiro e exibir um texto informativo como:
+**2. Atualizar a interface `SubscriptionTransaction`**
+Adicionar o campo:
 ```text
-"Assinatura será registrada na unidade: [Nome da Unidade]"
+units: { name: string } | null;
 ```
 
-Para isso, salvar o `unit_name` junto ao `selectedBarberId` (usando os dados já disponíveis no `BarberCombobox`, ou fazendo uma consulta rápida ao selecionar).
+**3. Adicionar coluna "Unidade" na tabela**
+- Novo `TableHead` com label "Unidade" entre "Data" e "Cliente"
+- Novo `TableCell` exibindo `t.units?.name || "--"`
 
-### Arquivo a remover (opcional)
-- `src/components/dashboard/barber/SubscriptionConfirmModal.tsx` -- código morto, não é mais usado
-
+A ordem das colunas ficara: Data | Unidade | Cliente | Acao | Plano | Motivo | (editar)
