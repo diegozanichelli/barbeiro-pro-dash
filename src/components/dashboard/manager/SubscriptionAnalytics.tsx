@@ -1,13 +1,15 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain } from "lucide-react";
+import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil } from "lucide-react";
+import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 
@@ -45,6 +47,7 @@ interface SubscriptionTransaction {
   price_sold: number;
   barbers: { name: string } | null;
   subscription_plans: { name: string } | null;
+  subscription_plan_id: string | null;
 }
 
 export default function SubscriptionAnalytics() {
@@ -54,6 +57,7 @@ export default function SubscriptionAnalytics() {
   const [transactions, setTransactions] = useState<SubscriptionTransaction[]>([]);
   const [totalNewClients, setTotalNewClients] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [editingTransaction, setEditingTransaction] = useState<SubscriptionTransaction | null>(null);
 
   const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
   const years = Array.from({ length: 3 }, (_, i) => manausNow.getFullYear() - 1 + i);
@@ -71,7 +75,7 @@ export default function SubscriptionAnalytics() {
     const [subRes, newClientsRes] = await Promise.all([
       supabase
         .from("sale_transactions")
-        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, barbers(name), subscription_plans(name)")
+        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, subscription_plan_id, barbers(name), subscription_plans(name)")
         .eq("item_type", "subscription")
         .gte("created_at", start)
         .lte("created_at", end)
@@ -243,10 +247,11 @@ export default function SubscriptionAnalytics() {
                     <TableHead>Ação</TableHead>
                     <TableHead>Plano</TableHead>
                     <TableHead>Motivo</TableHead>
+                    <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transactions.slice(0, 10).map((t) => {
+                  {transactions.map((t) => {
                     const action = t.subscription_action || "new";
                     const zonedDate = toZonedTime(new Date(t.created_at), "America/Manaus");
                     return (
@@ -260,6 +265,11 @@ export default function SubscriptionAnalytics() {
                         </TableCell>
                         <TableCell className="text-sm">{t.subscription_plans?.name || t.item_name}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{t.downgrade_reason || "—"}</TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingTransaction(t)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -269,6 +279,13 @@ export default function SubscriptionAnalytics() {
           )}
         </CardContent>
       </Card>
+
+      <SubscriptionEditModal
+        open={!!editingTransaction}
+        onOpenChange={(open) => { if (!open) setEditingTransaction(null); }}
+        transaction={editingTransaction}
+        onSaved={fetchData}
+      />
     </div>
   );
 }
