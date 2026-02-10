@@ -1,50 +1,45 @@
 
-# Revisao Geral de Scroll Mobile no Dashboard do Barbeiro
+# Adicionar DatePicker e Corrigir Data Retroativa no QuickSaleModal
 
 ## Problema
-No mobile, varias telas e modais do barbeiro nao permitem rolagem (scroll). O conteudo fica preso e o usuario nao consegue navegar para cima/baixo, especialmente:
-- Modal de scripts de venda da IA (conteudo longo sem scroll)
-- Dica do Coach IA (card com texto extenso)
-- Qualquer dialog com conteudo que ultrapassa a tela
-
-## Causa Raiz
-O componente global `DialogContent` (`src/components/ui/dialog.tsx`) nao tem restricao de altura maxima nem overflow scroll. Quando o conteudo do dialog e maior que a tela do celular, ele simplesmente transborda sem possibilidade de rolagem.
+O `QuickSaleModal` nao possui nenhum seletor de data. Ele sempre usa `getTodayString()` para a data da producao diaria e nao define `created_at` nas transacoes (usa o default do banco, que e `now()`). Isso impede lançamentos retroativos pelo gestor.
 
 ## Solucao
-
-### 1. Corrigir `DialogContent` globalmente
-Adicionar `max-h-[90vh] overflow-y-auto` ao componente `DialogContent` em `src/components/ui/dialog.tsx`. Isso garante que **todos** os dialogs da aplicacao se tornem scrollaveis no mobile automaticamente.
-
-### 2. Corrigir modal de scripts de venda (AITipsTab)
-O dialog de scripts em `AITipsTab.tsx` usa `<DialogContent className="sm:max-w-md">`. Com a correcao global, ele ja herdara o comportamento de scroll. Nenhuma mudanca adicional necessaria neste arquivo.
-
-### 3. Garantir touch-scroll no index.css
-Adicionar `overscroll-behavior: contain` e `-webkit-overflow-scrolling: touch` no body para garantir scroll suave em dispositivos iOS e Android.
+Adicionar um DatePicker identico ao do `BarberSaleForm` e usar a data selecionada tanto na `daily_productions.date` quanto no `created_at` das `sale_transactions`.
 
 ---
 
-## Detalhes Tecnicos
+## Alteracoes no arquivo `src/components/dashboard/manager/QuickSaleModal.tsx`
 
-### Arquivo: `src/components/ui/dialog.tsx`
-Alterar a classe do `DialogPrimitive.Content` de:
-```text
-"fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg ..."
-```
-Para:
-```text
-"fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg max-h-[90vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg ..."
-```
+### 1. Novos imports
+Adicionar: `Calendar`, `Popover`, `PopoverContent`, `PopoverTrigger`, `CalendarIcon`, `format`, `ptBR`
 
-### Arquivo: `src/index.css`
-Adicionar ao bloco `body`:
+### 2. Novo estado
 ```text
-body {
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-}
+const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+const [datePickerOpen, setDatePickerOpen] = useState(false);
 ```
 
-### Impacto
-- Corrige scroll em **todos** os modais da aplicacao (AI scripts, edicao de producao, presenca, vendas, etc.)
-- Nao quebra nenhum dialog existente que ja caiba na tela
-- Melhora a experiencia touch em iOS (Safari) e Android
+### 3. Reset do estado
+Na funcao `resetForm()`, adicionar `setSelectedDate(new Date())` e `setDatePickerOpen(false)`.
+
+### 4. DatePicker na UI
+Adicionar o seletor de data na area do header (dentro da secao colapsavel, junto com "Nome do Cliente" e "Venda Recepcao"), com o mesmo estilo do `BarberSaleForm`:
+- Botao mostrando "Hoje" ou a data formatada
+- Calendario popup com `disabled={(date) => date > new Date()}`
+- Destaque visual quando a data nao e hoje (cor de alerta)
+
+### 5. Corrigir `handleCartCheckout`
+- Trocar `const today = getTodayString()` por `const dateStr = format(selectedDate, "yyyy-MM-dd")`
+- Usar `dateStr` nas queries de `daily_productions` (`.eq("date", dateStr)` e no insert)
+- Adicionar `created_at` no payload de cada transacao:
+```text
+created_at: selectedDate.toISOString()
+```
+
+### 6. Corrigir `handleManualSale`
+- Mesma logica: usar `format(selectedDate, "yyyy-MM-dd")` em vez de `getTodayString()`
+- As transacoes manuais tambem devem respeitar a data escolhida
+
+### 7. Logica de hora
+Para datas passadas, a hora sera preservada como o momento do registro (horario atual aplicado ao dia selecionado). O importante e que o **dia** seja o correto para o filtro de producao diaria.
