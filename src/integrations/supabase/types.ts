@@ -608,6 +608,7 @@ export type Database = {
           barber_id: string | null
           catalog_product_id: string | null
           catalog_service_id: string | null
+          client_name: string | null
           commission_amount: number
           commission_rate_used: number
           created_at: string
@@ -630,6 +631,7 @@ export type Database = {
           barber_id?: string | null
           catalog_product_id?: string | null
           catalog_service_id?: string | null
+          client_name?: string | null
           commission_amount: number
           commission_rate_used: number
           created_at?: string
@@ -652,6 +654,7 @@ export type Database = {
           barber_id?: string | null
           catalog_product_id?: string | null
           catalog_service_id?: string | null
+          client_name?: string | null
           commission_amount?: number
           commission_rate_used?: number
           created_at?: string
@@ -836,6 +839,7 @@ export type Database = {
     }
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
+      cleanup_old_client_names: { Args: never; Returns: undefined }
       get_organization_rankings: {
         Args: { p_end_date: string; p_start_date: string; p_unit_id?: string }
         Returns: {
