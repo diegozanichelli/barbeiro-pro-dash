@@ -78,6 +78,7 @@ export default function SubscriptionWizardModal({
   // Step 2
   const [attributionType, setAttributionType] = useState<"reception" | "barber" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
+  const [selectedBarberUnitName, setSelectedBarberUnitName] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
 
@@ -89,7 +90,7 @@ export default function SubscriptionWizardModal({
   useEffect(() => {
     const fetchData = async () => {
       const [unitsRes, plansRes] = await Promise.all([
-        supabase.from("units").select("id, name").eq("status", "active").order("name"),
+        supabase.from("units").select("id, name").eq("organization_id", organizationId).eq("status", "active").order("name"),
         supabase.from("subscription_plans").select("id, name, price").eq("active", true).eq("organization_id", organizationId).order("name"),
       ]);
       if (unitsRes.data) setUnits(unitsRes.data);
@@ -106,6 +107,7 @@ export default function SubscriptionWizardModal({
       setDowngradeReason("");
       setAttributionType(null);
       setSelectedBarberId(null);
+      setSelectedBarberUnitName(null);
       setSelectedUnitId(null);
       setSelectedPlanId(null);
       setClientName("");
@@ -446,10 +448,19 @@ export default function SubscriptionWizardModal({
                   <BarberCombobox
                     organizationId={organizationId}
                     value={selectedBarberId}
-                    onChange={setSelectedBarberId}
+                    onChange={(barberId, unitName) => {
+                      setSelectedBarberId(barberId);
+                      setSelectedBarberUnitName(unitName ?? null);
+                    }}
                     placeholder="Buscar barbeiro..."
                     allowReception={false}
                   />
+                  {selectedBarberId && selectedBarberUnitName && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                      <Building2 className="w-3 h-3" />
+                      Assinatura será registrada na unidade: <strong>{selectedBarberUnitName}</strong>
+                    </p>
+                  )}
                 </div>
               )}
             </div>
