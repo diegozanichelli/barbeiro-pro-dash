@@ -112,6 +112,7 @@ export default function QuickSaleModal({
 
   // New client tracking (for conversion metrics)
   const [isNewClient, setIsNewClient] = useState(false);
+  const [clientName, setClientName] = useState("");
 
   // Compact header to free space for the grid after selecting items
   const shouldAutoCompactHeader = cart.length > 0 && activeTab !== "manual";
@@ -175,6 +176,7 @@ export default function QuickSaleModal({
     setActiveTab("services");
     setIsReceptionSale(false);
     setIsNewClient(false);
+    setClientName("");
     setHeaderExpanded(true);
   };
 
@@ -350,6 +352,7 @@ export default function QuickSaleModal({
             commission_rate_used: 0,
             commission_amount: 0,
             is_new_client: isNewClient,
+            client_name: clientName.trim() || null,
           });
         }
       });
@@ -514,6 +517,21 @@ export default function QuickSaleModal({
                     : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
                 )}
               >
+                {/* Nome do Cliente */}
+                <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
+                  <Label htmlFor="client-name" className="text-sm font-medium">
+                    Nome do Cliente (opcional)
+                  </Label>
+                  <Input
+                    id="client-name"
+                    type="text"
+                    placeholder="Ex: João"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+
                 {/* Toggle Venda Recepção */}
                 <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
                   <div className="flex items-center gap-2">

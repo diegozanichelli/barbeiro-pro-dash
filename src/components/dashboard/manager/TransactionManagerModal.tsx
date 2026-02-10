@@ -60,6 +60,7 @@ interface Transaction {
   price_sold: number;
   commission_amount: number;
   description: string | null;
+  client_name: string | null;
 }
 
 interface CatalogItem {
@@ -133,7 +134,7 @@ export default function TransactionManagerModal({
     try {
       const { data, error } = await supabase
         .from("sale_transactions")
-        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description")
+        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
         .eq("daily_production_id", dailyProductionId)
         .eq("source", "manager")
         .order("created_at", { ascending: true });
@@ -459,6 +460,11 @@ export default function TransactionManagerModal({
                               {getCategoryBadge(
                                 transaction.item_type,
                                 transaction.service_category
+                              )}
+                              {transaction.client_name && (
+                                <Badge variant="outline" className="text-[10px] gap-1">
+                                  👤 {transaction.client_name}
+                                </Badge>
                               )}
                             </div>
                             {transaction.description && (
