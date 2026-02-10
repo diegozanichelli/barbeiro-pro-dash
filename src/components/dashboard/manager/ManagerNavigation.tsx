@@ -59,15 +59,21 @@ export default function ManagerNavigation({
     { id: "overview", label: "Dashboard", icon: BarChart3 },
   ];
 
+  const gestaoItems: NavItem[] = [
+    { id: "barbers", label: "Barbeiros", icon: Users },
+    { id: "units", label: "Unidades", icon: Building2 },
+    { id: "goals", label: "Metas", icon: Target },
+  ];
+
+  if (hasSubscriptionModule) {
+    gestaoItems.push({ id: "plans", label: "Planos", icon: Repeat });
+  }
+
   const gestaoGroup: NavGroup = {
     id: "gestao",
     label: "Gestão",
     icon: Briefcase,
-    items: [
-      { id: "barbers", label: "Barbeiros", icon: Users },
-      { id: "units", label: "Unidades", icon: Building2 },
-      { id: "goals", label: "Metas", icon: Target },
-    ],
+    items: gestaoItems,
   };
 
   const financeiroItems: NavItem[] = [
