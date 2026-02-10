@@ -205,27 +205,23 @@ export default function BarberEditProductionModal({
     setCart(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       
-      let cleanedValue = newValue;
-      
       if (newValue === "") {
-        cleanedValue = "";
-      } else {
-        const cleaned = newValue.replace(/[^\d,.\-]/g, "");
-        if ((item.customPriceInput === "0" || item.customPriceInput === "0,00") && /^\d/.test(cleaned)) {
-          cleanedValue = cleaned.replace(/^0+(?=\d)/, "") || cleaned;
-        } else {
-          cleanedValue = cleaned;
-        }
+        return { ...item, customPriceInput: "", customPrice: 0 };
       }
-      
-      const parsed = parseFloat(cleanedValue.replace(",", ".")) || 0;
+
+      const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+      const parsed = parseFloat(cleaned.replace(",", ".")) || 0;
       
       return { 
         ...item, 
-        customPriceInput: cleanedValue,
+        customPriceInput: cleaned,
         customPrice: parsed
       };
     }));
+  };
+
+  const handleCartItemPriceFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setTimeout(() => e.target.select(), 0);
   };
 
   const finalizeCartItemPrice = (itemId: string) => {
@@ -588,6 +584,7 @@ export default function BarberEditProductionModal({
                             inputMode="decimal"
                             value={item.customPriceInput}
                             onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
+                            onFocus={handleCartItemPriceFocus}
                             onBlur={() => finalizeCartItemPrice(item.id)}
                             className="w-20 text-right font-bold text-xs h-7"
                           />
