@@ -306,25 +306,50 @@ export default function LiveDashboard() {
   };
 
   const handleEditClick = async (barber: Barber) => {
-    // Buscar daily_production_id
-    const { data: production } = await supabase
+    // Buscar daily_production_id com maybeSingle para não lançar erro se não existir
+    const { data: production, error: fetchError } = await supabase
       .from("daily_productions")
       .select("id")
       .eq("barber_id", barber.id)
       .eq("date", selectedDate)
-      .single();
-    
-    if (production) {
-      setEditModal({
-        open: true,
-        barberId: barber.id,
-        barberName: barber.name,
-        dailyProductionId: production.id,
-        date: selectedDate,
-      });
-    } else {
-      toast.error("Nenhuma produção encontrada para editar");
+      .maybeSingle();
+
+    if (fetchError) {
+      toast.error("Erro ao buscar produção");
+      return;
     }
+
+    let dailyProductionId = production?.id;
+
+    // Se não existe produção para esse dia, criar automaticamente com valores zerados
+    if (!dailyProductionId) {
+      const { data: newProd, error: insertError } = await supabase
+        .from("daily_productions")
+        .insert({
+          barber_id: barber.id,
+          date: selectedDate,
+          organization_id: organizationId,
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !newProd) {
+        toast.error("Erro ao criar produção para edição");
+        return;
+      }
+
+      dailyProductionId = newProd.id;
+      // Recarregar produções para refletir o novo registro
+      fetchData();
+    }
+
+    setEditModal({
+      open: true,
+      barberId: barber.id,
+      barberName: barber.name,
+      dailyProductionId,
+      date: selectedDate,
+    });
   };
 
   const handleViewTransactions = async (barber: Barber) => {
