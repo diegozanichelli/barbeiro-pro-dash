@@ -2,44 +2,66 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserCheck, CalendarOff, XCircle, ClipboardList, Loader2 } from "lucide-react";
 import { useOrganization } from "@/hooks/useOrganization";
 import { getCurrentMonthYear } from "@/lib/dateUtils";
-import { format } from "date-fns";
+import { format, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface BarberOccurrence {
   barberId: string;
   barberName: string;
+  unitId: string;
   unitName: string;
   presentCount: number;
   dayOffCount: number;
   absenceCount: number;
 }
 
+interface UnitOption {
+  id: string;
+  name: string;
+}
+
 export default function MonthlyOccurrencesSummary() {
   const { organizationId } = useOrganization();
   const [occurrences, setOccurrences] = useState<BarberOccurrence[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const { month, year } = getCurrentMonthYear();
 
   useEffect(() => {
     if (!organizationId) return;
+    fetchUnits();
     fetchOccurrences();
   }, [organizationId]);
 
+  const fetchUnits = async () => {
+    const { data } = await supabase
+      .from("units")
+      .select("id, name")
+      .eq("organization_id", organizationId!)
+      .eq("status", "active")
+      .order("name");
+    if (data) setUnits(data);
+  };
+
   const fetchOccurrences = async () => {
     try {
-      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-      const endDate = `${year}-${String(month).padStart(2, "0")}-31`;
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = endOfMonth(startDate);
+      const startStr = format(startDate, "yyyy-MM-dd");
+      const endStr = format(endDate, "yyyy-MM-dd");
 
       const { data: productions, error } = await supabase
         .from("daily_productions")
-        .select("barber_id, presence_type, confirmed_presence, barbers!inner(name, units!inner(name))")
+        .select("barber_id, presence_type, confirmed_presence, barbers!inner(name, unit_id, units!inner(id, name))")
         .eq("organization_id", organizationId!)
         .eq("confirmed_presence", true)
-        .gte("date", startDate)
-        .lte("date", endDate);
+        .gte("date", startStr)
+        .lte("date", endStr);
 
       if (error) throw error;
 
@@ -51,6 +73,7 @@ export default function MonthlyOccurrencesSummary() {
           map.set(p.barber_id, {
             barberId: p.barber_id,
             barberName: barber.name,
+            unitId: barber.units.id,
             unitName: barber.units.name,
             presentCount: 0,
             dayOffCount: 0,
@@ -58,7 +81,7 @@ export default function MonthlyOccurrencesSummary() {
           });
         }
         const entry = map.get(p.barber_id)!;
-        const type = p.presence_type || "present"; // null = legacy present
+        const type = p.presence_type || "present";
         if (type === "present") entry.presentCount++;
         else if (type === "day_off") entry.dayOffCount++;
         else if (type === "absence") entry.absenceCount++;
@@ -67,11 +90,7 @@ export default function MonthlyOccurrencesSummary() {
       setOccurrences(
         Array.from(map.values())
           .filter((o) => o.presentCount + o.dayOffCount + o.absenceCount > 0)
-          .sort((a, b) => {
-            const totalA = a.dayOffCount + a.absenceCount;
-            const totalB = b.dayOffCount + b.absenceCount;
-            return totalB - totalA;
-          })
+          .sort((a, b) => (b.dayOffCount + b.absenceCount) - (a.dayOffCount + a.absenceCount))
       );
     } catch (err) {
       console.error("Erro ao buscar ocorrências:", err);
@@ -82,7 +101,11 @@ export default function MonthlyOccurrencesSummary() {
 
   const monthLabel = format(new Date(year, month - 1), "MMMM yyyy", { locale: ptBR });
 
-  const totals = occurrences.reduce(
+  const filtered = selectedUnit === "all"
+    ? occurrences
+    : occurrences.filter((o) => o.unitId === selectedUnit);
+
+  const totals = filtered.reduce(
     (acc, o) => ({
       present: acc.present + o.presentCount,
       dayOff: acc.dayOff + o.dayOffCount,
@@ -106,10 +129,25 @@ export default function MonthlyOccurrencesSummary() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <ClipboardList className="w-5 h-5" />
-          Ocorrências do Mês — <span className="capitalize">{monthLabel}</span>
-        </CardTitle>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ClipboardList className="w-5 h-5" />
+            Ocorrências do Mês — <span className="capitalize">{monthLabel}</span>
+          </CardTitle>
+          {units.length > 1 && (
+            <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Todas as unidades" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as unidades</SelectItem>
+                {units.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Totals */}
@@ -139,7 +177,7 @@ export default function MonthlyOccurrencesSummary() {
 
         {/* Per barber */}
         <div className="space-y-2">
-          {occurrences.map((o) => (
+          {filtered.map((o) => (
             <div
               key={o.barberId}
               className="flex items-center justify-between rounded-lg border p-3"
