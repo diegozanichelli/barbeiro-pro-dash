@@ -28,6 +28,7 @@ import {
   UserPlus,
   ChevronDown,
   ChevronUp,
+  CalendarIcon,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
@@ -35,7 +36,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getTodayString } from "@/lib/dateUtils";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { getManausDate, getTodayString } from "@/lib/dateUtils";
 
 
 interface QuickSaleModalProps {
@@ -116,6 +121,10 @@ export default function QuickSaleModal({
   const [isNewClient, setIsNewClient] = useState(initialIsNewClient ?? false);
   const [clientName, setClientName] = useState("");
 
+  // Date picker state
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
   // Compact header to free space for the grid after selecting items
   const shouldAutoCompactHeader = cart.length > 0 && activeTab !== "manual";
   const [headerExpanded, setHeaderExpanded] = useState(true);
@@ -180,6 +189,8 @@ export default function QuickSaleModal({
     setIsNewClient(initialIsNewClient ?? false);
     setClientName("");
     setHeaderExpanded(true);
+    setSelectedDate(new Date());
+    setDatePickerOpen(false);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -294,7 +305,7 @@ export default function QuickSaleModal({
     }
 
     setIsLoading(true);
-    const today = getTodayString();
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
     const effectiveBarberId = isReceptionSale ? null : barberId;
 
     try {
@@ -306,7 +317,7 @@ export default function QuickSaleModal({
           .from("daily_productions")
           .select("id, clients_count")
           .eq("barber_id", barberId)
-          .eq("date", today)
+          .eq("date", dateStr)
           .single();
 
         if (existingProduction) {
@@ -321,7 +332,7 @@ export default function QuickSaleModal({
             .insert({
               barber_id: barberId,
               organization_id: organizationId,
-              date: today,
+              date: dateStr,
               clients_count: clientsCount,
               services_count: 0,
               products_count: 0,
@@ -355,6 +366,7 @@ export default function QuickSaleModal({
             commission_amount: 0,
             is_new_client: isNewClient,
             client_name: clientName.trim() || null,
+            created_at: selectedDate.toISOString(),
           });
         }
       });
@@ -386,7 +398,7 @@ export default function QuickSaleModal({
     }
 
     setIsLoading(true);
-    const today = getTodayString();
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
       let productionId: string;
@@ -394,7 +406,7 @@ export default function QuickSaleModal({
         .from("daily_productions")
         .select("*")
         .eq("barber_id", barberId)
-        .eq("date", today)
+        .eq("date", dateStr)
         .single();
 
       if (existingProduction) {
@@ -424,7 +436,7 @@ export default function QuickSaleModal({
         const insertData: any = {
           barber_id: barberId,
           organization_id: organizationId,
-          date: today,
+          date: dateStr,
           clients_count: 1,
           services_count: manualCategory !== "product" ? 1 : 0,
           products_count: manualCategory === "product" ? 1 : 0,
@@ -519,6 +531,43 @@ export default function QuickSaleModal({
                     : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
                 )}
               >
+                {/* DatePicker */}
+                <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
+                  <Label className="text-sm font-medium">Data da Venda</Label>
+                  <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal h-9",
+                          format(selectedDate, "yyyy-MM-dd") !== getTodayString() && "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {format(selectedDate, "yyyy-MM-dd") === getTodayString()
+                          ? "Hoje"
+                          : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={(date) => {
+                          if (date) {
+                            setSelectedDate(date);
+                            setDatePickerOpen(false);
+                          }
+                        }}
+                        disabled={(date) => date > new Date()}
+                        initialFocus
+                        className="p-3 pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
                 {/* Nome do Cliente */}
                 <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
                   <Label htmlFor="client-name" className="text-sm font-medium">
