@@ -26,9 +26,9 @@ import {
   Building2,
   Home,
   UserPlus,
-  ChevronDown,
-  ChevronUp,
   CalendarIcon,
+  ChevronLeft,
+  X,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
@@ -63,9 +63,9 @@ interface CatalogItem {
 }
 
 interface CartItem extends CatalogItem {
+  tempId: string;
   customPrice: number;
   customPriceInput: string;
-  quantity: number;
 }
 
 type CategoryTab = "services" | "products" | "manual";
@@ -106,7 +106,10 @@ export default function QuickSaleModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   
-  // Cart state (multi-select)
+  // Wizard step
+  const [step, setStep] = useState<1 | 2>(1);
+  
+  // Cart state (individualized with tempId)
   const [cart, setCart] = useState<CartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
   
@@ -125,15 +128,6 @@ export default function QuickSaleModal({
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Compact header to free space for the grid after selecting items
-  const shouldAutoCompactHeader = cart.length > 0 && activeTab !== "manual";
-  const [headerExpanded, setHeaderExpanded] = useState(true);
-
-  useEffect(() => {
-    if (!open) return;
-    setHeaderExpanded(!shouldAutoCompactHeader);
-  }, [open, shouldAutoCompactHeader]);
-
   // Fetch catalog items
   useEffect(() => {
     if (open && organizationId) {
@@ -143,7 +137,6 @@ export default function QuickSaleModal({
 
   const fetchCatalog = async () => {
     setLoadingCatalog(true);
-    const today = getTodayString();
     
     try {
       const [servicesRes, productsRes] = await Promise.all([
@@ -179,6 +172,7 @@ export default function QuickSaleModal({
   };
 
   const resetForm = () => {
+    setStep(1);
     setCart([]);
     setClientsCount(1);
     setManualValue("");
@@ -188,7 +182,6 @@ export default function QuickSaleModal({
     setIsReceptionSale(false);
     setIsNewClient(initialIsNewClient ?? false);
     setClientName("");
-    setHeaderExpanded(true);
     setSelectedDate(new Date());
     setDatePickerOpen(false);
   };
@@ -200,38 +193,25 @@ export default function QuickSaleModal({
     onOpenChange(isOpen);
   };
 
-  // Cart operations
-  const handleToggleCart = (item: CatalogItem) => {
-    setCart(prev => {
-      const exists = prev.find(i => i.id === item.id);
-      if (exists) {
-        return prev.filter(i => i.id !== item.id);
-      } else {
-        return [...prev, { 
-          ...item, 
-          customPrice: item.default_price, 
-          customPriceInput: item.default_price.toFixed(2).replace(".", ","),
-          quantity: 1 
-        }];
-      }
-    });
+  // Cart operations (individualized with tempId)
+  const handleAddToCart = (item: CatalogItem) => {
+    setCart(prev => [...prev, {
+      ...item,
+      tempId: crypto.randomUUID(),
+      customPrice: item.default_price,
+      customPriceInput: item.default_price.toFixed(2).replace(".", ","),
+    }]);
   };
 
-  const isInCart = (itemId: string) => cart.some(i => i.id === itemId);
+  const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
 
-  const updateCartItemQuantity = (itemId: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const newQty = Math.max(1, item.quantity + delta);
-        return { ...item, quantity: newQty };
-      }
-      return item;
-    }));
+  const removeFromCart = (tempId: string) => {
+    setCart(prev => prev.filter(i => i.tempId !== tempId));
   };
 
-  const updateCartItemPriceInput = (itemId: string, newValue: string) => {
+  const updateCartItemPriceInput = (tempId: string, newValue: string) => {
     setCart(prev => prev.map(item => {
-      if (item.id !== itemId) return item;
+      if (item.tempId !== tempId) return item;
       
       if (newValue === "") {
         return { ...item, customPriceInput: "", customPrice: 0 };
@@ -252,9 +232,9 @@ export default function QuickSaleModal({
     setTimeout(() => e.target.select(), 0);
   };
 
-  const finalizeCartItemPrice = (itemId: string) => {
+  const finalizeCartItemPrice = (tempId: string) => {
     setCart(prev => prev.map(item => {
-      if (item.id !== itemId) return item;
+      if (item.tempId !== tempId) return item;
       
       const formattedInput = item.customPrice > 0 
         ? item.customPrice.toFixed(2).replace(".", ",")
@@ -266,11 +246,7 @@ export default function QuickSaleModal({
 
   // Cart totals
   const cartTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + (item.customPrice * item.quantity), 0);
-  }, [cart]);
-
-  const cartItemsTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.quantity, 0);
+    return cart.reduce((sum, item) => sum + item.customPrice, 0);
   }, [cart]);
 
   // Filter items based on search and active tab
@@ -348,34 +324,29 @@ export default function QuickSaleModal({
         }
       }
 
-      // Batch insert all transactions (expanded by quantity)
-      const transactions: any[] = [];
-      cart.forEach(item => {
-        for (let i = 0; i < item.quantity; i++) {
-          transactions.push({
-            organization_id: organizationId,
-            barber_id: effectiveBarberId,
-            daily_production_id: productionId,
-            item_type: item.type,
-            catalog_service_id: item.type === "service" ? item.id : null,
-            catalog_product_id: item.type === "product" ? item.id : null,
-            item_name: item.name,
-            service_category: item.type === "service" ? item.category : null,
-            price_sold: item.customPrice,
-            commission_rate_used: 0,
-            commission_amount: 0,
-            is_new_client: isNewClient,
-            client_name: clientName.trim() || null,
-            created_at: selectedDate.toISOString(),
-          });
-        }
-      });
+      // 1 transaction per cart item (individualized)
+      const transactions = cart.map(item => ({
+        organization_id: organizationId,
+        barber_id: effectiveBarberId,
+        daily_production_id: productionId,
+        item_type: item.type,
+        catalog_service_id: item.type === "service" ? item.id : null,
+        catalog_product_id: item.type === "product" ? item.id : null,
+        item_name: item.name,
+        service_category: item.type === "service" ? item.category : null,
+        price_sold: item.customPrice,
+        commission_rate_used: 0,
+        commission_amount: 0,
+        is_new_client: isNewClient,
+        client_name: clientName.trim() || null,
+        created_at: selectedDate.toISOString(),
+      }));
 
       const { error } = await supabase.from("sale_transactions").insert(transactions);
       if (error) throw error;
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
-      toast.success(`${cartItemsTotal} ${cartItemsTotal === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
+      toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
 
@@ -479,474 +450,447 @@ export default function QuickSaleModal({
     (activeTab !== "manual" && cart.length > 0) ||
     (activeTab === "manual" && manualValue);
 
-  return (
+  // ─── STEP 1: Client Data ───
+  const renderStep1 = () => (
     <>
-      <Dialog open={open} onOpenChange={handleClose}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-            <DialogHeader
-              className={cn(
-                "px-6 border-b transition-[padding] duration-200",
-                headerExpanded ? "pt-6 pb-4" : "pt-3 pb-3",
-              )}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <DialogTitle className="text-lg font-semibold">
-                    Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {isReceptionSale
-                      ? "Venda sem atribuição de barbeiro (pontos vão para a loja)"
-                      : "Selecione múltiplos itens para registrar"}
-                  </DialogDescription>
-                </div>
+      <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogTitle className="text-lg font-semibold">
+          Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
+        </DialogTitle>
+        <DialogDescription>
+          Preencha os dados do atendimento
+        </DialogDescription>
+      </DialogHeader>
 
-                {shouldAutoCompactHeader && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 gap-1"
-                    onClick={() => setHeaderExpanded((v) => !v)}
-                    aria-label={headerExpanded ? "Ocultar ajustes" : "Mostrar ajustes"}
-                  >
-                    {headerExpanded ? (
-                      <ChevronUp className="h-4 w-4" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4" />
-                    )}
-                    <span className="hidden sm:inline">
-                      {headerExpanded ? "Ocultar" : "Ajustes"}
-                    </span>
-                  </Button>
-                )}
-              </div>
-
-              {/* Options (collapses automatically after selecting items) */}
-              <div
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        {/* DatePicker */}
+        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
+          <Label className="text-sm font-medium">Data da Venda</Label>
+          <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
                 className={cn(
-                  "mt-3 space-y-3 transition-all duration-200",
-                  headerExpanded
-                    ? "max-h-[240px] opacity-100"
-                    : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
+                  "w-full justify-start text-left font-normal h-10",
+                  format(selectedDate, "yyyy-MM-dd") !== getTodayString() && "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30"
                 )}
               >
-                {/* DatePicker */}
-                <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
-                  <Label className="text-sm font-medium">Data da Venda</Label>
-                  <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal h-9",
-                          format(selectedDate, "yyyy-MM-dd") !== getTodayString() && "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {format(selectedDate, "yyyy-MM-dd") === getTodayString()
-                          ? "Hoje"
-                          : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={(date) => {
-                          if (date) {
-                            setSelectedDate(date);
-                            setDatePickerOpen(false);
-                          }
-                        }}
-                        disabled={(date) => date > new Date()}
-                        initialFocus
-                        className="p-3 pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {/* Nome do Cliente */}
-                <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
-                  <Label htmlFor="client-name" className="text-sm font-medium">
-                    Nome do Cliente (opcional)
-                  </Label>
-                  <Input
-                    id="client-name"
-                    type="text"
-                    placeholder="Ex: João"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-
-                {/* Toggle Venda Recepção */}
-                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-muted-foreground" />
-                    <Label htmlFor="reception-mode" className="text-sm font-medium cursor-pointer">
-                      Venda Recepção / Loja
-                    </Label>
-                  </div>
-                  <Switch
-                    id="reception-mode"
-                    checked={isReceptionSale}
-                    onCheckedChange={setIsReceptionSale}
-                  />
-                </div>
-
-                {/* Client Type Selector (New vs Existing) */}
-                <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
-                  <Label className="text-sm font-medium">Tipo de Cliente</Label>
-                  <ToggleGroup
-                    type="single"
-                    value={isNewClient ? "new" : "existing"}
-                    onValueChange={(v) => setIsNewClient(v === "new")}
-                    className="justify-start"
-                  >
-                    <ToggleGroupItem
-                      value="existing"
-                      aria-label="Cliente da Casa"
-                      className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                    >
-                      <Home className="w-4 h-4" />
-                      Cliente da Casa
-                    </ToggleGroupItem>
-                    <ToggleGroupItem
-                      value="new"
-                      aria-label="Cliente Novo"
-                      className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      Cliente Novo
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-              </div>
-            </DialogHeader>
-
-          {/* Search Bar */}
-          <div className={cn("px-6", shouldAutoCompactHeader ? "pt-2" : "pt-4")}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar serviço ou produto..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={cn(
-                  "pl-10 transition-[height] duration-200",
-                  shouldAutoCompactHeader ? "h-10" : "h-11",
-                )}
-                autoFocus
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {format(selectedDate, "yyyy-MM-dd") === getTodayString()
+                  ? "Hoje"
+                  : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => {
+                  if (date) {
+                    setSelectedDate(date);
+                    setDatePickerOpen(false);
+                  }
+                }}
+                disabled={(date) => date > new Date()}
+                initialFocus
+                className="p-3 pointer-events-auto"
               />
-            </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Client Name */}
+        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
+          <Label htmlFor="client-name" className="text-sm font-medium">
+            Nome do Cliente (opcional)
+          </Label>
+          <Input
+            id="client-name"
+            type="text"
+            placeholder="Ex: João"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            className="h-10"
+          />
+        </div>
+
+        {/* Toggle Reception Sale */}
+        <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground" />
+            <Label htmlFor="reception-mode" className="text-sm font-medium cursor-pointer">
+              Venda Recepção / Loja
+            </Label>
           </div>
+          <Switch
+            id="reception-mode"
+            checked={isReceptionSale}
+            onCheckedChange={setIsReceptionSale}
+          />
+        </div>
 
-          {/* Category Tabs */}
-          <Tabs 
-            value={activeTab} 
-            onValueChange={(v) => {
-              setActiveTab(v as CategoryTab);
-            }}
-            className="flex-1 flex flex-col overflow-hidden"
+        {/* Client Type Selector */}
+        <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+          <Label className="text-sm font-medium">Tipo de Cliente</Label>
+          <ToggleGroup
+            type="single"
+            value={isNewClient ? "new" : "existing"}
+            onValueChange={(v) => setIsNewClient(v === "new")}
+            className="justify-start"
           >
-            <div className={cn("px-6", shouldAutoCompactHeader ? "pt-2" : "pt-4")}>
-              <TabsList
-                className={cn(
-                  "grid w-full grid-cols-3",
-                  shouldAutoCompactHeader ? "h-11" : "h-12",
-                )}
-              >
-                <TabsTrigger value="services" className="gap-2 text-sm">
-                  <Scissors className="h-4 w-4" />
-                  Serviços
-                  {services.length > 0 && (
-                    <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
-                      {services.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="products" className="gap-2 text-sm">
-                  <Package className="h-4 w-4" />
-                  Produtos
-                  {products.length > 0 && (
-                    <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
-                      {products.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="manual" className="gap-2 text-sm">
-                  <Hash className="h-4 w-4" />
-                  Manual
-                </TabsTrigger>
-              </TabsList>
+            <ToggleGroupItem
+              value="existing"
+              aria-label="Cliente da Casa"
+              className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            >
+              <Home className="w-4 h-4" />
+              Cliente da Casa
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="new"
+              aria-label="Cliente Novo"
+              className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
+            >
+              <UserPlus className="w-4 h-4" />
+              Cliente Novo
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      </div>
+
+      {/* Step 1 Footer */}
+      <div className="border-t px-6 py-4 flex gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => handleClose(false)}
+          className="flex-1"
+        >
+          Cancelar
+        </Button>
+        <Button
+          type="button"
+          className="flex-1"
+          onClick={() => setStep(2)}
+        >
+          Continuar
+          <ChevronLeft className="h-4 w-4 rotate-180" />
+        </Button>
+      </div>
+    </>
+  );
+
+  // ─── STEP 2: Catalog ───
+  const renderStep2 = () => (
+    <>
+      {/* Compact Header: Back + Title + Cart Badge */}
+      <div className="flex items-center gap-2 px-2 pt-3 pb-2 border-b">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 shrink-0"
+          onClick={() => setStep(1)}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        <h3 className="text-sm font-semibold truncate flex-1">
+          {clientName.trim() ? clientName.trim() : "Selecionar Itens"}
+        </h3>
+        {cart.length > 0 && (
+          <Badge className="shrink-0 text-xs">
+            {cart.length} {cart.length === 1 ? "item" : "itens"} • {formatCurrency(cartTotal)}
+          </Badge>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="px-3 pt-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar serviço ou produto..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 h-10"
+            autoFocus
+          />
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <Tabs 
+        value={activeTab} 
+        onValueChange={(v) => setActiveTab(v as CategoryTab)}
+        className="flex-1 flex flex-col overflow-hidden"
+      >
+        <div className="px-3 pt-2">
+          <TabsList className="grid w-full grid-cols-3 h-10">
+            <TabsTrigger value="services" className="gap-1.5 text-xs">
+              <Scissors className="h-3.5 w-3.5" />
+              Serviços
+              {services.length > 0 && (
+                <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
+                  {services.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="products" className="gap-1.5 text-xs">
+              <Package className="h-3.5 w-3.5" />
+              Produtos
+              {products.length > 0 && (
+                <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
+                  {products.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="gap-1.5 text-xs">
+              <Hash className="h-3.5 w-3.5" />
+              Manual
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+          {/* Services Grid */}
+          <TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
+            {loadingCatalog ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Scissors className="h-12 w-12 mb-4 opacity-50" />
+                <p className="font-medium">
+                  {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
+                </p>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 px-3 py-3 overflow-y-auto overscroll-contain touch-pan-y">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+                  {filteredItems.map((item) => (
+                    <CatalogCard
+                      key={item.id}
+                      item={item}
+                      countInCart={countInCart(item.id)}
+                      onSelect={() => handleAddToCart(item)}
+                      formatCurrency={formatCurrency}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Products Grid */}
+          <TabsContent value="products" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
+            {loadingCatalog ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Package className="h-12 w-12 mb-4 opacity-50" />
+                <p className="font-medium">
+                  {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+                </p>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 px-3 py-3 overflow-y-auto overscroll-contain touch-pan-y">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+                  {filteredItems.map((item) => (
+                    <CatalogCard
+                      key={item.id}
+                      item={item}
+                      countInCart={countInCart(item.id)}
+                      onSelect={() => handleAddToCart(item)}
+                      formatCurrency={formatCurrency}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Manual Entry */}
+          <TabsContent value="manual" className="flex-1 m-0 px-3 py-4">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="manualValue" className="text-sm font-medium">
+                  Valor (R$)
+                </Label>
+                <Input
+                  id="manualValue"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Digite o valor..."
+                  value={manualValue}
+                  onChange={(e) => handleNumericInput(manualValue, e.target.value, setManualValue)}
+                  onFocus={(e) => setTimeout(() => e.target.select(), 0)}
+                  className="text-2xl font-bold text-center h-14"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Categoria</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: "basic", label: "Serviço Básico", icon: Scissors },
+                    { value: "extra", label: "Serviço Extra", icon: Zap },
+                    { value: "product", label: "Produto", icon: Package },
+                  ].map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setManualCategory(value as typeof manualCategory)}
+                      className={cn(
+                        "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
+                        manualCategory === value
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-muted-foreground/50"
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                      <span className="text-xs font-medium text-center">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
+          </TabsContent>
 
-            <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-              {/* Services Grid */}
-              <TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
-                {loadingCatalog ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <Scissors className="h-12 w-12 mb-4 opacity-50" />
-                    <p className="font-medium">
-                      {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto overscroll-contain touch-pan-y">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {filteredItems.map((item) => (
-                        <CatalogCard
-                          key={item.id}
-                          item={item}
-                          isSelected={isInCart(item.id)}
-                          onSelect={() => handleToggleCart(item)}
-                          formatCurrency={formatCurrency}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </TabsContent>
-
-              {/* Products Grid */}
-              <TabsContent value="products" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
-                {loadingCatalog ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <Package className="h-12 w-12 mb-4 opacity-50" />
-                    <p className="font-medium">
-                      {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto overscroll-contain touch-pan-y">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {filteredItems.map((item) => (
-                        <CatalogCard
-                          key={item.id}
-                          item={item}
-                          isSelected={isInCart(item.id)}
-                          onSelect={() => handleToggleCart(item)}
-                          formatCurrency={formatCurrency}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </TabsContent>
-
-              {/* Manual Entry */}
-              <TabsContent value="manual" className="flex-1 m-0 px-6 py-4">
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="manualValue" className="text-sm font-medium">
-                      Valor (R$)
-                    </Label>
+          {/* Footer */}
+          <div className="border-t px-3 py-3 space-y-3 bg-muted/30">
+            {/* Cart Items */}
+            {cart.length > 0 && activeTab !== "manual" && (
+              <div className="space-y-2 max-h-[25vh] overflow-y-auto overscroll-contain">
+                {cart.map((item) => (
+                  <div key={item.tempId} className="flex items-center gap-2 p-1.5 rounded-lg bg-background border min-h-[44px]">
+                    <span className="truncate text-xs font-medium flex-1 min-w-0 pl-1">{item.name}</span>
+                    {item.fixed_commission !== null && (
+                      <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
+                        <Zap className="h-2 w-2 mr-0.5" />
+                        {item.fixed_commission}%
+                      </Badge>
+                    )}
                     <Input
-                      id="manualValue"
                       type="text"
                       inputMode="decimal"
-                      placeholder="Digite o valor..."
-                      value={manualValue}
-                      onChange={(e) => handleNumericInput(manualValue, e.target.value, setManualValue)}
-                      onFocus={(e) => setTimeout(() => e.target.select(), 0)}
-                      className="text-2xl font-bold text-center h-14"
+                      value={item.customPriceInput}
+                      onChange={(e) => updateCartItemPriceInput(item.tempId, e.target.value)}
+                      onFocus={handleCartItemPriceFocus}
+                      onBlur={() => finalizeCartItemPrice(item.tempId)}
+                      className="w-20 text-right font-bold text-xs h-8"
                     />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => removeFromCart(item.tempId)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
+                ))}
 
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Categoria</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { value: "basic", label: "Serviço Básico", icon: Scissors },
-                        { value: "extra", label: "Serviço Extra", icon: Zap },
-                        { value: "product", label: "Produto", icon: Package },
-                      ].map(({ value, label, icon: Icon }) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setManualCategory(value as typeof manualCategory)}
-                          className={cn(
-                            "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
-                            manualCategory === value
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border hover:border-muted-foreground/50"
-                          )}
-                        >
-                          <Icon className="h-5 w-5" />
-                          <span className="text-xs font-medium text-center">{label}</span>
-                        </button>
-                      ))}
-                    </div>
+                {/* Clients Counter */}
+                <div className="flex items-center justify-between p-2 rounded-lg bg-background border">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-primary" />
+                    <span className="text-xs font-medium">Clientes</span>
                   </div>
-                </div>
-              </TabsContent>
-
-              {/* Footer */}
-              <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
-                {/* Cart Summary */}
-                {cart.length > 0 && activeTab !== "manual" && (
-                  <div className="space-y-3 max-h-[30vh] overflow-y-auto overscroll-contain">
-                    {cart.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-background border text-sm">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="truncate font-medium">{item.name}</span>
-                          {item.fixed_commission !== null && (
-                            <Badge variant="secondary" className="shrink-0 text-[10px]">
-                              <Zap className="h-2 w-2 mr-0.5" />
-                              {item.fixed_commission}%
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Quantity */}
-                          <div className="flex items-center gap-1 bg-muted rounded-md border p-0.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10"
-                              onClick={() => updateCartItemQuantity(item.id, -1)}
-                              disabled={item.quantity <= 1}
-                            >
-                              <Minus className="w-3 h-3" />
-                            </Button>
-                            <span className="w-5 text-center font-bold text-xs">{item.quantity}x</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10"
-                              onClick={() => updateCartItemQuantity(item.id, 1)}
-                            >
-                              <Plus className="w-3 h-3" />
-                            </Button>
-                          </div>
-                          {/* Price */}
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            value={item.customPriceInput}
-                            onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
-                            onFocus={handleCartItemPriceFocus}
-                            onBlur={() => finalizeCartItemPrice(item.id)}
-                            className="w-20 text-right font-bold text-xs h-7"
-                          />
-                          {/* Remove */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 text-destructive hover:text-destructive"
-                            onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
-                          >
-                            ×
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Clients Counter */}
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-background border">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-medium">Clientes</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10"
-                          onClick={() => setClientsCount(prev => Math.max(1, prev - 1))}
-                          disabled={clientsCount <= 1}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </Button>
-                        <span className="w-6 text-center font-bold">{clientsCount}</span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10"
-                          onClick={() => setClientsCount(prev => prev + 1)}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Total */}
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
-                      <span className="font-medium">Total ({cartItemsTotal} itens):</span>
-                      <span className="text-xl font-bold text-primary">
-                        {formatCurrency(cartTotal)}
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10"
+                      onClick={() => setClientsCount(prev => Math.max(1, prev - 1))}
+                      disabled={clientsCount <= 1}
+                    >
+                      <Minus className="w-3 h-3" />
+                    </Button>
+                    <span className="w-6 text-center font-bold text-sm">{clientsCount}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10"
+                      onClick={() => setClientsCount(prev => prev + 1)}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </Button>
                   </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleClose(false)}
-                    className="flex-1"
-                    disabled={isLoading}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="flex-1 gap-2"
-                    disabled={isLoading || !canSubmit}
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        Confirmar Venda
-                      </>
-                    )}
-                  </Button>
                 </div>
               </div>
-            </form>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
+            )}
+
+            {/* Summary Line */}
+            {cart.length > 0 && activeTab !== "manual" && (
+              <div className="text-center font-bold text-sm">
+                {cart.length} {cart.length === 1 ? "item" : "itens"} • {formatCurrency(cartTotal)}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep(1)}
+                className="gap-1"
+                disabled={isLoading}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Voltar
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 gap-2"
+                disabled={isLoading || !canSubmit}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Confirmar Venda
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Tabs>
     </>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden flex flex-col p-0">
+        {step === 1 ? renderStep1() : renderStep2()}
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// Catalog Card Component
+// ─── Catalog Card (30% smaller) ───
 interface CatalogCardProps {
   item: CatalogItem;
-  isSelected: boolean;
+  countInCart: number;
   onSelect: () => void;
   formatCurrency: (value: number) => string;
 }
 
-function CatalogCard({ item, isSelected, onSelect, formatCurrency }: CatalogCardProps) {
+function CatalogCard({ item, countInCart, onSelect, formatCurrency }: CatalogCardProps) {
   return (
     <Card
       onClick={onSelect}
       className={cn(
-        "relative cursor-pointer p-4 transition-all duration-200 hover:shadow-lg active:scale-[0.98]",
-        isSelected
+        "relative cursor-pointer p-2.5 transition-all duration-200 hover:shadow-lg active:scale-[0.98]",
+        countInCart > 0
           ? "ring-2 ring-primary bg-primary/10 shadow-lg border-primary"
           : "hover:bg-accent/50 hover:border-primary/30"
       )}
@@ -955,35 +899,35 @@ function CatalogCard({ item, isSelected, onSelect, formatCurrency }: CatalogCard
       {item.fixed_commission !== null && (
         <Badge 
           variant="secondary" 
-          className="absolute -top-2 -right-2 bg-amber-500 text-white border-0 shadow-md"
+          className="absolute -top-2 -right-2 bg-amber-500 text-white border-0 shadow-md text-[10px] px-1.5 py-0"
         >
-          <Zap className="h-3 w-3 mr-0.5" />
+          <Zap className="h-2.5 w-2.5 mr-0.5" />
           {item.fixed_commission}%
         </Badge>
       )}
       
-      <div className="space-y-2">
-        <p className="font-bold text-sm leading-tight line-clamp-2 text-foreground">
+      <div className="space-y-1">
+        <p className="font-bold text-xs leading-tight line-clamp-2 text-foreground">
           {item.name}
         </p>
-        <p className="text-xl font-black text-primary">
+        <p className="text-base font-black text-primary">
           {formatCurrency(item.default_price)}
         </p>
         {item.category && (
           <Badge 
             variant={item.category === "basic" ? "secondary" : "default"}
-            className="text-xs"
+            className="text-[10px] px-1.5 py-0"
           >
             {item.category === "basic" ? "Básico" : "Extra"}
           </Badge>
         )}
       </div>
       
-      {/* Selection Indicator */}
-      {isSelected && (
-        <div className="absolute bottom-2 right-2">
-          <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center shadow-md">
-            <Check className="h-4 w-4 text-primary-foreground" strokeWidth={3} />
+      {/* Count Badge */}
+      {countInCart > 0 && (
+        <div className="absolute bottom-1.5 right-1.5">
+          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center shadow-md">
+            <span className="text-[10px] font-bold text-primary-foreground">{countInCart}</span>
           </div>
         </div>
       )}
