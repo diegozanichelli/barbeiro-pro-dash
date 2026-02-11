@@ -11,11 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Check, Minus, Plus, ShoppingCart, Trash2, Info } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { format } from "date-fns";
@@ -42,9 +41,9 @@ interface CatalogItem {
 }
 
 interface CartItem extends CatalogItem {
+  tempId: string;
   customPrice: number;
   customPriceInput: string;
-  quantity: number;
 }
 
 interface ExistingProduction {
@@ -61,6 +60,11 @@ interface ExistingProduction {
 
 type CategoryTab = "services" | "products";
 
+let tempIdCounter = 0;
+function generateTempId() {
+  return `edit-${Date.now()}-${++tempIdCounter}`;
+}
+
 export default function BarberEditProductionModal({
   open,
   onOpenChange,
@@ -76,14 +80,10 @@ export default function BarberEditProductionModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   
-  // Estado dos dados existentes
   const [existingData, setExistingData] = useState<ExistingProduction | null>(null);
-  
-  // Cart state (multi-select)
   const [cart, setCart] = useState<CartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
 
-  // Divergence modal
   const [divergenceModal, setDivergenceModal] = useState<{
     open: boolean;
     manualTotal: number;
@@ -91,7 +91,6 @@ export default function BarberEditProductionModal({
     hasDivergence: boolean;
   }>({ open: false, manualTotal: 0, txTotal: 0, hasDivergence: false });
 
-  // Fetch catalog items and existing production data when modal opens
   useEffect(() => {
     if (open && organizationId && productionId) {
       fetchData();
@@ -133,7 +132,6 @@ export default function BarberEditProductionModal({
 
       setCatalogItems([...services, ...products]);
       
-      // Carregar dados existentes
       if (productionRes.data) {
         const data = productionRes.data;
         setExistingData({
@@ -147,7 +145,6 @@ export default function BarberEditProductionModal({
           tx_extra_total: data.tx_extra_total || 0,
           tx_products_total: data.tx_products_total || 0,
         });
-        // Inicializar contador de clientes com o valor existente
         setClientsCount(data.clients_count || 1);
       }
     } catch (error) {
@@ -172,38 +169,28 @@ export default function BarberEditProductionModal({
     onOpenChange(isOpen);
   };
 
-  // Cart operations
-  const handleToggleCart = (item: CatalogItem) => {
-    setCart(prev => {
-      const exists = prev.find(i => i.id === item.id);
-      if (exists) {
-        return prev.filter(i => i.id !== item.id);
-      } else {
-        return [...prev, { 
-          ...item, 
-          customPrice: item.default_price, 
-          customPriceInput: item.default_price.toFixed(2).replace(".", ","),
-          quantity: 1 
-        }];
-      }
-    });
+  // Cart operations - individualized with tempId
+  const handleAddToCart = (item: CatalogItem) => {
+    setCart(prev => [
+      ...prev,
+      {
+        ...item,
+        tempId: generateTempId(),
+        customPrice: item.default_price,
+        customPriceInput: item.default_price.toFixed(2).replace(".", ","),
+      },
+    ]);
   };
 
-  const isInCart = (itemId: string) => cart.some(i => i.id === itemId);
+  const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
 
-  const updateCartItemQuantity = (itemId: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const newQty = Math.max(1, item.quantity + delta);
-        return { ...item, quantity: newQty };
-      }
-      return item;
-    }));
+  const removeFromCart = (tempId: string) => {
+    setCart(prev => prev.filter(i => i.tempId !== tempId));
   };
 
-  const updateCartItemPriceInput = (itemId: string, newValue: string) => {
+  const updateCartItemPriceInput = (tempId: string, newValue: string) => {
     setCart(prev => prev.map(item => {
-      if (item.id !== itemId) return item;
+      if (item.tempId !== tempId) return item;
       
       if (newValue === "") {
         return { ...item, customPriceInput: "", customPrice: 0 };
@@ -224,9 +211,9 @@ export default function BarberEditProductionModal({
     setTimeout(() => e.target.select(), 0);
   };
 
-  const finalizeCartItemPrice = (itemId: string) => {
+  const finalizeCartItemPrice = (tempId: string) => {
     setCart(prev => prev.map(item => {
-      if (item.id !== itemId) return item;
+      if (item.tempId !== tempId) return item;
       
       const formattedInput = item.customPrice > 0 
         ? item.customPrice.toFixed(2).replace(".", ",")
@@ -238,12 +225,10 @@ export default function BarberEditProductionModal({
 
   // Cart totals
   const cartTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + (item.customPrice * item.quantity), 0);
+    return cart.reduce((sum, item) => sum + item.customPrice, 0);
   }, [cart]);
 
-  const cartItemsTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.quantity, 0);
-  }, [cart]);
+  const cartItemsTotal = cart.length;
 
   // Existing totals
   const existingTotal = useMemo(() => {
@@ -251,7 +236,7 @@ export default function BarberEditProductionModal({
     return existingData.services_basic_total + existingData.services_extra_total + existingData.products_total;
   }, [existingData]);
 
-  // Filter items based on search and active tab
+  // Filter items
   const filteredItems = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     return catalogItems.filter((item) => {
@@ -289,27 +274,21 @@ export default function BarberEditProductionModal({
         throw deleteError;
       }
 
-      // 2. Criar novas transações itemizadas (source = 'barber')
-      const transactions: any[] = [];
-      
-      cart.forEach(item => {
-        for (let i = 0; i < item.quantity; i++) {
-          transactions.push({
-            organization_id: organizationId,
-            barber_id: barberId,
-            daily_production_id: productionId,
-            item_name: item.name,
-            item_type: item.type,
-            service_category: item.category || null,
-            catalog_service_id: item.type === "service" ? item.id : null,
-            catalog_product_id: item.type === "product" ? item.id : null,
-            price_sold: item.customPrice,
-            commission_rate_used: 0, // Trigger calculará
-            commission_amount: 0, // Trigger calculará
-            source: "barber", // <- Nova coluna!
-          });
-        }
-      });
+      // 2. Criar novas transações itemizadas (cada cart item = 1 transação)
+      const transactions = cart.map(item => ({
+        organization_id: organizationId,
+        barber_id: barberId,
+        daily_production_id: productionId,
+        item_name: item.name,
+        item_type: item.type,
+        service_category: item.category || null,
+        catalog_service_id: item.type === "service" ? item.id : null,
+        catalog_product_id: item.type === "product" ? item.id : null,
+        price_sold: item.customPrice,
+        commission_rate_used: 0,
+        commission_amount: 0,
+        source: "barber",
+      }));
 
       if (transactions.length > 0) {
         const { error: insertError } = await supabase
@@ -322,7 +301,7 @@ export default function BarberEditProductionModal({
         }
       }
 
-      // 3. Atualizar clients_count manualmente (não vem das transações)
+      // 3. Atualizar clients_count
       const { error: updateError } = await supabase
         .from("daily_productions")
         .update({
@@ -339,24 +318,20 @@ export default function BarberEditProductionModal({
       let productsTotal = 0;
 
       cart.forEach(item => {
-        const itemTotal = item.customPrice * item.quantity;
         if (item.type === "product") {
-          productsTotal += itemTotal;
+          productsTotal += item.customPrice;
         } else if (item.category === "extra") {
-          servicesExtraTotal += itemTotal;
+          servicesExtraTotal += item.customPrice;
         } else {
-          servicesBasicTotal += itemTotal;
+          servicesBasicTotal += item.customPrice;
         }
       });
 
       const manualTotal = servicesBasicTotal + servicesExtraTotal + productsTotal;
 
-      // Buscar dados tx_* para comparação
       const txTotal = existingData 
         ? existingData.tx_basic_total + existingData.tx_extra_total + existingData.tx_products_total
         : 0;
-
-      // Verificar divergência
 
       const divergenceThreshold = 0.05;
       let hasDivergence = false;
@@ -366,7 +341,6 @@ export default function BarberEditProductionModal({
         hasDivergence = percentDiff > divergenceThreshold;
       }
 
-      // Mostrar modal de feedback
       if (txTotal > 0) {
         setDivergenceModal({
           open: true,
@@ -397,23 +371,27 @@ export default function BarberEditProductionModal({
   };
 
   const formattedDate = format(new Date(productionDate + "T00:00:00"), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+  const shortDate = format(new Date(productionDate + "T00:00:00"), "dd/MM/yyyy");
+  const hasCartItems = cart.length > 0;
 
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
-            <DialogTitle className="text-lg font-semibold">
-              Editar Produção — {formattedDate}
+        <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden flex flex-col p-0">
+          {/* Ultra-compact header on mobile */}
+          <DialogHeader className="px-4 pt-3 pb-2 md:px-6 md:pt-6 md:pb-4 border-b">
+            <DialogTitle className="text-sm md:text-lg font-semibold">
+              <span className="md:hidden">Editar — {shortDate}</span>
+              <span className="hidden md:inline">Editar Produção — {formattedDate}</span>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="hidden md:block">
               Selecione os itens que você realizou neste dia para substituir o lançamento atual
             </DialogDescription>
           </DialogHeader>
 
-          {/* Resumo do lançamento atual */}
+          {/* Alert - hidden on mobile */}
           {existingData && existingTotal > 0 && (
-            <div className="px-6 pt-4">
+            <div className="hidden md:block px-6 pt-4">
               <Alert className="bg-muted/50 border-primary/20">
                 <Info className="h-4 w-4 text-primary" />
                 <AlertDescription className="text-sm">
@@ -434,7 +412,7 @@ export default function BarberEditProductionModal({
           )}
 
           {/* Search */}
-          <div className="px-6 pt-4">
+          <div className="px-3 py-2 md:px-6 md:pt-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -442,7 +420,7 @@ export default function BarberEditProductionModal({
                 placeholder="Buscar serviço ou produto..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 h-9 md:h-10"
               />
             </div>
           </div>
@@ -450,24 +428,24 @@ export default function BarberEditProductionModal({
           <Tabs
             value={activeTab}
             onValueChange={(v) => setActiveTab(v as CategoryTab)}
-            className="flex-1 flex flex-col overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden min-h-0"
           >
-            <div className="px-6 pt-4">
-              <TabsList className="grid w-full grid-cols-2 h-12">
-                <TabsTrigger value="services" className="gap-2 text-sm">
-                  <Scissors className="h-4 w-4" />
+            <div className="px-3 md:px-6 pt-2 md:pt-4">
+              <TabsList className="grid w-full grid-cols-2 h-10 md:h-12">
+                <TabsTrigger value="services" className="gap-1.5 text-xs md:text-sm">
+                  <Scissors className="h-3.5 w-3.5 md:h-4 md:w-4" />
                   Serviços
                   {services.length > 0 && (
-                    <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
                       {services.length}
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="products" className="gap-2 text-sm">
-                  <Package className="h-4 w-4" />
+                <TabsTrigger value="products" className="gap-1.5 text-xs md:text-sm">
+                  <Package className="h-3.5 w-3.5 md:h-4 md:w-4" />
                   Produtos
                   {products.length > 0 && (
-                    <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
                       {products.length}
                     </span>
                   )}
@@ -476,9 +454,11 @@ export default function BarberEditProductionModal({
             </div>
 
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-              {/* Scrollable Content Area */}
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-                {/* Services Grid */}
+              {/* Scrollable Catalog */}
+              <div
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+                style={{ WebkitOverflowScrolling: "touch" }}
+              >
                 <TabsContent value="services" className="mt-0">
                   {loadingCatalog ? (
                     <div className="flex items-center justify-center py-12">
@@ -492,15 +472,19 @@ export default function BarberEditProductionModal({
                       </p>
                     </div>
                   ) : (
-                    <div className="px-6 py-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 touch-pan-y">
+                    <div className="px-3 py-2 md:px-6 md:py-4">
+                      <div className={cn(
+                        "grid grid-cols-2 sm:grid-cols-3 touch-pan-y",
+                        hasCartItems ? "gap-1.5 md:gap-3" : "gap-2 md:gap-3"
+                      )}>
                         {filteredItems.map((item) => (
                           <CatalogCard
                             key={item.id}
                             item={item}
-                            isSelected={isInCart(item.id)}
-                            onSelect={() => handleToggleCart(item)}
+                            countInCart={countInCart(item.id)}
+                            onSelect={() => handleAddToCart(item)}
                             formatCurrency={formatCurrency}
+                            compact={hasCartItems}
                           />
                         ))}
                       </div>
@@ -508,7 +492,6 @@ export default function BarberEditProductionModal({
                   )}
                 </TabsContent>
 
-              {/* Products Grid */}
                 <TabsContent value="products" className="mt-0">
                   {loadingCatalog ? (
                     <div className="flex items-center justify-center py-12">
@@ -522,15 +505,19 @@ export default function BarberEditProductionModal({
                       </p>
                     </div>
                   ) : (
-                    <div className="px-6 py-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 touch-pan-y">
+                    <div className="px-3 py-2 md:px-6 md:py-4">
+                      <div className={cn(
+                        "grid grid-cols-2 sm:grid-cols-3 touch-pan-y",
+                        hasCartItems ? "gap-1.5 md:gap-3" : "gap-2 md:gap-3"
+                      )}>
                         {filteredItems.map((item) => (
                           <CatalogCard
                             key={item.id}
                             item={item}
-                            isSelected={isInCart(item.id)}
-                            onSelect={() => handleToggleCart(item)}
+                            countInCart={countInCart(item.id)}
+                            onSelect={() => handleAddToCart(item)}
                             formatCurrency={formatCurrency}
+                            compact={hasCartItems}
                           />
                         ))}
                       </div>
@@ -540,77 +527,51 @@ export default function BarberEditProductionModal({
               </div>
 
               {/* Footer */}
-              <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
-                {/* Cart Summary */}
+              <div className="border-t px-3 py-2 md:px-6 md:py-4 space-y-2 md:space-y-4 bg-muted/30">
                 {cart.length > 0 && (
-                  <div className="space-y-3">
+                  <div className="space-y-1.5 md:space-y-3 max-h-[30vh] overflow-y-auto">
                     {cart.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-background border text-sm">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="truncate font-medium">{item.name}</span>
+                      <div key={item.tempId} className="flex items-center justify-between min-h-[44px] p-1.5 md:p-2 rounded-lg bg-background border text-sm">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="truncate font-medium text-xs md:text-sm">{item.name}</span>
                           {item.category && (
                             <Badge variant={item.category === "basic" ? "secondary" : "default"} className="shrink-0 text-[10px]">
-                              {item.category === "basic" ? "Básico" : "Extra"}
+                              {item.category === "basic" ? "B" : "E"}
                             </Badge>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Quantity */}
-                          <div className="flex items-center gap-1 bg-muted rounded-md border p-0.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => updateCartItemQuantity(item.id, -1)}
-                              disabled={item.quantity <= 1}
-                            >
-                              <Minus className="w-3 h-3" />
-                            </Button>
-                            <span className="w-5 text-center font-bold text-xs">{item.quantity}x</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => updateCartItemQuantity(item.id, 1)}
-                            >
-                              <Plus className="w-3 h-3" />
-                            </Button>
-                          </div>
-                          {/* Price */}
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <Input
                             type="text"
                             inputMode="decimal"
                             value={item.customPriceInput}
-                            onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
+                            onChange={(e) => updateCartItemPriceInput(item.tempId, e.target.value)}
                             onFocus={handleCartItemPriceFocus}
-                            onBlur={() => finalizeCartItemPrice(item.id)}
-                            className="w-20 text-right font-bold text-xs h-7"
+                            onBlur={() => finalizeCartItemPrice(item.tempId)}
+                            className="w-20 text-right font-bold text-xs h-8"
                           />
-                          {/* Remove */}
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-destructive hover:text-destructive"
-                            onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
+                            className="h-10 w-10 text-destructive hover:text-destructive shrink-0"
+                            onClick={() => removeFromCart(item.tempId)}
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <X className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
                     ))}
 
                     {/* Clients Counter */}
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-background border">
-                      <Label className="text-sm font-medium">Quantidade de Clientes</Label>
+                    <div className="flex items-center justify-between min-h-[44px] p-2 md:p-3 rounded-lg bg-background border">
+                      <Label className="text-xs md:text-sm font-medium">Clientes</Label>
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-10 w-10"
                           onClick={() => setClientsCount(c => Math.max(1, c - 1))}
                           disabled={clientsCount <= 1}
                         >
@@ -621,7 +582,7 @@ export default function BarberEditProductionModal({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-10 w-10"
                           onClick={() => setClientsCount(c => c + 1)}
                         >
                           <Plus className="w-4 h-4" />
@@ -631,13 +592,13 @@ export default function BarberEditProductionModal({
 
                     {/* Comparação de valores */}
                     {existingTotal > 0 && (
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-primary/5 border border-primary/20 text-xs md:text-sm">
                         <span className="text-muted-foreground">Anterior → Novo:</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <span className="text-muted-foreground line-through">{formatCurrency(existingTotal)}</span>
                           <span className="font-bold text-primary">{formatCurrency(cartTotal)}</span>
                           {cartTotal !== existingTotal && (
-                            <Badge variant={cartTotal > existingTotal ? "default" : "secondary"} className="text-xs">
+                            <Badge variant={cartTotal > existingTotal ? "default" : "secondary"} className="text-[10px]">
                               {cartTotal > existingTotal ? "+" : ""}{formatCurrency(cartTotal - existingTotal)}
                             </Badge>
                           )}
@@ -647,19 +608,19 @@ export default function BarberEditProductionModal({
                   </div>
                 )}
 
-                {/* Empty state hint */}
+                {/* Empty state */}
                 {cart.length === 0 && (
-                  <div className="text-center py-4 text-muted-foreground text-sm">
-                    <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>Selecione os serviços e produtos realizados</p>
+                  <div className="text-center py-3 md:py-4 text-muted-foreground text-sm">
+                    <ShoppingCart className="h-6 w-6 md:h-8 md:w-8 mx-auto mb-1.5 opacity-50" />
+                    <p className="text-xs md:text-sm">Selecione os serviços e produtos realizados</p>
                   </div>
                 )}
 
-                {/* Submit Button */}
-                <div className="flex items-center justify-between gap-4">
+                {/* Submit */}
+                <div className="flex items-center justify-between gap-2">
                   {cart.length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <ShoppingCart className="h-4 w-4" />
+                    <div className="flex items-center gap-1.5 text-xs md:text-sm text-muted-foreground">
+                      <ShoppingCart className="h-3.5 w-3.5" />
                       <span>{cartItemsTotal} {cartItemsTotal === 1 ? 'item' : 'itens'}</span>
                       <span className="font-bold text-foreground">{formatCurrency(cartTotal)}</span>
                     </div>
@@ -667,18 +628,15 @@ export default function BarberEditProductionModal({
                   <Button
                     type="submit"
                     disabled={isLoading || cart.length === 0}
-                    className="ml-auto"
+                    className="ml-auto h-10"
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                         Salvando...
                       </>
                     ) : (
-                      <>
-                        <Check className="h-4 w-4 mr-2" />
-                        Salvar Alterações
-                      </>
+                      "Salvar Alterações"
                     )}
                   </Button>
                 </div>
@@ -699,61 +657,75 @@ export default function BarberEditProductionModal({
   );
 }
 
-// Catalog Card Component
+// Catalog Card Component - with compact mode and count badge
 interface CatalogCardProps {
   item: CatalogItem;
-  isSelected: boolean;
+  countInCart: number;
   onSelect: () => void;
   formatCurrency: (value: number) => string;
+  compact?: boolean;
 }
 
-function CatalogCard({ item, isSelected, onSelect, formatCurrency }: CatalogCardProps) {
+function CatalogCard({ item, countInCart, onSelect, formatCurrency, compact }: CatalogCardProps) {
+  const inCart = countInCart > 0;
+
   return (
     <Card
       onClick={onSelect}
       className={cn(
-        "relative cursor-pointer p-4 transition-all duration-200 hover:shadow-lg active:scale-[0.98]",
-        isSelected
+        "relative cursor-pointer transition-all duration-200 active:scale-[0.98]",
+        compact ? "p-2 md:p-4" : "p-4",
+        inCart
           ? "ring-2 ring-primary bg-primary/10 shadow-lg border-primary"
-          : "hover:bg-accent/50 hover:border-primary/30"
+          : "hover:bg-accent/50 hover:border-primary/30 hover:shadow-lg"
       )}
     >
+      {/* Count badge */}
+      {countInCart > 0 && (
+        <div className="absolute -top-1.5 -right-1.5 z-10 h-5 w-5 md:h-6 md:w-6 rounded-full bg-primary flex items-center justify-center shadow-md">
+          <span className="text-[10px] md:text-xs font-bold text-primary-foreground">
+            {countInCart > 1 ? `${countInCart}` : "✓"}
+          </span>
+        </div>
+      )}
+
       {/* Fixed Commission Badge */}
       {item.fixed_commission !== null && (
         <Badge 
           variant="secondary" 
-          className="absolute -top-2 -right-2 bg-warning text-warning-foreground border-0 shadow-md"
+          className={cn(
+            "absolute bg-warning text-warning-foreground border-0 shadow-md",
+            inCart ? "-top-1.5 left-0" : "-top-2 -right-2",
+            compact ? "text-[9px] px-1 py-0" : ""
+          )}
         >
-          <Zap className="h-3 w-3 mr-0.5" />
+          <Zap className={cn(compact ? "h-2.5 w-2.5" : "h-3 w-3", "mr-0.5")} />
           {item.fixed_commission}%
         </Badge>
       )}
       
-      <div className="space-y-2">
-        <p className="font-bold text-sm leading-tight line-clamp-2 text-foreground">
+      <div className={cn("space-y-1", compact ? "space-y-0.5" : "space-y-2")}>
+        <p className={cn(
+          "font-bold leading-tight line-clamp-2 text-foreground",
+          compact ? "text-xs md:text-sm" : "text-sm"
+        )}>
           {item.name}
         </p>
-        <p className="text-xl font-black text-primary">
+        <p className={cn(
+          "font-black text-primary",
+          compact ? "text-sm md:text-xl" : "text-xl"
+        )}>
           {formatCurrency(item.default_price)}
         </p>
         {item.category && (
           <Badge 
             variant={item.category === "basic" ? "secondary" : "default"}
-            className="text-xs"
+            className={cn(compact ? "text-[9px] px-1 py-0" : "text-xs")}
           >
             {item.category === "basic" ? "Básico" : "Extra"}
           </Badge>
         )}
       </div>
-      
-      {/* Selection Indicator */}
-      {isSelected && (
-        <div className="absolute bottom-2 right-2">
-          <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center shadow-md">
-            <Check className="h-4 w-4 text-primary-foreground" strokeWidth={3} />
-          </div>
-        </div>
-      )}
     </Card>
   );
 }
