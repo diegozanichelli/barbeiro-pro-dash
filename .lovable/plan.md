@@ -1,119 +1,113 @@
 
 
-# Registro de Ocorrencias com Classificacao de Dias
+# Individualizar Itens no Carrinho do Barbeiro
 
 ## Resumo
 
-Transformar o botao "Nao vendi nada" em um sistema de classificacao de dias, permitindo ao barbeiro registrar o motivo do dia sem vendas. Isso diferencia quem foi trabalhar e nao produziu (problema de vendas) de quem nao foi trabalhar (problema de escala).
+Refatorar o carrinho do `BarberSaleForm` para que cada clique em um servico/produto adicione uma nova linha independente, com preco editavel individualmente. Isso elimina o agrupamento por `service_id` e permite lancar o mesmo servico varias vezes com precos diferentes.
 
 ---
 
 ## Alteracoes
 
-### 1. Migracao de Banco de Dados
+### 1. Alterar a interface `CartItem`
 
-Adicionar coluna `presence_type` na tabela `daily_productions`:
+Adicionar um campo `tempId` (string unico) gerado no momento da adicao. Remover o campo `quantity` (cada linha sera sempre quantidade 1).
 
 ```text
-ALTER TABLE daily_productions 
-ADD COLUMN presence_type TEXT DEFAULT NULL;
+interface CartItem extends CatalogItem {
+  tempId: string;      // ID unico por linha (ex: "1707600000000_abc")
+  customPrice: number;
+}
+// quantity removido - cada linha = 1 unidade
 ```
 
-Valores possiveis:
-- `present` -- Trabalhou mas nao vendeu (conta como dia trabalhado)
-- `day_off` -- Folga / Troca de escala (NAO conta como dia trabalhado)
-- `absence` -- Falta / Atestado (NAO conta como dia trabalhado)
-- `NULL` -- Dia normal com vendas (comportamento atual)
+### 2. Alterar `handleToggleCart` para `handleAddToCart`
 
-Nao usamos ENUM para manter flexibilidade futura. A coluna permanece nullable para compatibilidade com registros existentes (dias com vendas nao precisam de classificacao).
+- Deixa de ser toggle (adicionar/remover). Agora SEMPRE adiciona uma nova entrada.
+- Gera `tempId` com `crypto.randomUUID()` ou `Date.now() + Math.random()`.
+- Para remover, o barbeiro usa o botao X no checkout.
 
-### 2. Refatorar `ConfirmPresenceModal.tsx`
-
-Transformar o modal em um formulario com 3 opcoes de classificacao:
-
-- Adicionar RadioGroup com as 3 opcoes visuais (icones + descricao):
-  - "Trabalhei mas nao vendi" (icone UserCheck, cor laranja)
-  - "Folga / Troca de escala" (icone CalendarOff, cor azul)
-  - "Falta / Atestado" (icone XCircle, cor vermelho)
-- O campo "Clientes de assinatura atendidos" so aparece quando `present` for selecionado
-- O seletor de data permanece
-- Atualizar a interface de `onConfirm` para enviar `presence_type` junto com os dados
-
-Nova assinatura do callback:
 ```text
-onConfirm: (subscriptionClientsCount: number, date: string, presenceType: string) => void
+const handleAddToCart = (item: CatalogItem) => {
+  const tempId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  setCart(prev => [...prev, { ...item, tempId, customPrice: item.default_price }]);
+};
 ```
 
-### 3. Atualizar `BarberDashboard.tsx` -- handleConfirmPresence
+### 3. Atualizar `CatalogCard` e grid de selecao
 
-- Receber o novo parametro `presenceType`
-- Salvar `presence_type` no insert/update de `daily_productions`
-- Para `present`: manter `confirmed_presence = true` (compatibilidade)
-- Para `day_off` e `absence`: salvar `confirmed_presence = true` + `presence_type` correspondente
-- Ajustar mensagens de toast conforme o tipo:
-  - `present`: "Presenca registrada. Dia contabilizado na meta."
-  - `day_off`: "Folga registrada. Voce tera que compensar nos dias restantes."
-  - `absence`: "Falta registrada."
+- Remover logica de `isSelected` (toggle visual). O card agora funciona como botao de "adicionar".
+- Exibir um pequeno contador no card indicando quantas vezes aquele item esta no carrinho (ex: badge "x3").
+- Cada clique adiciona +1 ao carrinho.
 
-### 4. Atualizar logica de "Dias Trabalhados" em 3 arquivos
-
-A regra muda: so conta como dia trabalhado se houve faturamento > 0 OU `presence_type = 'present'`. Dias com `day_off` ou `absence` NAO contam.
-
-**`BarberDashboard.tsx`** (linha ~252):
 ```text
-// ANTES:
-return total > 0 || p.confirmed_presence === true;
-
-// DEPOIS:
-return total > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
+// No grid de catalogo:
+const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
 ```
 
-**`LiveDashboard.tsx`** (linha ~392):
+O card mostra o contador quando > 0 em vez do checkmark.
+
+### 4. Atualizar funcoes de edicao/remocao no checkout
+
+- `updateCartItemPrice`: filtrar por `tempId` em vez de `item.id`.
+- Remover `updateCartItemQuantity` (nao ha mais quantidade por linha).
+- Botao de remover: `setCart(prev => prev.filter(i => i.tempId !== tempId))`.
+
+### 5. Simplificar o modal de checkout
+
+- Remover os botoes +/- de quantidade de cada linha.
+- Cada linha mostra: nome do item, badge de categoria, campo de preco editavel, botao X.
+- O subtotal por linha = `customPrice` (sem multiplicar por quantity).
+
+### 6. Atualizar calculos de total
+
 ```text
-// ANTES:
-(p) => Number(p.commission_earned) > 0 || p.confirmed_presence === true
-
-// DEPOIS:
-(p) => Number(p.commission_earned) > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null))
+const cartTotal = cart.reduce((sum, item) => sum + item.customPrice, 0);
+const cartItemsTotal = cart.length;
 ```
 
-**`DailyGoalsTracking.tsx`** (linha ~131):
+### 7. Atualizar `handleConfirmCheckout`
+
+- Remover o loop de `for (let i = 0; i < item.quantity; i++)`.
+- Cada item do array `cart` gera exatamente 1 transacao no banco.
+- Simplifica o codigo de batch insert.
+
 ```text
-// Mesma logica acima
+const transactions = cart.map(item => ({
+  barber_id: barberId,
+  organization_id: organizationId,
+  daily_production_id: dailyProductionId,
+  item_type: item.type,
+  item_name: item.name,
+  price_sold: item.customPrice,
+  service_category: item.type === "service" ? item.category : null,
+  catalog_service_id: item.type === "service" ? item.id : null,
+  catalog_product_id: item.type === "product" ? item.id : null,
+  commission_rate_used: 0,
+  commission_amount: 0,
+  source: "barber",
+  is_new_client: false,
+}));
 ```
 
-Importante: a query do `DailyGoalsTracking` e `LiveDashboard` precisam incluir `presence_type` no `.select()`.
+### 8. Footer fixo (badge do carrinho)
 
-### 5. Indicadores visuais nos dashboards
-
-**`DailyGoalsTracking.tsx`** -- Badge do barbeiro:
-- Trocar o badge generico "Presente s/ vendas" por badges especificos:
-  - `present` -> Badge laranja "Presente s/ vendas" (mantido)
-  - `day_off` -> Badge azul "Folga"
-  - `absence` -> Badge vermelho "Falta"
-
-**`LiveDashboard.tsx`** -- Card do barbeiro:
-- Adicionar icone/badge visual no card conforme o `presence_type` do dia selecionado
-
-### 6. ProductionHistory (historico do barbeiro)
-
-Atualizar a exibicao do historico para mostrar a classificacao do dia quando `confirmed_presence = true`:
-- Icone e texto indicando o tipo de ocorrencia registrada
-
----
-
-## Impacto na Meta
-
-A meta mensal (valor financeiro) NUNCA muda. O que muda e o calculo da meta diaria:
-
-- `day_off` e `absence` NAO reduzem os `work_days` da meta cadastrada
-- O barbeiro que folgou tera que vender mais nos dias restantes (meta diaria sobe automaticamente, pois `daysWorked` nao incrementa mas os dias do calendario passam)
-- `present` conta como dia trabalhado, puxando a media para baixo (alerta de performance ruim)
+Atualizar o badge do icone do carrinho para mostrar `cart.length` (quantidade total de linhas).
 
 ---
 
 ## Compatibilidade
 
-- Registros antigos com `confirmed_presence = true` e `presence_type = NULL` serao tratados como `present` (comportamento anterior preservado)
-- Nenhuma alteracao em triggers existentes necessaria (a coluna `presence_type` nao participa de calculos financeiros)
+- Nenhuma alteracao de banco de dados necessaria.
+- O backend ja recebe transacoes individuais (o loop de `quantity` atual ja fazia isso). A diferenca e que agora cada transacao pode ter preco diferente.
+- O `QuickSaleModal` do gestor NAO sera alterado nesta etapa (pode ser feito depois para manter consistencia).
+
+---
+
+## Resumo Visual
+
+Antes: Barbeiro clica "Barba Spa" -> aparece 1 linha com qty 2 -> mesmo preco para ambas.
+
+Depois: Barbeiro clica "Barba Spa" 2x -> aparecem 2 linhas separadas -> cada uma com preco editavel independente.
 
