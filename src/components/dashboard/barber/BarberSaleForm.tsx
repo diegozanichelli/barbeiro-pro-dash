@@ -589,7 +589,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    className="h-10 w-10 text-destructive hover:text-destructive"
                     onClick={() => removeCartItem(item.tempId)}
                   >
                     ×
@@ -632,7 +632,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10"
                 onClick={() => setClientsCount(prev => Math.max(1, prev - 1))}
                 disabled={clientsCount <= 1}
               >
@@ -642,7 +642,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10"
                 onClick={() => setClientsCount(prev => prev + 1)}
               >
                 <Plus className="w-4 h-4" />
