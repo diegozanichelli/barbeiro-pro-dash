@@ -3,11 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UserCheck, CalendarOff, XCircle, ClipboardList, Loader2 } from "lucide-react";
+import { UserCheck, CalendarOff, XCircle, ClipboardList, Loader2, ChevronDown } from "lucide-react";
 import { useOrganization } from "@/hooks/useOrganization";
 import { getCurrentMonthYear } from "@/lib/dateUtils";
 import { format, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface BarberOccurrence {
   barberId: string;
@@ -25,6 +26,7 @@ interface UnitOption {
 }
 
 export default function MonthlyOccurrencesSummary() {
+  const [isOpen, setIsOpen] = useState(false);
   const { organizationId } = useOrganization();
   const [occurrences, setOccurrences] = useState<BarberOccurrence[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
@@ -127,89 +129,106 @@ export default function MonthlyOccurrencesSummary() {
   if (occurrences.length === 0) return null;
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <ClipboardList className="w-5 h-5" />
-            Ocorrências do Mês — <span className="capitalize">{monthLabel}</span>
-          </CardTitle>
-          {units.length > 1 && (
-            <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Todas as unidades" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as unidades</SelectItem>
-                {units.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Totals */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="flex items-center gap-2 rounded-lg border p-3 bg-orange-500/10">
-            <UserCheck className="w-4 h-4 text-orange-500" />
-            <div>
-              <p className="text-xs text-muted-foreground">Presente s/ vendas</p>
-              <p className="text-xl font-bold text-orange-500">{totals.present}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border p-3 bg-blue-500/10">
-            <CalendarOff className="w-4 h-4 text-blue-500" />
-            <div>
-              <p className="text-xs text-muted-foreground">Folgas</p>
-              <p className="text-xl font-bold text-blue-500">{totals.dayOff}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border p-3 bg-red-500/10">
-            <XCircle className="w-4 h-4 text-red-500" />
-            <div>
-              <p className="text-xs text-muted-foreground">Faltas</p>
-              <p className="text-xl font-bold text-red-500">{totals.absence}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Per barber */}
-        <div className="space-y-2">
-          {filtered.map((o) => (
-            <div
-              key={o.barberId}
-              className="flex items-center justify-between rounded-lg border p-3"
-            >
-              <div>
-                <p className="font-medium text-sm">{o.barberName}</p>
-                <p className="text-xs text-muted-foreground">{o.unitName}</p>
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5" />
+                  Ocorrências do Mês — <span className="capitalize">{monthLabel}</span>
+                </CardTitle>
+                <Badge variant="secondary">
+                  {filtered.length} barbeiro(s)
+                </Badge>
               </div>
               <div className="flex items-center gap-2">
-                {o.presentCount > 0 && (
-                  <Badge className="bg-orange-500/20 text-orange-600 border-orange-500/30 hover:bg-orange-500/30">
-                    <UserCheck className="w-3 h-3 mr-1" />
-                    {o.presentCount}
-                  </Badge>
+                {units.length > 1 && (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Todas as unidades" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as unidades</SelectItem>
+                        {units.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
-                {o.dayOffCount > 0 && (
-                  <Badge className="bg-blue-500/20 text-blue-600 border-blue-500/30 hover:bg-blue-500/30">
-                    <CalendarOff className="w-3 h-3 mr-1" />
-                    {o.dayOffCount}
-                  </Badge>
-                )}
-                {o.absenceCount > 0 && (
-                  <Badge className="bg-red-500/20 text-red-600 border-red-500/30 hover:bg-red-500/30">
-                    <XCircle className="w-3 h-3 mr-1" />
-                    {o.absenceCount}
-                  </Badge>
-                )}
+                <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </div>
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+          </CardHeader>
+        </CollapsibleTrigger>
+
+        <CardContent className="space-y-4 pt-0">
+          {/* Totals - always visible */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="flex items-center gap-2 rounded-lg border p-3 bg-orange-500/10">
+              <UserCheck className="w-4 h-4 text-orange-500" />
+              <div>
+                <p className="text-xs text-muted-foreground">Presente s/ vendas</p>
+                <p className="text-xl font-bold text-orange-500">{totals.present}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border p-3 bg-blue-500/10">
+              <CalendarOff className="w-4 h-4 text-blue-500" />
+              <div>
+                <p className="text-xs text-muted-foreground">Folgas</p>
+                <p className="text-xl font-bold text-blue-500">{totals.dayOff}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border p-3 bg-red-500/10">
+              <XCircle className="w-4 h-4 text-red-500" />
+              <div>
+                <p className="text-xs text-muted-foreground">Faltas</p>
+                <p className="text-xl font-bold text-red-500">{totals.absence}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Per barber - collapsible */}
+          <CollapsibleContent>
+            <div className="space-y-2">
+              {filtered.map((o) => (
+                <div
+                  key={o.barberId}
+                  className="flex items-center justify-between rounded-lg border p-3"
+                >
+                  <div>
+                    <p className="font-medium text-sm">{o.barberName}</p>
+                    <p className="text-xs text-muted-foreground">{o.unitName}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {o.presentCount > 0 && (
+                      <Badge className="bg-orange-500/20 text-orange-600 border-orange-500/30 hover:bg-orange-500/30">
+                        <UserCheck className="w-3 h-3 mr-1" />
+                        {o.presentCount}
+                      </Badge>
+                    )}
+                    {o.dayOffCount > 0 && (
+                      <Badge className="bg-blue-500/20 text-blue-600 border-blue-500/30 hover:bg-blue-500/30">
+                        <CalendarOff className="w-3 h-3 mr-1" />
+                        {o.dayOffCount}
+                      </Badge>
+                    )}
+                    {o.absenceCount > 0 && (
+                      <Badge className="bg-red-500/20 text-red-600 border-red-500/30 hover:bg-red-500/30">
+                        <XCircle className="w-3 h-3 mr-1" />
+                        {o.absenceCount}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CollapsibleContent>
+        </CardContent>
+      </Card>
+    </Collapsible>
   );
 }
