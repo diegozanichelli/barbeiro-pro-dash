@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,8 @@ import {
   CalendarIcon,
   ChevronLeft,
   X,
+  Phone,
+  Smartphone,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
@@ -41,6 +43,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { useClientHistory } from "@/hooks/useClientHistory";
 
 
 interface QuickSaleModalProps {
@@ -123,6 +127,14 @@ export default function QuickSaleModal({
   // New client tracking (for conversion metrics)
   const [isNewClient, setIsNewClient] = useState(initialIsNewClient ?? false);
   const [clientName, setClientName] = useState("");
+  const [manualOverride, setManualOverride] = useState(false);
+
+  // Phone state
+  const [mobilePhone, setMobilePhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  // Client history hook
+  const clientHistory = useClientHistory(organizationId);
 
   // Date picker state
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -182,6 +194,10 @@ export default function QuickSaleModal({
     setIsReceptionSale(false);
     setIsNewClient(initialIsNewClient ?? false);
     setClientName("");
+    setMobilePhone("");
+    setPhoneError(null);
+    setManualOverride(false);
+    clientHistory.reset();
     setSelectedDate(new Date());
     setDatePickerOpen(false);
   };
@@ -191,6 +207,63 @@ export default function QuickSaleModal({
       resetForm();
     }
     onOpenChange(isOpen);
+  };
+
+  // Phone input handler with mask
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const formatted = formatPhone(raw);
+    setMobilePhone(formatted);
+
+    const digits = sanitizePhone(raw);
+    if (digits.length === 11) {
+      if (!isValidPhone(raw)) {
+        setPhoneError("Telefone inválido");
+      } else {
+        setPhoneError(null);
+      }
+    } else if (digits.length > 0 && digits.length < 11) {
+      setPhoneError(null); // Still typing
+    } else {
+      setPhoneError(null);
+    }
+  };
+
+  // Phone blur: trigger history check
+  const handlePhoneBlur = useCallback(async () => {
+    const digits = sanitizePhone(mobilePhone);
+    if (digits.length !== 11 || !isValidPhone(mobilePhone)) return;
+
+    const res = await clientHistory.checkHistory(mobilePhone, clientName);
+    if (!res) return;
+
+    if (res.status === "phone_found" && res.suggestedName) {
+      setClientName(res.suggestedName);
+      if (!manualOverride) setIsNewClient(false);
+    } else if (res.status === "name_found") {
+      if (!manualOverride) setIsNewClient(false);
+    } else if (res.status === "not_found") {
+      if (!manualOverride) setIsNewClient(true);
+    }
+  }, [mobilePhone, clientName, manualOverride, clientHistory]);
+
+  // Name blur: re-check if phone wasn't found
+  const handleNameBlur = useCallback(async () => {
+    if (clientHistory.status === "not_found" || clientHistory.status === "idle") {
+      const digits = sanitizePhone(mobilePhone);
+      if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
+        const res = await clientHistory.checkHistory(mobilePhone, clientName);
+        if (res && res.status === "name_found" && !manualOverride) {
+          setIsNewClient(false);
+        }
+      }
+    }
+  }, [mobilePhone, clientName, manualOverride, clientHistory]);
+
+  // Handle manual override of client type
+  const handleClientTypeChange = (value: string) => {
+    setManualOverride(true);
+    setIsNewClient(value === "new");
   };
 
   // Cart operations (individualized with tempId)
@@ -274,6 +347,11 @@ export default function QuickSaleModal({
     }
   };
 
+  // Check if phone is valid for proceeding
+  const phoneDigits = sanitizePhone(mobilePhone);
+  const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
+  const canProceedStep1 = isPhoneComplete && !clientHistory.checking && !phoneError;
+
   const handleCartCheckout = async () => {
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
@@ -283,6 +361,7 @@ export default function QuickSaleModal({
     setIsLoading(true);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
     const effectiveBarberId = isReceptionSale ? null : barberId;
+    const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
       // Get or create daily_production (only if NOT reception sale)
@@ -339,10 +418,11 @@ export default function QuickSaleModal({
         commission_amount: 0,
         is_new_client: isNewClient,
         client_name: clientName.trim() || null,
+        mobile_phone: phoneSanitized,
         created_at: selectedDate.toISOString(),
       }));
 
-      const { error } = await supabase.from("sale_transactions").insert(transactions);
+      const { error } = await supabase.from("sale_transactions").insert(transactions as any);
       if (error) throw error;
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
@@ -450,6 +530,50 @@ export default function QuickSaleModal({
     (activeTab !== "manual" && cart.length > 0) ||
     (activeTab === "manual" && manualValue);
 
+  // ─── Client Status Badge ───
+  const renderClientBadge = () => {
+    if (clientHistory.checking) {
+      return (
+        <Badge variant="secondary" className="gap-1 text-xs">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Verificando histórico...
+        </Badge>
+      );
+    }
+    if (clientHistory.status === "phone_found") {
+      return (
+        <Badge className="gap-1 text-xs bg-green-600 hover:bg-green-700 text-white border-0">
+          <Smartphone className="h-3 w-3" />
+          Identificado pelo Celular ({clientHistory.visitCount} {clientHistory.visitCount === 1 ? "visita" : "visitas"})
+        </Badge>
+      );
+    }
+    if (clientHistory.status === "name_found") {
+      return (
+        <Badge className="gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white border-0">
+          <Users className="h-3 w-3" />
+          Histórico encontrado pelo nome. Vinculando celular...
+        </Badge>
+      );
+    }
+    if (clientHistory.status === "not_found" && isPhoneComplete) {
+      return (
+        <Badge className="gap-1 text-xs bg-blue-500 hover:bg-blue-600 text-white border-0">
+          <UserPlus className="h-3 w-3" />
+          Primeiro registro deste cliente
+        </Badge>
+      );
+    }
+    if (manualOverride) {
+      return (
+        <Badge variant="secondary" className="gap-1 text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+          Classificação alterada manualmente
+        </Badge>
+      );
+    }
+    return null;
+  };
+
   // ─── STEP 1: Client Data ───
   const renderStep1 = () => (
     <>
@@ -500,10 +624,34 @@ export default function QuickSaleModal({
           </Popover>
         </div>
 
+        {/* Mobile Phone (required) */}
+        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
+          <Label htmlFor="mobile-phone" className="text-sm font-medium">
+            Celular do Cliente <span className="text-destructive">*</span>
+          </Label>
+          <div className="relative">
+            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="mobile-phone"
+              type="tel"
+              inputMode="numeric"
+              placeholder="(11) 99999-9999"
+              value={mobilePhone}
+              onChange={handlePhoneChange}
+              onBlur={handlePhoneBlur}
+              className={cn("h-10 pl-10", phoneError && "border-destructive")}
+              maxLength={15}
+            />
+          </div>
+          {phoneError && (
+            <p className="text-xs text-destructive font-medium">{phoneError}</p>
+          )}
+        </div>
+
         {/* Client Name */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label htmlFor="client-name" className="text-sm font-medium">
-            Nome do Cliente (opcional)
+            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "(opcional)"}
           </Label>
           <Input
             id="client-name"
@@ -511,9 +659,17 @@ export default function QuickSaleModal({
             placeholder="Ex: João"
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
+            onBlur={handleNameBlur}
             className="h-10"
           />
         </div>
+
+        {/* Client Status Badge */}
+        {renderClientBadge() && (
+          <div className="px-1">
+            {renderClientBadge()}
+          </div>
+        )}
 
         {/* Toggle Reception Sale */}
         <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
@@ -536,7 +692,9 @@ export default function QuickSaleModal({
           <ToggleGroup
             type="single"
             value={isNewClient ? "new" : "existing"}
-            onValueChange={(v) => setIsNewClient(v === "new")}
+            onValueChange={(v) => {
+              if (v) handleClientTypeChange(v);
+            }}
             className="justify-start"
           >
             <ToggleGroupItem
@@ -550,7 +708,7 @@ export default function QuickSaleModal({
             <ToggleGroupItem
               value="new"
               aria-label="Cliente Novo"
-              className="flex-1 gap-2 data-[state=on]:bg-success data-[state=on]:text-white"
+              className="flex-1 gap-2 data-[state=on]:bg-green-600 data-[state=on]:text-white"
             >
               <UserPlus className="w-4 h-4" />
               Cliente Novo
@@ -573,9 +731,16 @@ export default function QuickSaleModal({
           type="button"
           className="flex-1"
           onClick={() => setStep(2)}
+          disabled={!canProceedStep1}
         >
-          Continuar
-          <ChevronLeft className="h-4 w-4 rotate-180" />
+          {clientHistory.checking ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <>
+              Continuar
+              <ChevronLeft className="h-4 w-4 rotate-180" />
+            </>
+          )}
         </Button>
       </div>
     </>
@@ -596,7 +761,7 @@ export default function QuickSaleModal({
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <h3 className="text-sm font-semibold truncate flex-1">
-          {clientName.trim() ? clientName.trim() : "Selecionar Itens"}
+          Selecionar Itens
         </h3>
         {cart.length > 0 && (
           <Badge className="shrink-0 text-xs">
@@ -668,7 +833,7 @@ export default function QuickSaleModal({
               </div>
             ) : (
               <div className="flex-1 min-h-0 px-3 py-3 overflow-y-auto overscroll-contain touch-pan-y">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   {filteredItems.map((item) => (
                     <CatalogCard
                       key={item.id}
@@ -698,7 +863,7 @@ export default function QuickSaleModal({
               </div>
             ) : (
               <div className="flex-1 min-h-0 px-3 py-3 overflow-y-auto overscroll-contain touch-pan-y">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   {filteredItems.map((item) => (
                     <CatalogCard
                       key={item.id}

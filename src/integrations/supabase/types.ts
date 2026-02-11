@@ -622,6 +622,7 @@ export type Database = {
           is_new_client: boolean | null
           item_name: string
           item_type: string
+          mobile_phone: string | null
           organization_id: string
           price_sold: number
           service_category: string | null
@@ -645,6 +646,7 @@ export type Database = {
           is_new_client?: boolean | null
           item_name: string
           item_type: string
+          mobile_phone?: string | null
           organization_id: string
           price_sold: number
           service_category?: string | null
@@ -668,6 +670,7 @@ export type Database = {
           is_new_client?: boolean | null
           item_name?: string
           item_type?: string
+          mobile_phone?: string | null
           organization_id?: string
           price_sold?: number
           service_category?: string | null
