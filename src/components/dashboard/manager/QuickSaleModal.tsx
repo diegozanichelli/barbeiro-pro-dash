@@ -816,7 +816,7 @@ export default function QuickSaleModal({
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6"
+                              className="h-10 w-10"
                               onClick={() => updateCartItemQuantity(item.id, -1)}
                               disabled={item.quantity <= 1}
                             >
@@ -827,7 +827,7 @@ export default function QuickSaleModal({
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6"
+                              className="h-10 w-10"
                               onClick={() => updateCartItemQuantity(item.id, 1)}
                             >
                               <Plus className="w-3 h-3" />
@@ -848,7 +848,7 @@ export default function QuickSaleModal({
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            className="h-10 w-10 text-destructive hover:text-destructive"
                             onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
                           >
                             ×
@@ -868,7 +868,7 @@ export default function QuickSaleModal({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-10 w-10"
                           onClick={() => setClientsCount(prev => Math.max(1, prev - 1))}
                           disabled={clientsCount <= 1}
                         >
@@ -879,7 +879,7 @@ export default function QuickSaleModal({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-10 w-10"
                           onClick={() => setClientsCount(prev => prev + 1)}
                         >
                           <Plus className="w-3 h-3" />
