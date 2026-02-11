@@ -55,7 +55,7 @@ export default function MonthlyPayroll() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("daily_productions")
-        .select("barber_id, services_basic_total, services_extra_total, products_total, commission_earned")
+        .select("barber_id, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, commission_earned")
         .gte("date", format(startDate, "yyyy-MM-dd"))
         .lte("date", format(endDate, "yyyy-MM-dd"));
       if (error) throw error;
@@ -88,11 +88,12 @@ export default function MonthlyPayroll() {
       
       // Somar valores de produção
       const totalServices = barberProductions.reduce(
-        (sum, p) => sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0),
+        (sum, p) => sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+                        + (Number((p as any).tx_basic_total) || 0) + (Number((p as any).tx_extra_total) || 0),
         0
       );
       const totalProducts = barberProductions.reduce(
-        (sum, p) => sum + (Number(p.products_total) || 0),
+        (sum, p) => sum + (Number(p.products_total) || 0) + (Number((p as any).tx_products_total) || 0),
         0
       );
       const productionCommission = barberProductions.reduce(
