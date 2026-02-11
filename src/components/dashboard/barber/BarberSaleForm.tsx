@@ -429,7 +429,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
                 </p>
               ) : (
-                <div className="max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1">
+                <div className="h-[60vh] min-h-[400px] md:h-auto md:max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1 pb-4">
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {filteredItems.map((item) => (
                       <CatalogCard
@@ -454,7 +454,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
                 </p>
               ) : (
-                <div className="max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1">
+                <div className="h-[60vh] min-h-[400px] md:h-auto md:max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1 pb-4">
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {filteredItems.map((item) => (
                       <CatalogCard
@@ -515,7 +515,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           </Tabs>
 
           {/* Espaço para o footer fixo não sobrepor conteúdo */}
-          {cart.length > 0 && activeTab !== "manual" && <div className="h-20" />}
+          {cart.length > 0 && activeTab !== "manual" && <div className="h-24" />}
         </CardContent>
       </Card>
 
@@ -575,7 +575,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
           </div>
 
           {/* Lista de itens com edição de preço e quantidade */}
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[40vh] overflow-y-auto overscroll-contain pr-1">
             {cart.map((item) => (
               <div key={item.id} className="p-3 bg-secondary rounded-lg space-y-2">
                 <div className="flex items-center gap-3">
