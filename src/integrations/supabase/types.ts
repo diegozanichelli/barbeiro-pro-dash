@@ -853,10 +853,13 @@ export type Database = {
           barber_name: string
           clients_count: number
           commission_earned: number
+          extras_count: number
+          products_count: number
           products_total: number
           services_basic_total: number
           services_extra_total: number
           services_total: number
+          subscriptions_count: number
           unit_name: string
         }[]
       }
