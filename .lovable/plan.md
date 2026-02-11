@@ -1,65 +1,97 @@
 
-# Correcao: Divergencia de Ranking entre Barbeiros
 
-## Problema
-O Leaderboard faz **duas queries**: uma RPC segura (SECURITY DEFINER) para dados financeiros, e uma query direta em `sale_transactions` para contagens de produtos/extras/assinaturas. A segunda query e filtrada por RLS, fazendo cada barbeiro ver apenas os proprios dados. Resultado: todos se veem em 1o lugar.
+# Resultado da Varredura e Proximos Passos
 
-## Correcoes
+## Diagnostico Completo
 
-### 1. Expandir a RPC `get_organization_rankings` (Migracao SQL)
+A varredura tecnica revelou que **NENHUMA transacao esta orfã neste momento**. Todos os 5 barbeiros mencionados (Pablo Igor, Braiom Souza, Gabriel Oliveira, Lorran Patrick e Jhon Belchior) tem suas transacoes dos dias 10 e 11/02 corretamente vinculadas a registros em `daily_productions`, com totais computados.
 
-Adicionar 3 novas colunas ao retorno da funcao:
-- `products_count` (COUNT de `item_type = 'product'`)
-- `extras_count` (COUNT de `item_type = 'service' AND service_category = 'extra'`)
-- `subscriptions_count` (COUNT de `item_type = 'subscription'` OU `item_name` contendo 'assinatura'/'plano')
+Isso indica que o problema original ja foi resolvido pela migracao anterior da RPC, ou que as transacoes foram criadas corretamente pelo `QuickSaleModal` (que ja possui logica de criacao de `daily_productions` antes da insercao).
 
-A funcao ja e SECURITY DEFINER, entao todos os usuarios verao os mesmos dados. Sera feito um LEFT JOIN com `sale_transactions` usando `daily_production_id` para manter a mesma janela de datas.
+## O que JA esta implementado (correcoes anteriores)
 
-Confirmacao: a RPC ja soma `products_total + tx_products_total`, atendendo ao requisito de consistencia.
+1. **RPC `get_organization_rankings`** -- ja expandida com `products_count`, `extras_count`, `subscriptions_count` via SECURITY DEFINER
+2. **Leaderboard.tsx** -- ja usa apenas a RPC, sem query direta em `sale_transactions`
+3. **Refetch automatico** -- `visibilitychange` listener ja ativo no Leaderboard
+4. **QuickSaleModal** -- ja cria `daily_productions` antes de inserir transacoes (linhas 370-404)
 
-### 2. Remover query direta no Frontend
+## O que falta implementar (rede de seguranca)
 
-No arquivo `src/components/dashboard/Leaderboard.tsx`:
-- Remover linhas 337-363 (query direta em `sale_transactions`)
-- Remover o objeto `barberTransactionStats` e sua logica de agregacao
-- Usar `products_count`, `extras_count`, `subscriptions_count` diretamente do retorno da RPC expandida
+### 1. Trigger de seguranca no banco de dados (SQL)
 
-### 3. Trigger de atualizacao ao fechar modais
+Criar um trigger `BEFORE INSERT` em `sale_transactions` que, quando `daily_production_id` for NULL mas `barber_id` for preenchido:
+- Calcula a data usando timezone de Manaus
+- Cria automaticamente o `daily_productions` se nao existir (INSERT ON CONFLICT DO NOTHING)
+- Vincula a transacao ao registro criado
 
-Adicionar callback `onSaleComplete` no componente `Leaderboard` que chama `fetchRankings()`. Propagar esse callback dos dashboards (ManagerDashboard e BarberDashboard) para que, ao fechar QuickSaleModal, SubscriptionWizardModal ou BarberSaleForm, o ranking seja recarregado.
+Isso funciona como rede de seguranca final, impedindo que qualquer transacao futura fique orfã independente de falha no frontend.
 
-Como alternativa mais simples (sem refatorar props entre muitos componentes): adicionar um `refetchInterval` de 30 segundos ou usar `document.addEventListener('visibilitychange')` para refetch quando a aba volta ao foco.
+### 2. Verificacao pos-correcao
 
-### 4. Consistencia anual
+Apos a migracao, executar:
 
-Os filtros `p_start_date` e `p_end_date` da RPC ja atendem qualquer periodo (diario, mensal, anual). A performance nao sera afetada negativamente porque o JOIN com `sale_transactions` usa `daily_production_id` que ja tem indice.
+```text
+SELECT count(*) FROM sale_transactions WHERE daily_production_id IS NULL AND barber_id IS NOT NULL;
+-- Resultado esperado: 0
+```
 
 ## Secao Tecnica
 
-### Migracao SQL - Nova RPC
+### Migracao SQL - Trigger de seguranca
 
 ```text
-CREATE OR REPLACE FUNCTION get_organization_rankings(...)
-RETURNS TABLE(
-  -- colunas existentes...
-  products_count bigint,
-  extras_count bigint,
-  subscriptions_count bigint
-)
--- Adiciona subqueries correlacionadas ou LEFT JOIN com sale_transactions
--- agrupando por barber_id, contando item_type adequado
+CREATE OR REPLACE FUNCTION public.ensure_daily_production_link()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_date date;
+  v_production_id uuid;
+  v_org_id uuid;
+BEGIN
+  -- So atua quando daily_production_id e NULL e barber_id existe
+  IF NEW.daily_production_id IS NOT NULL OR NEW.barber_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Calcula data em Manaus (GMT-4)
+  v_date := (NEW.created_at AT TIME ZONE 'America/Manaus')::date;
+  v_org_id := COALESCE(NEW.organization_id, (SELECT organization_id FROM barbers WHERE id = NEW.barber_id));
+
+  -- Cria daily_production se nao existir
+  INSERT INTO daily_productions (barber_id, organization_id, date, clients_count, services_count, products_count)
+  VALUES (NEW.barber_id, v_org_id, v_date, 0, 0, 0)
+  ON CONFLICT (barber_id, date) DO NOTHING;
+
+  -- Busca o ID
+  SELECT id INTO v_production_id
+  FROM daily_productions
+  WHERE barber_id = NEW.barber_id AND date = v_date;
+
+  NEW.daily_production_id := v_production_id;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_ensure_daily_production_link
+  BEFORE INSERT ON sale_transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION ensure_daily_production_link();
 ```
+
+**Nota:** Este trigger depende de um indice UNIQUE em `daily_productions(barber_id, date)` para o `ON CONFLICT` funcionar. Se esse constraint nao existir, sera criado na mesma migracao.
 
 ### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---|---|
-| Migracao SQL | Expandir RPC com 3 novas colunas |
-| `src/components/dashboard/Leaderboard.tsx` | Remover query direta (linhas 337-363), usar dados da RPC, adicionar refetch automatico |
-| `src/integrations/supabase/types.ts` | Atualizado automaticamente apos migracao |
+| Migracao SQL | Criar trigger `ensure_daily_production_link` como rede de seguranca |
 
-### Verificacoes de seguranca
+### Verificacoes
 
-- mobile_phone: nao afetado (campo em sale_transactions, nao tocado pela RPC)
-- Comissao: nao afetada (calculate_commission ja soma ambas fontes)
-- RLS: melhorado -- barbeiros nao precisam mais de SELECT em sale_transactions de outros
+- Nenhuma alteracao no frontend e necessaria (QuickSaleModal ja funciona corretamente)
+- Os 5 barbeiros ja tem dados corretos no sistema
+- O trigger so sera acionado em casos extremos (falha de rede parcial, race condition)
+
