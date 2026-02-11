@@ -35,8 +35,8 @@ interface CatalogItem {
 }
 
 interface CartItem extends CatalogItem {
+  tempId: string;
   customPrice: number;
-  quantity: number;
 }
 
 
@@ -62,7 +62,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"services" | "products" | "manual">("services");
   
-  // Carrinho multi-select
+  // Carrinho individualizado (cada item = 1 linha com tempId único)
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [clientsCount, setClientsCount] = useState(1);
@@ -79,12 +79,10 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   // Note: is_new_client tracking is manager-only (reception/PDV)
   // Barber transactions default to false
 
-  // Buscar catálogo da organização + assinaturas de hoje
+  // Buscar catálogo da organização
   useEffect(() => {
     const fetchCatalog = async () => {
       setLoadingCatalog(true);
-      
-      const today = getTodayString();
       
       const [servicesRes, productsRes] = await Promise.all([
         supabase
@@ -137,50 +135,37 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     });
   }, [catalogItems, searchQuery, activeTab]);
 
-  // Toggle item no carrinho
-  const handleToggleCart = (item: CatalogItem) => {
-    setCart(prev => {
-      const exists = prev.find(i => i.id === item.id);
-      if (exists) {
-        return prev.filter(i => i.id !== item.id);
-      } else {
-        return [...prev, { ...item, customPrice: item.default_price, quantity: 1 }];
-      }
-    });
+  // Adicionar item ao carrinho (sempre cria nova linha)
+  const handleAddToCart = (item: CatalogItem) => {
+    const tempId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setCart(prev => [...prev, { ...item, tempId, customPrice: item.default_price }]);
   };
 
-  const isInCart = (itemId: string) => cart.some(i => i.id === itemId);
+  // Contar quantas vezes um item está no carrinho
+  const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
 
-  // Atualizar quantidade no carrinho
-  const updateCartItemQuantity = (itemId: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const newQty = Math.max(1, item.quantity + delta);
-        return { ...item, quantity: newQty };
-      }
-      return item;
-    }));
-  };
-
-  // Atualizar preço no carrinho
-  const updateCartItemPrice = (itemId: string, newPrice: string) => {
+  // Atualizar preço no carrinho por tempId
+  const updateCartItemPrice = (tempId: string, newPrice: string) => {
     const parsed = parseFloat(newPrice.replace(",", ".")) || 0;
     setCart(prev => prev.map(item => 
-      item.id === itemId ? { ...item, customPrice: parsed } : item
+      item.tempId === tempId ? { ...item, customPrice: parsed } : item
     ));
   };
 
-  // Total do carrinho (considerando quantidade)
+  // Remover item do carrinho por tempId
+  const removeCartItem = (tempId: string) => {
+    setCart(prev => prev.filter(i => i.tempId !== tempId));
+  };
+
+  // Total do carrinho
   const cartTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + (item.customPrice * item.quantity), 0);
+    return cart.reduce((sum, item) => sum + item.customPrice, 0);
   }, [cart]);
 
   // Contagem total de itens
-  const cartItemsTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.quantity, 0);
-  }, [cart]);
+  const cartItemsTotal = cart.length;
 
-  // Confirmar checkout (batch insert) - com suporte a quantidade
+  // Confirmar checkout (batch insert) - cada item = 1 transação
   const handleConfirmCheckout = async () => {
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
@@ -231,28 +216,23 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
         dailyProductionId = newProd.id;
       }
 
-      // 2. Batch insert de todas as transações - expandindo quantidade em múltiplas transações
+      // 2. Cada item do carrinho gera exatamente 1 transação
       // IMPORTANTE: source='barber' para diferenciar de lançamentos do gestor
-      const transactions: any[] = [];
-      cart.forEach(item => {
-        for (let i = 0; i < item.quantity; i++) {
-          transactions.push({
-            barber_id: barberId,
-            organization_id: organizationId,
-            daily_production_id: dailyProductionId,
-            item_type: item.type,
-            item_name: item.name,
-            price_sold: item.customPrice,
-            service_category: item.type === "service" ? item.category : null,
-            catalog_service_id: item.type === "service" ? item.id : null,
-            catalog_product_id: item.type === "product" ? item.id : null,
-            commission_rate_used: 0, // Trigger vai calcular
-            commission_amount: 0, // Trigger vai calcular
-            source: "barber", // <- Diferencia do gestor
-            is_new_client: false, // Barbeiro não define - métrica é exclusiva do gestor
-          });
-        }
-      });
+      const transactions = cart.map(item => ({
+        barber_id: barberId,
+        organization_id: organizationId,
+        daily_production_id: dailyProductionId,
+        item_type: item.type,
+        item_name: item.name,
+        price_sold: item.customPrice,
+        service_category: item.type === "service" ? item.category : null,
+        catalog_service_id: item.type === "service" ? item.id : null,
+        catalog_product_id: item.type === "product" ? item.id : null,
+        commission_rate_used: 0, // Trigger vai calcular
+        commission_amount: 0, // Trigger vai calcular
+        source: "barber", // <- Diferencia do gestor
+        is_new_client: false, // Barbeiro não define - métrica é exclusiva do gestor
+      }));
 
       const { error: txError } = await supabase
         .from("sale_transactions")
@@ -435,8 +415,8 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                       <CatalogCard
                         key={item.id}
                         item={item}
-                        isSelected={isInCart(item.id)}
-                        onSelect={() => handleToggleCart(item)}
+                        countInCart={countInCart(item.id)}
+                        onSelect={() => handleAddToCart(item)}
                       />
                     ))}
                   </div>
@@ -460,8 +440,8 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                       <CatalogCard
                         key={item.id}
                         item={item}
-                        isSelected={isInCart(item.id)}
-                        onSelect={() => handleToggleCart(item)}
+                        countInCart={countInCart(item.id)}
+                        onSelect={() => handleAddToCart(item)}
                       />
                     ))}
                   </div>
@@ -564,7 +544,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             </DialogDescription>
           </DialogHeader>
 
-          {/* Data da venda e Tipo de Cliente */}
+          {/* Data da venda */}
           <div className="space-y-2">
             <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-md">
               <span className="text-sm text-muted-foreground">Data:</span>
@@ -574,10 +554,10 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
             </div>
           </div>
 
-          {/* Lista de itens com edição de preço e quantidade */}
+          {/* Lista de itens individualizados */}
           <div className="space-y-3 max-h-[40vh] overflow-y-auto overscroll-contain pr-1">
             {cart.map((item) => (
-              <div key={item.id} className="p-3 bg-secondary rounded-lg space-y-2">
+              <div key={item.tempId} className="p-3 bg-secondary rounded-lg space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <p className="font-medium text-sm">{item.name}</p>
@@ -599,38 +579,15 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))}
+                    onClick={() => removeCartItem(item.tempId)}
                   >
                     ×
                   </Button>
                 </div>
                 
-                {/* Linha de Quantidade e Preço */}
-                <div className="flex items-center justify-between gap-2">
-                  {/* Seletor de Quantidade */}
-                  <div className="flex items-center gap-1 bg-background rounded-md border p-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => updateCartItemQuantity(item.id, -1)}
-                      disabled={item.quantity <= 1}
-                    >
-                      <Minus className="w-3 h-3" />
-                    </Button>
-                    <span className="w-6 text-center font-bold text-sm">{item.quantity}x</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => updateCartItemQuantity(item.id, 1)}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  
-                  {/* Preço Unitário */}
-                  <div className="relative flex-1 max-w-[120px]">
+                {/* Preço editável */}
+                <div className="flex items-center justify-end gap-2">
+                  <div className="relative flex-1 max-w-[140px]">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
                     <Input
                       type="text"
@@ -639,18 +596,10 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                       onChange={(e) => {
                         const val = e.target.value;
                         const cleaned = val.replace(/[^\d,.\-]/g, "");
-                        updateCartItemPrice(item.id, cleaned);
+                        updateCartItemPrice(item.tempId, cleaned);
                       }}
                       className="pl-7 text-right font-bold text-sm h-8 bg-background"
                     />
-                  </div>
-                  
-                  {/* Subtotal */}
-                  <div className="text-right min-w-[70px]">
-                    <p className="text-xs text-muted-foreground">Subtotal</p>
-                    <p className="font-bold text-sm text-primary">
-                      R$ {(item.customPrice * item.quantity).toFixed(2).replace(".", ",")}
-                    </p>
                   </div>
                 </div>
               </div>
@@ -727,11 +676,11 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
 // Componente de Card do Catálogo
 interface CatalogCardProps {
   item: CatalogItem;
-  isSelected: boolean;
+  countInCart: number;
   onSelect: () => void;
 }
 
-function CatalogCard({ item, isSelected, onSelect }: CatalogCardProps) {
+function CatalogCard({ item, countInCart, onSelect }: CatalogCardProps) {
   return (
     <button
       type="button"
@@ -739,15 +688,15 @@ function CatalogCard({ item, isSelected, onSelect }: CatalogCardProps) {
       className={cn(
         "relative flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all duration-200",
         "hover:shadow-md active:scale-[0.98]",
-        isSelected
+        countInCart > 0
           ? "border-primary bg-primary/10 shadow-md"
           : "border-border bg-secondary hover:border-primary/50"
       )}
     >
-      {/* Checkmark de seleção */}
-      {isSelected && (
-        <div className="absolute top-2 right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
-          <Check className="w-3 h-3 text-primary-foreground" />
+      {/* Badge de contador no carrinho */}
+      {countInCart > 0 && (
+        <div className="absolute top-2 right-2 min-w-[22px] h-[22px] bg-primary rounded-full flex items-center justify-center px-1">
+          <span className="text-[11px] font-bold text-primary-foreground">x{countInCart}</span>
         </div>
       )}
 
