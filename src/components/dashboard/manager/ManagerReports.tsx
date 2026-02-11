@@ -146,12 +146,12 @@ export default function ManagerReports() {
 
     if (productions) {
       const totalRevenue = productions.reduce(
-        (sum, p) => {
-          // Usar lógica retrocompatível: se houver services_basic_total ou services_extra_total, usar eles
+        (sum, p: any) => {
           const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
             ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+              + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0)
             : (Number(p.services_total) || 0);
-          return sum + servicesTotal + Number(p.products_total);
+          return sum + servicesTotal + Number(p.products_total) + (Number(p.tx_products_total) || 0);
         },
         0
       );
@@ -462,14 +462,13 @@ export default function ManagerReports() {
                     // Se tiver os campos novos, usa eles separadamente
                     // Caso contrário, considera tudo como serviços básicos (retrocompatível)
                     if (production.services_basic_total !== null || production.services_extra_total !== null) {
-                      stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
-                      stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
+                      stats.servicesBasicTotal += (Number(production.services_basic_total) || 0) + (Number(production.tx_basic_total) || 0);
+                      stats.servicesExtraTotal += (Number(production.services_extra_total) || 0) + (Number(production.tx_extra_total) || 0);
                     } else {
-                      // Registros antigos: services_total vai para básicos
                       stats.servicesBasicTotal += Number(production.services_total) || 0;
                     }
                     
-                    stats.productsTotal += Number(production.products_total);
+                    stats.productsTotal += (Number(production.products_total) || 0) + (Number(production.tx_products_total) || 0);
                     stats.commissionTotal += Number(production.commission_earned);
                     stats.clientsTotal += Number(production.clients_count);
                   });
