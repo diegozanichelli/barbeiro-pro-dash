@@ -700,7 +700,7 @@ function CatalogCard({ item, countInCart, onSelect, compact = false }: CatalogCa
       className={cn(
         "relative flex flex-col items-center justify-center rounded-lg border-2 transition-all duration-200",
         "hover:shadow-md active:scale-[0.98]",
-        compact ? "p-2 md:p-4" : "p-4",
+        compact ? "p-1.5 md:p-2.5" : "p-2.5",
         countInCart > 0
           ? "border-primary bg-primary/10 shadow-md"
           : "border-border bg-secondary hover:border-primary/50"
@@ -708,10 +708,7 @@ function CatalogCard({ item, countInCart, onSelect, compact = false }: CatalogCa
     >
       {/* Badge de contador no carrinho */}
       {countInCart > 0 && (
-        <div className={cn(
-          "absolute min-w-[20px] h-[20px] bg-primary rounded-full flex items-center justify-center px-1",
-          compact ? "top-1 right-1 md:top-2 md:right-2" : "top-2 right-2"
-        )}>
+        <div className="absolute top-1 right-1 min-w-[20px] h-[20px] bg-primary rounded-full flex items-center justify-center px-1">
           <span className="text-[10px] font-bold text-primary-foreground">x{countInCart}</span>
         </div>
       )}
@@ -721,8 +718,7 @@ function CatalogCard({ item, countInCart, onSelect, compact = false }: CatalogCa
         <Badge
           variant="outline"
           className={cn(
-            "absolute text-[9px] px-1",
-            compact ? "top-1 left-1 md:top-2 md:left-2 md:text-[10px] md:px-1.5" : "top-2 left-2 text-[10px] px-1.5",
+            "absolute top-1 left-1 text-[9px] px-1",
             item.category === "basic" ? "border-primary/50 text-primary" : "border-accent-foreground/50 text-accent-foreground"
           )}
         >
@@ -732,25 +728,22 @@ function CatalogCard({ item, countInCart, onSelect, compact = false }: CatalogCa
 
       {/* Nome do item */}
       <span className={cn(
-        "font-medium text-center line-clamp-2",
-        compact ? "text-xs mt-1 md:text-sm md:mt-2" : "text-sm mt-2"
+        "font-medium text-center line-clamp-2 mt-1",
+        compact ? "text-[10px] md:text-xs" : "text-xs"
       )}>{item.name}</span>
 
       {/* Preço */}
       <span className={cn(
-        "font-bold text-primary",
-        compact ? "text-sm mt-0.5 md:text-lg md:mt-1" : "text-lg mt-1"
+        "font-bold text-primary mt-0.5",
+        compact ? "text-xs md:text-base" : "text-base"
       )}>
         R$ {item.default_price.toFixed(2).replace(".", ",")}
       </span>
 
       {/* Badge de comissão fixa */}
       {item.fixed_commission && (
-        <Badge className={cn(
-          "bg-warning/20 text-warning border-warning/30 text-[10px]",
-          compact ? "mt-0.5 md:mt-1" : "mt-1"
-        )}>
-          <Zap className="w-3 h-3 mr-0.5" />
+        <Badge className="bg-warning/20 text-warning border-warning/30 text-[10px] mt-0.5">
+          <Zap className="w-2.5 h-2.5 mr-0.5" />
           {item.fixed_commission}%
         </Badge>
       )}
