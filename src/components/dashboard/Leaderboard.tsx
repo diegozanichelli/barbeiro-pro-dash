@@ -87,6 +87,17 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
     fetchRankings();
   }, [period, unitFilter]);
 
+  // Refetch automático quando a aba volta ao foco (ex: após fechar modal de venda)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchRankings();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [period, unitFilter]);
+
   const fetchUnits = async () => {
     const { data } = await supabase.from("units").select("*").eq("status", "active");
     if (data) setUnits(data);
@@ -330,55 +341,20 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
     if (!rankings) return;
 
-    // First, get barber IDs to fetch additional transaction data
-    const barberIds = rankings.map((r: any) => r.barber_id);
-
-    // Fetch transaction counts for championship mode
-    const { data: transactionCounts } = await supabase
-      .from("sale_transactions")
-      .select("barber_id, item_type, service_category, item_name")
-      .in("barber_id", barberIds)
-      .gte("created_at", start)
-      .lte("created_at", end + "T23:59:59");
-
-    // Aggregate transaction counts by barber
-    const barberTransactionStats: Record<string, { products_count: number; extras_count: number; subscriptions_count: number }> = {};
-    
-    if (transactionCounts) {
-      transactionCounts.forEach((t) => {
-        if (!barberTransactionStats[t.barber_id]) {
-          barberTransactionStats[t.barber_id] = { products_count: 0, extras_count: 0, subscriptions_count: 0 };
-        }
-        if (t.item_type === "product") {
-          barberTransactionStats[t.barber_id].products_count++;
-        }
-        if (t.item_type === "service" && t.service_category === "extra") {
-          barberTransactionStats[t.barber_id].extras_count++;
-        }
-        // Check for subscriptions by type OR by name containing 'Assinatura' or 'Plano'
-        if (t.item_type === "subscription" || 
-            (t.item_name && (t.item_name.toLowerCase().includes("assinatura") || t.item_name.toLowerCase().includes("plano")))) {
-          barberTransactionStats[t.barber_id].subscriptions_count++;
-        }
-      });
-    }
-
-    const statsArray = rankings.map((r: any) => {
-      const txStats = barberTransactionStats[r.barber_id] || { products_count: 0, extras_count: 0, subscriptions_count: 0 };
-      return {
-        barber_id: r.barber_id,
-        barber_name: r.barber_name,
-        unit_name: r.unit_name,
-        services_total: Number(r.services_total) || 0,
-        services_extra_total: Number(r.services_extra_total) || 0,
-        products_total: Number(r.products_total) || 0,
-        clients_count: Number(r.clients_count) || 0,
-        commission_earned: Number(r.commission_earned) || 0,
-        products_count: txStats.products_count,
-        extras_count: txStats.extras_count,
-        subscriptions_count: txStats.subscriptions_count,
-      };
-    });
+    // All data now comes from the RPC (SECURITY DEFINER) - no direct sale_transactions query needed
+    const statsArray = rankings.map((r: any) => ({
+      barber_id: r.barber_id,
+      barber_name: r.barber_name,
+      unit_name: r.unit_name,
+      services_total: Number(r.services_total) || 0,
+      services_extra_total: Number(r.services_extra_total) || 0,
+      products_total: Number(r.products_total) || 0,
+      clients_count: Number(r.clients_count) || 0,
+      commission_earned: Number(r.commission_earned) || 0,
+      products_count: Number(r.products_count) || 0,
+      extras_count: Number(r.extras_count) || 0,
+      subscriptions_count: Number(r.subscriptions_count) || 0,
+    }));
 
     // Store raw data for championship mode
     setRawBarberData(statsArray);
