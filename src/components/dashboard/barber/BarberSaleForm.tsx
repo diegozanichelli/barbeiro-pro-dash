@@ -317,15 +317,18 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   return (
     <>
       <Card className="bg-card border-border shadow-card-custom">
-        <CardHeader className="pb-3">
+        <CardHeader className={cn("transition-all", cart.length > 0 ? "pb-1 pt-3 md:pb-3 md:pt-6" : "pb-3")}>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-primary" />
+            <CardTitle className={cn(
+              "flex items-center gap-2 transition-all",
+              cart.length > 0 ? "text-base md:text-2xl" : ""
+            )}>
+              <DollarSign className={cn("text-primary", cart.length > 0 ? "w-4 h-4 md:w-5 md:h-5" : "w-5 h-5")} />
               REGISTRAR VENDA
             </CardTitle>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className={cn("space-y-4", cart.length > 0 && "space-y-2 md:space-y-4")}>
           {/* Date Picker */}
           <div className="flex items-center gap-2">
             <Label className="text-sm text-muted-foreground whitespace-nowrap">Data:</Label>
@@ -410,13 +413,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                 </p>
               ) : (
                 <div className="h-[60vh] min-h-[400px] md:h-auto md:max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1 pb-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className={cn(
+                    "grid grid-cols-2 md:grid-cols-3",
+                    cart.length > 0 ? "gap-1.5 md:gap-3" : "gap-3"
+                  )}>
                     {filteredItems.map((item) => (
                       <CatalogCard
                         key={item.id}
                         item={item}
                         countInCart={countInCart(item.id)}
                         onSelect={() => handleAddToCart(item)}
+                        compact={cart.length > 0}
                       />
                     ))}
                   </div>
@@ -435,13 +442,17 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                 </p>
               ) : (
                 <div className="h-[60vh] min-h-[400px] md:h-auto md:max-h-[50vh] overflow-y-auto overscroll-contain touch-pan-y pr-1 pb-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className={cn(
+                    "grid grid-cols-2 md:grid-cols-3",
+                    cart.length > 0 ? "gap-1.5 md:gap-3" : "gap-3"
+                  )}>
                     {filteredItems.map((item) => (
                       <CatalogCard
                         key={item.id}
                         item={item}
                         countInCart={countInCart(item.id)}
                         onSelect={() => handleAddToCart(item)}
+                        compact={cart.length > 0}
                       />
                     ))}
                   </div>
@@ -678,16 +689,18 @@ interface CatalogCardProps {
   item: CatalogItem;
   countInCart: number;
   onSelect: () => void;
+  compact?: boolean;
 }
 
-function CatalogCard({ item, countInCart, onSelect }: CatalogCardProps) {
+function CatalogCard({ item, countInCart, onSelect, compact = false }: CatalogCardProps) {
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "relative flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all duration-200",
+        "relative flex flex-col items-center justify-center rounded-lg border-2 transition-all duration-200",
         "hover:shadow-md active:scale-[0.98]",
+        compact ? "p-2 md:p-4" : "p-4",
         countInCart > 0
           ? "border-primary bg-primary/10 shadow-md"
           : "border-border bg-secondary hover:border-primary/50"
@@ -695,8 +708,11 @@ function CatalogCard({ item, countInCart, onSelect }: CatalogCardProps) {
     >
       {/* Badge de contador no carrinho */}
       {countInCart > 0 && (
-        <div className="absolute top-2 right-2 min-w-[22px] h-[22px] bg-primary rounded-full flex items-center justify-center px-1">
-          <span className="text-[11px] font-bold text-primary-foreground">x{countInCart}</span>
+        <div className={cn(
+          "absolute min-w-[20px] h-[20px] bg-primary rounded-full flex items-center justify-center px-1",
+          compact ? "top-1 right-1 md:top-2 md:right-2" : "top-2 right-2"
+        )}>
+          <span className="text-[10px] font-bold text-primary-foreground">x{countInCart}</span>
         </div>
       )}
 
@@ -705,7 +721,8 @@ function CatalogCard({ item, countInCart, onSelect }: CatalogCardProps) {
         <Badge
           variant="outline"
           className={cn(
-            "absolute top-2 left-2 text-[10px] px-1.5",
+            "absolute text-[9px] px-1",
+            compact ? "top-1 left-1 md:top-2 md:left-2 md:text-[10px] md:px-1.5" : "top-2 left-2 text-[10px] px-1.5",
             item.category === "basic" ? "border-primary/50 text-primary" : "border-accent-foreground/50 text-accent-foreground"
           )}
         >
@@ -714,16 +731,25 @@ function CatalogCard({ item, countInCart, onSelect }: CatalogCardProps) {
       )}
 
       {/* Nome do item */}
-      <span className="text-sm font-medium text-center mt-2 line-clamp-2">{item.name}</span>
+      <span className={cn(
+        "font-medium text-center line-clamp-2",
+        compact ? "text-xs mt-1 md:text-sm md:mt-2" : "text-sm mt-2"
+      )}>{item.name}</span>
 
       {/* Preço */}
-      <span className="text-lg font-bold text-primary mt-1">
+      <span className={cn(
+        "font-bold text-primary",
+        compact ? "text-sm mt-0.5 md:text-lg md:mt-1" : "text-lg mt-1"
+      )}>
         R$ {item.default_price.toFixed(2).replace(".", ",")}
       </span>
 
       {/* Badge de comissão fixa */}
       {item.fixed_commission && (
-        <Badge className="mt-1 bg-warning/20 text-warning border-warning/30 text-[10px]">
+        <Badge className={cn(
+          "bg-warning/20 text-warning border-warning/30 text-[10px]",
+          compact ? "mt-0.5 md:mt-1" : "mt-1"
+        )}>
           <Zap className="w-3 h-3 mr-0.5" />
           {item.fixed_commission}%
         </Badge>
