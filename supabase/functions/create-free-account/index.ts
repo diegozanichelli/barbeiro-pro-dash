@@ -101,7 +101,8 @@ serve(async (req) => {
 
     logStep("Organization created", { orgId: orgData.id });
 
-    // Create manager user
+    // Create manager user (or reuse existing)
+    let userId: string;
     const { data: newUser, error: createUserError } = await supabaseClient.auth.admin.createUser({
       email: trimmedEmail,
       password: passwordStr,
@@ -112,19 +113,47 @@ serve(async (req) => {
     });
 
     if (createUserError) {
-      logStep("Error creating user", { error: createUserError });
-      // Rollback organization
-      await supabaseClient.from("organizations").delete().eq("id", orgData.id);
-      throw new Error(`Failed to create user: ${createUserError.message}`);
+      // If user already exists, try to find and reuse them
+      if (createUserError.message.includes("already been registered")) {
+        logStep("User already exists, checking if available");
+        const { data: { users }, error: listError } = await supabaseClient.auth.admin.listUsers();
+        if (listError) {
+          await supabaseClient.from("organizations").delete().eq("id", orgData.id);
+          throw new Error("Não foi possível verificar o usuário existente");
+        }
+        const existingUser = users.find(u => u.email === trimmedEmail);
+        if (!existingUser) {
+          await supabaseClient.from("organizations").delete().eq("id", orgData.id);
+          throw new Error("Usuário não encontrado após verificação");
+        }
+        // Check if user already has a role (already belongs to an org)
+        const { data: existingRole } = await supabaseClient
+          .from("user_roles")
+          .select("id")
+          .eq("user_id", existingUser.id)
+          .maybeSingle();
+        if (existingRole) {
+          await supabaseClient.from("organizations").delete().eq("id", orgData.id);
+          throw new Error("Este email já está vinculado a outra organização");
+        }
+        userId = existingUser.id;
+        logStep("Reusing existing user", { userId });
+      } else {
+        logStep("Error creating user", { error: createUserError });
+        await supabaseClient.from("organizations").delete().eq("id", orgData.id);
+        throw new Error(`Failed to create user: ${createUserError.message}`);
+      }
+    } else {
+      userId = newUser.user.id;
     }
 
-    logStep("User created", { userId: newUser.user.id });
+    logStep("User ready", { userId });
 
     // Create user role
     const { error: roleError } = await supabaseClient
       .from("user_roles")
       .insert({
-        user_id: newUser.user.id,
+        user_id: userId,
         role: "manager",
         organization_id: orgData.id,
       });
@@ -132,9 +161,9 @@ serve(async (req) => {
     if (roleError) {
       logStep("Error creating role", { error: roleError });
       // Rollback
-      await supabaseClient.auth.admin.deleteUser(newUser.user.id);
+      await supabaseClient.auth.admin.deleteUser(userId);
       await supabaseClient.from("organizations").delete().eq("id", orgData.id);
-      throw new Error(`Failed to create user role: ${roleError.message}`);
+      throw new Error(`Falha ao criar role do usuário: ${roleError.message}`);
     }
 
     logStep("Free account created successfully");
