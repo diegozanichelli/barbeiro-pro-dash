@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -33,11 +33,15 @@ import {
   RefreshCw,
   ArrowUpCircle,
   ArrowDownCircle,
+  Phone,
+  Smartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
 import { getTodayString } from "@/lib/dateUtils";
-import { format } from "date-fns";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { useClientHistory } from "@/hooks/useClientHistory";
 
 interface SubscriptionWizardModalProps {
   open: boolean;
@@ -73,22 +77,26 @@ export default function SubscriptionWizardModal({
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
 
-  // Step 1
+  // Step 1 - Client identification + Plan
+  const [mobilePhone, setMobilePhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [clientName, setClientName] = useState("");
   const [isNewClient, setIsNewClient] = useState<boolean | null>(null);
   const [subscriptionAction, setSubscriptionAction] = useState<SubscriptionAction | null>(null);
   const [downgradeReason, setDowngradeReason] = useState("");
+  const [manualOverride, setManualOverride] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
-  // Step 2
+  // Step 2 - Attribution
   const [attributionType, setAttributionType] = useState<"reception" | "barber" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [selectedBarberUnitName, setSelectedBarberUnitName] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
-
-  // Step 3
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [clientName, setClientName] = useState("");
+
+  // Client history
+  const clientHistory = useClientHistory(organizationId);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -105,19 +113,83 @@ export default function SubscriptionWizardModal({
   useEffect(() => {
     if (!open) {
       setStep("client_type");
+      setMobilePhone("");
+      setPhoneError(null);
+      setClientName("");
       setIsNewClient(null);
       setSubscriptionAction(null);
       setDowngradeReason("");
+      setManualOverride(false);
+      setSelectedPlanId(null);
       setAttributionType(null);
       setSelectedBarberId(null);
       setSelectedBarberUnitName(null);
       setSelectedUnitId(null);
-      setSelectedPlanId(null);
-      setClientName("");
+      clientHistory.reset();
     }
   }, [open]);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+
+  // Phone handlers
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const formatted = formatPhone(raw);
+    setMobilePhone(formatted);
+
+    const digits = sanitizePhone(raw);
+    if (digits.length === 11) {
+      if (!isValidPhone(raw)) {
+        setPhoneError("Telefone inválido");
+      } else {
+        setPhoneError(null);
+      }
+    } else {
+      setPhoneError(null);
+    }
+  };
+
+  const handlePhoneBlur = useCallback(async () => {
+    const digits = sanitizePhone(mobilePhone);
+    if (digits.length !== 11 || !isValidPhone(mobilePhone)) return;
+
+    const res = await clientHistory.checkHistory(mobilePhone, clientName);
+    if (!res) return;
+
+    if (res.status === "phone_found" && res.suggestedName) {
+      setClientName(res.suggestedName);
+      if (!manualOverride) {
+        setIsNewClient(false);
+        setSubscriptionAction(null);
+      }
+    } else if (res.status === "name_found") {
+      if (!manualOverride) {
+        setIsNewClient(false);
+        setSubscriptionAction(null);
+      }
+    } else if (res.status === "not_found") {
+      if (!manualOverride) {
+        setIsNewClient(true);
+        setSubscriptionAction("new");
+      }
+    }
+  }, [mobilePhone, clientName, manualOverride, clientHistory]);
+
+  const handleNameBlur = useCallback(async () => {
+    if (clientHistory.status === "not_found" || clientHistory.status === "idle") {
+      const digits = sanitizePhone(mobilePhone);
+      if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
+        const res = await clientHistory.checkHistory(mobilePhone, clientName);
+        if (res && res.status === "name_found" && !manualOverride) {
+          setIsNewClient(false);
+          setSubscriptionAction(null);
+        }
+      }
+    }
+  }, [mobilePhone, clientName, manualOverride, clientHistory]);
+
+  const phoneDigits = sanitizePhone(mobilePhone);
+  const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
 
   const handleBack = () => {
     if (step === "attribution") setStep("client_type");
@@ -131,8 +203,11 @@ export default function SubscriptionWizardModal({
 
   const canProceed = () => {
     if (step === "client_type") {
+      if (!isPhoneComplete || clientHistory.checking || phoneError) return false;
+      if (!clientName.trim()) return false;
+      if (!selectedPlanId) return false;
       if (isNewClient === null) return false;
-      if (isNewClient) return true; // action = 'new' automatically
+      if (isNewClient) return true;
       return subscriptionAction !== null && (subscriptionAction !== "downgrade" || downgradeReason.trim().length > 0);
     }
     if (step === "attribution") {
@@ -141,12 +216,13 @@ export default function SubscriptionWizardModal({
       return false;
     }
     if (step === "details") {
-      return !!selectedPlanId && clientName.trim().length > 0;
+      return true; // Summary only
     }
     return false;
   };
 
   const handleSelectNewClient = (value: boolean) => {
+    setManualOverride(true);
     setIsNewClient(value);
     if (value) {
       setSubscriptionAction("new");
@@ -162,9 +238,10 @@ export default function SubscriptionWizardModal({
   };
 
   const handleSubmit = async () => {
-    if (!canProceed()) return;
+    if (!selectedPlanId || !clientName.trim()) return;
     setLoading(true);
     const dateStr = selectedDate || getTodayString();
+    const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
       let productionId: string | null = null;
@@ -219,6 +296,8 @@ export default function SubscriptionWizardModal({
         item_type: "subscription",
         item_name: `Assinatura ${selectedPlan?.name || ""}`,
         description: clientName.trim(),
+        client_name: clientName.trim(),
+        mobile_phone: phoneSanitized,
         price_sold: selectedPlan?.price || 0,
         service_category: null,
         catalog_service_id: null,
@@ -252,7 +331,7 @@ export default function SubscriptionWizardModal({
 
   const handleBridgeToService = () => {
     const barberName = selectedBarberId
-      ? "Barbeiro" // Will be resolved by parent
+      ? "Barbeiro"
       : "Recepção";
     onOpenChange(false);
     onBridgeToService?.(selectedBarberId, barberName);
@@ -269,6 +348,50 @@ export default function SubscriptionWizardModal({
     return 4;
   };
 
+  // Client Status Badge
+  const renderClientBadge = () => {
+    if (clientHistory.checking) {
+      return (
+        <Badge variant="secondary" className="gap-1 text-xs">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Verificando histórico...
+        </Badge>
+      );
+    }
+    if (clientHistory.status === "phone_found") {
+      return (
+        <Badge className="gap-1 text-xs bg-green-600 hover:bg-green-700 text-white border-0">
+          <Smartphone className="h-3 w-3" />
+          Identificado pelo Celular ({clientHistory.visitCount} {clientHistory.visitCount === 1 ? "visita" : "visitas"})
+        </Badge>
+      );
+    }
+    if (clientHistory.status === "name_found") {
+      return (
+        <Badge className="gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white border-0">
+          <Users className="h-3 w-3" />
+          Histórico encontrado pelo nome. Vinculando celular...
+        </Badge>
+      );
+    }
+    if (clientHistory.status === "not_found" && isPhoneComplete) {
+      return (
+        <Badge className="gap-1 text-xs bg-blue-500 hover:bg-blue-600 text-white border-0">
+          <UserPlus className="h-3 w-3" />
+          Primeiro registro deste cliente
+        </Badge>
+      );
+    }
+    if (manualOverride) {
+      return (
+        <Badge variant="secondary" className="gap-1 text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+          Classificação alterada manualmente
+        </Badge>
+      );
+    }
+    return null;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col">
@@ -283,51 +406,120 @@ export default function SubscriptionWizardModal({
             <DialogDescription>
               Passo {getStepNumber()} de 3 —{" "}
               {step === "client_type"
-                ? "Tipo de Cliente"
+                ? "Identificação + Plano"
                 : step === "attribution"
                 ? "Atribuição de Pontos"
-                : "Detalhes do Plano"}
+                : "Resumo"}
             </DialogDescription>
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-6 py-4">
-          {/* STEP 1 */}
+        <div className="flex-1 overflow-y-auto space-y-4 py-4">
+          {/* STEP 1: Client Identification + Plan */}
           {step === "client_type" && (
             <div className="space-y-4">
-              <Label className="text-base font-medium">
-                É um cliente novo ou já era da casa?
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Isso ajuda a medir a taxa de conversão de novos clientes em assinantes.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  type="button"
-                  variant={isNewClient === true ? "default" : "outline"}
-                  className={cn(
-                    "h-auto py-4 flex flex-col items-center gap-2",
-                    isNewClient === true && "ring-2 ring-primary ring-offset-2"
+              {/* Mobile Phone (required) */}
+              <div className="space-y-1">
+                <Label htmlFor="sub-mobile-phone" className="text-sm font-medium">
+                  Celular do Cliente <span className="text-destructive">*</span>
+                </Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="sub-mobile-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="(11) 99999-9999"
+                    value={mobilePhone}
+                    onChange={handlePhoneChange}
+                    onBlur={handlePhoneBlur}
+                    className={cn("h-10 pl-10", phoneError && "border-destructive")}
+                    maxLength={15}
+                  />
+                </div>
+                {phoneError && (
+                  <p className="text-xs text-destructive font-medium">{phoneError}</p>
+                )}
+              </div>
+
+              {/* Client Name (required) */}
+              <div className="space-y-1">
+                <Label htmlFor="sub-client-name" className="text-sm font-medium">
+                  Nome do Cliente <span className="text-destructive">*</span>
+                  {clientHistory.status === "phone_found" && (
+                    <span className="text-muted-foreground font-normal"> (auto-preenchido)</span>
                   )}
-                  onClick={() => handleSelectNewClient(true)}
-                >
-                  <UserPlus className="w-6 h-6" />
-                  <span className="font-medium">Novo Cliente</span>
-                  <span className="text-xs text-muted-foreground">Primeira vez</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant={isNewClient === false ? "default" : "outline"}
-                  className={cn(
-                    "h-auto py-4 flex flex-col items-center gap-2",
-                    isNewClient === false && "ring-2 ring-primary ring-offset-2"
-                  )}
-                  onClick={() => handleSelectNewClient(false)}
-                >
-                  <Users className="w-6 h-6" />
-                  <span className="font-medium">Já é Cliente</span>
-                  <span className="text-xs text-muted-foreground">Cliente da casa</span>
-                </Button>
+                </Label>
+                <Input
+                  id="sub-client-name"
+                  placeholder="Nome completo para conferência"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  onBlur={handleNameBlur}
+                />
+              </div>
+
+              {/* Client Status Badge */}
+              {renderClientBadge() && (
+                <div>{renderClientBadge()}</div>
+              )}
+
+              {/* Plan Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="subscription-plan-select">
+                  Qual o plano vendido? <span className="text-destructive">*</span>
+                </Label>
+                {plans.length > 0 ? (
+                  <Select value={selectedPlanId || ""} onValueChange={(v) => setSelectedPlanId(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o plano..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {plans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name} — R$ {Number(plan.price).toFixed(2)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted-foreground p-3 border border-dashed rounded-md text-center">
+                    Nenhum plano cadastrado. Cadastre em Gestão → Planos.
+                  </p>
+                )}
+              </div>
+
+              {/* Client Type */}
+              <div className="space-y-2">
+                <Label className="text-base font-medium">Tipo de Cliente</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant={isNewClient === true ? "default" : "outline"}
+                    className={cn(
+                      "h-auto py-4 flex flex-col items-center gap-2",
+                      isNewClient === true && "ring-2 ring-primary ring-offset-2"
+                    )}
+                    onClick={() => handleSelectNewClient(true)}
+                  >
+                    <UserPlus className="w-6 h-6" />
+                    <span className="font-medium">Novo Cliente</span>
+                    <span className="text-xs text-muted-foreground">Primeira vez</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={isNewClient === false ? "default" : "outline"}
+                    className={cn(
+                      "h-auto py-4 flex flex-col items-center gap-2",
+                      isNewClient === false && "ring-2 ring-primary ring-offset-2"
+                    )}
+                    onClick={() => handleSelectNewClient(false)}
+                  >
+                    <Users className="w-6 h-6" />
+                    <span className="font-medium">Já é Cliente</span>
+                    <span className="text-xs text-muted-foreground">Cliente da casa</span>
+                  </Button>
+                </div>
               </div>
 
               {/* Sub-options for existing client */}
@@ -392,7 +584,7 @@ export default function SubscriptionWizardModal({
             </div>
           )}
 
-          {/* STEP 2 */}
+          {/* STEP 2: Attribution */}
           {step === "attribution" && (
             <div className="space-y-4">
               <Label className="text-base font-medium">Quem realizou essa venda?</Label>
@@ -471,55 +663,45 @@ export default function SubscriptionWizardModal({
             </div>
           )}
 
-          {/* STEP 3 */}
+          {/* STEP 3: Summary (read-only) */}
           {step === "details" && (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="subscription-plan-select">
-                  Qual o plano vendido? <span className="text-destructive">*</span>
-                </Label>
-                {plans.length > 0 ? (
-                  <Select value={selectedPlanId || ""} onValueChange={(v) => setSelectedPlanId(v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o plano..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {plans.map((plan) => (
-                        <SelectItem key={plan.id} value={plan.id}>
-                          {plan.name} — R$ {Number(plan.price).toFixed(2)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="text-sm text-muted-foreground p-3 border border-dashed rounded-md text-center">
-                    Nenhum plano cadastrado. Cadastre em Gestão → Planos.
-                  </p>
-                )}
+              <div className="p-4 bg-muted rounded-lg space-y-3 text-sm">
+                <p className="font-bold text-base">Resumo da Assinatura</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Cliente:</span>
+                    <span className="font-medium">{clientName.trim()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Celular:</span>
+                    <span className="font-medium">{mobilePhone}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Plano:</span>
+                    <span className="font-medium">{selectedPlan ? `${selectedPlan.name} — R$ ${Number(selectedPlan.price).toFixed(2)}` : "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Ação:</span>
+                    <span className="font-medium">
+                      {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : "🔽 Downgrade"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Pontos para:</span>
+                    <span className="font-medium">{selectedBarberId ? "💈 Barbeiro" : "🏢 Recepção"}</span>
+                  </div>
+                  {subscriptionAction === "downgrade" && downgradeReason && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Motivo:</span>
+                      <span className="font-medium">{downgradeReason}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="client-name">
-                  Nome do Cliente <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="client-name"
-                  placeholder="Nome completo para conferência"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                />
-              </div>
-
-              {/* Summary */}
-              <div className="mt-4 p-3 bg-muted rounded-lg space-y-1 text-sm">
-                <p><strong>Resumo:</strong></p>
-                <p>• Ação: {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : "🔽 Downgrade"}</p>
-                <p>• Plano: {selectedPlan ? `${selectedPlan.name} — R$ ${Number(selectedPlan.price).toFixed(2)}` : "—"}</p>
-                <p>• Pontos para: {selectedBarberId ? "💈 Barbeiro selecionado" : "🏢 Recepção"}</p>
-                {subscriptionAction === "downgrade" && downgradeReason && (
-                  <p>• Motivo: {downgradeReason}</p>
-                )}
-              </div>
+              {renderClientBadge() && (
+                <div>{renderClientBadge()}</div>
+              )}
             </div>
           )}
 
@@ -578,8 +760,14 @@ export default function SubscriptionWizardModal({
             </Button>
           ) : (
             <Button className="flex-1 gap-2" onClick={handleNext} disabled={!canProceed()}>
-              Próximo
-              <ArrowRight className="w-4 h-4" />
+              {clientHistory.checking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  Próximo
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </Button>
           )}
         </DialogFooter>
