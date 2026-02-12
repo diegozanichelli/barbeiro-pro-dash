@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const isSubmittingRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"services" | "products" | "manual">("services");
   
@@ -171,8 +172,11 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       toast.error("Selecione pelo menos um item");
       return;
     }
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     setLoading(true);
+    setCheckoutOpen(false);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
@@ -254,6 +258,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       toast.error(error.message || "Erro ao registrar venda");
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -263,6 +268,8 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       toast.error("Informe um valor válido");
       return;
     }
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     setLoading(true);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
@@ -306,6 +313,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
       toast.error(error.message || "Erro ao registrar venda");
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
