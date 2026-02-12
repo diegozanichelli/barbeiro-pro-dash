@@ -28,6 +28,9 @@ interface DailyProduction {
   products_count: number;
   confirmed_presence?: boolean;
   presence_type?: string | null;
+  tx_basic_total?: number | null;
+  tx_extra_total?: number | null;
+  tx_products_total?: number | null;
 }
 
 export default function ProductionHistory({ 
@@ -74,9 +77,9 @@ export default function ProductionHistory({
   };
 
   const getServicesTotal = (production: DailyProduction) => {
-    // Retrocompatibilidade: se tem novos campos, soma; senão usa o antigo
     if (production.services_basic_total !== null || production.services_extra_total !== null) {
-      return (production.services_basic_total || 0) + (production.services_extra_total || 0);
+      return (production.services_basic_total || 0) + (production.services_extra_total || 0)
+           + (production.tx_basic_total || 0) + (production.tx_extra_total || 0);
     }
     return production.services_total || 0;
   };
@@ -156,7 +159,7 @@ export default function ProductionHistory({
                       {formatCurrency(production.services_extra_total || 0)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatCurrency(production.products_total)}
+                      {formatCurrency((production.products_total || 0) + (production.tx_products_total || 0))}
                     </TableCell>
                     <TableCell className="text-right font-bold text-success">
                       {formatCurrency(production.commission_earned)}

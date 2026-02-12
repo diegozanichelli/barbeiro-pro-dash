@@ -231,29 +231,28 @@ const [todayProduction, setTodayProduction] = useState<{
       const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
       
       // Calcular total de serviços com retrocompatibilidade
+      // Calcular total de serviços incluindo tx_* (vendas do gestor/recepção)
       const totalServicesRevenue = productions.reduce((sum, p) => {
-        // Se tem os novos campos, soma Basic + Extra
         if (p.services_basic_total !== null || p.services_extra_total !== null) {
-          return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
+          return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+                     + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
         }
-        // Senão, usa o campo antigo
         return sum + Number(p.services_total || 0);
       }, 0);
       
-      const totalProductsRevenue = productions.reduce((sum, p) => sum + Number(p.products_total || 0), 0);
+      const totalProductsRevenue = productions.reduce((sum, p) => 
+        sum + (Number(p.products_total) || 0) + (Number(p.tx_products_total) || 0), 0);
       const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
-      // RECALCULAR comissão com as taxas ATUAIS do barbeiro (não usar valor histórico do BD)
-      // Isso permite que quando o gerente alterar a comissão, o dashboard mostre o novo valor em tempo real
-      const recalculatedCommission = (totalServicesRevenue * (barber.services_commission / 100)) + 
-                                      (totalProductsRevenue * (barber.products_commission / 100));
+      // Usar commission_earned do banco (fonte única de verdade - já considera taxas fixas + ambas fontes)
+      const accumulatedCommission = productions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
 
       // Contar dias com produção real OU com presença confirmada (present/null)
       // day_off e absence NÃO contam como dia trabalhado
       const daysWithProduction = productions.filter(p => {
-        const total = (Number(p.services_basic_total) || 0) + 
-                      (Number(p.services_extra_total) || 0) + 
-                      (Number(p.products_total) || 0);
+        const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
+                      (Number(p.products_total) || 0) + (Number(p.tx_basic_total) || 0) + 
+                      (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
         return total > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
       }).length;
 
@@ -264,7 +263,10 @@ const [todayProduction, setTodayProduction] = useState<{
       if (todayProd) {
         const todayTotal = (Number(todayProd.services_basic_total) || 0) +
                           (Number(todayProd.services_extra_total) || 0) +
-                          (Number(todayProd.products_total) || 0);
+                          (Number(todayProd.products_total) || 0) +
+                          (Number(todayProd.tx_basic_total) || 0) +
+                          (Number(todayProd.tx_extra_total) || 0) +
+                          (Number(todayProd.tx_products_total) || 0);
         setTodayProduction({
           id: todayProd.id,
           total: todayTotal,
@@ -282,7 +284,7 @@ const [todayProduction, setTodayProduction] = useState<{
       }
 
       setStats({
-        accumulated_commission: recalculatedCommission,
+        accumulated_commission: accumulatedCommission,
         days_worked: daysWithProduction,
         total_clients: totalClients,
         total_services: totalServicesRevenue,
