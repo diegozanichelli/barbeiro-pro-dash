@@ -78,8 +78,7 @@ export default function ProductionHistory({
 
   const getServicesTotal = (production: DailyProduction) => {
     if (production.services_basic_total !== null || production.services_extra_total !== null) {
-      return (production.services_basic_total || 0) + (production.services_extra_total || 0)
-           + (production.tx_basic_total || 0) + (production.tx_extra_total || 0);
+      return (production.services_basic_total || 0) + (production.services_extra_total || 0);
     }
     return production.services_total || 0;
   };
@@ -159,7 +158,7 @@ export default function ProductionHistory({
                       {formatCurrency(production.services_extra_total || 0)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatCurrency((production.products_total || 0) + (production.tx_products_total || 0))}
+                      {formatCurrency(production.products_total || 0)}
                     </TableCell>
                     <TableCell className="text-right font-bold text-success">
                       {formatCurrency(production.commission_earned)}
