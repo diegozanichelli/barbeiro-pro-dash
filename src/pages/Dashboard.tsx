@@ -18,11 +18,15 @@ export default function Dashboard() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (!session) {
+        if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setUser(null);
           navigate("/auth");
+          return;
+        }
+        if (session) {
+          setSession(session);
+          setUser(session.user);
         }
       }
     );
