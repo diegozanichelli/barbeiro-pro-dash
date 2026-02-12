@@ -155,6 +155,18 @@ export default function LiveDashboard() {
         setProductions(productionsData);
       }
 
+      // Fetch manager transactions directly from sale_transactions for the selected day
+      const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
+      const { data: managerTxData } = await supabase
+        .from("sale_transactions")
+        .select("barber_id, price_sold, item_type, service_category")
+        .eq("organization_id", organizationId)
+        .eq("source", "manager")
+        .gte("created_at", selectedDate + "T00:00:00-04:00")
+        .lt("created_at", nextDay + "T00:00:00-04:00");
+
+      setManagerTransactions(managerTxData || []);
+
       // Fetch month's productions for days worked calculation and average ticket
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
       const { data: monthProductionsData } = await supabase
@@ -229,29 +241,26 @@ export default function LiveDashboard() {
     setSelectedDate(todayManaus);
   };
 
-  // Calculate total revenue when productions change - EXCLUSIVAMENTE de tx_* (Ao Vivo)
+  // State for manager transactions read directly from sale_transactions
+  const [managerTransactions, setManagerTransactions] = useState<any[]>([]);
+
+  // Calculate total revenue from managerTransactions (Ao Vivo)
   useEffect(() => {
-    const filteredProductions = selectedUnit === "all"
-      ? productions
-      : productions.filter((p) => {
-          const barber = barbers.find((b) => b.id === p.barber_id);
+    const filtered = selectedUnit === "all"
+      ? managerTransactions
+      : managerTransactions.filter((t) => {
+          const barber = barbers.find((b) => b.id === t.barber_id);
           return barber?.unit_id === selectedUnit;
         });
 
-    // ISOLAMENTO: Usar APENAS campos tx_* para o total do Ao Vivo
-    const newTotal = filteredProductions.reduce((sum, p) => {
-      const txBasic = (p as any).tx_basic_total || 0;
-      const txExtra = (p as any).tx_extra_total || 0;
-      const txProducts = (p as any).tx_products_total || 0;
-      return sum + txBasic + txExtra + txProducts;
-    }, 0);
+    const newTotal = filtered.reduce((sum, t) => sum + (t.price_sold || 0), 0);
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
       setIsGlowing(true);
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [productions, selectedUnit, barbers, totalRevenue]);
+  }, [managerTransactions, selectedUnit, barbers, totalRevenue]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
@@ -291,15 +300,10 @@ export default function LiveDashboard() {
   }, [organizationId, selectedDate, isViewingToday, fetchData]);
 
   const getBarberRevenue = (barberId: string) => {
-    const production = productions.find((p) => p.barber_id === barberId);
-    if (!production) return 0;
-
-    // Usar campos tx_* (dados do Ao Vivo/Gestor) para o dashboard em tempo real
-    const txBasic = (production as any).tx_basic_total || 0;
-    const txExtra = (production as any).tx_extra_total || 0;
-    const txProducts = (production as any).tx_products_total || 0;
-
-    return txBasic + txExtra + txProducts;
+    // Read directly from managerTransactions instead of tx_* fields
+    return managerTransactions
+      .filter(t => t.barber_id === barberId)
+      .reduce((sum, t) => sum + (t.price_sold || 0), 0);
   };
 
   const getBarberProduction = (barberId: string) => {
@@ -448,18 +452,17 @@ export default function LiveDashboard() {
       return totalRevenueMonth / totalClientsMonth;
     }
 
-    // Fallback: usar tx_clients_count de hoje
-    const filteredProductions = selectedUnit === "all"
-      ? productions
-      : productions.filter((p) => {
-          const barber = barbers.find((b) => b.id === p.barber_id);
+    // Fallback: count unique basic services from managerTransactions as client proxy
+    const filteredTx = selectedUnit === "all"
+      ? managerTransactions
+      : managerTransactions.filter((t) => {
+          const barber = barbers.find((b) => b.id === t.barber_id);
           return barber?.unit_id === selectedUnit;
         });
 
-    const totalClients = filteredProductions.reduce(
-      (sum, p) => sum + ((p as any).tx_clients_count || 0), 
-      0
-    );
+    const totalClients = filteredTx.filter(
+      t => t.item_type === "service" && t.service_category === "basic"
+    ).length;
     
     if (totalClients > 0) {
       return totalRevenue / totalClients;
