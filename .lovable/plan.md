@@ -1,72 +1,84 @@
 
+# Substituir Modal de Edicao Manual por Cards de Catalogo (ManagerReports)
 
-# Separacao Total: Barbeiro ve apenas o que ele lancou
+## Problema
 
-## Contexto
+O modal "Editar Lancamento" no relatorio do gestor (`ManagerReports.tsx`, linhas 638-700) ainda usa inputs manuais (Total Servicos, Total Produtos, Qtd Servicos, etc.). Isso permite que o gestor insira valores avulsos que nao geram transacoes itemizadas, quebrando a integridade dos dados e o calculo de comissao.
 
-Os dados confirmam que **dezenas de barbeiros** tem `tx_*` (lancamentos do gestor) somando no `commission_earned`. Exemplo: AGEU dia 11 tem R$ 179,31 de comissao vindo APENAS de transacoes do gestor, quando deveria mostrar R$ 0,00 (ele nao lancou nada).
+## Solucao
+
+Remover o modal antigo de inputs manuais e substituir pelo `TransactionManagerModal` existente, **porem com uma adaptacao critica**: as transacoes inseridas devem usar `source='barber'` (nao `source='manager'`), pois a edicao do gestor nesta tela de Relatorios/Auditoria e uma correcao da producao do barbeiro, nao um lancamento de caixa.
 
 ## Alteracoes
 
-### 1. Frontend - BarberDashboard.tsx
+### 1. ManagerReports.tsx - Remover modal antigo
 
-Remover `tx_*` de todos os calculos:
+- Remover o state `editForm` (linhas 67-73) e a funcao `handleSaveEdit` (linhas 257-290)
+- Remover todo o bloco `<Dialog>` do modal antigo (linhas 638-701)
 
-- **Faturamento mensal de servicos**: remover `tx_basic_total` e `tx_extra_total` da soma
-- **Faturamento mensal de produtos**: remover `tx_products_total` da soma
-- **Dias trabalhados**: remover `tx_*` do filtro de "dia com producao"
-- **Card "MEU FATURAMENTO HOJE"**: remover `tx_*` do total diario
-- **Comissao**: continua usando `commission_earned` do banco (que sera corrigido pelo trigger)
+### 2. ManagerReports.tsx - Adicionar TransactionManagerModal adaptado
 
-### 2. Frontend - ProductionHistory.tsx
+- Importar o componente `TransactionManagerModal`
+- Alterar `handleEdit` para abrir o `TransactionManagerModal` com os dados da producao selecionada (barberId, dailyProductionId, date, organizationId)
+- Adaptar o state `editingProduction` para passar as props necessarias
 
-- **`getServicesTotal`**: remover `tx_basic_total` e `tx_extra_total`
-- **Coluna Produtos**: remover `tx_products_total`
+### 3. TransactionManagerModal.tsx - Suportar modo "auditoria"
 
-### 3. Banco de Dados - Trigger `calculate_commission`
+Adicionar uma prop `auditMode?: boolean` ao `TransactionManagerModal`:
 
-Alterar para calcular comissao APENAS com campos do barbeiro:
+- Quando `auditMode=true`:
+  - O modal lista transacoes de `source='barber'` (em vez de `source='manager'`)
+  - Ao adicionar novos itens, salva com `source='barber'`
+  - O titulo muda para "Auditar Producao" em vez de "Gerenciar Producao"
+  - A logica de "Limpar e Substituir" usa `source='barber'`
+  
+- Quando `auditMode=false` (padrao): comportamento atual mantido (gestao de caixa com `source='manager'`)
 
-```text
--- ANTES (soma manual + gestor)
-v_services_total := services_basic_total + services_extra_total
-                  + tx_basic_total + tx_extra_total
-v_products_total := products_total + tx_products_total
+### 4. Fluxo de Auditoria
 
--- DEPOIS (apenas barbeiro)
-v_services_total := services_basic_total + services_extra_total
-v_products_total := products_total
-```
-
-### 4. Migracao SQL - Recalcular fevereiro
-
-Executar UPDATE em todas as `daily_productions` de fevereiro para disparar o trigger corrigido e recalcular `commission_earned` sem `tx_*`.
-
-```text
-UPDATE daily_productions
-SET updated_at = now()
-WHERE date >= '2026-02-01' AND date <= '2026-02-12';
-```
-
-Isso forca o trigger a rodar e recalcular com a nova formula.
-
-## O que NAO muda
-
-- Painel "AO VIVO" do gestor continua lendo apenas `tx_*`
-- Rankings do gestor (`get_organization_rankings`) continuam somando ambas fontes
-- As `sale_transactions` com `source='manager'` continuam sendo salvas normalmente
-- O trigger `recalculate_daily_production_from_transactions` continua populando `tx_*`
-
-## Impacto nos dados
-
-Barbeiros que so tem lancamentos do gestor (ex: AGEU dia 11 e 12, Biel, Braian) passarao a mostrar R$ 0,00 de faturamento e comissao ate que eles proprios facam seus lancamentos. Isso e o comportamento correto: o barbeiro controla sua producao.
+Quando o gestor clica em "Editar" no relatorio:
+1. Abre o `TransactionManagerModal` em modo auditoria
+2. Mostra os itens atuais do barbeiro (`source='barber'`)
+3. O gestor pode excluir itens ou adicionar novos via cards
+4. Ao salvar, os itens sao gravados com `source='barber'`
+5. O trigger `recalculate_daily_production_from_transactions` recalcula automaticamente `services_basic_total`, `services_extra_total`, `products_total`
+6. O trigger `calculate_commission` recalcula a comissao usando apenas os campos do barbeiro
 
 ## Secao Tecnica
 
-| Arquivo / Recurso | Alteracao |
+| Arquivo | Alteracao |
 |---|---|
-| `src/components/dashboard/BarberDashboard.tsx` | Remove `tx_*` de 4 calculos (servicos, produtos, dias, hoje) |
-| `src/components/dashboard/barber/ProductionHistory.tsx` | Remove `tx_*` de `getServicesTotal` e coluna Produtos |
-| Trigger `calculate_commission` (SQL migration) | Remove `tx_*` da formula de comissao |
-| Migracao de dados (SQL) | Recalcula `commission_earned` de fevereiro |
+| `src/components/dashboard/manager/ManagerReports.tsx` | Remove modal antigo de inputs, importa e usa `TransactionManagerModal` com `auditMode=true` |
+| `src/components/dashboard/manager/TransactionManagerModal.tsx` | Adiciona prop `auditMode` que altera o `source` filtrado/inserido de `'manager'` para `'barber'` |
 
+### Detalhes da prop `auditMode` no TransactionManagerModal
+
+```text
+// Linhas afetadas no TransactionManagerModal.tsx:
+
+// 1. Interface - adicionar auditMode?: boolean
+// 2. fetchTransactions (linha 139): .eq("source", auditMode ? "barber" : "manager")
+// 3. handleAddItems (linha 312): source nao precisa ser definido aqui pois o trigger ja infere,
+//    mas para consistencia: source = auditMode ? "barber" : "manager" (nao definido = default 'manager')
+// 4. Titulo (linhas 417-419): auditMode ? "Auditar Producao" : "Gerenciar Producao"
+```
+
+### Detalhes da integracao no ManagerReports
+
+```text
+// Estado necessario para o TransactionManagerModal:
+// - barberId: editingProduction.barber_id
+// - barberName: obter do array 'barbers' filtrando por id
+// - organizationId: obter do hook ou contexto
+// - dailyProductionId: editingProduction.id
+// - date: editingProduction.date
+
+// A funcao handleEdit muda de preencher form manual para apenas setar editingProduction
+// O componente TransactionManagerModal cuida do resto
+```
+
+## O que NAO muda
+
+- O `TransactionManagerModal` no painel "AO VIVO" continua funcionando com `source='manager'` (padrao)
+- O `BarberEditProductionModal` do barbeiro continua funcionando normalmente
+- O botao de excluir producao no relatorio continua igual
