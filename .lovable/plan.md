@@ -1,71 +1,133 @@
 
 
-# Corrigir Wizard de Venda: Telefone Opcional e Cliente da Casa como Padrao
+# Auditoria Geral de Integridade - Relatorio Completo
 
-## Problema Identificado
+## 1. CONSISTENCIA DE COMISSOES
 
-O `QuickSaleModal.tsx` tem duas restricoes que estao travando o fluxo do gestor:
+**Resultado: APROVADO** -- Zero divergencias encontradas.
 
-1. **Telefone obrigatorio** (linha 353): O botao "Continuar" so desbloqueia com 11 digitos validos. O gestor nao consegue prosseguir sem preencher.
-2. **Auto-selecao de "Cliente Novo"** (linhas 245-246): Quando o telefone nao e encontrado no historico, o sistema muda automaticamente para "Cliente Novo", dando a impressao de que esta travado.
+Rodei uma query comparando `commission_earned` vs o calculo esperado `(services_basic_total + services_extra_total) * services_commission% + products_total * products_commission%` em **todos** os registros de fevereiro com comissao > 0.
 
-## Solucao
+Nenhum registro apresentou divergencia superior a R$ 0,01. Todas as comissoes estao matematicamente corretas com base nas taxas atuais dos barbeiros.
 
-### 1. Tornar o telefone opcional
+## 2. REGISTROS FANTASMAS
 
-Alterar a condicao `canProceedStep1` (linha 353) para permitir prosseguir SEM telefone:
+**Resultado: 67 registros fantasmas encontrados em 5 organizacoes.**
 
-```text
-ANTES:
-  const canProceedStep1 = isPhoneComplete && !clientHistory.checking && !phoneError;
+Registros com `tx_*` preenchido (vendas do gestor vinculadas) mas producao do barbeiro zerada:
 
-DEPOIS:
-  const isPhoneEmpty = phoneDigits.length === 0;
-  const canProceedStep1 = (isPhoneEmpty || isPhoneComplete) && !clientHistory.checking && !phoneError;
-```
-
-Isso significa:
-- Sem telefone: pode prosseguir (o campo fica vazio)
-- Com telefone parcial (ex: 5 digitos): bloqueado (previne dados incompletos)
-- Com telefone completo e valido: pode prosseguir (e o historico e verificado)
-
-Remover o asterisco vermelho (*) do label "Celular do Cliente" (linha 605).
-
-### 2. Manter "Cliente da Casa" como padrao
-
-Alterar o comportamento quando o telefone nao e encontrado (linha 245-246):
-
-```text
-ANTES:
-  } else if (res.status === "not_found") {
-    if (!manualOverride) setIsNewClient(true);
-  }
-
-DEPOIS:
-  } else if (res.status === "not_found") {
-    // Nao muda automaticamente para "Novo"
-    // O gestor decide manualmente
-  }
-```
-
-O padrao permanece "Cliente da Casa" (`isNewClient = false`). O gestor muda para "Novo" apenas quando quiser. A auto-deteccao so ocorre quando o historico ENCONTRA o cliente (phone_found ou name_found), confirmando que e "Da Casa".
-
-### 3. Atualizar o Badge de "Primeiro registro"
-
-O badge "Primeiro registro deste cliente" (linhas 534-540) continuara aparecendo como uma SUGESTAO visual, mas sem forcar a mudanca do toggle.
-
-## Arquivos Alterados
-
-| Arquivo | Alteracao |
+| Organizacao | Qtd Fantasmas |
 |---|---|
-| `QuickSaleModal.tsx` (linha 353) | Permitir prosseguir sem telefone |
-| `QuickSaleModal.tsx` (linha 605) | Remover asterisco obrigatorio do label |
-| `QuickSaleModal.tsx` (linhas 245-246) | Remover auto-selecao de "Cliente Novo" |
+| Leonardo Costa | 26 |
+| Barbearia SGP-B | 23 |
+| JK Barbearia | 7 |
+| Atlas Barbearia | 6 |
+| Chezz | 5 |
 
-## O que NAO muda
+**Impacto financeiro: NULO.** Todos esses 67 registros tem `commission_earned = 0` porque a producao do barbeiro (`services_basic_total`, `products_total`) esta zerada. Os campos `tx_*` sao apenas espelho do gestor e nao afetam comissao. Portanto, nenhum barbeiro esta recebendo centavo a mais.
 
-- A verificacao de historico continua funcionando quando o telefone e preenchido
-- O auto-preenchimento do nome quando o cliente e encontrado continua
-- O toggle "Cliente da Casa / Novo" continua acessivel e funcional
-- A validacao anti-fraude do telefone continua (bloqueia numeros invalidos se digitados)
+**Trigger removido: CONFIRMADO.** O trigger `trg_ensure_daily_production_link` foi removido com sucesso. Nao existe nenhuma funcao no banco que faca `INSERT INTO daily_productions` automaticamente (exceto o trigger de recalculo que apenas atualiza registros existentes).
+
+## 3. INTEGRIDADE DAS TRANSACOES
+
+**Resultado: APROVADO.**
+
+- **Transacoes orfas sem organization_id:** 0
+- **Transacoes apontando para daily_production deletado:** 0
+
+**Distribuicao de source em fevereiro:**
+
+| Source | Tipo | Total |
+|---|---|---|
+| barber | service | 1.368 |
+| barber | product | 163 |
+| barber | subscription | 6 |
+| manager | service | 997 |
+| manager | product | 106 |
+| manager | subscription | 16 |
+
+O `TransactionManagerModal` respeita corretamente o `auditMode`:
+- `auditMode=true` (usado em Relatorios): salva como `source='barber'`
+- `auditMode=false` (usado no Ao Vivo): salva como `source='manager'`
+
+## 4. VALIDACAO DE UX (FRONTEND)
+
+### QuickSaleModal
+- **Telefone opcional:** CORRIGIDO. O campo permite prosseguir vazio ou com 11 digitos validos.
+- **Anti-clique duplo:** AUSENTE. Usa `useState(isLoading)` mas NAO tem `useRef` para prevenir duplo clique. Ha uma janela de vulnerabilidade entre o clique e o `setIsLoading(true)` onde um segundo clique pode disparar outra transacao.
+
+### TransactionManagerModal
+- **auditMode:** CORRETO. Leitura e escrita respeitam `source='barber'` vs `source='manager'`.
+- **Anti-clique duplo:** PARCIAL. Usa `useState(isSubmitting)` mas sem `useRef`, mesma vulnerabilidade.
+
+### BarberSaleForm
+- **Anti-clique duplo:** CORRETO. Usa `useRef(isSubmittingRef)` -- o unico formulario com protecao robusta.
+
+## 5. TRIGGERS DUPLICADOS (RISCO ENCONTRADO)
+
+Existem **3 triggers identicos** na tabela `daily_productions` executando a mesma funcao `calculate_commission`:
+
+1. `calculate_commission_trigger`
+2. `calculate_daily_commission`
+3. `trg_daily_productions_commission`
+
+Isso significa que toda vez que um barbeiro salva sua producao, a comissao e calculada **3 vezes** em sequencia. Embora o resultado final seja o mesmo (idempotente), isso triplica o processamento desnecessariamente e pode causar lentidao.
+
+## RESUMO DE SAUDE
+
+| Verificacao | Status | Acao Necessaria |
+|---|---|---|
+| Comissoes corretas | OK | Nenhuma |
+| Fantasmas financeiros | OK | 67 registros existem mas com comissao R$ 0 |
+| Trigger auto-criacao removido | OK | Confirmado |
+| Transacoes orfas | OK | Zero encontradas |
+| Source barber/manager | OK | Respeitado em todos os fluxos |
+| Telefone opcional | OK | Ja corrigido |
+| Anti-clique duplo QuickSaleModal | PENDENTE | Adicionar `useRef` |
+| Anti-clique duplo TransactionManagerModal | PENDENTE | Adicionar `useRef` |
+| Triggers duplicados | PENDENTE | Remover 2 dos 3 triggers identicos |
+
+## PLANO DE CORRECAO
+
+### Correcao 1: Anti-clique duplo nos modais do gestor
+
+Adicionar `useRef` no `QuickSaleModal.tsx` e `TransactionManagerModal.tsx`, seguindo o mesmo padrao ja implementado no `BarberSaleForm.tsx`:
+
+```text
+const isSubmittingRef = useRef(false);
+
+// No inicio do handleCartCheckout / handleSingleCheckout:
+if (isSubmittingRef.current) return;
+isSubmittingRef.current = true;
+
+// No finally:
+isSubmittingRef.current = false;
+```
+
+### Correcao 2: Remover triggers duplicados
+
+Executar migracao SQL para remover 2 dos 3 triggers, mantendo apenas `calculate_commission_trigger`:
+
+```text
+DROP TRIGGER IF EXISTS calculate_daily_commission ON daily_productions;
+DROP TRIGGER IF EXISTS trg_daily_productions_commission ON daily_productions;
+```
+
+### Correcao 3 (Opcional): Limpar fantasmas
+
+Deletar os 67 registros fantasmas que tem producao zerada e comissao zerada, ja que nao servem para nada:
+
+```text
+DELETE FROM daily_productions
+WHERE date >= '2026-02-01'
+  AND COALESCE(services_basic_total, 0) = 0
+  AND COALESCE(services_extra_total, 0) = 0
+  AND COALESCE(products_total, 0) = 0
+  AND commission_earned = 0
+  AND confirmed_presence = false;
+```
+
+## VEREDICTO FINAL
+
+**Nenhum barbeiro de nenhuma barbearia esta recebendo um centavo a mais ou a menos.** As comissoes estao 100% corretas com base na producao declarada. Os fantasmas existem mas nao tem impacto financeiro. As correcoes pendentes sao de robustez (anti-clique duplo) e performance (triggers duplicados).
 
