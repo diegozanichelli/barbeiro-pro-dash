@@ -243,7 +243,7 @@ export default function QuickSaleModal({
     } else if (res.status === "name_found") {
       if (!manualOverride) setIsNewClient(false);
     } else if (res.status === "not_found") {
-      if (!manualOverride) setIsNewClient(true);
+      // Não muda automaticamente — o gestor decide manualmente
     }
   }, [mobilePhone, clientName, manualOverride, clientHistory]);
 
@@ -350,7 +350,8 @@ export default function QuickSaleModal({
   // Check if phone is valid for proceeding
   const phoneDigits = sanitizePhone(mobilePhone);
   const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
-  const canProceedStep1 = isPhoneComplete && !clientHistory.checking && !phoneError;
+  const isPhoneEmpty = phoneDigits.length === 0;
+  const canProceedStep1 = (isPhoneEmpty || isPhoneComplete) && !clientHistory.checking && !phoneError;
 
   const handleCartCheckout = async () => {
     if (cart.length === 0) {
@@ -602,7 +603,7 @@ export default function QuickSaleModal({
         {/* Mobile Phone (required) */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label htmlFor="mobile-phone" className="text-sm font-medium">
-            Celular do Cliente <span className="text-destructive">*</span>
+            Celular do Cliente
           </Label>
           <div className="relative">
             <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
