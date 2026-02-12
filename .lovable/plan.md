@@ -1,133 +1,120 @@
 
+# Correção: Sistema deslogando sozinho
 
-# Auditoria Geral de Integridade - Relatorio Completo
+## Problema Identificado
 
-## 1. CONSISTENCIA DE COMISSOES
+O sistema desloga o usuário automaticamente após ~1 hora de inatividade por causa de uma **condição de corrida** (race condition) entre a renovação automática do token JWT e a verificação de assinatura.
 
-**Resultado: APROVADO** -- Zero divergencias encontradas.
-
-Rodei uma query comparando `commission_earned` vs o calculo esperado `(services_basic_total + services_extra_total) * services_commission% + products_total * products_commission%` em **todos** os registros de fevereiro com comissao > 0.
-
-Nenhum registro apresentou divergencia superior a R$ 0,01. Todas as comissoes estao matematicamente corretas com base nas taxas atuais dos barbeiros.
-
-## 2. REGISTROS FANTASMAS
-
-**Resultado: 67 registros fantasmas encontrados em 5 organizacoes.**
-
-Registros com `tx_*` preenchido (vendas do gestor vinculadas) mas producao do barbeiro zerada:
-
-| Organizacao | Qtd Fantasmas |
-|---|---|
-| Leonardo Costa | 26 |
-| Barbearia SGP-B | 23 |
-| JK Barbearia | 7 |
-| Atlas Barbearia | 6 |
-| Chezz | 5 |
-
-**Impacto financeiro: NULO.** Todos esses 67 registros tem `commission_earned = 0` porque a producao do barbeiro (`services_basic_total`, `products_total`) esta zerada. Os campos `tx_*` sao apenas espelho do gestor e nao afetam comissao. Portanto, nenhum barbeiro esta recebendo centavo a mais.
-
-**Trigger removido: CONFIRMADO.** O trigger `trg_ensure_daily_production_link` foi removido com sucesso. Nao existe nenhuma funcao no banco que faca `INSERT INTO daily_productions` automaticamente (exceto o trigger de recalculo que apenas atualiza registros existentes).
-
-## 3. INTEGRIDADE DAS TRANSACOES
-
-**Resultado: APROVADO.**
-
-- **Transacoes orfas sem organization_id:** 0
-- **Transacoes apontando para daily_production deletado:** 0
-
-**Distribuicao de source em fevereiro:**
-
-| Source | Tipo | Total |
-|---|---|---|
-| barber | service | 1.368 |
-| barber | product | 163 |
-| barber | subscription | 6 |
-| manager | service | 997 |
-| manager | product | 106 |
-| manager | subscription | 16 |
-
-O `TransactionManagerModal` respeita corretamente o `auditMode`:
-- `auditMode=true` (usado em Relatorios): salva como `source='barber'`
-- `auditMode=false` (usado no Ao Vivo): salva como `source='manager'`
-
-## 4. VALIDACAO DE UX (FRONTEND)
-
-### QuickSaleModal
-- **Telefone opcional:** CORRIGIDO. O campo permite prosseguir vazio ou com 11 digitos validos.
-- **Anti-clique duplo:** AUSENTE. Usa `useState(isLoading)` mas NAO tem `useRef` para prevenir duplo clique. Ha uma janela de vulnerabilidade entre o clique e o `setIsLoading(true)` onde um segundo clique pode disparar outra transacao.
-
-### TransactionManagerModal
-- **auditMode:** CORRETO. Leitura e escrita respeitam `source='barber'` vs `source='manager'`.
-- **Anti-clique duplo:** PARCIAL. Usa `useState(isSubmitting)` mas sem `useRef`, mesma vulnerabilidade.
-
-### BarberSaleForm
-- **Anti-clique duplo:** CORRETO. Usa `useRef(isSubmittingRef)` -- o unico formulario com protecao robusta.
-
-## 5. TRIGGERS DUPLICADOS (RISCO ENCONTRADO)
-
-Existem **3 triggers identicos** na tabela `daily_productions` executando a mesma funcao `calculate_commission`:
-
-1. `calculate_commission_trigger`
-2. `calculate_daily_commission`
-3. `trg_daily_productions_commission`
-
-Isso significa que toda vez que um barbeiro salva sua producao, a comissao e calculada **3 vezes** em sequencia. Embora o resultado final seja o mesmo (idempotente), isso triplica o processamento desnecessariamente e pode causar lentidao.
-
-## RESUMO DE SAUDE
-
-| Verificacao | Status | Acao Necessaria |
-|---|---|---|
-| Comissoes corretas | OK | Nenhuma |
-| Fantasmas financeiros | OK | 67 registros existem mas com comissao R$ 0 |
-| Trigger auto-criacao removido | OK | Confirmado |
-| Transacoes orfas | OK | Zero encontradas |
-| Source barber/manager | OK | Respeitado em todos os fluxos |
-| Telefone opcional | OK | Ja corrigido |
-| Anti-clique duplo QuickSaleModal | PENDENTE | Adicionar `useRef` |
-| Anti-clique duplo TransactionManagerModal | PENDENTE | Adicionar `useRef` |
-| Triggers duplicados | PENDENTE | Remover 2 dos 3 triggers identicos |
-
-## PLANO DE CORRECAO
-
-### Correcao 1: Anti-clique duplo nos modais do gestor
-
-Adicionar `useRef` no `QuickSaleModal.tsx` e `TransactionManagerModal.tsx`, seguindo o mesmo padrao ja implementado no `BarberSaleForm.tsx`:
+### Fluxo do bug:
 
 ```text
-const isSubmittingRef = useRef(false);
-
-// No inicio do handleCartCheckout / handleSingleCheckout:
-if (isSubmittingRef.current) return;
-isSubmittingRef.current = true;
-
-// No finally:
-isSubmittingRef.current = false;
+Token JWT expira (~1h)
+  -> Supabase tenta renovar automaticamente
+  -> onAuthStateChange dispara
+  -> checkSubscription() é chamado
+  -> getSession() retorna token antigo (cache)
+  -> Edge function recebe token expirado
+  -> Retorna "Invalid or expired token"
+  -> Hook faz signOut() imediato
+  -> Usuário é redirecionado para /auth
 ```
 
-### Correcao 2: Remover triggers duplicados
+## Correções Planejadas
 
-Executar migracao SQL para remover 2 dos 3 triggers, mantendo apenas `calculate_commission_trigger`:
+### 1. Filtrar eventos no useSubscriptionCheck
+
+Atualmente o hook roda `checkSubscription()` em **qualquer** evento de auth (incluindo `SIGNED_OUT`, `TOKEN_REFRESHED`). Vamos filtrar para só rodar em eventos relevantes e ignorar o `SIGNED_OUT` (que causa loop).
+
+### 2. Não deslogar no primeiro erro de auth
+
+Em vez de fazer `signOut()` imediatamente ao receber "Invalid or expired token", vamos:
+- Aguardar 2 segundos e tentar novamente com sessão atualizada
+- Só deslogar se o **segundo** tentativa também falhar
+- Isso dá tempo para o `autoRefreshToken` completar a renovação
+
+### 3. Corrigir Dashboard.tsx para não reagir a session null temporário
+
+O `onAuthStateChange` no Dashboard redireciona para `/auth` quando `session` é `null`, mas durante um token refresh, a session pode ficar momentaneamente nula. Vamos ignorar o `INITIAL_SESSION` e só redirecionar em `SIGNED_OUT` explícito.
+
+## Arquivos Modificados
+
+- `src/hooks/useSubscriptionCheck.tsx` - Adicionar retry antes de signOut + filtrar eventos
+- `src/pages/Dashboard.tsx` - Filtrar evento SIGNED_OUT antes de redirecionar
+
+## Detalhes Técnicos
+
+### useSubscriptionCheck.tsx
 
 ```text
-DROP TRIGGER IF EXISTS calculate_daily_commission ON daily_productions;
-DROP TRIGGER IF EXISTS trg_daily_productions_commission ON daily_productions;
+// Antes (problemático):
+supabase.auth.onAuthStateChange(() => {
+  checkSubscription();  // Roda em QUALQUER evento
+});
+
+// Depois (corrigido):
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') return;  // Não re-verificar no logout
+  if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+    checkSubscription();
+  }
+});
 ```
 
-### Correcao 3 (Opcional): Limpar fantasmas
-
-Deletar os 67 registros fantasmas que tem producao zerada e comissao zerada, ja que nao servem para nada:
+Lógica de retry no erro de auth:
 
 ```text
-DELETE FROM daily_productions
-WHERE date >= '2026-02-01'
-  AND COALESCE(services_basic_total, 0) = 0
-  AND COALESCE(services_extra_total, 0) = 0
-  AND COALESCE(products_total, 0) = 0
-  AND commission_earned = 0
-  AND confirmed_presence = false;
+if (isAuthError) {
+  // Esperar o autoRefreshToken completar
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  // Tentar de novo com sessão atualizada
+  const { data: { session: freshSession } } = await supabase.auth.getSession();
+  if (!freshSession) {
+    // Agora sim, deslogar
+    await supabase.auth.signOut();
+    navigate("/auth");
+    return;
+  }
+  
+  // Se tem sessão fresca, re-tentar a verificação
+  const retryResult = await supabase.functions.invoke("check-subscription-status");
+  if (retryResult.data?.message?.includes("Invalid")) {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  } else {
+    setStatus(retryResult.data);
+  }
+}
 ```
 
-## VEREDICTO FINAL
+### Dashboard.tsx
 
-**Nenhum barbeiro de nenhuma barbearia esta recebendo um centavo a mais ou a menos.** As comissoes estao 100% corretas com base na producao declarada. Os fantasmas existem mas nao tem impacto financeiro. As correcoes pendentes sao de robustez (anti-clique duplo) e performance (triggers duplicados).
+```text
+// Antes (problemático):
+supabase.auth.onAuthStateChange((event, session) => {
+  setSession(session);
+  setUser(session?.user ?? null);
+  if (!session) navigate("/auth");  // Redireciona mesmo no refresh!
+});
 
+// Depois (corrigido):
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT') {
+    setSession(null);
+    setUser(null);
+    navigate("/auth");
+    return;
+  }
+  if (session) {
+    setSession(session);
+    setUser(session.user);
+  }
+});
+```
+
+## Resultado Esperado
+
+- O token JWT continua expirando a cada ~1 hora (comportamento normal)
+- O Supabase renova automaticamente sem interferência
+- O usuário permanece logado enquanto o refresh token for válido (dias/semanas)
+- Só desloga se o refresh token realmente expirar ou for revogado
