@@ -230,18 +230,16 @@ const [todayProduction, setTodayProduction] = useState<{
       const totalServicesCount = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
       const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
       
-      // Calcular total de serviços com retrocompatibilidade
-      // Calcular total de serviços incluindo tx_* (vendas do gestor/recepção)
+      // Calcular total de serviços - APENAS produção do barbeiro (sem tx_*)
       const totalServicesRevenue = productions.reduce((sum, p) => {
         if (p.services_basic_total !== null || p.services_extra_total !== null) {
-          return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
-                     + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
+          return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
         }
         return sum + Number(p.services_total || 0);
       }, 0);
       
       const totalProductsRevenue = productions.reduce((sum, p) => 
-        sum + (Number(p.products_total) || 0) + (Number(p.tx_products_total) || 0), 0);
+        sum + (Number(p.products_total) || 0), 0);
       const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
       // Usar commission_earned do banco (fonte única de verdade - já considera taxas fixas + ambas fontes)
@@ -249,10 +247,10 @@ const [todayProduction, setTodayProduction] = useState<{
 
       // Contar dias com produção real OU com presença confirmada (present/null)
       // day_off e absence NÃO contam como dia trabalhado
+      // Dias trabalhados - APENAS produção do barbeiro (sem tx_*)
       const daysWithProduction = productions.filter(p => {
         const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
-                      (Number(p.products_total) || 0) + (Number(p.tx_basic_total) || 0) + 
-                      (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
+                      (Number(p.products_total) || 0);
         return total > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
       }).length;
 
@@ -261,12 +259,10 @@ const [todayProduction, setTodayProduction] = useState<{
       const todayProd = productions.find(p => p.date === todayStr);
       
       if (todayProd) {
+        // Faturamento de hoje - APENAS produção do barbeiro (sem tx_*)
         const todayTotal = (Number(todayProd.services_basic_total) || 0) +
                           (Number(todayProd.services_extra_total) || 0) +
-                          (Number(todayProd.products_total) || 0) +
-                          (Number(todayProd.tx_basic_total) || 0) +
-                          (Number(todayProd.tx_extra_total) || 0) +
-                          (Number(todayProd.tx_products_total) || 0);
+                          (Number(todayProd.products_total) || 0);
         setTodayProduction({
           id: todayProd.id,
           total: todayTotal,
