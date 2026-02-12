@@ -47,7 +47,7 @@ interface TransactionManagerModalProps {
   barberId: string;
   barberName: string;
   organizationId: string;
-  dailyProductionId: string;
+  dailyProductionId?: string | null;
   date: string;
   onSuccess: () => void;
   auditMode?: boolean;
@@ -110,10 +110,10 @@ export default function TransactionManagerModal({
 
   // Fetch transactions when modal opens
   useEffect(() => {
-    if (open && dailyProductionId) {
+    if (open && barberId && date) {
       fetchTransactions();
     }
-  }, [open, dailyProductionId]);
+  }, [open, barberId, date]);
 
   // Fetch catalog when switching to add mode
   useEffect(() => {
@@ -135,11 +135,16 @@ export default function TransactionManagerModal({
   const fetchTransactions = async () => {
     setLoadingTransactions(true);
     try {
+      const { addDays, parseISO, format: fmtDate } = await import("date-fns");
+      const nextDay = fmtDate(addDays(parseISO(date), 1), "yyyy-MM-dd");
+
       const { data, error } = await supabase
         .from("sale_transactions")
         .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
-        .eq("daily_production_id", dailyProductionId)
+        .eq("barber_id", barberId)
         .eq("source", auditMode ? "barber" : "manager")
+        .gte("created_at", `${date}T00:00:00`)
+        .lt("created_at", `${nextDay}T00:00:00`)
         .order("created_at", { ascending: true });
 
       if (error) throw error;
@@ -318,7 +323,7 @@ export default function TransactionManagerModal({
           transactionsToInsert.push({
             organization_id: organizationId,
             barber_id: barberId,
-            daily_production_id: dailyProductionId,
+            daily_production_id: dailyProductionId || null,
             item_type: item.type,
             catalog_service_id: item.type === "service" ? item.id : null,
             catalog_product_id: item.type === "product" ? item.id : null,
