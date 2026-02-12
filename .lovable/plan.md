@@ -1,97 +1,106 @@
 
 
-# Resultado da Varredura e Proximos Passos
+# Correcao de Emergencia: Comissoes e Faturamento dos Barbeiros
 
-## Diagnostico Completo
+## Problema
 
-A varredura tecnica revelou que **NENHUMA transacao esta orfã neste momento**. Todos os 5 barbeiros mencionados (Pablo Igor, Braiom Souza, Gabriel Oliveira, Lorran Patrick e Jhon Belchior) tem suas transacoes dos dias 10 e 11/02 corretamente vinculadas a registros em `daily_productions`, com totais computados.
+O dashboard do barbeiro (`BarberDashboard.tsx`) ignora completamente as colunas `tx_*` (vendas lancadas pelo gestor/recepcao), causando:
 
-Isso indica que o problema original ja foi resolvido pela migracao anterior da RPC, ou que as transacoes foram criadas corretamente pelo `QuickSaleModal` (que ja possui logica de criacao de `daily_productions` antes da insercao).
+1. **Faturamento exibido menor** -- soma apenas `services_basic_total + services_extra_total + products_total`, ignorando `tx_basic_total + tx_extra_total + tx_products_total`
+2. **Comissao recalculada errada** -- linha 248 recalcula comissao no frontend usando percentual simples, sobrescrevendo o valor correto do banco (`commission_earned`) que ja considera taxas fixas de catalogo + ambas fontes
+3. **Historico incompleto** -- `ProductionHistory.tsx` mostra R$ 0 em servicos/produtos quando apenas o gestor lancou
 
-## O que JA esta implementado (correcoes anteriores)
+## Correcoes
 
-1. **RPC `get_organization_rankings`** -- ja expandida com `products_count`, `extras_count`, `subscriptions_count` via SECURITY DEFINER
-2. **Leaderboard.tsx** -- ja usa apenas a RPC, sem query direta em `sale_transactions`
-3. **Refetch automatico** -- `visibilitychange` listener ja ativo no Leaderboard
-4. **QuickSaleModal** -- ja cria `daily_productions` antes de inserir transacoes (linhas 370-404)
+### 1. BarberDashboard.tsx - fetchMonthlyStats (linhas 234-249)
 
-## O que falta implementar (rede de seguranca)
-
-### 1. Trigger de seguranca no banco de dados (SQL)
-
-Criar um trigger `BEFORE INSERT` em `sale_transactions` que, quando `daily_production_id` for NULL mas `barber_id` for preenchido:
-- Calcula a data usando timezone de Manaus
-- Cria automaticamente o `daily_productions` se nao existir (INSERT ON CONFLICT DO NOTHING)
-- Vincula a transacao ao registro criado
-
-Isso funciona como rede de seguranca final, impedindo que qualquer transacao futura fique orfã independente de falha no frontend.
-
-### 2. Verificacao pos-correcao
-
-Apos a migracao, executar:
-
+**Receita de servicos** -- adicionar `tx_basic_total` e `tx_extra_total` na soma:
 ```text
-SELECT count(*) FROM sale_transactions WHERE daily_production_id IS NULL AND barber_id IS NOT NULL;
--- Resultado esperado: 0
+// ANTES (linha 237):
+return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
+
+// DEPOIS:
+return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+           + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
 ```
 
-## Secao Tecnica
-
-### Migracao SQL - Trigger de seguranca
-
+**Receita de produtos** -- adicionar `tx_products_total`:
 ```text
-CREATE OR REPLACE FUNCTION public.ensure_daily_production_link()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_date date;
-  v_production_id uuid;
-  v_org_id uuid;
-BEGIN
-  -- So atua quando daily_production_id e NULL e barber_id existe
-  IF NEW.daily_production_id IS NOT NULL OR NEW.barber_id IS NULL THEN
-    RETURN NEW;
-  END IF;
+// ANTES (linha 243):
+const totalProductsRevenue = productions.reduce((sum, p) => sum + Number(p.products_total || 0), 0);
 
-  -- Calcula data em Manaus (GMT-4)
-  v_date := (NEW.created_at AT TIME ZONE 'America/Manaus')::date;
-  v_org_id := COALESCE(NEW.organization_id, (SELECT organization_id FROM barbers WHERE id = NEW.barber_id));
-
-  -- Cria daily_production se nao existir
-  INSERT INTO daily_productions (barber_id, organization_id, date, clients_count, services_count, products_count)
-  VALUES (NEW.barber_id, v_org_id, v_date, 0, 0, 0)
-  ON CONFLICT (barber_id, date) DO NOTHING;
-
-  -- Busca o ID
-  SELECT id INTO v_production_id
-  FROM daily_productions
-  WHERE barber_id = NEW.barber_id AND date = v_date;
-
-  NEW.daily_production_id := v_production_id;
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER trg_ensure_daily_production_link
-  BEFORE INSERT ON sale_transactions
-  FOR EACH ROW
-  EXECUTE FUNCTION ensure_daily_production_link();
+// DEPOIS:
+const totalProductsRevenue = productions.reduce((sum, p) => 
+  sum + (Number(p.products_total) || 0) + (Number(p.tx_products_total) || 0), 0);
 ```
 
-**Nota:** Este trigger depende de um indice UNIQUE em `daily_productions(barber_id, date)` para o `ON CONFLICT` funcionar. Se esse constraint nao existir, sera criado na mesma migracao.
+**Comissao** -- usar `commission_earned` do banco ao inves de recalcular:
+```text
+// ANTES (linhas 248-249):
+const recalculatedCommission = (totalServicesRevenue * (barber.services_commission / 100)) + 
+                                (totalProductsRevenue * (barber.products_commission / 100));
 
-### Arquivos modificados
+// DEPOIS:
+const accumulatedCommission = productions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
+```
+
+**Dias trabalhados** -- incluir `tx_*` na contagem (linhas 253-256):
+```text
+// Incluir tx_* na deteccao de producao real
+const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
+              (Number(p.products_total) || 0) + (Number(p.tx_basic_total) || 0) + 
+              (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
+```
+
+**Producao de hoje** -- incluir `tx_*` no total exibido (linhas 265-267):
+```text
+const todayTotal = (Number(todayProd.services_basic_total) || 0) +
+                  (Number(todayProd.services_extra_total) || 0) +
+                  (Number(todayProd.products_total) || 0) +
+                  (Number(todayProd.tx_basic_total) || 0) +
+                  (Number(todayProd.tx_extra_total) || 0) +
+                  (Number(todayProd.tx_products_total) || 0);
+```
+
+**Usar `accumulatedCommission`** na atribuicao do stats (linha 285):
+```text
+accumulated_commission: accumulatedCommission,
+```
+
+### 2. ProductionHistory.tsx
+
+**Interface** -- adicionar campos `tx_*`:
+```text
+interface DailyProduction {
+  // ... campos existentes ...
+  tx_basic_total?: number | null;
+  tx_extra_total?: number | null;
+  tx_products_total?: number | null;
+}
+```
+
+**getServicesTotal** -- incluir `tx_*`:
+```text
+return (production.services_basic_total || 0) + (production.services_extra_total || 0)
+     + (production.tx_basic_total || 0) + (production.tx_extra_total || 0);
+```
+
+**Celula de Produtos** -- somar ambas fontes:
+```text
+{formatCurrency((production.products_total || 0) + (production.tx_products_total || 0))}
+```
+
+### Arquivos Modificados
 
 | Arquivo | Alteracao |
 |---|---|
-| Migracao SQL | Criar trigger `ensure_daily_production_link` como rede de seguranca |
+| `src/components/dashboard/BarberDashboard.tsx` | Incluir `tx_*` em receita, dias, e producao de hoje; usar `commission_earned` do banco |
+| `src/components/dashboard/barber/ProductionHistory.tsx` | Incluir `tx_*` na interface, servicos total e produtos |
 
-### Verificacoes
+### Impacto
 
-- Nenhuma alteracao no frontend e necessaria (QuickSaleModal ja funciona corretamente)
-- Os 5 barbeiros ja tem dados corretos no sistema
-- O trigger so sera acionado em casos extremos (falha de rede parcial, race condition)
+- 54 barbeiros verao o faturamento e comissao corretos imediatamente
+- Nenhuma alteracao no banco de dados necessaria (dados ja estao corretos)
+- Blindagem com `(Number(x) || 0)` em todas as somas previne NaN
+- Realtime listener ja ativo garante atualizacao em tempo real
 
