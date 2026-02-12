@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import { toast } from "sonner";
-import { Search, DollarSign, Scissors, ShoppingBag, Hash, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
+import { Search, DollarSign, Scissors, ShoppingBag, Check, Zap, Loader2, CalendarIcon, Minus, Plus, ShoppingCart, Users } from "lucide-react";
 import { format } from "date-fns";
 import { getTodayString } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
@@ -40,20 +40,6 @@ interface CartItem extends CatalogItem {
 }
 
 
-// Correção do bug do zero à esquerda
-function handleNumericInput(
-  currentValue: string,
-  newValue: string,
-  setter: (v: string) => void
-) {
-  const cleaned = newValue.replace(/[^\d,.\-]/g, "");
-  if ((currentValue === "0" || currentValue === "0,00") && /^\d/.test(cleaned)) {
-    const withoutLeadingZeros = cleaned.replace(/^0+(?=\d)/, "");
-    setter(withoutLeadingZeros || cleaned);
-    return;
-  }
-  setter(cleaned);
-}
 
 export default function BarberSaleForm({ barberId, organizationId, onSuccess }: BarberSaleFormProps) {
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
@@ -61,7 +47,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const isSubmittingRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"services" | "products" | "manual">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "products">("services");
   
   // Carrinho individualizado (cada item = 1 linha com tempId único)
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -73,9 +59,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   
   
-  // Campos do modo manual
-  const [manualValue, setManualValue] = useState("0");
-  const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
   
   // Note: is_new_client tracking is manager-only (reception/PDV)
   // Barber transactions default to false
@@ -262,60 +245,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
     }
   };
 
-  const handleConfirmManualSale = async () => {
-    const value = parseFloat(manualValue.replace(",", ".")) || 0;
-    if (value <= 0) {
-      toast.error("Informe um valor válido");
-      return;
-    }
-    if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
-
-    setLoading(true);
-    const dateStr = format(selectedDate, "yyyy-MM-dd");
-
-    try {
-      // Buscar produção existente
-      const { data: existingProd } = await supabase
-        .from("daily_productions")
-        .select("*")
-        .eq("barber_id", barberId)
-        .eq("date", dateStr)
-        .maybeSingle();
-
-      const updates = {
-        barber_id: barberId,
-        organization_id: organizationId,
-        date: dateStr,
-        services_basic_total: (existingProd?.services_basic_total || 0) + (manualCategory === "basic" ? value : 0),
-        services_extra_total: (existingProd?.services_extra_total || 0) + (manualCategory === "extra" ? value : 0),
-        products_total: (existingProd?.products_total || 0) + (manualCategory === "product" ? value : 0),
-        clients_count: (existingProd?.clients_count || 0) + 1,
-        services_count: (existingProd?.services_count || 0) + (manualCategory !== "product" ? 1 : 0),
-        products_count: (existingProd?.products_count || 0) + (manualCategory === "product" ? 1 : 0),
-      };
-
-      const { error } = await supabase
-        .from("daily_productions")
-        .upsert(updates, { onConflict: "date,barber_id" });
-
-      if (error) throw error;
-
-      const categoryLabel = manualCategory === "basic" ? "Serviço Básico" : manualCategory === "extra" ? "Serviço Extra" : "Produto";
-      toast.success(`${categoryLabel} registrado!`, {
-        description: `R$ ${value.toFixed(2)}`,
-      });
-
-      setManualValue("0");
-      onSuccess();
-    } catch (error: any) {
-      console.error("Erro ao registrar venda manual:", error);
-      toast.error(error.message || "Erro ao registrar venda");
-    } finally {
-      setLoading(false);
-      isSubmittingRef.current = false;
-    }
-  };
 
   const servicesCount = catalogItems.filter((i) => i.type === "service").length;
   const productsCount = catalogItems.filter((i) => i.type === "product").length;
@@ -384,7 +313,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
 
           {/* Abas */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="services" className="flex items-center gap-1.5">
                 <Scissors className="w-4 h-4" />
                 <span className="hidden sm:inline">Serviços</span>
@@ -402,10 +331,6 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                     {productsCount}
                   </Badge>
                 )}
-              </TabsTrigger>
-              <TabsTrigger value="manual" className="flex items-center gap-1.5">
-                <Hash className="w-4 h-4" />
-                Manual
               </TabsTrigger>
             </TabsList>
 
@@ -468,58 +393,15 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
               )}
             </TabsContent>
 
-            {/* Modo Manual */}
-            <TabsContent value="manual" className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label>Categoria</Label>
-                <Select value={manualCategory} onValueChange={(v) => setManualCategory(v as typeof manualCategory)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="basic">Serviço Básico</SelectItem>
-                    <SelectItem value="extra">Serviço Extra</SelectItem>
-                    <SelectItem value="product">Produto</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Valor (R$)</Label>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={manualValue}
-                  onChange={(e) => handleNumericInput(manualValue, e.target.value, setManualValue)}
-                  placeholder="0,00"
-                  className="text-lg font-bold text-center"
-                />
-              </div>
-
-              <Button
-                className="w-full"
-                onClick={handleConfirmManualSale}
-                disabled={loading || parseFloat(manualValue.replace(",", ".")) <= 0}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  "Confirmar Venda Manual"
-                )}
-              </Button>
-            </TabsContent>
           </Tabs>
 
           {/* Espaço para o footer fixo não sobrepor conteúdo */}
-          {cart.length > 0 && activeTab !== "manual" && <div className="h-24" />}
+          {cart.length > 0 && <div className="h-24" />}
         </CardContent>
       </Card>
 
       {/* Footer Fixo do Carrinho (estilo iFood) */}
-      {cart.length > 0 && activeTab !== "manual" && (
+      {cart.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-primary text-primary-foreground p-4 shadow-lg border-t z-50">
           <div className="max-w-lg mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
