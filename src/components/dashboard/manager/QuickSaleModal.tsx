@@ -364,43 +364,18 @@ export default function QuickSaleModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
-      // Get or create daily_production (only if NOT reception sale)
+      // Look up existing daily_production (do NOT create one)
       let productionId: string | null = null;
       
       if (!isReceptionSale) {
         const { data: existingProduction } = await supabase
           .from("daily_productions")
-          .select("id, clients_count")
+          .select("id")
           .eq("barber_id", barberId)
           .eq("date", dateStr)
-          .single();
+          .maybeSingle();
 
-        if (existingProduction) {
-          productionId = existingProduction.id;
-          await supabase
-            .from("daily_productions")
-            .update({ clients_count: (existingProduction.clients_count || 0) + clientsCount })
-            .eq("id", productionId);
-        } else {
-          const { data: newProduction, error: createError } = await supabase
-            .from("daily_productions")
-            .insert({
-              barber_id: barberId,
-              organization_id: organizationId,
-              date: dateStr,
-              clients_count: clientsCount,
-              services_count: 0,
-              products_count: 0,
-              services_basic_total: 0,
-              services_extra_total: 0,
-              products_total: 0,
-            })
-            .select("id")
-            .single();
-
-          if (createError) throw createError;
-          productionId = newProduction.id;
-        }
+        productionId = existingProduction?.id || null;
       }
 
       // 1 transaction per cart item (individualized)
