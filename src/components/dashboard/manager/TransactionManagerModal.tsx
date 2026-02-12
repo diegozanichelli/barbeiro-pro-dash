@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +99,7 @@ export default function TransactionManagerModal({
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -300,11 +301,13 @@ export default function TransactionManagerModal({
   const products = catalogItems.filter((item) => item.type === "product");
 
   const handleAddItems = async () => {
+    if (isSubmittingRef.current) return;
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       // Insert transactions
@@ -348,6 +351,7 @@ export default function TransactionManagerModal({
       toast.error("Erro ao adicionar itens");
     } finally {
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 

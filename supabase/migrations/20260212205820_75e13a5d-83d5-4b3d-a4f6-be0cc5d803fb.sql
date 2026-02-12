@@ -1,0 +1,2 @@
+DROP TRIGGER IF EXISTS calculate_daily_commission ON daily_productions;
+DROP TRIGGER IF EXISTS trg_daily_productions_commission ON daily_productions;

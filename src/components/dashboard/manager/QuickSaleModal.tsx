@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -105,6 +105,7 @@ export default function QuickSaleModal({
   initialIsNewClient,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -354,11 +355,13 @@ export default function QuickSaleModal({
   const canProceedStep1 = (isPhoneEmpty || isPhoneComplete) && !clientHistory.checking && !phoneError;
 
   const handleCartCheckout = async () => {
+    if (isSubmittingRef.current) return;
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
     const effectiveBarberId = isReceptionSale ? null : barberId;
@@ -414,16 +417,19 @@ export default function QuickSaleModal({
       toast.error("Erro ao registrar venda");
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
   const handleManualSale = async () => {
+    if (isSubmittingRef.current) return;
     const numericValue = parseFloat(manualValue.replace(",", "."));
     if (isNaN(numericValue) || numericValue <= 0) {
       toast.error("Informe um valor válido");
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
 
@@ -492,6 +498,7 @@ export default function QuickSaleModal({
       toast.error("Erro ao registrar venda");
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
