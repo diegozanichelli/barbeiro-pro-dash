@@ -1,84 +1,72 @@
 
-# Substituir Modal de Edicao Manual por Cards de Catalogo (ManagerReports)
 
-## Problema
+# Eliminar Criacao Automatica de Producoes Diarias
 
-O modal "Editar Lancamento" no relatorio do gestor (`ManagerReports.tsx`, linhas 638-700) ainda usa inputs manuais (Total Servicos, Total Produtos, Qtd Servicos, etc.). Isso permite que o gestor insira valores avulsos que nao geram transacoes itemizadas, quebrando a integridade dos dados e o calculo de comissao.
+## 1. Migracao SQL
 
-## Solucao
+Dropar o trigger e funcao `ensure_daily_production_link`, desvincular 148 transacoes orfas do dia 12, e deletar 43 registros vazios de `daily_productions`.
 
-Remover o modal antigo de inputs manuais e substituir pelo `TransactionManagerModal` existente, **porem com uma adaptacao critica**: as transacoes inseridas devem usar `source='barber'` (nao `source='manager'`), pois a edicao do gestor nesta tela de Relatorios/Auditoria e uma correcao da producao do barbeiro, nao um lancamento de caixa.
+```text
+DROP TRIGGER trg_ensure_daily_production_link ON sale_transactions;
+DROP FUNCTION ensure_daily_production_link();
+UPDATE sale_transactions SET daily_production_id = NULL WHERE daily_production_id IN (registros vazios do dia 12);
+DELETE FROM daily_productions WHERE date = '2026-02-12' AND todos campos zerados;
+```
 
-## Alteracoes
+## 2. QuickSaleModal.tsx - Remover criacao de daily_productions
 
-### 1. ManagerReports.tsx - Remover modal antigo
+Linhas 367-404: substituir toda a logica de "Get or create daily_production" por uma busca simples. Se o barbeiro ja tem um registro para o dia, vincula. Se nao tem, deixa `daily_production_id = null`.
 
-- Remover o state `editForm` (linhas 67-73) e a funcao `handleSaveEdit` (linhas 257-290)
-- Remover todo o bloco `<Dialog>` do modal antigo (linhas 638-701)
+```text
+ANTES:
+- Busca daily_production existente
+- Se nao existe, INSERT com valores zerados
+- Incrementa clients_count
 
-### 2. ManagerReports.tsx - Adicionar TransactionManagerModal adaptado
+DEPOIS:
+- Busca daily_production existente com maybeSingle()
+- Se existe, usa o id
+- Se nao existe, productionId = null (nao cria nada)
+```
 
-- Importar o componente `TransactionManagerModal`
-- Alterar `handleEdit` para abrir o `TransactionManagerModal` com os dados da producao selecionada (barberId, dailyProductionId, date, organizationId)
-- Adaptar o state `editingProduction` para passar as props necessarias
+## 3. LiveDashboard.tsx - Ler vendas direto de sale_transactions
 
-### 3. TransactionManagerModal.tsx - Suportar modo "auditoria"
+O painel Ao Vivo atualmente le `tx_*` de `daily_productions`. Sem a criacao automatica, esses campos nao serao populados para barbeiros sem registro.
 
-Adicionar uma prop `auditMode?: boolean` ao `TransactionManagerModal`:
+Solucao: adicionar uma query direta a `sale_transactions` com `source='manager'` para o dia selecionado.
 
-- Quando `auditMode=true`:
-  - O modal lista transacoes de `source='barber'` (em vez de `source='manager'`)
-  - Ao adicionar novos itens, salva com `source='barber'`
-  - O titulo muda para "Auditar Producao" em vez de "Gerenciar Producao"
-  - A logica de "Limpar e Substituir" usa `source='barber'`
-  
-- Quando `auditMode=false` (padrao): comportamento atual mantido (gestao de caixa com `source='manager'`)
+```text
+// Nova query no fetchData:
+const { data: managerTxData } = await supabase
+  .from("sale_transactions")
+  .select("barber_id, price_sold, item_type, service_category")
+  .eq("organization_id", organizationId)
+  .eq("source", "manager")
+  .gte("created_at", selectedDate + "T00:00:00-04:00")
+  .lt("created_at", nextDay + "T00:00:00-04:00");
 
-### 4. Fluxo de Auditoria
+// Novo state: managerTransactions
+// getBarberRevenue: somar de managerTransactions em vez de tx_*
+// totalRevenue: somar de managerTransactions
+// hasPendingManualEntry: verificar se barbeiro tem daily_productions com manual_* > 0
+```
 
-Quando o gestor clica em "Editar" no relatorio:
-1. Abre o `TransactionManagerModal` em modo auditoria
-2. Mostra os itens atuais do barbeiro (`source='barber'`)
-3. O gestor pode excluir itens ou adicionar novos via cards
-4. Ao salvar, os itens sao gravados com `source='barber'`
-5. O trigger `recalculate_daily_production_from_transactions` recalcula automaticamente `services_basic_total`, `services_extra_total`, `products_total`
-6. O trigger `calculate_commission` recalcula a comissao usando apenas os campos do barbeiro
+Funcoes afetadas:
+- `getBarberRevenue`: le de `managerTransactions` agrupado por barbeiro
+- `useEffect` de totalRevenue (linha 232): soma de `managerTransactions`
+- `hasPendingManualEntry`: continua lendo de `productions` (daily_productions)
+
+## 4. Validacao
+
+- O painel "Ao Vivo" continuara mostrando vendas do gestor (agora lidas diretamente de sale_transactions)
+- O alerta de "Producao Pendente" reaparecera para os 43 barbeiros no dia 12
+- O `handleEditClick` no LiveDashboard (linha 326) continua criando daily_productions quando o gestor abre o TransactionManagerModal - isso e intencional pois e uma acao explicita
 
 ## Secao Tecnica
 
-| Arquivo | Alteracao |
+| Arquivo / Recurso | Alteracao |
 |---|---|
-| `src/components/dashboard/manager/ManagerReports.tsx` | Remove modal antigo de inputs, importa e usa `TransactionManagerModal` com `auditMode=true` |
-| `src/components/dashboard/manager/TransactionManagerModal.tsx` | Adiciona prop `auditMode` que altera o `source` filtrado/inserido de `'manager'` para `'barber'` |
+| SQL Migration | DROP trigger + funcao, UPDATE + DELETE registros dia 12 |
+| `QuickSaleModal.tsx` (linhas 367-404) | Remover INSERT em daily_productions; usar maybeSingle() para buscar existente |
+| `LiveDashboard.tsx` | Novo state `managerTransactions`; nova query em fetchData; refatorar `getBarberRevenue` e calculo de totalRevenue para ler de sale_transactions |
 
-### Detalhes da prop `auditMode` no TransactionManagerModal
-
-```text
-// Linhas afetadas no TransactionManagerModal.tsx:
-
-// 1. Interface - adicionar auditMode?: boolean
-// 2. fetchTransactions (linha 139): .eq("source", auditMode ? "barber" : "manager")
-// 3. handleAddItems (linha 312): source nao precisa ser definido aqui pois o trigger ja infere,
-//    mas para consistencia: source = auditMode ? "barber" : "manager" (nao definido = default 'manager')
-// 4. Titulo (linhas 417-419): auditMode ? "Auditar Producao" : "Gerenciar Producao"
-```
-
-### Detalhes da integracao no ManagerReports
-
-```text
-// Estado necessario para o TransactionManagerModal:
-// - barberId: editingProduction.barber_id
-// - barberName: obter do array 'barbers' filtrando por id
-// - organizationId: obter do hook ou contexto
-// - dailyProductionId: editingProduction.id
-// - date: editingProduction.date
-
-// A funcao handleEdit muda de preencher form manual para apenas setar editingProduction
-// O componente TransactionManagerModal cuida do resto
-```
-
-## O que NAO muda
-
-- O `TransactionManagerModal` no painel "AO VIVO" continua funcionando com `source='manager'` (padrao)
-- O `BarberEditProductionModal` do barbeiro continua funcionando normalmente
-- O botao de excluir producao no relatorio continua igual
