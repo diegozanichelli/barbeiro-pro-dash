@@ -50,6 +50,7 @@ interface TransactionManagerModalProps {
   dailyProductionId: string;
   date: string;
   onSuccess: () => void;
+  auditMode?: boolean;
 }
 
 interface Transaction {
@@ -90,6 +91,7 @@ export default function TransactionManagerModal({
   dailyProductionId,
   date,
   onSuccess,
+  auditMode = false,
 }: TransactionManagerModalProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -136,7 +138,7 @@ export default function TransactionManagerModal({
         .from("sale_transactions")
         .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
         .eq("daily_production_id", dailyProductionId)
-        .eq("source", "manager")
+        .eq("source", auditMode ? "barber" : "manager")
         .order("created_at", { ascending: true });
 
       if (error) throw error;
@@ -307,6 +309,7 @@ export default function TransactionManagerModal({
     try {
       // Insert transactions
       const transactionsToInsert: any[] = [];
+      const sourceValue = auditMode ? "barber" : "manager";
       cart.forEach((item) => {
         for (let i = 0; i < item.quantity; i++) {
           transactionsToInsert.push({
@@ -321,6 +324,7 @@ export default function TransactionManagerModal({
             price_sold: item.customPrice,
             commission_rate_used: 0,
             commission_amount: 0,
+            source: sourceValue,
           });
         }
       });
@@ -415,8 +419,8 @@ export default function TransactionManagerModal({
               <div>
                 <DialogTitle className="text-lg font-semibold">
                   {viewMode === "list"
-                    ? `Gerenciar Produção — ${barberName}`
-                    : "Adicionar Itens Retroativos"}
+                    ? `${auditMode ? "Auditar" : "Gerenciar"} Produção — ${barberName}`
+                    : "Adicionar Itens"}
                 </DialogTitle>
                 <DialogDescription>
                   {viewMode === "list"

@@ -7,13 +7,13 @@ import { getManausDate } from "@/lib/dateUtils";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
+import TransactionManagerModal from "./TransactionManagerModal";
+import { useOrganization } from "@/hooks/useOrganization";
 
 interface DailyProduction {
   id: string;
@@ -41,6 +41,7 @@ interface Unit {
 }
 
 export default function ManagerReports() {
+  const { organizationId } = useOrganization();
   const [stats, setStats] = useState({
     totalRevenue: 0,
     totalCommission: 0,
@@ -56,7 +57,6 @@ export default function ManagerReports() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
-  // Usar data de Manaus para inicializar o período corretamente
   const manausNow = useMemo(() => getManausDate(), []);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(manausNow),
@@ -64,13 +64,6 @@ export default function ManagerReports() {
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    services_total: "",
-    products_total: "",
-    services_count: "",
-    products_count: "",
-    clients_count: "",
-  });
 
   useEffect(() => {
     fetchUnits();
@@ -245,48 +238,10 @@ export default function ManagerReports() {
 
   const handleEdit = (production: DailyProduction) => {
     setEditingProduction(production);
-    setEditForm({
-      services_total: production.services_total.toString(),
-      products_total: production.products_total.toString(),
-      services_count: production.services_count.toString(),
-      products_count: production.products_count.toString(),
-      clients_count: production.clients_count.toString(),
-    });
   };
 
-  const handleSaveEdit = async () => {
-    if (!editingProduction) return;
-
-    const { error } = await supabase
-      .from("daily_productions")
-      .update({
-        services_total: Number(editForm.services_total),
-        products_total: Number(editForm.products_total),
-        services_count: Number(editForm.services_count),
-        products_count: Number(editForm.products_count),
-        clients_count: Number(editForm.clients_count),
-      })
-      .eq("id", editingProduction.id);
-
-    if (error) {
-      toast({
-        title: "Erro ao atualizar",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Lançamento atualizado",
-        description: "Os dados foram atualizados automaticamente.",
-      });
-      setEditingProduction(null);
-      
-      // Forçar reload completo dos dados
-      await Promise.all([
-        fetchStats(),
-        fetchProductions(),
-      ]);
-    }
+  const handleAuditSuccess = async () => {
+    await Promise.all([fetchStats(), fetchProductions()]);
   };
 
   const handleDelete = async () => {
@@ -635,70 +590,19 @@ export default function ManagerReports() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!editingProduction} onOpenChange={() => setEditingProduction(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Lançamento</DialogTitle>
-            <DialogDescription>
-              Altere os valores do lançamento. A comissão será recalculada automaticamente.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Total Serviços (R$)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editForm.services_total}
-                  onChange={(e) => setEditForm({ ...editForm, services_total: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Total Produtos (R$)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editForm.products_total}
-                  onChange={(e) => setEditForm({ ...editForm, products_total: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Qtd Serviços</Label>
-                <Input
-                  type="number"
-                  value={editForm.services_count}
-                  onChange={(e) => setEditForm({ ...editForm, services_count: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Qtd Produtos</Label>
-                <Input
-                  type="number"
-                  value={editForm.products_count}
-                  onChange={(e) => setEditForm({ ...editForm, products_count: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Qtd Clientes</Label>
-                <Input
-                  type="number"
-                  value={editForm.clients_count}
-                  onChange={(e) => setEditForm({ ...editForm, clients_count: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingProduction(null)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSaveEdit}>Salvar Alterações</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {editingProduction && organizationId && (
+        <TransactionManagerModal
+          open={!!editingProduction}
+          onOpenChange={(open) => { if (!open) setEditingProduction(null); }}
+          barberId={editingProduction.barber_id}
+          barberName={allBarbers.find(b => b.id === editingProduction.barber_id)?.name || "Barbeiro"}
+          organizationId={organizationId}
+          dailyProductionId={editingProduction.id}
+          date={editingProduction.date}
+          onSuccess={handleAuditSuccess}
+          auditMode={true}
+        />
+      )}
 
       <AlertDialog open={!!deletingProductionId} onOpenChange={() => setDeletingProductionId(null)}>
         <AlertDialogContent>
