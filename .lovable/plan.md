@@ -1,92 +1,64 @@
 
 
-# Correcao: QuickSaleModal ainda cria daily_productions
+# Correção: Excluir Assinaturas do Faturamento "Ao Vivo" + Comissão Zero
 
-## Diagnostico
+## Diagnóstico
 
-A varredura completa identificou **1 unico ponto critico** no lado do gestor que ainda cria registros em `daily_productions`:
-
-**`QuickSaleModal.tsx` - funcao `handleManualSale` (linhas 424-500)**
-
-Essa funcao tem uma aba "Manual" que, ao ser usada pelo gestor, cria ou atualiza registros em `daily_productions` diretamente. O caminho do carrinho (`handleCartCheckout`) ja foi corrigido na refatoracao anterior, mas o caminho manual nao foi tocado.
-
-### Demais arquivos verificados (sem problemas)
-
-| Arquivo | Operacao | Veredicto |
-|---------|----------|-----------|
-| `LiveDashboard.tsx` | SELECT + maybeSingle | OK (ja corrigido) |
-| `TransactionManagerModal.tsx` | INSERT com null | OK (ja corrigido) |
-| `BarberSaleForm.tsx` | INSERT | OK (acao do barbeiro, correto) |
-| `BarberDashboard.tsx` | INSERT (confirmar presenca) | OK (acao do barbeiro) |
-| `DailyProductionForm.tsx` | UPSERT | OK (acao do barbeiro) |
-| `ManagerReports.tsx` | SELECT + DELETE | OK (leitura/limpeza) |
-| Todos os demais manager/* | SELECT only | OK |
+O Fagner Serra mostra R$ 161,40 (Depilação R$ 31,50 + Assinatura Gold R$ 129,90) quando deveria mostrar apenas R$ 31,50. São 3 pontos de correção no código + 1 confirmação.
 
 ---
 
-## Correcao: Refatorar handleManualSale
+## 1. LiveDashboard.tsx - Faturamento total da unidade (linha 256)
 
-A funcao `handleManualSale` sera reescrita para seguir o mesmo padrao do `handleCartCheckout`: inserir uma `sale_transaction` com `daily_production_id: null` (se nao existir producao) e **nunca criar** registros em `daily_productions`.
-
-### Logica nova (linhas 424-500)
+Adicionar filtro para excluir `item_type === 'subscription'` antes de somar:
 
 ```text
-handleManualSale:
-  1. Buscar daily_production existente via maybeSingle() (nao single())
-  2. productionId = existingProduction?.id || null
-  3. Inserir UMA sale_transaction com:
-     - barber_id, organization_id
-     - daily_production_id: productionId (pode ser null)
-     - item_type: "service" ou "product" conforme manualCategory
-     - item_name: descricao generica baseada na categoria
-     - service_category: "basic", "extra" ou null
-     - price_sold: numericValue
-     - commission_rate_used: 0, commission_amount: 0
-     - source: "manager"
-     - created_at: selectedDate.toISOString()
-  4. NAO fazer insert/update em daily_productions
+ANTES: filtered.reduce((sum, t) => sum + (t.price_sold || 0), 0)
+DEPOIS: filtered.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + (t.price_sold || 0), 0)
 ```
 
-### Limpeza de fantasmas de hoje (13/02)
+## 2. LiveDashboard.tsx - Faturamento individual do barbeiro (linhas 302-307)
 
-Apos a correcao do codigo, executar limpeza SQL dos registros fantasmas criados hoje:
+Mesmo filtro no cálculo por barbeiro:
 
 ```text
-DELETE FROM daily_productions dp
-WHERE dp.date = '2026-02-13'
-  AND dp.confirmed_presence = false
-  AND COALESCE(dp.services_basic_total, 0) = 0
-  AND COALESCE(dp.services_extra_total, 0) = 0
-  AND dp.products_total = 0
-  AND dp.services_total = 0
-  AND dp.clients_count = 0
-  AND COALESCE(dp.tx_basic_total, 0) = 0
-  AND COALESCE(dp.tx_extra_total, 0) = 0
-  AND COALESCE(dp.tx_products_total, 0) = 0
-  AND NOT EXISTS (
-    SELECT 1 FROM sale_transactions st
-    WHERE st.daily_production_id = dp.id
-  );
+ANTES:  .filter(t => t.barber_id === barberId)
+DEPOIS: .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
 ```
 
-Nota: O barbeiro Ageu Felipe (que tem `confirmed_presence = true`) NAO sera afetado por esta query.
+Isso corrige automaticamente: card do barbeiro, barra de meta, "cortes restantes" e Top 3 Ranking.
+
+## 3. TransactionManagerModal.tsx - Total no rodapé (linha 406)
+
+Excluir assinaturas do total exibido (itens continuam visíveis na lista):
+
+```text
+ANTES:  transactions.reduce((sum, t) => sum + t.price_sold, 0)
+DEPOIS: transactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0)
+```
+
+## 4. SubscriptionWizardModal.tsx - Comissão zero (CONFIRMADO)
+
+O Wizard já insere com `commission_rate_used: 0` e `commission_amount: 0` (linhas 305-306). Nenhuma alteração necessária.
+
+## 5. SubscriptionAnalytics.tsx - Valores financeiros nos cards
+
+Adicionar o valor bruto (R$) em cada summary card, usando `price_sold` das transações. Os cards passarão a mostrar contagem + valor total por categoria (Novas, Renovações, Upgrades, Downgrades).
 
 ---
 
-## Ordem de Execucao
+## Arquivos modificados
 
-1. Corrigir `handleManualSale` em `QuickSaleModal.tsx`
-2. Executar limpeza SQL dos fantasmas de 13/02
-3. Validar no painel Ao Vivo
-
-## Arquivos Modificados
-
-- `src/components/dashboard/manager/QuickSaleModal.tsx`
-- Limpeza SQL (dados de 13/02)
+| Arquivo | Alteração |
+|---------|-----------|
+| `LiveDashboard.tsx` | 2 filtros: total da unidade + total do barbeiro |
+| `TransactionManagerModal.tsx` | 1 filtro: total do rodapé |
+| `SubscriptionAnalytics.tsx` | Adicionar valores R$ nos summary cards |
 
 ## Resultado
 
-- Nenhuma acao do gestor (carrinho OU manual) criara registros em `daily_productions`
-- Transacoes manuais serao registradas como `sale_transactions` com source "manager"
-- O trigger `trg_link_orphans_on_production_start` vinculara automaticamente quando o barbeiro iniciar o dia
+- Fagner Serra: R$ 31,50 (apenas o extra), não R$ 161,40
+- Assinaturas visíveis no "olhinho" mas sem impactar faturamento
+- Comissão de assinatura = 0 no banco (já garantido)
+- Relatórios de Evolução > Inteligência mostram faturamento bruto de assinaturas por categoria
 
