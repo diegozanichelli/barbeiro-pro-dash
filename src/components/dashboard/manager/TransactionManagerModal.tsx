@@ -403,7 +403,7 @@ export default function TransactionManagerModal({
     return null;
   };
 
-  const totalTransactions = transactions.reduce((sum, t) => sum + t.price_sold, 0);
+  const totalTransactions = transactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
 
   return (
     <>

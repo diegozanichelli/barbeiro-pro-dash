@@ -253,7 +253,7 @@ export default function LiveDashboard() {
           return barber?.unit_id === selectedUnit;
         });
 
-    const newTotal = filtered.reduce((sum, t) => sum + (t.price_sold || 0), 0);
+    const newTotal = filtered.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + (t.price_sold || 0), 0);
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
       setIsGlowing(true);
@@ -302,7 +302,7 @@ export default function LiveDashboard() {
   const getBarberRevenue = (barberId: string) => {
     // Read directly from managerTransactions instead of tx_* fields
     return managerTransactions
-      .filter(t => t.barber_id === barberId)
+      .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
       .reduce((sum, t) => sum + (t.price_sold || 0), 0);
   };
 
