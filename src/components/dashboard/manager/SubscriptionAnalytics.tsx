@@ -96,13 +96,17 @@ export default function SubscriptionAnalytics() {
   };
 
   // Metrics
-  const counts = useMemo(() => {
+  const { counts, revenue } = useMemo(() => {
     const c = { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
+    const r = { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
     transactions.forEach((t) => {
       const action = t.subscription_action as keyof typeof c;
-      if (action && action in c) c[action]++;
+      if (action && action in c) {
+        c[action]++;
+        r[action] += Number(t.price_sold) || 0;
+      }
     });
-    return c;
+    return { counts: c, revenue: r };
   }, [transactions]);
 
   // Downgrade reasons
@@ -175,10 +179,10 @@ export default function SubscriptionAnalytics() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard label="Novas Assinaturas" count={counts.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" />
-        <SummaryCard label="Renovações" count={counts.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" />
-        <SummaryCard label="Upgrades" count={counts.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" />
-        <SummaryCard label="Downgrades" count={counts.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" />
+        <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" />
+        <SummaryCard label="Renovações" count={counts.renew} amount={revenue.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" />
+        <SummaryCard label="Upgrades" count={counts.upgrade} amount={revenue.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" />
+        <SummaryCard label="Downgrades" count={counts.downgrade} amount={revenue.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" />
       </div>
 
       {/* Charts */}
@@ -293,13 +297,18 @@ export default function SubscriptionAnalytics() {
   );
 }
 
-function SummaryCard({ label, count, icon, color }: { label: string; count: number; icon: React.ReactNode; color: string }) {
+function SummaryCard({ label, count, amount, icon, color }: { label: string; count: number; amount?: number; icon: React.ReactNode; color: string }) {
   return (
     <Card className={`border-l-4 ${color}`}>
       <CardContent className="p-4 flex items-center justify-between">
         <div>
           <p className="text-xs text-muted-foreground">{label}</p>
           <p className="text-2xl font-bold">{count}</p>
+          {amount !== undefined && amount > 0 && (
+            <p className="text-sm font-semibold text-primary">
+              {amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </p>
+          )}
         </div>
         {icon}
       </CardContent>
