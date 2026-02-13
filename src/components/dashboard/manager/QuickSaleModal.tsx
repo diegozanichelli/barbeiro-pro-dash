@@ -434,59 +434,37 @@ export default function QuickSaleModal({
     const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
-      let productionId: string;
+      // Buscar daily_production existente (sem criar)
       const { data: existingProduction } = await supabase
         .from("daily_productions")
-        .select("*")
+        .select("id")
         .eq("barber_id", barberId)
         .eq("date", dateStr)
-        .single();
+        .maybeSingle();
 
-      if (existingProduction) {
-        productionId = existingProduction.id;
-        const updateData: Record<string, number> = {
-          clients_count: existingProduction.clients_count + 1,
-        };
+      const productionId = existingProduction?.id || null;
 
-        if (manualCategory === "basic") {
-          updateData.services_basic_total = (existingProduction.services_basic_total || 0) + numericValue;
-          updateData.services_count = existingProduction.services_count + 1;
-        } else if (manualCategory === "extra") {
-          updateData.services_extra_total = (existingProduction.services_extra_total || 0) + numericValue;
-          updateData.services_count = existingProduction.services_count + 1;
-        } else {
-          updateData.products_total = existingProduction.products_total + numericValue;
-          updateData.products_count = existingProduction.products_count + 1;
-        }
+      const itemType = manualCategory === "product" ? "product" : "service";
+      const serviceCategory = manualCategory === "basic" ? "basic" : manualCategory === "extra" ? "extra" : null;
+      const itemName = manualCategory === "basic" ? "Serviço básico (manual)" 
+        : manualCategory === "extra" ? "Serviço extra (manual)" 
+        : "Produto (manual)";
 
-        const { error } = await supabase
-          .from("daily_productions")
-          .update(updateData)
-          .eq("id", productionId);
+      const { error } = await supabase.from("sale_transactions").insert({
+        barber_id: barberId,
+        organization_id: organizationId,
+        daily_production_id: productionId,
+        item_type: itemType,
+        item_name: itemName,
+        service_category: serviceCategory,
+        price_sold: numericValue,
+        commission_rate_used: 0,
+        commission_amount: 0,
+        source: "manager",
+        created_at: selectedDate.toISOString(),
+      } as any);
 
-        if (error) throw error;
-      } else {
-        const insertData: any = {
-          barber_id: barberId,
-          organization_id: organizationId,
-          date: dateStr,
-          clients_count: 1,
-          services_count: manualCategory !== "product" ? 1 : 0,
-          products_count: manualCategory === "product" ? 1 : 0,
-          services_basic_total: manualCategory === "basic" ? numericValue : 0,
-          services_extra_total: manualCategory === "extra" ? numericValue : 0,
-          products_total: manualCategory === "product" ? numericValue : 0,
-        };
-
-        const { data: newProd, error } = await supabase
-          .from("daily_productions")
-          .insert(insertData)
-          .select("id")
-          .single();
-
-        if (error) throw error;
-        productionId = newProd.id;
-      }
+      if (error) throw error;
 
       toast.success(`Venda manual registrada para ${barberName}`);
       
