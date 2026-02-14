@@ -1,23 +1,51 @@
 
-# Fix: Scroll na Lista de Transacoes do Modal "Gerenciar Producao"
+
+# Fix: Scroll na lista de transacoes do modal "Gerenciar Producao"
 
 ## Problema
 
-O modal "Gerenciar Producao" mostra "Total (10 itens)" mas apenas 4 sao visiveis. O conteudo ultrapassa a area do modal sem ativar o scroll. Isso ocorre na view de lista (transacoes existentes), nao na view de adicionar itens (que ja foi corrigida).
+Mesmo apos adicionar `min-h-0` no container pai, o `ScrollArea` do Radix nao ativa a barra de rolagem porque ele precisa de uma **altura definida** (nao apenas `flex-1`) para calcular o overflow internamente.
 
 ## Causa Raiz
 
-O container da lista (linha 445) usa `flex-1` mas falta `min-h-0`. Em flexbox, itens com `flex-1` nao encolhem abaixo do tamanho do conteudo por padrao (`min-height: auto`). O `ScrollArea` interno nao consegue calcular a altura disponivel e nao ativa a barra de rolagem.
+O componente `ScrollArea` do Radix UI calcula o scroll baseado na altura do seu container. Quando recebe apenas `flex-1`, ele expande junto com o conteudo em vez de restringir a area visivel. E necessario combinar `flex-1` com `h-0` (ou `min-h-0`) para forcar uma altura base de 0 e deixar o flex preencher o espaco disponivel.
 
 ## Correcao
 
 **Arquivo:** `src/components/dashboard/manager/TransactionManagerModal.tsx`
 
-**Linha 445:**
+### Alteracao 1 - ScrollArea (linha 459)
+
+Adicionar `min-h-0` ao ScrollArea para que ele respeite o limite do container flex:
 
 ```text
-ANTES: <div className="flex-1 flex flex-col overflow-hidden">
-DEPOIS: <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+ANTES:  <ScrollArea className="flex-1 px-6 py-4">
+DEPOIS: <ScrollArea className="flex-1 min-h-0 px-6 py-4">
 ```
 
-Uma unica alteracao de uma linha. O `min-h-0` permite que o container flex encolha, fazendo o `ScrollArea` (linha 459) funcionar corretamente com scroll.
+### Alteracao 2 - Fallback com overflow nativo
+
+Caso o Radix ScrollArea continue sem funcionar (comportamento conhecido em certos layouts flex), substituir por um div com scroll nativo:
+
+```text
+ANTES:  <ScrollArea className="flex-1 px-6 py-4">
+          <div className="space-y-2">...</div>
+        </ScrollArea>
+
+DEPOIS: <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+          <div className="space-y-2">...</div>
+        </div>
+```
+
+A abordagem recomendada e a **Alteracao 2** (div nativo), pois e mais confiavel em contextos de flexbox aninhado e elimina a dependencia do calculo interno do Radix ScrollArea.
+
+## Arquivo modificado
+
+| Arquivo | Linha | Alteracao |
+|---------|-------|-----------|
+| `TransactionManagerModal.tsx` | ~459 | Substituir `ScrollArea` por `div` com `overflow-y-auto` |
+
+## Resultado
+
+Todos os itens da lista de transacoes serao acessiveis via scroll, mesmo quando houver 10+ itens no modal.
+
