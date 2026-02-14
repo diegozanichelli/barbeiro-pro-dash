@@ -456,7 +456,7 @@ export default function TransactionManagerModal({
                   </p>
                 </div>
               ) : (
-                <ScrollArea className="flex-1 px-6 py-4">
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
                   <div className="space-y-2">
                     {transactions.map((transaction) => (
                       <div
@@ -474,39 +474,26 @@ export default function TransactionManagerModal({
                                 transaction.item_type,
                                 transaction.service_category
                               )}
-                              {transaction.client_name && (
-                                <Badge variant="outline" className="text-[10px] gap-1">
-                                  👤 {transaction.client_name}
-                                </Badge>
-                              )}
                             </div>
-                            {transaction.description && (
-                              <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                {transaction.description}
-                              </p>
-                            )}
+                            <p className="text-xs text-muted-foreground">
+                              {formatCurrency(transaction.price_sold)} · Comissão: {formatCurrency(transaction.commission_amount)}
+                            </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="font-bold text-primary">
-                            {formatCurrency(transaction.price_sold)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() =>
-                              setDeleteConfirm({ open: true, transactionId: transaction.id })
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                          onClick={() => setDeleteConfirm({ open: true, transactionId: transaction.id })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     ))}
                   </div>
-                </ScrollArea>
+                </div>
               )}
+
 
               {/* Footer with totals and add button */}
               <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
