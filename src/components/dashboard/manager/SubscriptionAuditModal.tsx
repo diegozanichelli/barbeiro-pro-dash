@@ -196,6 +196,7 @@ export default function SubscriptionAuditModal({
             Nenhuma venda de assinatura encontrada.
           </p>
         ) : (
+          <div className="max-h-[50vh] overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -319,6 +320,7 @@ export default function SubscriptionAuditModal({
               })}
             </TableBody>
           </Table>
+          </div>
         )}
       </DialogContent>
     </Dialog>
