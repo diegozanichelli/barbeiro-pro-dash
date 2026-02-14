@@ -1,38 +1,37 @@
 
 
-# Fix: Forcar barra de scroll na lista de transacoes
+# Fix: Adicionar barra de scroll na tabela do modal "Auditoria de Assinaturas"
 
 ## Problema
 
-A area de transacoes usa `flex-1 min-h-0 overflow-y-auto`, mas como o conteudo e pequeno (1-4 itens), o flex nao restringe a altura e o scroll nunca aparece. Mesmo com muitos itens, a cadeia de flex containers nao propaga a restricao de altura corretamente.
+O modal `SubscriptionAuditModal` usa `overflow-y-auto` no `DialogContent` inteiro, mas a tabela de transacoes nao tem uma restricao de altura propria. Isso faz com que o modal inteiro role, sem uma barra de scroll visivel na area da lista.
 
 ## Solucao
 
-Substituir a abordagem flex por uma **altura maxima fixa** no container scrollavel. Isso garante que o scroll apareca sempre, independente da quantidade de itens.
+Aplicar a mesma tecnica usada no `TransactionManagerModal`: envolver a `Table` em um `div` com `max-h-[50vh] overflow-y-auto`.
 
 ## Alteracao
 
-**Arquivo:** `src/components/dashboard/manager/TransactionManagerModal.tsx`
+**Arquivo:** `src/components/dashboard/manager/SubscriptionAuditModal.tsx`
 
-**Linha 459:**
-
-```text
-ANTES:  <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-DEPOIS: <div className="max-h-[50vh] overflow-y-auto px-6 py-4">
-```
-
-**Linha 445 (container pai):** Remover `flex-1 min-h-0` pois nao e mais necessario com altura fixa:
+**Linha 199 (onde comeca a `<Table>`):**
 
 ```text
-ANTES:  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-DEPOIS: <div className="flex-1 flex flex-col overflow-hidden">
+ANTES:
+          <Table>
+            <TableHeader>
+              ...
+            </TableBody>
+          </Table>
+
+DEPOIS:
+          <div className="max-h-[50vh] overflow-y-auto">
+            <Table>
+              <TableHeader>
+                ...
+              </TableBody>
+            </Table>
+          </div>
 ```
 
-Com `max-h-[50vh]`, a lista ocupa no maximo metade da tela, deixando espaco para header e footer. A barra de scroll aparece assim que o conteudo ultrapassar esse limite, mesmo com poucos itens o container fica bem dimensionado.
-
-## Resultado
-
-- Scroll funcional com qualquer quantidade de itens
-- Header (titulo) e footer (total + botao) sempre visiveis
-- Compativel com mobile e desktop
-
+Apenas envolve a tabela existente em um container com altura maxima fixa. O header e titulo do modal ficam sempre visiveis acima.
