@@ -532,7 +532,7 @@ export default function TransactionManagerModal({
             <Tabs
               value={activeTab}
               onValueChange={(v) => setActiveTab(v as CategoryTab)}
-              className="flex-1 flex flex-col overflow-hidden"
+              className="flex-1 min-h-0 flex flex-col overflow-hidden"
             >
               {/* Search */}
               <div className="px-6 pt-4">
@@ -573,7 +573,7 @@ export default function TransactionManagerModal({
               </div>
 
               {/* Services Grid */}
-              <TabsContent value="services" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden">
                 {loadingCatalog ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -603,7 +603,7 @@ export default function TransactionManagerModal({
               </TabsContent>
 
               {/* Products Grid */}
-              <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="products" className="flex-1 min-h-0 m-0 overflow-hidden">
                 {loadingCatalog ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
