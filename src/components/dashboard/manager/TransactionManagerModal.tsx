@@ -442,7 +442,7 @@ export default function TransactionManagerModal({
 
           {viewMode === "list" ? (
             // LIST VIEW
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {loadingTransactions ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
