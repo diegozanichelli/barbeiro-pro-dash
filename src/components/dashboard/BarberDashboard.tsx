@@ -249,6 +249,10 @@ const [todayProduction, setTodayProduction] = useState<{
       // day_off e absence NÃO contam como dia trabalhado
       // Dias trabalhados - APENAS produção do barbeiro (sem tx_*)
       const daysWithProduction = productions.filter(p => {
+        // Excluir domingos da contagem de dias trabalhados (domingo = bônus, não consome dia útil)
+        const dateObj = new Date(p.date + "T12:00:00");
+        if (dateObj.getDay() === 0) return false;
+
         const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
                       (Number(p.products_total) || 0);
         return total > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
