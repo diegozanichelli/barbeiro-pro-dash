@@ -1,68 +1,113 @@
 
+# Domingo como Dia de Bonus e Escala Facultativa
 
-# Fix: Comissao Dobrada ao Editar Producao do Barbeiro
+## Resumo
 
-## Causa Raiz
+Domingo passa a ser tratado como dia **bonus/extra**: nunca cobra presenca, nunca gera alerta, mas se o barbeiro trabalhar, o faturamento e comissao contam normalmente para a meta mensal sem consumir dias uteis da escala oficial.
 
-O barbeiro **nao tem permissao para deletar** suas proprias transacoes na tabela `sale_transactions`. As politicas de seguranca (RLS) permitem apenas:
-- **SELECT** (visualizar)
-- **INSERT** (inserir)
+## Arquivos e Alteracoes
 
-Quando o barbeiro edita um lancamento pelo modal de edicao, o sistema tenta:
-1. **Deletar** as transacoes antigas (BLOQUEADO pelo RLS - falha silenciosa)
-2. **Inserir** as novas transacoes (permitido)
+### 1. Alertas de Producao Pendente (Barbeiro)
+**Arquivo:** `src/components/dashboard/barber/MissingProductionAlert.tsx`
 
-Como a exclusao falha sem erro visivel, as transacoes antigas permanecem no banco. As novas sao inseridas em cima. O trigger do banco soma TUDO, duplicando os valores de faturamento e comissao.
+- A funcao `getWorkingDaysUntilToday` ja exclui domingos (linha 28: `date.getDay() !== 0`).
+- **Nenhuma alteracao necessaria** - ja esta correto.
 
-## Solucao
+### 2. Alertas de Producao Pendente (Gestor)
+**Arquivo:** `src/components/dashboard/manager/MissingProductionsAlert.tsx`
 
-Adicionar uma politica RLS de **DELETE** para barbeiros na tabela `sale_transactions`, permitindo que deletem apenas suas proprias transacoes com `source='barber'`.
+- A funcao `getWorkingDaysForMonth` ja exclui domingos (linha 47: `date.getDay() !== 0`).
+- **Nenhuma alteracao necessaria** - ja esta correto.
 
-## Alteracao
+### 3. Contagem de Dias Trabalhados (Barbeiro Dashboard)
+**Arquivo:** `src/components/dashboard/BarberDashboard.tsx`
 
-**Migration SQL:**
+**Problema atual:** `daysWorked` conta TODOS os dias com producao, incluindo domingos. Se um barbeiro trabalha no domingo, o sistema desconta um dia util da meta, fazendo o domingo "consumir" um dia da escala.
 
-```sql
-CREATE POLICY "Barbers can delete their own barber transactions"
-  ON public.sale_transactions
-  FOR DELETE
-  USING (
-    source = 'barber'
-    AND barber_id IN (
-      SELECT id FROM barbers WHERE user_id = auth.uid()
-    )
-  );
+**Alteracao (linha ~251):** Filtrar domingos da contagem de `daysWithProduction`:
+```typescript
+const daysWithProduction = productions.filter(p => {
+  // Excluir domingos da contagem de dias trabalhados para nao consumir dias uteis
+  const dateObj = new Date(p.date + "T12:00:00");
+  if (dateObj.getDay() === 0) return false; // Domingo = bonus, nao conta
+
+  const total = (Number(p.services_basic_total) || 0) + ...;
+  return total > 0 || (p.confirmed_presence === true && ...);
+}).length;
 ```
 
-Tambem sera adicionada uma politica de **UPDATE** para prevenir problemas similares no futuro:
+**Efeito:** O faturamento de domingo continua somando na `accumulated_commission` (ja funciona), mas nao reduz `remainingWorkDaysFromGoal`, acelerando o atingimento da meta.
 
-```sql
-CREATE POLICY "Barbers can update their own barber transactions"
-  ON public.sale_transactions
-  FOR UPDATE
-  USING (
-    source = 'barber'
-    AND barber_id IN (
-      SELECT id FROM barbers WHERE user_id = auth.uid()
-    )
-  )
-  WITH CHECK (
-    source = 'barber'
-    AND barber_id IN (
-      SELECT id FROM barbers WHERE user_id = auth.uid()
-    )
-  );
+### 4. Contagem de Dias Trabalhados (Gestor - Metas do Dia)
+**Arquivo:** `src/components/dashboard/manager/DailyGoalsTracking.tsx`
+
+**Mesma logica** aplicada na contagem de `daysWorked` (linha ~133): excluir domingos para que o progresso esperado e os dias restantes reflitam apenas seg-sab.
+
+Tambem ajustar `getWorkingDaysPassed` (linha ~43) para excluir domingos - ja exclui, entao ok.
+
+### 5. Calculo de Media por Dia
+**Arquivo:** `src/components/dashboard/BarberDashboard.tsx`
+
+Na exibicao de media (se existir), usar a formula:
+```
+mediaDiaria = faturamentoTotal / max(diasUteisMeta, diasReaisTrabalhados)
+```
+Onde `diasReaisTrabalhados` inclui domingos somente se forem mais que `diasUteisMeta`, para nao inflar a media.
+
+### 6. Edge Function de Alertas de Performance
+**Arquivo:** `supabase/functions/check-performance-alerts/index.ts`
+
+**Problema:** O calculo de pacing usa `diaAtual` (dia do calendario) dividido por `diasUteisConfigurados`. Nao exclui domingos do calculo.
+
+**Alteracao:** Contar dias uteis (seg-sab) transcorridos ate hoje ao inves de usar o numero do dia:
+```typescript
+// Contar apenas dias uteis (seg-sab) transcorridos
+let diasUteisCorridos = 0;
+for (let d = 1; d <= diaAtual; d++) {
+  const date = new Date(anoAtual, mesAtual - 1, d);
+  if (date.getDay() !== 0) diasUteisCorridos++;
+}
+const metaEsperadaAteHoje = (diasUteisCorridos / diasUteisConfigurados) * metaTotal;
 ```
 
-**Seguranca:** A restricao `source = 'barber'` garante que o barbeiro so pode alterar/excluir seus proprios lancamentos, nunca os do gestor (`source = 'manager'`).
+### 7. Funcao `calculateRemainingWorkDays`
+**Arquivo:** `src/lib/dateUtils.ts`
 
-## Correcao Retroativa
+**Problema atual:** Conta TODOS os dias restantes no calendario (incluindo domingos).
 
-Apos aplicar a migration, sera necessario limpar os dados duplicados existentes e recalcular as comissoes do mes de fevereiro para corrigir os valores que ja foram afetados.
+**Alteracao:** Excluir domingos do calculo de dias restantes:
+```typescript
+export function calculateRemainingWorkDays(today: Date = getManausDate()): number {
+  const lastDayOfMonth = endOfMonth(today).getDate();
+  let count = 0;
+  for (let d = today.getDate(); d <= lastDayOfMonth; d++) {
+    const date = new Date(today.getFullYear(), today.getMonth(), d);
+    if (date.getDay() !== 0) count++; // Excluir domingos
+  }
+  return count;
+}
+```
 
-## Resultado
+### 8. Vinculo de Unidade Temporaria (Domingo)
 
-- Barbeiros poderao editar seus lancamentos sem duplicacao
-- Transacoes do gestor (`source='manager'`) continuam protegidas
-- Comissoes calculadas corretamente apos edicao
+O sistema atual ja aceita lancamentos de qualquer barbeiro em `daily_productions` independente da unidade, pois o `organization_id` e validado (nao `unit_id`). O barbeiro da Unidade A que trabalha na Unidade B no domingo lanca normalmente - o `barber_id` e o `organization_id` garantem a integridade. **Nenhuma alteracao necessaria** desde que as unidades pertencam a mesma organizacao.
 
+---
+
+## Secao Tecnica
+
+### Resumo das alteracoes por arquivo:
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/lib/dateUtils.ts` | `calculateRemainingWorkDays` exclui domingos |
+| `src/components/dashboard/BarberDashboard.tsx` | `daysWithProduction` ignora domingos na contagem |
+| `src/components/dashboard/manager/DailyGoalsTracking.tsx` | `daysWorked` ignora domingos na contagem |
+| `supabase/functions/check-performance-alerts/index.ts` | Pacing usa dias uteis corridos (sem domingos) |
+| Alertas de producao pendente | Ja excluem domingos - sem alteracao |
+| Vinculo de unidade | Ja funciona por organization_id - sem alteracao |
+
+### Impacto nos dados existentes
+- Nenhuma migration de banco necessaria
+- A comissao acumulada (campo `commission_earned`) ja inclui domingos naturalmente
+- A alteracao e puramente de **calculo de apresentacao e pacing**
