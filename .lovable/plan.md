@@ -1,67 +1,53 @@
 
 
-# Limpeza Retroativa de Transacoes Duplicadas - Fevereiro 2026
+# Otimizacao UX Mobile - Campos de Preco
 
-## Diagnostico
+## Resumo
 
-- **241 producoes** afetadas com transacoes duplicadas
-- **505 registros** a serem removidos (mantendo 1.317 registros corretos)
-- **55 barbeiros** impactados com comissoes infladas
+Criar componente `CurrencyInput` com mascara de centavos em tempo real, Quick Price Chips, auto-select (select all) no foco, altura 48px e fonte 16px. Aplicar em BarberSaleForm e DailyProductionForm.
 
-## Causa
+## 1. Criar `src/components/ui/currency-input.tsx`
 
-Cada vez que o barbeiro editava um lancamento, o sistema tentava deletar as transacoes antigas (bloqueado pelo RLS) e inseria as novas em cima. O resultado: acumulo de registros duplicados.
+Componente reutilizavel com:
 
-## Estrategia de Limpeza
+- **Mascara de centavos**: valor interno em centavos, cada digito desloca a virgula (digitar 3-0-0-0 exibe "30,00")
+- **Backspace**: remove ultimo digito (Math.floor(cents / 10))
+- **Quick Price Chips**: prop `quickValues` renderiza botoes horizontais com scroll, min-height 44px, estilo outline
+- **Auto-select**: `onFocus` faz `e.target.select()` com setTimeout para compatibilidade mobile (preserva dados em vez de limpar)
+- **Acessibilidade**: `inputMode="numeric"`, `h-12` (48px), `text-base` (16px), `autoComplete="off"`
+- **Interface**: `value: number` (reais), `onChange: (val: number) => void`, `quickValues?: number[]`
 
-Para cada producao afetada:
-1. Identificar o **ultimo lote** de edicao (timestamp mais recente = `MAX(created_at)`)
-2. **Manter** apenas as transacoes desse ultimo lote (estado final correto apos a ultima edicao)
-3. **Deletar** todas as transacoes anteriores (as que deveriam ter sido removidas pela edicao)
+## 2. Alterar `src/components/dashboard/barber/BarberSaleForm.tsx`
 
-O trigger `recalculate_daily_production_from_transactions` sera disparado automaticamente apos cada exclusao, recalculando os totais e comissoes corretos na tabela `daily_productions`.
+- Importar `CurrencyInput`
+- Substituir o `Input` de preco editavel no carrinho (~linha 490-505) por `CurrencyInput` com `quickValues={[30, 50, 80, 100]}`
+- Adaptar o handler `updateCartItemPrice` para receber number direto
 
-## Script SQL
+## 3. Alterar `src/components/dashboard/barber/DailyProductionForm.tsx`
 
-A migration executara um unico comando DELETE usando CTEs:
+- Importar `CurrencyInput`
+- Substituir `MobileNumericInput` com `isDecimal` nos 3 campos monetarios (servicesBasicTotal, servicesExtraTotal, productsTotal) por `CurrencyInput`
+- Quick Chips: `[100, 200, 300, 500]` para totais diarios
+- Para `MobileNumericInput` (campos inteiros: clientes, servicos, produtos): adicionar classes `h-12 text-base` para garantir 48px e 16px
 
-```sql
--- 1. Identificar producoes com duplicatas
--- 2. Para cada uma, encontrar o timestamp do ultimo lote
--- 3. Deletar tudo que NAO pertence ao ultimo lote
--- O trigger recalcula comissoes automaticamente
+## Secao Tecnica
 
-WITH affected_productions AS (
-  SELECT DISTINCT daily_production_id
-  FROM sale_transactions
-  WHERE source = 'barber' AND created_at >= '2026-02-01'
-  GROUP BY daily_production_id, item_name, price_sold
-  HAVING COUNT(*) > 1
-),
-latest_batch AS (
-  SELECT daily_production_id, MAX(created_at) as max_ts
-  FROM sale_transactions
-  WHERE source = 'barber'
-    AND daily_production_id IN (SELECT daily_production_id FROM affected_productions)
-  GROUP BY daily_production_id
-)
-DELETE FROM sale_transactions
-WHERE source = 'barber'
-  AND daily_production_id IN (SELECT daily_production_id FROM affected_productions)
-  AND created_at < (
-    SELECT max_ts FROM latest_batch lb
-    WHERE lb.daily_production_id = sale_transactions.daily_production_id
-  );
+### Logica da mascara
+
+```text
+Estado interno: centavos (inteiro)
+Digitar "3"    -> cents=3     -> exibe "0,03"
+Digitar "0"    -> cents=30    -> exibe "0,30"
+Digitar "0"    -> cents=300   -> exibe "3,00"
+Digitar "0"    -> cents=3000  -> exibe "30,00"
+Backspace      -> cents=300   -> exibe "3,00"
 ```
 
-## Seguranca
+### Arquivos
 
-- Apenas transacoes com `source = 'barber'` sao afetadas (transacoes do gestor intactas)
-- Apenas registros de fevereiro 2026 sao considerados
-- O trigger reconstroi automaticamente os valores corretos de comissao
+| Arquivo | Acao |
+|---------|------|
+| `src/components/ui/currency-input.tsx` | Criar |
+| `src/components/dashboard/barber/BarberSaleForm.tsx` | Alterar campo de preco no checkout |
+| `src/components/dashboard/barber/DailyProductionForm.tsx` | Alterar 3 campos R$ + aumentar toque nos contadores |
 
-## Resultado Esperado
-
-- 505 registros duplicados removidos
-- Comissoes recalculadas automaticamente para os 55 barbeiros
-- Jesus e todos os demais verao os valores corretos no dashboard imediatamente
