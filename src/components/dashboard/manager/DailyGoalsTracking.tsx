@@ -130,9 +130,12 @@ export default function DailyGoalsTracking() {
         const todayPresenceType = (todayProduction as any)?.presence_type as string | null;
 
         // Contar dias com produção real OU com presença confirmada (present/null)
-        const daysWorked = barberProductions.filter(p => 
-          Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null))
-        ).length;
+        // Excluir domingos da contagem (domingo = bônus, não consome dia útil)
+        const daysWorked = barberProductions.filter(p => {
+          const dateObj = new Date(p.date + "T12:00:00");
+          if (dateObj.getDay() === 0) return false;
+          return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
+        }).length;
         
         // Calculate remaining commission to achieve
         const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);

@@ -50,9 +50,11 @@ export function getCurrentDay(): number {
  * @returns Número de dias entre hoje e o fim do mês (inclusive)
  */
 export function calculateRemainingWorkDays(today: Date = getManausDate()): number {
-  const currentDay = today.getDate(); // Dia atual (1-31)
-  const lastDayOfMonth = endOfMonth(today).getDate(); // Último dia do mês (28-31)
-  
-  // Fórmula: Total de dias no mês - Dia atual + 1 (inclui hoje)
-  return lastDayOfMonth - currentDay + 1;
+  const lastDayOfMonth = endOfMonth(today).getDate();
+  let count = 0;
+  for (let d = today.getDate(); d <= lastDayOfMonth; d++) {
+    const date = new Date(today.getFullYear(), today.getMonth(), d);
+    if (date.getDay() !== 0) count++; // Excluir domingos
+  }
+  return count;
 }

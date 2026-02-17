@@ -138,8 +138,15 @@ Deno.serve(async (req) => {
         const diasUteisConfigurados = meta.work_days;
         const metaTotal = Number(meta.target_commission);
         
-        // Meta esperada proporcional aos dias corridos
-        const metaEsperadaAteHoje = (diaAtual / diasUteisConfigurados) * metaTotal;
+        // Contar apenas dias úteis (seg-sáb) transcorridos até hoje
+        let diasUteisCorridos = 0;
+        for (let d = 1; d <= diaAtual; d++) {
+          const date = new Date(anoAtual, mesAtual - 1, d);
+          if (date.getDay() !== 0) diasUteisCorridos++; // Excluir domingos
+        }
+        
+        // Meta esperada proporcional aos dias úteis corridos
+        const metaEsperadaAteHoje = (diasUteisCorridos / diasUteisConfigurados) * metaTotal;
         
         // Threshold de 85% da meta esperada
         const threshold = metaEsperadaAteHoje * 0.85;
@@ -150,8 +157,14 @@ Deno.serve(async (req) => {
         // Calcular percentual atingido
         const percentualAtingido = (comissaoAcumulada / metaTotal) * 100;
         
-        // Dias restantes
-        const diasRestantes = diasUteisConfigurados - diaAtual;
+        // Dias úteis restantes (sem domingos)
+        let diasUteisRestantes = 0;
+        const ultimoDiaMesNum = new Date(anoAtual, mesAtual, 0).getDate();
+        for (let d = diaAtual + 1; d <= ultimoDiaMesNum; d++) {
+          const date = new Date(anoAtual, mesAtual - 1, d);
+          if (date.getDay() !== 0) diasUteisRestantes++;
+        }
+        const diasRestantes = diasUteisRestantes;
 
         logStep('Barber analysis', {
           barberName: barber.name,
