@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "sonner";
 import { Calendar, DollarSign } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -95,6 +96,7 @@ function MobileNumericInput({
       onBlur={handleBlur}
       placeholder={placeholder || (isDecimal ? "0,00" : "0")}
       autoComplete="off"
+      className="h-12 text-base"
       {...props}
     />
   );
@@ -262,11 +264,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Total em Serviços Básicos (R$)</FormLabel>
                       <FormControl>
-                        <MobileNumericInput
+                        <CurrencyInput
                           value={field.value}
                           onChange={field.onChange}
-                          placeholder="0,00"
-                          isDecimal
+                          quickValues={[100, 200, 300, 500]}
                         />
                       </FormControl>
                       <FormMessage />
@@ -280,11 +281,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                     <FormItem>
                       <FormLabel>Total em Serviços Extras (R$)</FormLabel>
                       <FormControl>
-                        <MobileNumericInput
+                        <CurrencyInput
                           value={field.value}
                           onChange={field.onChange}
-                          placeholder="0,00"
-                          isDecimal
+                          quickValues={[100, 200, 300, 500]}
                         />
                       </FormControl>
                       <FormMessage />
@@ -300,11 +300,10 @@ export default function DailyProductionForm({ barberId, organizationId, onSucces
                   <FormItem>
                     <FormLabel>Total em Produtos (R$)</FormLabel>
                     <FormControl>
-                      <MobileNumericInput
+                      <CurrencyInput
                         value={field.value}
                         onChange={field.onChange}
-                        placeholder="0,00"
-                        isDecimal
+                        quickValues={[100, 200, 300, 500]}
                       />
                     </FormControl>
                     <FormMessage />

@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -129,10 +130,9 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
   const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
 
   // Atualizar preço no carrinho por tempId
-  const updateCartItemPrice = (tempId: string, newPrice: string) => {
-    const parsed = parseFloat(newPrice.replace(",", ".")) || 0;
+  const updateCartItemPrice = (tempId: string, newPrice: number) => {
     setCart(prev => prev.map(item => 
-      item.tempId === tempId ? { ...item, customPrice: parsed } : item
+      item.tempId === tempId ? { ...item, customPrice: newPrice } : item
     ));
   };
 
@@ -486,23 +486,12 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
                   </Button>
                 </div>
                 
-                {/* Preço editável */}
-                <div className="flex items-center justify-end gap-2">
-                  <div className="relative flex-1 max-w-[140px]">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.customPrice.toFixed(2).replace(".", ",")}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const cleaned = val.replace(/[^\d,.\-]/g, "");
-                        updateCartItemPrice(item.tempId, cleaned);
-                      }}
-                      className="pl-7 text-right font-bold text-sm h-8 bg-background"
-                    />
-                  </div>
-                </div>
+                {/* Preço editável com máscara de centavos */}
+                <CurrencyInput
+                  value={item.customPrice}
+                  onChange={(val) => updateCartItemPrice(item.tempId, val)}
+                  quickValues={[30, 50, 80, 100]}
+                />
               </div>
             ))}
           </div>
