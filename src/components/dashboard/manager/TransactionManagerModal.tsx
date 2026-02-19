@@ -475,6 +475,11 @@ export default function TransactionManagerModal({
                                 transaction.service_category
                               )}
                             </div>
+                            {transaction.client_name && (
+                              <p className="text-xs text-muted-foreground/80">
+                                Cliente: {transaction.client_name}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                               {formatCurrency(transaction.price_sold)} · Comissão: {formatCurrency(transaction.commission_amount)}
                             </p>
