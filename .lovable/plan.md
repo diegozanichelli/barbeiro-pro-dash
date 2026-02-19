@@ -1,53 +1,41 @@
 
 
-# Otimizacao UX Mobile - Campos de Preco
+# Restaurar Nome do Cliente no Modal "Gerenciar Producao"
 
-## Resumo
+## Problema
 
-Criar componente `CurrencyInput` com mascara de centavos em tempo real, Quick Price Chips, auto-select (select all) no foco, altura 48px e fonte 16px. Aplicar em BarberSaleForm e DailyProductionForm.
+O modal "Gerenciar Producao" (componente `TransactionManagerModal.tsx`) busca o campo `client_name` da tabela `sale_transactions` (linha 143), mas nao o exibe na lista de transacoes. Anteriormente esse nome aparecia, mas foi perdido em alguma refatoracao visual.
 
-## 1. Criar `src/components/ui/currency-input.tsx`
+## Solucao
 
-Componente reutilizavel com:
+Adicionar o `client_name` na linha de cada transacao, exibido como texto secundario ao lado do preco e comissao.
 
-- **Mascara de centavos**: valor interno em centavos, cada digito desloca a virgula (digitar 3-0-0-0 exibe "30,00")
-- **Backspace**: remove ultimo digito (Math.floor(cents / 10))
-- **Quick Price Chips**: prop `quickValues` renderiza botoes horizontais com scroll, min-height 44px, estilo outline
-- **Auto-select**: `onFocus` faz `e.target.select()` com setTimeout para compatibilidade mobile (preserva dados em vez de limpar)
-- **Acessibilidade**: `inputMode="numeric"`, `h-12` (48px), `text-base` (16px), `autoComplete="off"`
-- **Interface**: `value: number` (reais), `onChange: (val: number) => void`, `quickValues?: number[]`
+## Alteracao
 
-## 2. Alterar `src/components/dashboard/barber/BarberSaleForm.tsx`
+**Arquivo:** `src/components/dashboard/manager/TransactionManagerModal.tsx`
 
-- Importar `CurrencyInput`
-- Substituir o `Input` de preco editavel no carrinho (~linha 490-505) por `CurrencyInput` com `quickValues={[30, 50, 80, 100]}`
-- Adaptar o handler `updateCartItemPrice` para receber number direto
+**Local:** Bloco de renderizacao de cada transacao (linhas 468-481)
 
-## 3. Alterar `src/components/dashboard/barber/DailyProductionForm.tsx`
+Adicionar o nome do cliente logo abaixo do nome do item, antes da linha de preco/comissao. Se `client_name` existir, exibi-lo com um icone de usuario ou simplesmente como texto em destaque sutil.
 
-- Importar `CurrencyInput`
-- Substituir `MobileNumericInput` com `isDecimal` nos 3 campos monetarios (servicesBasicTotal, servicesExtraTotal, productsTotal) por `CurrencyInput`
-- Quick Chips: `[100, 200, 300, 500]` para totais diarios
-- Para `MobileNumericInput` (campos inteiros: clientes, servicos, produtos): adicionar classes `h-12 text-base` para garantir 48px e 16px
-
-## Secao Tecnica
-
-### Logica da mascara
-
-```text
-Estado interno: centavos (inteiro)
-Digitar "3"    -> cents=3     -> exibe "0,03"
-Digitar "0"    -> cents=30    -> exibe "0,30"
-Digitar "0"    -> cents=300   -> exibe "3,00"
-Digitar "0"    -> cents=3000  -> exibe "30,00"
-Backspace      -> cents=300   -> exibe "3,00"
+**Antes:**
+```
+<p className="text-xs text-muted-foreground">
+  R$ 80,00 · Comissao: R$ 30,40
+</p>
 ```
 
-### Arquivos
+**Depois:**
+```
+{transaction.client_name && (
+  <p className="text-xs text-muted-foreground/80">
+    Cliente: {transaction.client_name}
+  </p>
+)}
+<p className="text-xs text-muted-foreground">
+  R$ 80,00 · Comissao: R$ 30,40
+</p>
+```
 
-| Arquivo | Acao |
-|---------|------|
-| `src/components/ui/currency-input.tsx` | Criar |
-| `src/components/dashboard/barber/BarberSaleForm.tsx` | Alterar campo de preco no checkout |
-| `src/components/dashboard/barber/DailyProductionForm.tsx` | Alterar 3 campos R$ + aumentar toque nos contadores |
+O nome do cliente aparecera entre o nome do servico e a linha de valores, apenas quando houver um nome registrado.
 
