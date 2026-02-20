@@ -1,67 +1,66 @@
 
-# Evolucao do Modulo de Lancamento de Ganhos de Assinatura
+# Exibir Dados Legados no Modal "Gerenciar Producao"
 
-## Resumo
+## Problema
 
-Adicionar coluna `total_revenue` na tabela `barber_subscription_earnings` para registrar o faturamento bruto da cadeira, atualizar o formulario com dois campos monetarios (usando CurrencyInput), atualizar a tabela de listagem, e integrar o novo valor nos relatorios de evolucao.
+Barbeiros que lancaram producao pelo formulario manual antigo (campos de totais) gravaram dados apenas na tabela `daily_productions`, sem criar registros individuais em `sale_transactions`. Quando o gestor abre o modal "Auditar Producao" (TransactionManagerModal), ele busca somente em `sale_transactions` e encontra zero registros -- mostrando "Nenhuma transacao registrada", mesmo havendo faturamento e comissao na tabela de producoes.
 
-## 1. Migracao de Banco de Dados
+Isso afeta todas as barbearias cujos barbeiros usaram o formulario manual, nao apenas a Chezz.
 
-Adicionar coluna `total_revenue` (numeric, default 0) na tabela `barber_subscription_earnings`.
+## Solucao
 
-```sql
-ALTER TABLE barber_subscription_earnings
-ADD COLUMN total_revenue numeric NOT NULL DEFAULT 0;
-```
+Quando o modal abrir em modo auditoria (`auditMode=true`), detectar se existem zero transacoes mas o `daily_productions` correspondente tem valores. Nesse caso, exibir um card informativo com os totais legados, orientando o gestor a adicionar itens retroativos se desejar corrigir.
 
-## 2. Alterar `SubscriptionEarningsForm.tsx`
+## Alteracao
 
-### Formulario
-- Adicionar estado `totalRevenue` (number, default 0)
-- Substituir o campo unico "Valor R$" por dois campos usando `CurrencyInput`:
-  - **Faturamento Bruto (Cadeira)** com dica: "Este valor sera usado para calcular o faturamento total da unidade nos relatorios."
-  - **Ganho do Barbeiro (Comissao)** (o campo `amount` existente)
-- Ambos obrigatorios na validacao do `handleSave`
+**Arquivo:** `src/components/dashboard/manager/TransactionManagerModal.tsx`
 
-### Logica de salvamento
-- Incluir `total_revenue` no insert e update (alem do `amount` existente)
-- No `handleEdit`, preencher ambos os campos
+### 1. Buscar dados legados do daily_productions
 
-### Interface `SubscriptionEarning`
-- Adicionar campo `total_revenue: number`
+Apos o `fetchTransactions` retornar vazio em modo auditoria, buscar o registro de `daily_productions` correspondente (usando `barberId` e `date`) para verificar se ha valores de producao.
 
-### Tabela de listagem
-- Atualizar colunas: Barbeiro | Faturamento Bruto (R$) | Ganho Barbeiro (R$) | Acoes
-- Exibir `total_revenue` e `amount` separadamente
+### 2. Exibir card informativo quando houver dados legados
 
-## 3. Integrar nos Relatorios de Evolucao
+No bloco que hoje mostra "Nenhuma transacao registrada" (linhas 450-457), adicionar uma condicao: se existem dados legados (totais > 0), mostrar um card amarelo com:
 
-### `ShopEvolution.tsx`
-- Buscar dados de `barber_subscription_earnings` agrupados por mes para o ano selecionado
-- Somar `total_revenue` ao faturamento mensal (receita), adicionando como nova categoria "Assinaturas" nas barras empilhadas
-- Adicionar ao tooltip e a tabela comparativa mensal
+- Titulo: "Producao lancada pelo formulario manual"
+- Os totais existentes: Servicos Basicos, Servicos Extras, Produtos, Comissao
+- Mensagem: "Este lancamento foi feito pelo formulario antigo (valores totais). Para detalhar os itens, use o botao abaixo."
+
+Se nao houver dados legados, manter a mensagem atual "Nenhuma transacao registrada".
+
+### 3. Botao "Adicionar Item Retroativo" permanece disponivel
+
+O gestor podera adicionar itens do catalogo normalmente. Ao salvar, o trigger existente recalcula o `daily_productions` automaticamente.
 
 ## Secao Tecnica
 
-### Campos no banco
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| `amount` (existente) | numeric | Ganho do barbeiro (comissao) |
-| `total_revenue` (novo) | numeric | Faturamento bruto da cadeira |
-
-### Fluxo de dados
+### Novo estado
 
 ```text
-Formulario -> barber_subscription_earnings (amount + total_revenue)
-                     |
-                     v
-ShopEvolution.tsx -> SUM(total_revenue) por mes -> barra "Assinaturas" no grafico
+legacyProduction: { servicesBasic: number, servicesExtra: number, products: number, commission: number } | null
+```
+
+### Busca condicional
+
+Disparada quando `transactions.length === 0 && auditMode && date && barberId`, consultando:
+
+```text
+daily_productions WHERE barber_id = X AND date = Y
+```
+
+### Renderizacao condicional (bloco vazio, linhas 450-457)
+
+```text
+Se transactions.length === 0:
+  Se legacyProduction com valores > 0:
+    -> Card amarelo com totais legados + mensagem explicativa
+  Senao:
+    -> Mensagem atual "Nenhuma transacao registrada"
 ```
 
 ### Arquivos modificados
 
 | Arquivo | Acao |
 |---------|------|
-| Migracao SQL | Adicionar coluna `total_revenue` |
-| `src/components/dashboard/manager/SubscriptionEarningsForm.tsx` | Dois campos CurrencyInput + tabela com 2 colunas de valor |
-| `src/components/dashboard/manager/ShopEvolution.tsx` | Buscar e somar `total_revenue` ao faturamento |
+| `TransactionManagerModal.tsx` | Adicionar estado legacyProduction, busca em daily_productions, card informativo |
