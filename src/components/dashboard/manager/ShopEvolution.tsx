@@ -18,6 +18,7 @@ interface MonthlyShopData {
   receitaBasica: number;
   receitaExtra: number;
   receitaProdutos: number;
+  receitaAssinaturas: number;
   comissaoTotal: number;
   ticketMedio: number;
   clientes: number;
@@ -100,17 +101,33 @@ export default function ShopEvolution() {
       console.error("Erro ao buscar metas:", goalsError);
     }
 
+    // Buscar faturamento de assinaturas do ano
+    const { data: subscriptionEarnings, error: subError } = await supabase
+      .from("barber_subscription_earnings")
+      .select("month, total_revenue, barber_id, barbers!inner(unit_id)")
+      .eq("year", selectedYear);
+
+    if (subError) {
+      console.error("Erro ao buscar ganhos de assinatura:", subError);
+    }
+
+    // Filtrar assinaturas por unidade se selecionada
+    const filteredSubEarnings = selectedUnit === "all"
+      ? subscriptionEarnings
+      : subscriptionEarnings?.filter((s: any) => s.barbers?.unit_id === selectedUnit);
+
     // Filtrar metas por unidade se selecionada
     const filteredGoals = selectedUnit === "all"
       ? goals
       : goals?.filter((g: any) => g.barbers?.unit_id === selectedUnit);
 
     // Agrupar dados por mês
-    const monthlyAggregates = monthNames.map((_, index) => ({
+    const monthlyAggregates = monthNames.map(() => ({
       receita: 0,
       receitaBasica: 0,
       receitaExtra: 0,
       receitaProdutos: 0,
+      receitaAssinaturas: 0,
       comissaoTotal: 0,
       clientes: 0,
     }));
@@ -118,7 +135,6 @@ export default function ShopEvolution() {
     filteredProductions?.forEach((prod: any) => {
       const month = new Date(prod.date).getMonth();
       
-      // Lógica retrocompatível para serviços
       const servicesBasic = prod.services_basic_total ?? 0;
       const servicesExtra = prod.services_extra_total ?? 0;
       const servicesTotal = servicesBasic > 0 || servicesExtra > 0 
@@ -131,6 +147,16 @@ export default function ShopEvolution() {
       monthlyAggregates[month].receita += servicesTotal + (prod.products_total ?? 0);
       monthlyAggregates[month].comissaoTotal += prod.commission_earned ?? 0;
       monthlyAggregates[month].clientes += prod.clients_count ?? 0;
+    });
+
+    // Agregar faturamento de assinaturas por mês
+    filteredSubEarnings?.forEach((sub: any) => {
+      const monthIndex = sub.month - 1;
+      if (monthIndex >= 0 && monthIndex < 12) {
+        const revenue = Number(sub.total_revenue) || 0;
+        monthlyAggregates[monthIndex].receitaAssinaturas += revenue;
+        monthlyAggregates[monthIndex].receita += revenue;
+      }
     });
 
     // Agrupar metas por mês
@@ -153,6 +179,7 @@ export default function ShopEvolution() {
         receitaBasica: agg.receitaBasica,
         receitaExtra: agg.receitaExtra,
         receitaProdutos: agg.receitaProdutos,
+        receitaAssinaturas: agg.receitaAssinaturas,
         comissaoTotal: agg.comissaoTotal,
         ticketMedio,
         clientes: agg.clientes,
@@ -167,7 +194,7 @@ export default function ShopEvolution() {
 
   // Calcular totais e comparativos - usar data de Manaus
   const currentMonth = manausNow.getMonth();
-  const defaultMonthData = { receita: 0, ticketMedio: 0, performance: 0, clientes: 0, receitaBasica: 0, receitaExtra: 0, receitaProdutos: 0, comissaoTotal: 0, metaTotal: 0 };
+  const defaultMonthData = { receita: 0, ticketMedio: 0, performance: 0, clientes: 0, receitaBasica: 0, receitaExtra: 0, receitaProdutos: 0, receitaAssinaturas: 0, comissaoTotal: 0, metaTotal: 0 };
   const currentMonthData = chartData.length > 0 ? (chartData[currentMonth] || defaultMonthData) : defaultMonthData;
   const previousMonthData = chartData.length > 0 && currentMonth > 0 ? (chartData[currentMonth - 1] || defaultMonthData) : defaultMonthData;
 
@@ -193,6 +220,9 @@ export default function ShopEvolution() {
               <p className="text-sm text-muted-foreground">Serviços Básicos: <span className="text-foreground font-medium">R$ {data.receitaBasica.toFixed(2)}</span></p>
               <p className="text-sm text-muted-foreground">Serviços Extras: <span className="text-foreground font-medium">R$ {data.receitaExtra.toFixed(2)}</span></p>
               <p className="text-sm text-muted-foreground">Produtos: <span className="text-foreground font-medium">R$ {data.receitaProdutos.toFixed(2)}</span></p>
+              {data.receitaAssinaturas > 0 && (
+                <p className="text-sm text-muted-foreground">Assinaturas: <span className="text-foreground font-medium">R$ {data.receitaAssinaturas.toFixed(2)}</span></p>
+              )}
               <p className="text-sm text-muted-foreground border-t border-border mt-2 pt-2">Total: <span className="text-primary font-bold">R$ {data.receita.toFixed(2)}</span></p>
             </>
           )}
@@ -351,7 +381,8 @@ export default function ShopEvolution() {
                     <Legend />
                     <Bar dataKey="receitaBasica" name="Serviços Básicos" stackId="a" fill="hsl(var(--primary))" radius={[0, 0, 0, 0]} />
                     <Bar dataKey="receitaExtra" name="Serviços Extras" stackId="a" fill="hsl(var(--success))" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="receitaProdutos" name="Produtos" stackId="a" fill="hsl(217, 91%, 60%)" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="receitaProdutos" name="Produtos" stackId="a" fill="hsl(217, 91%, 60%)" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="receitaAssinaturas" name="Assinaturas" stackId="a" fill="hsl(280, 70%, 55%)" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 ) : viewMode === 'ticket' ? (
                   <LineChart data={chartData}>

@@ -64,6 +64,7 @@ export type Database = {
           id: string
           month: number
           organization_id: string
+          total_revenue: number
           updated_at: string
           year: number
         }
@@ -74,6 +75,7 @@ export type Database = {
           id?: string
           month: number
           organization_id: string
+          total_revenue?: number
           updated_at?: string
           year: number
         }
@@ -84,6 +86,7 @@ export type Database = {
           id?: string
           month?: number
           organization_id?: string
+          total_revenue?: number
           updated_at?: string
           year?: number
         }
