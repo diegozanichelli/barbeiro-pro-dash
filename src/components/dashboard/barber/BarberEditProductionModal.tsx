@@ -186,8 +186,8 @@ export default function BarberEditProductionModal({
       const { error: deleteError } = await supabase
         .from("sale_transactions")
         .delete()
+        .eq("daily_production_id", productionId)
         .eq("barber_id", barberId)
-        .eq("date", productionDate)
         .eq("source", "barber");
 
       if (deleteError) throw deleteError;
@@ -205,8 +205,8 @@ export default function BarberEditProductionModal({
           confirmed_presence: true,
           presence_type: selectedStatus,
         })
-        .eq("barber_id", barberId)
-        .eq("date", productionDate);
+        .eq("id", productionId)
+        .eq("barber_id", barberId);
 
       if (updateError) throw updateError;
 
