@@ -1,66 +1,86 @@
 
-# Exibir Dados Legados no Modal "Gerenciar Producao"
+# Ajuste da Logica de Producoes Pendentes + Confirmacao Retroativa no Historico
 
 ## Problema
 
-Barbeiros que lancaram producao pelo formulario manual antigo (campos de totais) gravaram dados apenas na tabela `daily_productions`, sem criar registros individuais em `sale_transactions`. Quando o gestor abre o modal "Auditar Producao" (TransactionManagerModal), ele busca somente em `sale_transactions` e encontra zero registros -- mostrando "Nenhuma transacao registrada", mesmo havendo faturamento e comissao na tabela de producoes.
+O alerta de "Producoes Pendentes" considera pendente qualquer dia sem registro em `daily_productions`. Porem, se o barbeiro trabalhou, nao vendeu nada e nao registrou presenca, o dia continua aparecendo como pendente indefinidamente, mesmo nao havendo producao a lancar.
 
-Isso afeta todas as barbearias cujos barbeiros usaram o formulario manual, nao apenas a Chezz.
+## Nova Regra de Pendencia
 
-## Solucao
+Um dia e pendente quando:
+- Nao existe registro em `daily_productions` para aquela data
+- **OU** existe registro mas `confirmed_presence = false`
 
-Quando o modal abrir em modo auditoria (`auditMode=true`), detectar se existem zero transacoes mas o `daily_productions` correspondente tem valores. Nesse caso, exibir um card informativo com os totais legados, orientando o gestor a adicionar itens retroativos se desejar corrigir.
+Um dia **NAO** e pendente quando `confirmed_presence = true` (independente do `presence_type` ou dos valores).
 
-## Alteracao
+## Alteracoes
 
-**Arquivo:** `src/components/dashboard/manager/TransactionManagerModal.tsx`
+### 1. Alerta no Dashboard do Barbeiro (`MissingProductionAlert.tsx`)
 
-### 1. Buscar dados legados do daily_productions
+**Antes:** Busca apenas `date` de `daily_productions` e considera pendente qualquer dia util sem registro.
 
-Apos o `fetchTransactions` retornar vazio em modo auditoria, buscar o registro de `daily_productions` correspondente (usando `barberId` e `date`) para verificar se ha valores de producao.
+**Depois:** Busca `date` e `confirmed_presence` de `daily_productions`. Um dia e pendente se:
+- Nao tem registro algum, OU
+- Tem registro com `confirmed_presence = false`
 
-### 2. Exibir card informativo quando houver dados legados
+A query passa a trazer `date, confirmed_presence` em vez de apenas `date`. A logica de filtragem muda para considerar como "presente" apenas datas com `confirmed_presence = true`.
 
-No bloco que hoje mostra "Nenhuma transacao registrada" (linhas 450-457), adicionar uma condicao: se existem dados legados (totais > 0), mostrar um card amarelo com:
+### 2. Alerta no Dashboard do Gestor (`MissingProductionsAlert.tsx` - manager)
 
-- Titulo: "Producao lancada pelo formulario manual"
-- Os totais existentes: Servicos Basicos, Servicos Extras, Produtos, Comissao
-- Mensagem: "Este lancamento foi feito pelo formulario antigo (valores totais). Para detalhar os itens, use o botao abaixo."
+Mesma logica: buscar `barber_id, date, confirmed_presence` e considerar pendente os dias sem registro OU com `confirmed_presence = false`.
 
-Se nao houver dados legados, manter a mensagem atual "Nenhuma transacao registrada".
+### 3. Confirmacao Retroativa no Historico (`BarberEditProductionModal.tsx`)
 
-### 3. Botao "Adicionar Item Retroativo" permanece disponivel
+Quando o barbeiro clica em "Editar" um dia no historico e nao ha transacoes (carrinho vazio), adicionar uma secao **"Confirmar Status do Dia"** com as 3 opcoes de presenca:
+- Trabalhei mas nao vendi (present)
+- Folga (day_off)
+- Falta / Atestado (absence)
 
-O gestor podera adicionar itens do catalogo normalmente. Ao salvar, o trigger existente recalcula o `daily_productions` automaticamente.
+Ao salvar com uma dessas opcoes (sem itens no carrinho):
+- Atualizar `daily_productions` com `confirmed_presence = true` e `presence_type` escolhido
+- Manter todos os valores monetarios zerados
+- O dia deixa de aparecer como pendente
+
+**Importante:** Se o barbeiro adicionar itens ao carrinho, o fluxo atual de salvar transacoes continua funcionando normalmente. A secao de presenca so aparece como alternativa quando o carrinho esta vazio.
+
+### 4. Historico (`ProductionHistory.tsx`)
+
+Os dias com `confirmed_presence = true` e valores zerados ja exibem badges (Presente/Folga/Falta) -- isso nao muda. A unica melhoria e que agora o barbeiro podera definir esses status retroativamente pelo modal de edicao.
 
 ## Secao Tecnica
 
-### Novo estado
-
-```text
-legacyProduction: { servicesBasic: number, servicesExtra: number, products: number, commission: number } | null
-```
-
-### Busca condicional
-
-Disparada quando `transactions.length === 0 && auditMode && date && barberId`, consultando:
-
-```text
-daily_productions WHERE barber_id = X AND date = Y
-```
-
-### Renderizacao condicional (bloco vazio, linhas 450-457)
-
-```text
-Se transactions.length === 0:
-  Se legacyProduction com valores > 0:
-    -> Card amarelo com totais legados + mensagem explicativa
-  Senao:
-    -> Mensagem atual "Nenhuma transacao registrada"
-```
-
 ### Arquivos modificados
 
-| Arquivo | Acao |
-|---------|------|
-| `TransactionManagerModal.tsx` | Adicionar estado legacyProduction, busca em daily_productions, card informativo |
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/components/dashboard/barber/MissingProductionAlert.tsx` | Buscar `date, confirmed_presence`; filtrar pendentes = sem registro OU `confirmed_presence = false` |
+| `src/components/dashboard/manager/MissingProductionsAlert.tsx` | Mesma logica: buscar `confirmed_presence` e filtrar corretamente |
+| `src/components/dashboard/barber/BarberEditProductionModal.tsx` | Adicionar secao de confirmacao de presenca quando carrinho vazio; salvar `confirmed_presence + presence_type` |
+
+### Logica de filtragem (pseudo-codigo)
+
+```text
+dias_uteis = gerar dias uteis ate ontem (excluindo domingos)
+producoes = SELECT date, confirmed_presence FROM daily_productions WHERE barber_id = X AND date BETWEEN ...
+
+dias_confirmados = producoes.filter(p => p.confirmed_presence === true).map(p => p.date)
+dias_pendentes = dias_uteis.filter(dia => !dias_confirmados.includes(dia))
+```
+
+### Fluxo do modal de edicao (carrinho vazio)
+
+```text
+Barbeiro abre "Editar" no historico
+  -> Modal carrega catalogo + producao existente
+  -> Se carrinho vazio, exibe secao "Confirmar Status do Dia"
+     -> 3 opcoes: present / day_off / absence
+     -> Botao "Confirmar" salva:
+        UPDATE daily_productions SET confirmed_presence = true, presence_type = X WHERE id = Y
+  -> Se carrinho tem itens, fluxo normal de salvar transacoes
+```
+
+### Sem impacto em:
+- Triggers de comissao (`calculate_commission`, `recalculate_daily_production_from_transactions`)
+- Campos `tx_*` (auditoria do gestor)
+- Logica de divergencia
+- Calculo de meta diaria (ja usa `confirmed_presence` corretamente)
