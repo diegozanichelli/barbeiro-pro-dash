@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info, ChevronDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -30,7 +30,12 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
-import StatusDoDiaDialog, { PresenceType } from "./StatusDoDiaDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BarberEditProductionModalProps {
   open: boolean;
@@ -70,6 +75,7 @@ interface ExistingProduction {
 }
 
 type CategoryTab = "services" | "products";
+type PresenceType = "present" | "day_off" | "absence";
 
 let tempIdCounter = 0;
 function generateTempId() {
@@ -94,7 +100,6 @@ export default function BarberEditProductionModal({
   const [existingData, setExistingData] = useState<ExistingProduction | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [statusWarningOpen, setStatusWarningOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<PresenceType | null>(null);
   const [isSavingPresence, setIsSavingPresence] = useState(false);
@@ -175,7 +180,6 @@ export default function BarberEditProductionModal({
     setSearchQuery("");
     setActiveTab("services");
     setExistingData(null);
-    setStatusDialogOpen(false);
     setStatusWarningOpen(false);
     setPendingStatus(null);
   };
@@ -211,7 +215,6 @@ export default function BarberEditProductionModal({
       if (updateError) throw updateError;
 
       toast.success("Status do dia registrado com sucesso!");
-      setStatusDialogOpen(false);
       resetForm();
       onOpenChange(false);
       onSuccess();
@@ -708,15 +711,30 @@ export default function BarberEditProductionModal({
                       Cancelar
                     </Button>
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setStatusDialogOpen(true)}
-                      disabled={isLoading || isSavingPresence}
-                      className="h-10"
-                    >
-                      Registrar Presença
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={isLoading || isSavingPresence}
+                          className="h-10"
+                        >
+                          Registrar Presença
+                          <ChevronDown className="h-4 w-4 ml-1.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem onClick={() => handleRequestStatusConfirm("present")}>
+                          Trabalhei mas não vendi
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRequestStatusConfirm("day_off")}>
+                          Folga
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRequestStatusConfirm("absence")}>
+                          Falta / Atestado
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                     <Button
                       type="submit"
@@ -739,15 +757,6 @@ export default function BarberEditProductionModal({
           </Tabs>
         </DialogContent>
       </Dialog>
-
-      <StatusDoDiaDialog
-        open={statusDialogOpen}
-        onOpenChange={setStatusDialogOpen}
-        barberId={barberId}
-        date={productionDate}
-        isLoading={isSavingPresence}
-        onConfirm={handleRequestStatusConfirm}
-      />
 
       <AlertDialog open={statusWarningOpen} onOpenChange={setStatusWarningOpen}>
         <AlertDialogContent>
