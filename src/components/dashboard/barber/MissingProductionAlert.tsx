@@ -44,7 +44,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
 
       const { data: productions, error } = await supabase
         .from("daily_productions")
-        .select("date")
+        .select("date, confirmed_presence")
         .eq("barber_id", barberId)
         .gte("date", startOfMonth)
         .lte("date", yesterdayStr);
@@ -52,8 +52,10 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
       if (error) throw error;
 
       const workingDays = getWorkingDaysUntilToday();
-      const productionDates = (productions || []).map(p => p.date);
-      const missing = workingDays.filter(day => !productionDates.includes(day));
+      const confirmedDates = (productions || [])
+        .filter(p => p.confirmed_presence === true)
+        .map(p => p.date);
+      const missing = workingDays.filter(day => !confirmedDates.includes(day));
 
       setMissingDays(missing);
     } catch (error) {
