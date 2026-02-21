@@ -11,12 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info, UserCheck, CalendarOff, AlertCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
@@ -83,6 +84,8 @@ export default function BarberEditProductionModal({
   const [existingData, setExistingData] = useState<ExistingProduction | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
+  const [presenceType, setPresenceType] = useState<string | null>(null);
+  const [isSavingPresence, setIsSavingPresence] = useState(false);
 
   const [divergenceModal, setDivergenceModal] = useState<{
     open: boolean;
@@ -160,6 +163,36 @@ export default function BarberEditProductionModal({
     setSearchQuery("");
     setActiveTab("services");
     setExistingData(null);
+    setPresenceType(null);
+  };
+
+  const handleSavePresence = async () => {
+    if (!presenceType) {
+      toast.error("Selecione o status do dia");
+      return;
+    }
+    setIsSavingPresence(true);
+    try {
+      const { error } = await supabase
+        .from("daily_productions")
+        .update({
+          confirmed_presence: true,
+          presence_type: presenceType,
+        })
+        .eq("id", productionId);
+
+      if (error) throw error;
+
+      toast.success("Status do dia confirmado!");
+      resetForm();
+      onOpenChange(false);
+      onSuccess();
+    } catch (error: any) {
+      console.error("Erro ao confirmar presença:", error);
+      toast.error(error.message || "Erro ao confirmar presença");
+    } finally {
+      setIsSavingPresence(false);
+    }
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -610,9 +643,58 @@ export default function BarberEditProductionModal({
 
                 {/* Empty state */}
                 {cart.length === 0 && (
-                  <div className="text-center py-3 md:py-4 text-muted-foreground text-sm">
-                    <ShoppingCart className="h-6 w-6 md:h-8 md:w-8 mx-auto mb-1.5 opacity-50" />
-                    <p className="text-xs md:text-sm">Selecione os serviços e produtos realizados</p>
+                  <div className="space-y-3">
+                    <div className="text-center py-2 text-muted-foreground text-sm">
+                      <ShoppingCart className="h-6 w-6 md:h-8 md:w-8 mx-auto mb-1.5 opacity-50" />
+                      <p className="text-xs md:text-sm">Selecione os serviços e produtos realizados</p>
+                    </div>
+
+                    {/* Retroactive presence confirmation */}
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+                      <p className="text-sm font-semibold flex items-center gap-2">
+                        <UserCheck className="h-4 w-4 text-primary" />
+                        Confirmar Status do Dia
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Se não houve vendas, confirme o que aconteceu neste dia:
+                      </p>
+                      <RadioGroup value={presenceType || ""} onValueChange={setPresenceType} className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="present" id="edit-present" />
+                          <Label htmlFor="edit-present" className="text-xs md:text-sm cursor-pointer">
+                            Trabalhei mas não vendi
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="day_off" id="edit-day_off" />
+                          <Label htmlFor="edit-day_off" className="text-xs md:text-sm cursor-pointer flex items-center gap-1.5">
+                            <CalendarOff className="h-3.5 w-3.5" /> Folga
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="absence" id="edit-absence" />
+                          <Label htmlFor="edit-absence" className="text-xs md:text-sm cursor-pointer flex items-center gap-1.5">
+                            <AlertCircle className="h-3.5 w-3.5" /> Falta / Atestado
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                      <Button
+                        type="button"
+                        onClick={handleSavePresence}
+                        disabled={!presenceType || isSavingPresence}
+                        className="w-full h-10"
+                        variant="default"
+                      >
+                        {isSavingPresence ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                            Confirmando...
+                          </>
+                        ) : (
+                          "Confirmar Status"
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )}
 
