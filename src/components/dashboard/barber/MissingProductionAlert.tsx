@@ -4,29 +4,34 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
+import { getManausDate, getCurrentMonthYear } from "@/lib/dateUtils";
+import { useOrganization } from "@/hooks/useOrganization";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface MissingProductionAlertProps {
   barberId: string;
 }
 
 export default function MissingProductionAlert({ barberId }: MissingProductionAlertProps) {
+  const { organizationId } = useOrganization();
   const [missingDays, setMissingDays] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const today = getManausDate();
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
+  const { holidayDates } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
 
   useEffect(() => {
     fetchMissingDays();
-  }, [barberId]);
+  }, [barberId, holidayDates]);
 
   const getWorkingDaysUntilToday = (): string[] => {
     const days: string[] = [];
     for (let d = 1; d < today.getDate(); d++) {
       const date = new Date(currentYear, currentMonth - 1, d);
-      if (date.getDay() !== 0) { // Excluir domingos
-        days.push(format(date, "yyyy-MM-dd"));
+      const dateKey = format(date, "yyyy-MM-dd");
+      if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) { // Excluir domingos e feriados
+        days.push(dateKey);
       }
     }
     return days;

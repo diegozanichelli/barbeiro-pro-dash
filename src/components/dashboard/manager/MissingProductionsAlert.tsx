@@ -9,6 +9,7 @@ import { format, getDaysInMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { getManausDate, getCurrentMonthYear } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface BarberMissingDays {
   barberId: string;
@@ -29,10 +30,11 @@ export default function MissingProductionsAlert() {
   const [selectedYear, setSelectedYear] = useState(todayYear);
 
   const isCurrentMonth = selectedMonth === todayMonth && selectedYear === todayYear;
+  const { holidayDates } = useOrganizationHolidays({ organizationId, month: selectedMonth, year: selectedYear });
 
   useEffect(() => {
     fetchMissingProductions();
-  }, [organizationId, selectedMonth, selectedYear]);
+  }, [organizationId, selectedMonth, selectedYear, holidayDates]);
 
   const getWorkingDaysForMonth = (): string[] => {
     const days: string[] = [];
@@ -44,8 +46,9 @@ export default function MissingProductionsAlert() {
     
     for (let d = 1; d <= lastDay; d++) {
       const date = new Date(selectedYear, selectedMonth - 1, d);
-      if (date.getDay() !== 0) { // Excluir domingos
-        days.push(format(date, "yyyy-MM-dd"));
+      const dateKey = format(date, "yyyy-MM-dd");
+      if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) { // Excluir domingos e feriados
+        days.push(dateKey);
       }
     }
     return days;

@@ -9,6 +9,7 @@ import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTrian
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 interface BarberDailyGoal {
   barberId: string;
   barberName: string;
@@ -38,13 +39,15 @@ export default function DailyGoalsTracking() {
   const today = getManausDate();
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
   const todayStr = getTodayString();
+  const { holidayDates } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
 
   // Calculate working days passed in the month (excluding Sundays)
   const getWorkingDaysPassed = () => {
     let count = 0;
     for (let d = 1; d <= today.getDate(); d++) {
       const date = new Date(currentYear, currentMonth - 1, d);
-      if (date.getDay() !== 0) { // 0 = Sunday
+      const dateKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) { // 0 = Sunday
         count++;
       }
     }
@@ -133,7 +136,8 @@ export default function DailyGoalsTracking() {
         // Excluir domingos da contagem (domingo = bônus, não consome dia útil)
         const daysWorked = barberProductions.filter(p => {
           const dateObj = new Date(p.date + "T12:00:00");
-          if (dateObj.getDay() === 0) return false;
+          const dateKey = p.date;
+          if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
           return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
         }).length;
         
@@ -142,7 +146,7 @@ export default function DailyGoalsTracking() {
         
         // Calculate remaining work days (same logic as BarberDashboard)
         const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
-        const remainingCalendarDays = calculateRemainingWorkDays();
+        const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
         const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
         
         // Daily commission target based on remaining amount / remaining days

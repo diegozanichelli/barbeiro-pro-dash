@@ -29,6 +29,7 @@ import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import SubscriptionAuditModal from "./SubscriptionAuditModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface Barber {
   id: string;
@@ -73,6 +74,12 @@ interface Unit {
 
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
+  const todayManausDate = getManausDate();
+  const { holidayDates } = useOrganizationHolidays({
+    organizationId,
+    month: todayManausDate.getMonth() + 1,
+    year: todayManausDate.getFullYear(),
+  });
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [productions, setProductions] = useState<DailyProduction[]>([]);
   const [monthProductions, setMonthProductions] = useState<MonthProduction[]>([]);
@@ -353,16 +360,20 @@ export default function LiveDashboard() {
     );
 
     // Count days worked: production > 0 OR confirmed_presence with present/null type
-    const daysWorked = barberMonthProductions.filter(
-      (p) => Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null))
-    ).length;
+    const daysWorked = barberMonthProductions.filter((p) => {
+      const dateObj = new Date(p.date + "T12:00:00");
+      const dateKey = p.date;
+      if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
+
+      return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
+    }).length;
 
     // Calculate remaining commission to achieve
     const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
 
     // Calculate remaining work days (same logic as BarberDashboard)
     const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
-    const remainingCalendarDays = calculateRemainingWorkDays();
+    const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
     const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
 
     // Daily commission target based on remaining amount / remaining days

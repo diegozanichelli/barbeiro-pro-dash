@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { getManausDate } from "@/lib/dateUtils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,8 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Calendar as DateCalendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Target, Calendar, Plus, Pencil, Trash2 } from "lucide-react";
+import { Target, Calendar, Plus, Pencil, Trash2, Landmark } from "lucide-react";
+import { format } from "date-fns";
 
 interface MonthlyGoal {
   id: string;
@@ -38,6 +41,7 @@ export default function GoalsManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isHolidayDialogOpen, setIsHolidayDialogOpen] = useState(false);
   
   // Form states
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
@@ -45,6 +49,9 @@ export default function GoalsManagement() {
   const [workDays, setWorkDays] = useState("");
   const [editingGoal, setEditingGoal] = useState<MonthlyGoal | null>(null);
   const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null);
+  const [holidayDates, setHolidayDates] = useState<Date[]>([]);
+  const [savingHolidays, setSavingHolidays] = useState(false);
+  const [holidayTableUnavailable, setHolidayTableUnavailable] = useState(false);
 
   useEffect(() => {
     fetchBarbers();
@@ -52,7 +59,15 @@ export default function GoalsManagement() {
 
   useEffect(() => {
     fetchGoals();
+    fetchHolidays();
   }, [filterMonth, filterYear]);
+
+  const isHolidayTableMissingError = (error: unknown): boolean => {
+    if (!error || typeof error !== "object") return false;
+
+    const maybe = error as { message?: string };
+    return (maybe.message || "").includes("Could not find the table 'public.organization_holidays' in the schema cache");
+  };
 
   const fetchBarbers = async () => {
     const { data, error } = await supabase
@@ -92,6 +107,86 @@ export default function GoalsManagement() {
 
     if (data) {
       setGoals(data as MonthlyGoal[]);
+    }
+  };
+
+  const fetchHolidays = async () => {
+    if (!organizationId) return;
+
+    const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+    const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+    const { data, error } = await supabase
+      .from("organization_holidays")
+      .select("date")
+      .eq("organization_id", organizationId)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar feriados:", error);
+
+      if (isHolidayTableMissingError(error)) {
+        setHolidayTableUnavailable(true);
+        return;
+      }
+
+      toast.error("Erro ao carregar feriados");
+      return;
+    }
+
+    setHolidayTableUnavailable(false);
+
+    const loadedDates = (data || []).map((item) => new Date(`${item.date}T12:00:00`));
+    setHolidayDates(loadedDates);
+  };
+
+  const handleSaveHolidays = async () => {
+    if (!organizationId) {
+      toast.error("Organização não encontrada");
+      return;
+    }
+
+    setSavingHolidays(true);
+
+    try {
+      const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+      const { error: deleteError } = await supabase
+        .from("organization_holidays")
+        .delete()
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (deleteError) throw deleteError;
+
+      if (holidayDates.length > 0) {
+        const payload = holidayDates.map((date) => ({
+          organization_id: organizationId,
+          date: format(date, "yyyy-MM-dd"),
+        }));
+
+        const { error: insertError } = await supabase
+          .from("organization_holidays")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+
+      toast.success("Feriados salvos com sucesso!");
+      fetchHolidays();
+    } catch (error: any) {
+      if (isHolidayTableMissingError(error)) {
+        setHolidayTableUnavailable(true);
+        toast.error("Tabela de feriados ainda não existe no banco. Rode as migrações (supabase db push) e tente novamente.");
+      } else {
+        toast.error(error?.message || "Erro ao salvar feriados");
+      }
+    } finally {
+      setSavingHolidays(false);
     }
   };
 
@@ -236,13 +331,23 @@ export default function GoalsManagement() {
               </CardTitle>
               <CardDescription>Visualize, edite e exclua as metas cadastradas</CardDescription>
             </div>
-            <Button 
-              onClick={() => setIsCreateDialogOpen(true)}
-              disabled={availableBarbers.length === 0}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Adicionar Nova Meta
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsHolidayDialogOpen(true)}
+              >
+                <Landmark className="w-4 h-4 mr-2" />
+                Configurar Feriados
+              </Button>
+
+              <Button 
+                onClick={() => setIsCreateDialogOpen(true)}
+                disabled={availableBarbers.length === 0}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Adicionar Nova Meta
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -343,6 +448,54 @@ export default function GoalsManagement() {
           </div>
         </CardContent>
       </Card>
+
+
+      <Dialog open={isHolidayDialogOpen} onOpenChange={setIsHolidayDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Landmark className="w-4 h-4" />
+              Feriados da Empresa ({months[filterMonth - 1]}/{filterYear})
+            </DialogTitle>
+            <DialogDescription>
+              Selecione os dias de feriado em que a empresa não vai funcionar. Esses dias serão desconsiderados nos cálculos de dias restantes.
+            </DialogDescription>
+          </DialogHeader>
+
+          {holidayTableUnavailable && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                A tabela de feriados ainda não está disponível no banco deste ambiente.
+                Execute as migrações (ex.: <strong>supabase db push</strong>) e tente novamente.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-4 py-2">
+            <DateCalendar
+              mode="multiple"
+              selected={holidayDates}
+              onSelect={(dates) => setHolidayDates(dates || [])}
+              month={new Date(filterYear, filterMonth - 1, 1)}
+              onMonthChange={() => undefined}
+              className="rounded-md border"
+            />
+
+            <p className="text-sm text-muted-foreground">
+              {holidayDates.length} {holidayDates.length === 1 ? "feriado selecionado" : "feriados selecionados"}
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsHolidayDialogOpen(false)}>
+              Fechar
+            </Button>
+            <Button onClick={handleSaveHolidays} disabled={savingHolidays || holidayTableUnavailable}>
+              {savingHolidays ? "Salvando..." : "Salvar Feriados"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog para Criar Meta */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
