@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -115,9 +115,9 @@ export default function BarberEditProductionModal({
     if (open && organizationId && productionId) {
       fetchData();
     }
-  }, [open, organizationId, productionId]);
+  }, [open, organizationId, productionId, fetchData]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoadingCatalog(true);
     
     try {
@@ -172,7 +172,7 @@ export default function BarberEditProductionModal({
     } finally {
       setLoadingCatalog(false);
     }
-  };
+  }, [organizationId, productionId]);
 
   const resetForm = () => {
     setCart([]);
