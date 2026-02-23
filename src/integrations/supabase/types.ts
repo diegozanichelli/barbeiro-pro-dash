@@ -849,6 +849,20 @@ export type Database = {
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
       cleanup_old_client_names: { Args: never; Returns: undefined }
+      get_manager_report_stats: {
+        Args: {
+          p_barber_id?: string
+          p_date_from: string
+          p_date_to: string
+          p_unit_id?: string
+        }
+        Returns: {
+          average_ticket: number
+          total_clients: number
+          total_commission: number
+          total_revenue: number
+        }[]
+      }
       get_organization_rankings: {
         Args: { p_end_date: string; p_start_date: string; p_unit_id?: string }
         Returns: {
