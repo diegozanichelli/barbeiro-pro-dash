@@ -9,6 +9,7 @@ import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTrian
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 interface BarberDailyGoal {
   barberId: string;
   barberName: string;
@@ -38,6 +39,7 @@ export default function DailyGoalsTracking() {
   const today = getManausDate();
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
   const todayStr = getTodayString();
+  const { holidayDates } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
 
   // Calculate working days passed in the month (excluding Sundays)
   const getWorkingDaysPassed = () => {
@@ -142,7 +144,7 @@ export default function DailyGoalsTracking() {
         
         // Calculate remaining work days (same logic as BarberDashboard)
         const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
-        const remainingCalendarDays = calculateRemainingWorkDays();
+        const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
         const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
         
         // Daily commission target based on remaining amount / remaining days

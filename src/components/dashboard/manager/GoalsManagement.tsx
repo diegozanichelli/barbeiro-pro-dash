@@ -10,8 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Calendar as DateCalendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Target, Calendar, Plus, Pencil, Trash2 } from "lucide-react";
+import { Target, Calendar, Plus, Pencil, Trash2, Landmark } from "lucide-react";
+import { format } from "date-fns";
 
 interface MonthlyGoal {
   id: string;
@@ -45,6 +47,8 @@ export default function GoalsManagement() {
   const [workDays, setWorkDays] = useState("");
   const [editingGoal, setEditingGoal] = useState<MonthlyGoal | null>(null);
   const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null);
+  const [holidayDates, setHolidayDates] = useState<Date[]>([]);
+  const [savingHolidays, setSavingHolidays] = useState(false);
 
   useEffect(() => {
     fetchBarbers();
@@ -52,6 +56,7 @@ export default function GoalsManagement() {
 
   useEffect(() => {
     fetchGoals();
+    fetchHolidays();
   }, [filterMonth, filterYear]);
 
   const fetchBarbers = async () => {
@@ -92,6 +97,73 @@ export default function GoalsManagement() {
 
     if (data) {
       setGoals(data as MonthlyGoal[]);
+    }
+  };
+
+  const fetchHolidays = async () => {
+    if (!organizationId) return;
+
+    const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+    const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+    const { data, error } = await supabase
+      .from("organization_holidays")
+      .select("date")
+      .eq("organization_id", organizationId)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar feriados:", error);
+      toast.error("Erro ao carregar feriados");
+      return;
+    }
+
+    const loadedDates = (data || []).map((item) => new Date(`${item.date}T12:00:00`));
+    setHolidayDates(loadedDates);
+  };
+
+  const handleSaveHolidays = async () => {
+    if (!organizationId) {
+      toast.error("Organização não encontrada");
+      return;
+    }
+
+    setSavingHolidays(true);
+
+    try {
+      const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+      const { error: deleteError } = await supabase
+        .from("organization_holidays")
+        .delete()
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (deleteError) throw deleteError;
+
+      if (holidayDates.length > 0) {
+        const payload = holidayDates.map((date) => ({
+          organization_id: organizationId,
+          date: format(date, "yyyy-MM-dd"),
+        }));
+
+        const { error: insertError } = await supabase
+          .from("organization_holidays")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+
+      toast.success("Feriados salvos com sucesso!");
+      fetchHolidays();
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao salvar feriados");
+    } finally {
+      setSavingHolidays(false);
     }
   };
 
@@ -288,6 +360,37 @@ export default function GoalsManagement() {
               </div>
             </div>
           </div>
+
+          <Card className="border-dashed">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Landmark className="w-4 h-4" />
+                Feriados da Empresa ({months[filterMonth - 1]}/{filterYear})
+              </CardTitle>
+              <CardDescription>
+                Selecione os dias de feriado em que a empresa não vai funcionar. Esses dias serão desconsiderados nos cálculos de dias restantes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <DateCalendar
+                mode="multiple"
+                selected={holidayDates}
+                onSelect={(dates) => setHolidayDates(dates || [])}
+                month={new Date(filterYear, filterMonth - 1, 1)}
+                onMonthChange={() => undefined}
+                className="rounded-md border"
+              />
+
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm text-muted-foreground">
+                  {holidayDates.length} {holidayDates.length === 1 ? "feriado selecionado" : "feriados selecionados"}
+                </p>
+                <Button onClick={handleSaveHolidays} disabled={savingHolidays}>
+                  {savingHolidays ? "Salvando..." : "Salvar Feriados"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Tabela de Metas */}
           <div className="border rounded-lg">
