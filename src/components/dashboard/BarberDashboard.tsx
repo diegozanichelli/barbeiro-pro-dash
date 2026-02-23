@@ -23,6 +23,7 @@ import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface BarberDashboardProps {
   user: User;
@@ -78,6 +79,11 @@ const [todayProduction, setTodayProduction] = useState<{
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   
   // Estado para notificação de alteração de comissão
+  const { holidayDates } = useOrganizationHolidays({
+    organizationId: barber?.organization_id,
+    month: selectedMonth,
+    year: selectedYear,
+  });
   const [commissionChange, setCommissionChange] = useState<{
     oldServices: number;
     newServices: number;
@@ -350,7 +356,7 @@ const [todayProduction, setTodayProduction] = useState<{
       // Dias restantes no calendário (para urgência)
       const manausDate = getManausDate();
       const selectedDate = new Date(selectedYear, selectedMonth - 1, manausDate.getDate());
-      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate);
+      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate, holidayDates);
       
       // Usar o MENOR entre dias configurados restantes e dias no calendário
       // Isso cria urgência quando o tempo está acabando
@@ -586,7 +592,7 @@ const [todayProduction, setTodayProduction] = useState<{
   // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
   const today = new Date();
   const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
-  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays() : 0;
+  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays(getManausDate(), holidayDates) : 0;
   
   // Calcular "Falta Ganhar" com proteção contra NaN
   const remaining = monthlyGoal 
