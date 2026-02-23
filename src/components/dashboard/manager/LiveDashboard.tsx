@@ -29,6 +29,7 @@ import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import SubscriptionAuditModal from "./SubscriptionAuditModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface Barber {
   id: string;
@@ -73,6 +74,12 @@ interface Unit {
 
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
+  const todayManausDate = getManausDate();
+  const { holidayDates } = useOrganizationHolidays({
+    organizationId,
+    month: todayManausDate.getMonth() + 1,
+    year: todayManausDate.getFullYear(),
+  });
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [productions, setProductions] = useState<DailyProduction[]>([]);
   const [monthProductions, setMonthProductions] = useState<MonthProduction[]>([]);
@@ -362,7 +369,7 @@ export default function LiveDashboard() {
 
     // Calculate remaining work days (same logic as BarberDashboard)
     const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
-    const remainingCalendarDays = calculateRemainingWorkDays();
+    const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
     const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
 
     // Daily commission target based on remaining amount / remaining days

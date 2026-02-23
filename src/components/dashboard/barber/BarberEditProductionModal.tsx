@@ -11,16 +11,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info, UserCheck, CalendarOff, AlertCircle } from "lucide-react";
+import { Loader2, Search, Scissors, Package, Zap, Minus, Plus, ShoppingCart, X, Info, ChevronDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BarberEditProductionModalProps {
   open: boolean;
@@ -60,6 +75,7 @@ interface ExistingProduction {
 }
 
 type CategoryTab = "services" | "products";
+type PresenceType = "present" | "day_off" | "absence";
 
 let tempIdCounter = 0;
 function generateTempId() {
@@ -84,7 +100,8 @@ export default function BarberEditProductionModal({
   const [existingData, setExistingData] = useState<ExistingProduction | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
-  const [presenceType, setPresenceType] = useState<string | null>(null);
+  const [statusWarningOpen, setStatusWarningOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<PresenceType | null>(null);
   const [isSavingPresence, setIsSavingPresence] = useState(false);
 
   const [divergenceModal, setDivergenceModal] = useState<{
@@ -163,36 +180,60 @@ export default function BarberEditProductionModal({
     setSearchQuery("");
     setActiveTab("services");
     setExistingData(null);
-    setPresenceType(null);
+    setStatusWarningOpen(false);
+    setPendingStatus(null);
   };
 
-  const handleSavePresence = async () => {
-    if (!presenceType) {
-      toast.error("Selecione o status do dia");
-      return;
-    }
+  const handleConfirmStatus = async (selectedStatus: PresenceType) => {
     setIsSavingPresence(true);
     try {
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
+        .from("sale_transactions")
+        .delete()
+        .eq("daily_production_id", productionId)
+        .eq("barber_id", barberId)
+        .eq("source", "barber");
+
+      if (deleteError) throw deleteError;
+
+      const { error: updateError } = await supabase
         .from("daily_productions")
         .update({
+          services_basic_total: 0,
+          services_extra_total: 0,
+          products_total: 0,
+          manual_basic_total: 0,
+          manual_extra_total: 0,
+          manual_products_total: 0,
+          commission_earned: 0,
           confirmed_presence: true,
-          presence_type: presenceType,
+          presence_type: selectedStatus,
         })
-        .eq("id", productionId);
+        .eq("id", productionId)
+        .eq("barber_id", barberId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      toast.success("Status do dia confirmado!");
+      toast.success("Status do dia registrado com sucesso!");
       resetForm();
       onOpenChange(false);
       onSuccess();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Erro ao confirmar presença:", error);
-      toast.error(error.message || "Erro ao confirmar presença");
+      toast.error(error instanceof Error ? error.message : "Erro ao confirmar presença");
     } finally {
       setIsSavingPresence(false);
     }
+  };
+
+  const handleRequestStatusConfirm = async (selectedStatus: PresenceType) => {
+    if (cart.length > 0) {
+      setPendingStatus(selectedStatus);
+      setStatusWarningOpen(true);
+      return;
+    }
+
+    await handleConfirmStatus(selectedStatus);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -229,7 +270,7 @@ export default function BarberEditProductionModal({
         return { ...item, customPriceInput: "", customPrice: 0 };
       }
 
-      const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+      const cleaned = newValue.replace(/[^\d,.-]/g, "");
       const parsed = parseFloat(cleaned.replace(",", ".")) || 0;
       
       return { 
@@ -388,9 +429,9 @@ export default function BarberEditProductionModal({
       resetForm();
       onOpenChange(false);
       onSuccess();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error updating production:", error);
-      toast.error(error.message || "Erro ao atualizar produção");
+      toast.error(error instanceof Error ? error.message : "Erro ao atualizar produção");
     } finally {
       setIsLoading(false);
     }
@@ -643,63 +684,14 @@ export default function BarberEditProductionModal({
 
                 {/* Empty state */}
                 {cart.length === 0 && (
-                  <div className="space-y-3">
-                    <div className="text-center py-2 text-muted-foreground text-sm">
-                      <ShoppingCart className="h-6 w-6 md:h-8 md:w-8 mx-auto mb-1.5 opacity-50" />
-                      <p className="text-xs md:text-sm">Selecione os serviços e produtos realizados</p>
-                    </div>
-
-                    {/* Retroactive presence confirmation */}
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
-                      <p className="text-sm font-semibold flex items-center gap-2">
-                        <UserCheck className="h-4 w-4 text-primary" />
-                        Confirmar Status do Dia
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Se não houve vendas, confirme o que aconteceu neste dia:
-                      </p>
-                      <RadioGroup value={presenceType || ""} onValueChange={setPresenceType} className="space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="present" id="edit-present" />
-                          <Label htmlFor="edit-present" className="text-xs md:text-sm cursor-pointer">
-                            Trabalhei mas não vendi
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="day_off" id="edit-day_off" />
-                          <Label htmlFor="edit-day_off" className="text-xs md:text-sm cursor-pointer flex items-center gap-1.5">
-                            <CalendarOff className="h-3.5 w-3.5" /> Folga
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="absence" id="edit-absence" />
-                          <Label htmlFor="edit-absence" className="text-xs md:text-sm cursor-pointer flex items-center gap-1.5">
-                            <AlertCircle className="h-3.5 w-3.5" /> Falta / Atestado
-                          </Label>
-                        </div>
-                      </RadioGroup>
-                      <Button
-                        type="button"
-                        onClick={handleSavePresence}
-                        disabled={!presenceType || isSavingPresence}
-                        className="w-full h-10"
-                        variant="default"
-                      >
-                        {isSavingPresence ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                            Confirmando...
-                          </>
-                        ) : (
-                          "Confirmar Status"
-                        )}
-                      </Button>
-                    </div>
+                  <div className="text-center py-2 text-muted-foreground text-sm">
+                    <ShoppingCart className="h-6 w-6 md:h-8 md:w-8 mx-auto mb-1.5 opacity-50" />
+                    <p className="text-xs md:text-sm">Selecione os serviços e produtos realizados</p>
                   </div>
                 )}
 
                 {/* Submit */}
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   {cart.length > 0 && (
                     <div className="flex items-center gap-1.5 text-xs md:text-sm text-muted-foreground">
                       <ShoppingCart className="h-3.5 w-3.5" />
@@ -707,26 +699,89 @@ export default function BarberEditProductionModal({
                       <span className="font-bold text-foreground">{formatCurrency(cartTotal)}</span>
                     </div>
                   )}
-                  <Button
-                    type="submit"
-                    disabled={isLoading || cart.length === 0}
-                    className="ml-auto h-10"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                        Salvando...
-                      </>
-                    ) : (
-                      "Salvar Alterações"
-                    )}
-                  </Button>
+
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleClose(false)}
+                      disabled={isLoading || isSavingPresence}
+                      className="h-10"
+                    >
+                      Cancelar
+                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={isLoading || isSavingPresence}
+                          className="h-10"
+                        >
+                          Registrar Presença
+                          <ChevronDown className="h-4 w-4 ml-1.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem onClick={() => handleRequestStatusConfirm("present")}>
+                          Trabalhei mas não vendi
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRequestStatusConfirm("day_off")}>
+                          Folga
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRequestStatusConfirm("absence")}>
+                          Falta / Atestado
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <Button
+                      type="submit"
+                      disabled={isLoading || cart.length === 0 || isSavingPresence}
+                      className="h-10"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        "Salvar Alterações"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </form>
           </Tabs>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={statusWarningOpen} onOpenChange={setStatusWarningOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Existem serviços lançados</AlertDialogTitle>
+            <AlertDialogDescription>
+              Registrar status do dia removerá os lançamentos. Deseja continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSavingPresence}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSavingPresence || !pendingStatus}
+              onClick={async (event) => {
+                event.preventDefault();
+                if (!pendingStatus) return;
+                setStatusWarningOpen(false);
+                await handleConfirmStatus(pendingStatus);
+              }}
+            >
+              {isSavingPresence ? "Confirmando..." : "Continuar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <DivergenceModal
         open={divergenceModal.open}
