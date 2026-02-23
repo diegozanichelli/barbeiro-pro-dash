@@ -40,6 +40,7 @@ export default function GoalsManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isHolidayDialogOpen, setIsHolidayDialogOpen] = useState(false);
   
   // Form states
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
@@ -308,13 +309,23 @@ export default function GoalsManagement() {
               </CardTitle>
               <CardDescription>Visualize, edite e exclua as metas cadastradas</CardDescription>
             </div>
-            <Button 
-              onClick={() => setIsCreateDialogOpen(true)}
-              disabled={availableBarbers.length === 0}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Adicionar Nova Meta
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsHolidayDialogOpen(true)}
+              >
+                <Landmark className="w-4 h-4 mr-2" />
+                Configurar Feriados
+              </Button>
+
+              <Button 
+                onClick={() => setIsCreateDialogOpen(true)}
+                disabled={availableBarbers.length === 0}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Adicionar Nova Meta
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -446,6 +457,45 @@ export default function GoalsManagement() {
           </div>
         </CardContent>
       </Card>
+
+
+      <Dialog open={isHolidayDialogOpen} onOpenChange={setIsHolidayDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Landmark className="w-4 h-4" />
+              Feriados da Empresa ({months[filterMonth - 1]}/{filterYear})
+            </DialogTitle>
+            <DialogDescription>
+              Selecione os dias de feriado em que a empresa não vai funcionar. Esses dias serão desconsiderados nos cálculos de dias restantes.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <DateCalendar
+              mode="multiple"
+              selected={holidayDates}
+              onSelect={(dates) => setHolidayDates(dates || [])}
+              month={new Date(filterYear, filterMonth - 1, 1)}
+              onMonthChange={() => undefined}
+              className="rounded-md border"
+            />
+
+            <p className="text-sm text-muted-foreground">
+              {holidayDates.length} {holidayDates.length === 1 ? "feriado selecionado" : "feriados selecionados"}
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsHolidayDialogOpen(false)}>
+              Fechar
+            </Button>
+            <Button onClick={handleSaveHolidays} disabled={savingHolidays}>
+              {savingHolidays ? "Salvando..." : "Salvar Feriados"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog para Criar Meta */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
