@@ -321,6 +321,7 @@ const [todayProduction, setTodayProduction] = useState<{
   useEffect(() => {
     fetchBarberData();
 
+    // Realtime listener para atualizar quando gerente alterar comissões
     const barberChannel = supabase
       .channel('barbers-changes')
       .on(
@@ -336,6 +337,7 @@ const [todayProduction, setTodayProduction] = useState<{
           const oldBarber = payload.old as BarberData;
           const newBarber = payload.new as BarberData;
           
+          // Verificar se houve mudança nas comissões
           const servicesChanged = oldBarber.services_commission !== newBarber.services_commission;
           const productsChanged = oldBarber.products_commission !== newBarber.products_commission;
           
@@ -348,6 +350,7 @@ const [todayProduction, setTodayProduction] = useState<{
               timestamp: new Date(),
             });
             
+            // Toast de notificação
             toast.success("Sua comissão foi atualizada pelo gerente!", {
               description: "Confira as novas taxas no banner acima.",
               duration: 5000,
@@ -369,18 +372,20 @@ const [todayProduction, setTodayProduction] = useState<{
       fetchMonthlyGoal();
       fetchMonthlyStats();
       
+      // Realtime listener para FORÇAR recálculo quando lançamentos forem alterados
       const productionsChannel = supabase
         .channel(`daily-productions-${barber.id}`)
         .on(
           'postgres_changes',
           {
-            event: '*',
+            event: '*', // INSERT, UPDATE, DELETE
             schema: 'public',
             table: 'daily_productions',
             filter: `barber_id=eq.${barber.id}`,
           },
           (payload) => {
             console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
+            // Forçar recálculo IMEDIATO das estatísticas
             fetchMonthlyStats();
             fetchMonthlyGoal();
           }
@@ -391,13 +396,14 @@ const [todayProduction, setTodayProduction] = useState<{
         supabase.removeChannel(productionsChannel);
       };
     }
-  }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]);
+  }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
 
   useEffect(() => {
     if (monthlyGoal && stats && barber) {
       calculateDailyTarget();
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
+
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
