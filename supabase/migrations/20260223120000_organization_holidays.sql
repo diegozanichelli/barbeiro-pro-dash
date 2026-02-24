@@ -32,3 +32,5 @@ CREATE TRIGGER update_organization_holidays_updated_at
 BEFORE UPDATE ON public.organization_holidays
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
+
+NOTIFY pgrst, 'reload schema';
