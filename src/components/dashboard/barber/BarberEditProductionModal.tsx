@@ -46,6 +46,7 @@ import {
   Search,
   ShoppingCart,
   Trash2,
+  History,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -72,6 +73,7 @@ interface CatalogItem {
 interface CartItem extends CatalogItem {
   tempId: string;
   customPrice: number;
+  catalogRefId: string | null;
 }
 
 interface ExistingProduction {
@@ -82,6 +84,17 @@ interface ExistingProduction {
   tx_basic_total: number;
   tx_extra_total: number;
   tx_products_total: number;
+}
+
+interface PreviousCommandItem {
+  id: string;
+  item_name: string;
+  item_type: "service" | "product";
+  service_category: string | null;
+  catalog_service_id: string | null;
+  catalog_product_id: string | null;
+  price_sold: number;
+  created_at: string | null;
 }
 
 type CategoryTab = "services" | "products";
@@ -110,6 +123,7 @@ export default function BarberEditProductionModal({
 
   const [existingData, setExistingData] = useState<ExistingProduction | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [previousCommandItems, setPreviousCommandItems] = useState<PreviousCommandItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
   const [statusWarningOpen, setStatusWarningOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<PresenceType | null>(null);
@@ -125,7 +139,7 @@ export default function BarberEditProductionModal({
     setLoadingCatalog(true);
 
     try {
-      const [servicesRes, productsRes, productionRes] = await Promise.all([
+      const [servicesRes, productsRes, productionRes, previousTransactionsRes] = await Promise.all([
         supabase
           .from("catalog_services")
           .select("id, name, default_price, fixed_commission, category")
@@ -143,12 +157,37 @@ export default function BarberEditProductionModal({
           .select("services_basic_total, services_extra_total, products_total, clients_count, tx_basic_total, tx_extra_total, tx_products_total")
           .eq("id", productionId)
           .single(),
+        supabase
+          .from("sale_transactions")
+          .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold, created_at")
+          .eq("daily_production_id", productionId)
+          .eq("barber_id", barberId)
+          .eq("source", "barber")
+          .order("created_at", { ascending: true }),
       ]);
 
       const services: CatalogItem[] = (servicesRes.data ?? []).map((item) => ({ ...item, type: "service" }));
       const products: CatalogItem[] = (productsRes.data ?? []).map((item) => ({ ...item, type: "product" }));
 
       setCatalogItems([...services, ...products]);
+
+      const previousItems = (previousTransactionsRes.data ?? []) as PreviousCommandItem[];
+      setPreviousCommandItems(previousItems);
+
+      const stagedFromPrevious: CartItem[] = previousItems.map((transaction) => ({
+        id: transaction.item_type === "service"
+          ? transaction.catalog_service_id ?? transaction.id
+          : transaction.catalog_product_id ?? transaction.id,
+        name: transaction.item_name,
+        default_price: transaction.price_sold,
+        fixed_commission: null,
+        category: transaction.service_category ?? undefined,
+        type: transaction.item_type,
+        tempId: generateTempId(),
+        customPrice: transaction.price_sold,
+        catalogRefId: transaction.item_type === "service" ? transaction.catalog_service_id : transaction.catalog_product_id,
+      }));
+      setCart(stagedFromPrevious);
 
       if (productionRes.data) {
         setExistingData({
@@ -168,7 +207,7 @@ export default function BarberEditProductionModal({
     } finally {
       setLoadingCatalog(false);
     }
-  }, [organizationId, productionId]);
+  }, [organizationId, productionId, barberId]);
 
   useEffect(() => {
     if (open && organizationId && productionId) {
@@ -178,6 +217,7 @@ export default function BarberEditProductionModal({
 
   const resetForm = useCallback(() => {
     setCart([]);
+    setPreviousCommandItems([]);
     setSearchQuery("");
     setActiveTab("services");
     setAddItemDialogOpen(false);
@@ -193,7 +233,7 @@ export default function BarberEditProductionModal({
   };
 
   const handleAddToCart = (item: CatalogItem) => {
-    setCart((prev) => [...prev, { ...item, tempId: generateTempId(), customPrice: item.default_price }]);
+    setCart((prev) => [...prev, { ...item, tempId: generateTempId(), customPrice: item.default_price, catalogRefId: item.id }]);
   };
 
   const updateCartItemPrice = (tempId: string, newPrice: number) => {
@@ -281,8 +321,8 @@ export default function BarberEditProductionModal({
         item_name: item.name,
         item_type: item.type,
         service_category: item.category || null,
-        catalog_service_id: item.type === "service" ? item.id : null,
-        catalog_product_id: item.type === "product" ? item.id : null,
+        catalog_service_id: item.type === "service" ? item.catalogRefId : null,
+        catalog_product_id: item.type === "product" ? item.catalogRefId : null,
         price_sold: item.customPrice,
         commission_rate_used: 0,
         commission_amount: 0,
@@ -349,6 +389,8 @@ export default function BarberEditProductionModal({
 
   const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + item.customPrice, 0), [cart]);
 
+  const previousCommandTotal = useMemo(() => previousCommandItems.reduce((sum, item) => sum + item.price_sold, 0), [previousCommandItems]);
+
   const filteredCatalogItems = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     return catalogItems.filter((item) => {
@@ -400,6 +442,27 @@ export default function BarberEditProductionModal({
 
           <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
             <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-3 space-y-2">
+              {previousCommandItems.length > 0 && (
+                <div className="rounded-lg border border-dashed bg-muted/30 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <History className="h-4 w-4 text-muted-foreground" />
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Histórico da comanda anterior</p>
+                    </div>
+                    <span className="text-xs font-medium text-muted-foreground">{formatCurrency(previousCommandTotal)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Somente visualização para conferência. Ao salvar, o lançamento antigo é substituído pelo corrigido.</p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {previousCommandItems.map((transaction) => (
+                      <div key={transaction.id} className="flex items-center justify-between rounded-md bg-background px-2 py-1.5 text-xs">
+                        <span className="truncate">{transaction.item_name}</span>
+                        <span className="font-medium">{formatCurrency(transaction.price_sold)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {cart.length === 0 ? (
                 <div className="rounded-lg border border-dashed py-10 text-center text-muted-foreground">
                   <ShoppingCart className="mx-auto h-8 w-8 mb-2 opacity-60" />
