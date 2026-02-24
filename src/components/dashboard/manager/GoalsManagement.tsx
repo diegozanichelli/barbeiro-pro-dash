@@ -112,7 +112,7 @@ export default function GoalsManagement() {
     const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
     const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("organization_holidays")
       .select("date")
       .eq("organization_id", organizationId)
@@ -150,7 +150,7 @@ export default function GoalsManagement() {
       const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
       const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
 
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await (supabase as any)
         .from("organization_holidays")
         .delete()
         .eq("organization_id", organizationId)
@@ -165,7 +165,7 @@ export default function GoalsManagement() {
           date: format(date, "yyyy-MM-dd"),
         }));
 
-        const { error: insertError } = await supabase
+        const { error: insertError } = await (supabase as any)
           .from("organization_holidays")
           .insert(payload);
 
@@ -181,6 +181,73 @@ export default function GoalsManagement() {
       } else {
         toast.error(error instanceof Error ? error.message : "Erro ao salvar feriados");
       }
+    } finally {
+      setSavingHolidays(false);
+    }
+  };
+
+  const fetchHolidays = async () => {
+    if (!organizationId) return;
+
+    const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+    const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+    const { data, error } = await (supabase as any)
+      .from("organization_holidays")
+      .select("date")
+      .eq("organization_id", organizationId)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar feriados:", error);
+      toast.error("Erro ao carregar feriados");
+      return;
+    }
+
+    const loadedDates = (data || []).map((item) => new Date(`${item.date}T12:00:00`));
+    setHolidayDates(loadedDates);
+  };
+
+  const handleSaveHolidays = async () => {
+    if (!organizationId) {
+      toast.error("Organização não encontrada");
+      return;
+    }
+
+    setSavingHolidays(true);
+
+    try {
+      const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+      const { error: deleteError } = await (supabase as any)
+        .from("organization_holidays")
+        .delete()
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (deleteError) throw deleteError;
+
+      if (holidayDates.length > 0) {
+        const payload = holidayDates.map((date) => ({
+          organization_id: organizationId,
+          date: format(date, "yyyy-MM-dd"),
+        }));
+
+        const { error: insertError } = await (supabase as any)
+          .from("organization_holidays")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+
+      toast.success("Feriados salvos com sucesso!");
+      fetchHolidays();
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao salvar feriados");
     } finally {
       setSavingHolidays(false);
     }
