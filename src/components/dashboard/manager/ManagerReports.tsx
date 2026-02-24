@@ -93,24 +93,24 @@ export default function ManagerReports() {
     
     const now = new Date();
 
-    // Buscar produções no período selecionado com filtro de unidade/barbeiro
-    let productionsQuery = supabase
-      .from("daily_productions")
-      .select("*, barbers!inner(id, unit_id)")
-      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-      .lte("date", format(dateRange.to, "yyyy-MM-dd"));
+    // Usar RPC para agregação no banco (evita limite de 1000 linhas)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_manager_report_stats', {
+      p_date_from: format(dateRange.from, "yyyy-MM-dd"),
+      p_date_to: format(dateRange.to, "yyyy-MM-dd"),
+      p_unit_id: selectedUnit !== "all" ? selectedUnit : null,
+      p_barber_id: selectedBarber !== "all" ? selectedBarber : null,
+    });
 
-    // Aplicar filtro de unidade
-    if (selectedUnit !== "all") {
-      productionsQuery = productionsQuery.eq("barbers.unit_id", selectedUnit);
+    if (rpcError) {
+      console.error("Erro ao buscar stats:", rpcError);
+      return;
     }
 
-    // Aplicar filtro de barbeiro
-    if (selectedBarber !== "all") {
-      productionsQuery = productionsQuery.eq("barber_id", selectedBarber);
-    }
-
-    const { data: productions } = await productionsQuery;
+    const statsRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    const totalRevenue = Number(statsRow?.total_revenue) || 0;
+    const totalCommission = Number(statsRow?.total_commission) || 0;
+    const totalClients = Number(statsRow?.total_clients) || 0;
+    const averageTicket = Number(statsRow?.average_ticket) || 0;
 
     // Buscar barbeiros ativos (filtrados por unidade se selecionada)
     let barbersQuery = supabase
@@ -137,52 +137,41 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    if (productions) {
-      const totalRevenue = productions.reduce(
-        (sum, p: any) => {
-          const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
-            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
-              + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0)
-            : (Number(p.services_total) || 0);
-          return sum + servicesTotal + Number(p.products_total) + (Number(p.tx_products_total) || 0);
-        },
-        0
-      );
-      const totalCommission = productions.reduce(
-        (sum, p) => sum + Number(p.commission_earned),
-        0
-      );
-      const totalClients = productions.reduce(
-        (sum, p) => sum + Number(p.clients_count),
-        0
-      );
+    // Para verificar metas, precisamos das comissões por barbeiro
+    // Usar query com limite apenas para metas (poucos barbeiros)
+    let goalsAchieved = 0;
+    if (goals && goals.length > 0) {
+      const { data: commissions } = await supabase
+        .from("daily_productions")
+        .select("barber_id, commission_earned, barbers!inner(unit_id)")
+        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+        .lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
-      // Calcular comissão acumulada por barbeiro para verificar metas
-      const barberCommissions = new Map<string, number>();
-      productions.forEach((p) => {
-        const current = barberCommissions.get(p.barber_id) || 0;
-        barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
-      });
+      if (commissions) {
+        const barberCommissions = new Map<string, number>();
+        commissions.forEach((p: any) => {
+          if (selectedUnit !== "all" && p.barbers?.unit_id !== selectedUnit) return;
+          const current = barberCommissions.get(p.barber_id) || 0;
+          barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
+        });
 
-      let goalsAchieved = 0;
-      if (goals) {
-        goals.forEach((goal) => {
+        goals.forEach((goal: any) => {
           const earned = barberCommissions.get(goal.barber_id) || 0;
           if (earned >= goal.target_commission) {
             goalsAchieved++;
           }
         });
       }
-
-      setStats({
-        totalRevenue,
-        totalCommission,
-        totalClients,
-        averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
-        goalsAchieved,
-        totalBarbers: barbersData?.length || 0,
-      });
     }
+
+    setStats({
+      totalRevenue,
+      totalCommission,
+      totalClients,
+      averageTicket,
+      goalsAchieved,
+      totalBarbers: barbersData?.length || 0,
+    });
   };
 
   const fetchUnits = async () => {
