@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface BarberDashboardProps {
   user: User;
@@ -39,6 +40,26 @@ interface BarberData {
 interface MonthlyGoal {
   target_commission: number;
   work_days: number;
+}
+
+interface EditingProduction {
+  id: string;
+  date: string;
+}
+
+interface DailyProductionRow {
+  id: string;
+  date: string;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  services_total: number | null;
+  products_total: number | null;
+  clients_count: number | null;
+  services_count: number | null;
+  products_count: number | null;
+  commission_earned: number | null;
+  confirmed_presence: boolean | null;
+  presence_type: string | null;
 }
 
 interface MonthlyStats {
@@ -67,7 +88,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTarget, setDailyTarget] = useState(0);
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [missingLink, setMissingLink] = useState(false);
-  const [editingProduction, setEditingProduction] = useState<any>(null);
+  const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
 const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
@@ -78,6 +99,11 @@ const [todayProduction, setTodayProduction] = useState<{
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   
   // Estado para notificação de alteração de comissão
+  const { holidayDates } = useOrganizationHolidays({
+    organizationId: barber?.organization_id,
+    month: selectedMonth,
+    year: selectedYear,
+  });
   const [commissionChange, setCommissionChange] = useState<{
     oldServices: number;
     newServices: number;
@@ -132,7 +158,7 @@ const [todayProduction, setTodayProduction] = useState<{
     return () => {
       supabase.removeChannel(barberChannel);
     };
-  }, [user]);
+  }, [user, fetchBarberData]);
 
   useEffect(() => {
     if (barber) {
@@ -163,15 +189,15 @@ const [todayProduction, setTodayProduction] = useState<{
         supabase.removeChannel(productionsChannel);
       };
     }
-  }, [barber, selectedMonth, selectedYear]); // Recarregar quando mês/ano mudar
+  }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
 
   useEffect(() => {
     if (monthlyGoal && stats && barber) {
       calculateDailyTarget();
     }
-  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear]);
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
-  const fetchBarberData = async () => {
+  const fetchBarberData = useCallback(async () => {
     const { data, error } = await supabase
       .from("barbers")
       .select("*")
@@ -188,9 +214,9 @@ const [todayProduction, setTodayProduction] = useState<{
     } else {
       setMissingLink(true);
     }
-  };
+  }, [user.id]);
 
-  const fetchMonthlyGoal = async () => {
+  const fetchMonthlyGoal = useCallback(async () => {
     if (!barber) return;
 
     const { data, error } = await supabase
@@ -210,9 +236,9 @@ const [todayProduction, setTodayProduction] = useState<{
     } else {
       setMonthlyGoal(null);
     }
-  };
+  }, [barber, selectedMonth, selectedYear]);
 
-  const fetchMonthlyStats = async () => {
+  const fetchMonthlyStats = useCallback(async () => {
     if (!barber) return;
 
     const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
@@ -225,42 +251,47 @@ const [todayProduction, setTodayProduction] = useState<{
       .gte("date", format(firstDay, "yyyy-MM-dd"))
       .lte("date", format(lastDay, "yyyy-MM-dd"));
 
-    if (productions && productions.length > 0) {
-      const totalClients = productions.reduce((sum, p) => sum + Number(p.clients_count), 0);
-      const totalServicesCount = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
-      const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
+    const typedProductions = (productions || []) as DailyProductionRow[];
+
+    if (typedProductions.length > 0) {
+      const totalClients = typedProductions.reduce((sum, p) => sum + Number(p.clients_count), 0);
+      const totalServicesCount = typedProductions.reduce((sum, p) => sum + Number(p.services_count), 0);
+      const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
       
       // Calcular total de serviços - APENAS produção do barbeiro (sem tx_*)
-      const totalServicesRevenue = productions.reduce((sum, p) => {
+      const totalServicesRevenue = typedProductions.reduce((sum, p) => {
         if (p.services_basic_total !== null || p.services_extra_total !== null) {
           return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
         }
         return sum + Number(p.services_total || 0);
       }, 0);
       
-      const totalProductsRevenue = productions.reduce((sum, p) => 
+      const totalProductsRevenue = typedProductions.reduce((sum, p) => 
         sum + (Number(p.products_total) || 0), 0);
       const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
       // Usar commission_earned do banco (fonte única de verdade - já considera taxas fixas + ambas fontes)
-      const accumulatedCommission = productions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
+      const accumulatedCommission = typedProductions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
 
       // Contar dias com produção real OU com presença confirmada (present/null)
       // day_off e absence NÃO contam como dia trabalhado
       // Dias trabalhados - APENAS produção do barbeiro (sem tx_*)
-      const daysWithProduction = productions.filter(p => {
-        // Excluir domingos da contagem de dias trabalhados (domingo = bônus, não consome dia útil)
+      const daysWithProduction = typedProductions.filter(p => {
         const dateObj = new Date(p.date + "T12:00:00");
-        if (dateObj.getDay() === 0) return false;
+        const dateKey = format(dateObj, "yyyy-MM-dd");
+
+        // Excluir domingos e feriados da contagem de dias trabalhados (dias oficiais)
+        // Se trabalhar nesses dias, conta como bônus (faturamento soma, mas não consome dia útil)
+        if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
 
         const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
                       (Number(p.products_total) || 0);
-        return total > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
+        return total > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
       }).length;
 
       // Identificar produção de hoje para o card de confirmação de presença
       const todayStr = getTodayString();
-      const todayProd = productions.find(p => p.date === todayStr);
+      const todayProd = typedProductions.find(p => p.date === todayStr);
       
       if (todayProd) {
         // Faturamento de hoje - APENAS produção do barbeiro (sem tx_*)
@@ -320,9 +351,9 @@ const [todayProduction, setTodayProduction] = useState<{
         products_conversion: 0,
       });
     }
-  };
+  }, [barber, selectedYear, selectedMonth, holidayDates]);
 
-  const calculateDailyTarget = async () => {
+  const calculateDailyTarget = useCallback(async () => {
     if (!monthlyGoal || !stats || !barber) return;
 
     const remaining = monthlyGoal.target_commission - stats.accumulated_commission;
@@ -350,7 +381,7 @@ const [todayProduction, setTodayProduction] = useState<{
       // Dias restantes no calendário (para urgência)
       const manausDate = getManausDate();
       const selectedDate = new Date(selectedYear, selectedMonth - 1, manausDate.getDate());
-      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate);
+      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate, holidayDates);
       
       // Usar o MENOR entre dias configurados restantes e dias no calendário
       // Isso cria urgência quando o tempo está acabando
@@ -371,7 +402,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
       setDailyTargetServices(servicesTarget);
     }
-  };
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -403,7 +434,7 @@ const [todayProduction, setTodayProduction] = useState<{
     setSelectedYear(year);
   };
 
-  const handleEditProduction = (production: any) => {
+  const handleEditProduction = (production: EditingProduction) => {
     setEditingProduction({
       id: production.id,
       date: production.date,
@@ -586,7 +617,7 @@ const [todayProduction, setTodayProduction] = useState<{
   // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
   const today = new Date();
   const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
-  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays() : 0;
+  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays(getManausDate(), holidayDates) : 0;
   
   // Calcular "Falta Ganhar" com proteção contra NaN
   const remaining = monthlyGoal 
