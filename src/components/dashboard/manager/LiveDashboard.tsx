@@ -206,7 +206,8 @@ export default function LiveDashboard() {
       const { data: monthProductionsData } = await supabase
         .from("daily_productions")
         .select(`
-          barber_id, 
+          barber_id,
+          date,
           commission_earned, 
           confirmed_presence,
           presence_type,
