@@ -111,92 +111,6 @@ const [todayProduction, setTodayProduction] = useState<{
     newProducts: number;
     timestamp: Date;
   } | null>(null);
-  useEffect(() => {
-    fetchBarberData();
-
-    // Realtime listener para atualizar quando gerente alterar comissões
-    const barberChannel = supabase
-      .channel('barbers-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'barbers',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log('Comissão atualizada pelo gerente:', payload);
-          const oldBarber = payload.old as BarberData;
-          const newBarber = payload.new as BarberData;
-          
-          // Verificar se houve mudança nas comissões
-          const servicesChanged = oldBarber.services_commission !== newBarber.services_commission;
-          const productsChanged = oldBarber.products_commission !== newBarber.products_commission;
-          
-          if (servicesChanged || productsChanged) {
-            setCommissionChange({
-              oldServices: oldBarber.services_commission,
-              newServices: newBarber.services_commission,
-              oldProducts: oldBarber.products_commission,
-              newProducts: newBarber.products_commission,
-              timestamp: new Date(),
-            });
-            
-            // Toast de notificação
-            toast.success("Sua comissão foi atualizada pelo gerente!", {
-              description: "Confira as novas taxas no banner acima.",
-              duration: 5000,
-            });
-          }
-          
-          setBarber(newBarber);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(barberChannel);
-    };
-  }, [user, fetchBarberData]);
-
-  useEffect(() => {
-    if (barber) {
-      fetchMonthlyGoal();
-      fetchMonthlyStats();
-      
-      // Realtime listener para FORÇAR recálculo quando lançamentos forem alterados
-      const productionsChannel = supabase
-        .channel(`daily-productions-${barber.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // INSERT, UPDATE, DELETE
-            schema: 'public',
-            table: 'daily_productions',
-            filter: `barber_id=eq.${barber.id}`,
-          },
-          (payload) => {
-            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
-            // Forçar recálculo IMEDIATO das estatísticas
-            fetchMonthlyStats();
-            fetchMonthlyGoal();
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(productionsChannel);
-      };
-    }
-  }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
-
-  useEffect(() => {
-    if (monthlyGoal && stats && barber) {
-      calculateDailyTarget();
-    }
-  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
-
   const fetchBarberData = useCallback(async () => {
     const { data, error } = await supabase
       .from("barbers")
@@ -403,6 +317,87 @@ const [todayProduction, setTodayProduction] = useState<{
       setDailyTargetServices(servicesTarget);
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates]);
+
+  useEffect(() => {
+    fetchBarberData();
+
+    const barberChannel = supabase
+      .channel('barbers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'barbers',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Comissão atualizada pelo gerente:', payload);
+          const oldBarber = payload.old as BarberData;
+          const newBarber = payload.new as BarberData;
+          
+          const servicesChanged = oldBarber.services_commission !== newBarber.services_commission;
+          const productsChanged = oldBarber.products_commission !== newBarber.products_commission;
+          
+          if (servicesChanged || productsChanged) {
+            setCommissionChange({
+              oldServices: oldBarber.services_commission,
+              newServices: newBarber.services_commission,
+              oldProducts: oldBarber.products_commission,
+              newProducts: newBarber.products_commission,
+              timestamp: new Date(),
+            });
+            
+            toast.success("Sua comissão foi atualizada pelo gerente!", {
+              description: "Confira as novas taxas no banner acima.",
+              duration: 5000,
+            });
+          }
+          
+          setBarber(newBarber);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(barberChannel);
+    };
+  }, [user, fetchBarberData]);
+
+  useEffect(() => {
+    if (barber) {
+      fetchMonthlyGoal();
+      fetchMonthlyStats();
+      
+      const productionsChannel = supabase
+        .channel(`daily-productions-${barber.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'daily_productions',
+            filter: `barber_id=eq.${barber.id}`,
+          },
+          (payload) => {
+            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
+            fetchMonthlyStats();
+            fetchMonthlyGoal();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(productionsChannel);
+      };
+    }
+  }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]);
+
+  useEffect(() => {
+    if (monthlyGoal && stats && barber) {
+      calculateDailyTarget();
+    }
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
