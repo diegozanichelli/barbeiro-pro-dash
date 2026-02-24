@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { getManausDate } from "@/lib/dateUtils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,11 @@ import { Calendar as DateCalendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
 import { Target, Calendar, Plus, Pencil, Trash2, Landmark } from "lucide-react";
 import { format } from "date-fns";
+
+interface BarberOption {
+  id: string;
+  name: string;
+}
 
 interface MonthlyGoal {
   id: string;
@@ -29,7 +35,7 @@ interface MonthlyGoal {
 
 export default function GoalsManagement() {
   const { organizationId } = useOrganization();
-  const [barbers, setBarbers] = useState<any[]>([]);
+  const [barbers, setBarbers] = useState<BarberOption[]>([]);
   const [goals, setGoals] = useState<MonthlyGoal[]>([]);
   const manausNow = useMemo(() => getManausDate(), []);
   const [filterMonth, setFilterMonth] = useState(manausNow.getMonth() + 1);
@@ -50,17 +56,16 @@ export default function GoalsManagement() {
   const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null);
   const [holidayDates, setHolidayDates] = useState<Date[]>([]);
   const [savingHolidays, setSavingHolidays] = useState(false);
+  const [holidayTableUnavailable, setHolidayTableUnavailable] = useState(false);
 
-  useEffect(() => {
-    fetchBarbers();
-  }, []);
+  const isHolidayTableMissingError = (error: unknown): boolean => {
+    if (!error || typeof error !== "object") return false;
 
-  useEffect(() => {
-    fetchGoals();
-    fetchHolidays();
-  }, [filterMonth, filterYear]);
+    const maybe = error as { message?: string };
+    return (maybe.message || "").includes("Could not find the table 'public.organization_holidays' in the schema cache");
+  };
 
-  const fetchBarbers = async () => {
+  const fetchBarbers = useCallback(async () => {
     const { data, error } = await supabase
       .from("barbers")
       .select("*")
@@ -75,9 +80,9 @@ export default function GoalsManagement() {
     
     console.log("Barbeiros carregados:", data);
     if (data) setBarbers(data);
-  };
+  }, []);
 
-  const fetchGoals = async () => {
+  const fetchGoals = useCallback(async () => {
     const { data, error } = await supabase
       .from("monthly_goals")
       .select(`
@@ -98,6 +103,86 @@ export default function GoalsManagement() {
 
     if (data) {
       setGoals(data as MonthlyGoal[]);
+    }
+  }, [filterMonth, filterYear]);
+
+  const loadHolidaysForMonth = useCallback(async () => {
+    if (!organizationId) return;
+
+    const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+    const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+    const { data, error } = await supabase
+      .from("organization_holidays")
+      .select("date")
+      .eq("organization_id", organizationId)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar feriados:", error);
+
+      if (isHolidayTableMissingError(error)) {
+        setHolidayTableUnavailable(true);
+        return;
+      }
+
+      toast.error("Erro ao carregar feriados");
+      return;
+    }
+
+    setHolidayTableUnavailable(false);
+
+    const loadedDates = (data || []).map((item) => new Date(`${item.date}T12:00:00`));
+    setHolidayDates(loadedDates);
+  }, [organizationId, filterYear, filterMonth]);
+
+  const saveHolidaysForMonth = async () => {
+    if (!organizationId) {
+      toast.error("Organização não encontrada");
+      return;
+    }
+
+    setSavingHolidays(true);
+
+    try {
+      const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+
+      const { error: deleteError } = await supabase
+        .from("organization_holidays")
+        .delete()
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (deleteError) throw deleteError;
+
+      if (holidayDates.length > 0) {
+        const payload = holidayDates.map((date) => ({
+          organization_id: organizationId,
+          date: format(date, "yyyy-MM-dd"),
+        }));
+
+        const { error: insertError } = await supabase
+          .from("organization_holidays")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+
+      toast.success("Feriados salvos com sucesso!");
+      loadHolidaysForMonth();
+    } catch (error: unknown) {
+      if (isHolidayTableMissingError(error)) {
+        setHolidayTableUnavailable(true);
+        toast.error("Tabela de feriados ainda não existe no banco. Rode as migrações (supabase db push) e tente novamente.");
+      } else {
+        toast.error(error instanceof Error ? error.message : "Erro ao salvar feriados");
+      }
+    } finally {
+      setSavingHolidays(false);
     }
   };
 
@@ -199,12 +284,13 @@ export default function GoalsManagement() {
       setIsCreateDialogOpen(false);
       resetForm();
       fetchGoals();
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Detectar erro de duplicate key
-      if (error.code === '23505' || error.message?.includes('duplicate key')) {
+      const dbError = error as { code?: string; message?: string };
+      if (dbError.code === '23505' || dbError.message?.includes('duplicate key')) {
         toast.error("Erro: Este barbeiro já possui uma meta para este mês. Use o botão Editar (lápis) para modificar.");
       } else {
-        toast.error(error.message || "Erro ao criar meta");
+        toast.error(error instanceof Error ? error.message : "Erro ao criar meta");
       }
     } finally {
       setLoading(false);
@@ -234,8 +320,8 @@ export default function GoalsManagement() {
       setIsEditDialogOpen(false);
       resetForm();
       fetchGoals();
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao atualizar meta");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Erro ao atualizar meta");
     } finally {
       setLoading(false);
     }
@@ -258,12 +344,21 @@ export default function GoalsManagement() {
       setIsDeleteDialogOpen(false);
       setDeletingGoalId(null);
       fetchGoals();
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao excluir meta");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Erro ao excluir meta");
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchBarbers();
+  }, [fetchBarbers]);
+
+  useEffect(() => {
+    fetchGoals();
+    loadHolidaysForMonth();
+  }, [fetchGoals, loadHolidaysForMonth]);
 
   const openEditDialog = (goal: MonthlyGoal) => {
     setEditingGoal(goal);
@@ -471,6 +566,15 @@ export default function GoalsManagement() {
             </DialogDescription>
           </DialogHeader>
 
+          {holidayTableUnavailable && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                A tabela de feriados ainda não está disponível no banco deste ambiente.
+                Execute as migrações (ex.: <strong>supabase db push</strong>) e tente novamente.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="space-y-4 py-2">
             <DateCalendar
               mode="multiple"
@@ -490,7 +594,7 @@ export default function GoalsManagement() {
             <Button variant="outline" onClick={() => setIsHolidayDialogOpen(false)}>
               Fechar
             </Button>
-            <Button onClick={handleSaveHolidays} disabled={savingHolidays}>
+            <Button onClick={saveHolidaysForMonth} disabled={savingHolidays || holidayTableUnavailable}>
               {savingHolidays ? "Salvando..." : "Salvar Feriados"}
             </Button>
           </DialogFooter>
