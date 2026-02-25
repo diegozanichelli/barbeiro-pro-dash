@@ -17,12 +17,25 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
   const [missingDays, setMissingDays] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const today = getManausDate();
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
-  const { holidayDates } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
+  const { holidayDates, loading: holidaysLoading, error: holidaysError } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
 
   const fetchMissingDays = useCallback(async () => {
     if (!barberId) return;
+
+    const today = getManausDate();
+
+    if (holidaysLoading) {
+      setLoading(true);
+      return;
+    }
+
+    if (holidaysError) {
+      console.error("Erro ao carregar feriados para alerta de pendência:", holidaysError);
+      setMissingDays([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
@@ -64,7 +77,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
     } finally {
       setLoading(false);
     }
-  }, [barberId, currentMonth, currentYear, holidayDates, today]);
+  }, [barberId, currentMonth, currentYear, holidayDates, holidaysLoading, holidaysError]);
 
   useEffect(() => {
     fetchMissingDays();

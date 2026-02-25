@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getDaysInMonth } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 
 interface UseOrganizationHolidaysParams {
@@ -10,18 +11,26 @@ interface UseOrganizationHolidaysParams {
 export function useOrganizationHolidays({ organizationId, month, year }: UseOrganizationHolidaysParams) {
   const [holidayDates, setHolidayDates] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchHolidays = async () => {
       if (!organizationId) {
+        if (!isMounted) return;
         setHolidayDates([]);
+        setError(null);
+        setLoading(false);
         return;
       }
 
       setLoading(true);
+      setError(null);
 
+      const lastDay = getDaysInMonth(new Date(year, month - 1));
       const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-      const endDate = `${year}-${String(month).padStart(2, "0")}-31`;
+      const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
       const { data, error } = await supabase
         .from("organization_holidays")
@@ -33,16 +42,27 @@ export function useOrganizationHolidays({ organizationId, month, year }: UseOrga
 
       if (error) {
         console.error("Erro ao carregar feriados:", error);
-        setHolidayDates([]);
+        if (isMounted) {
+          setHolidayDates([]);
+          setError(error.message || "Erro ao carregar feriados");
+        }
       } else {
-        setHolidayDates((data || []).map((item) => item.date));
+        if (isMounted) {
+          setHolidayDates((data || []).map((item) => item.date));
+        }
       }
 
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     };
 
     fetchHolidays();
+
+    return () => {
+      isMounted = false;
+    };
   }, [organizationId, month, year]);
 
-  return { holidayDates, loading };
+  return { holidayDates, loading, error };
 }

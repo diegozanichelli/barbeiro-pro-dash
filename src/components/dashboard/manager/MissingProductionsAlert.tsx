@@ -30,16 +30,33 @@ export default function MissingProductionsAlert() {
   const [missingData, setMissingData] = useState<BarberMissingDays[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const today = getManausDate();
   const { month: todayMonth, year: todayYear } = getCurrentMonthYear();
   const [selectedMonth, setSelectedMonth] = useState(todayMonth);
   const [selectedYear, setSelectedYear] = useState(todayYear);
 
   const isCurrentMonth = selectedMonth === todayMonth && selectedYear === todayYear;
-  const { holidayDates } = useOrganizationHolidays({ organizationId, month: selectedMonth, year: selectedYear });
+  const {
+    holidayDates,
+    loading: holidaysLoading,
+    error: holidaysError,
+  } = useOrganizationHolidays({ organizationId, month: selectedMonth, year: selectedYear });
 
   const fetchMissingProductions = useCallback(async () => {
+    const today = getManausDate();
+
     if (!organizationId) {
+      setMissingData([]);
+      setLoading(false);
+      return;
+    }
+
+    if (holidaysLoading) {
+      setLoading(true);
+      return;
+    }
+
+    if (holidaysError) {
+      console.error("Erro de feriados ao montar produções pendentes:", holidaysError);
       setMissingData([]);
       setLoading(false);
       return;
@@ -115,7 +132,7 @@ export default function MissingProductionsAlert() {
     } finally {
       setLoading(false);
     }
-  }, [organizationId, selectedYear, selectedMonth, holidayDates, isCurrentMonth, today]);
+  }, [organizationId, selectedYear, selectedMonth, holidayDates, holidaysLoading, holidaysError, isCurrentMonth]);
 
   useEffect(() => {
     fetchMissingProductions();

@@ -44,9 +44,9 @@ export function getCurrentDay(): number {
 
 /**
  * Calcula o número de dias restantes no mês atual (incluindo hoje)
- * Considera TODOS os dias do calendário (Domingo a Domingo)
- * O barbeiro escolhe quando folgar, então todos os dias são dias de trabalho potenciais
+ * Considera apenas os dias úteis oficiais (exclui domingos e feriados configurados)
  * @param today - Data atual (padrão: data de Manaus)
+ * @param holidayDates - Lista de datas (yyyy-MM-dd) que devem ser desconsideradas
  * @returns Número de dias entre hoje e o fim do mês (inclusive)
  */
 export function calculateRemainingWorkDays(today: Date = getManausDate(), holidayDates: string[] = []): number {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
@@ -84,33 +84,10 @@ export default function ManagerReports() {
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchUnits();
-    fetchBarbers();
-  }, []);
-
-  useEffect(() => {
-    // Filtrar barbeiros pela unidade selecionada
-    if (selectedUnit === "all") {
-      setBarbers(allBarbers);
-    } else {
-      setBarbers(allBarbers.filter(b => b.unit_id === selectedUnit));
-    }
-    // Reset do barbeiro selecionado quando a unidade muda
-    setSelectedBarber("all");
-  }, [selectedUnit, allBarbers]);
-
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchStats();
-      fetchProductions();
-    }
-  }, [dateRange, selectedBarber, selectedUnit]);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
     
-    const now = new Date();
+    const goalReferenceDate = dateRange.from;
 
     // Usar RPC para agregação no banco (evita limite de 1000 linhas)
     const { data: rpcData, error: rpcError } = await supabase.rpc('get_manager_report_stats', {
@@ -147,8 +124,8 @@ export default function ManagerReports() {
     let goalsQuery = supabase
       .from("monthly_goals")
       .select("*, barbers!inner(id, unit_id)")
-      .eq("month", now.getMonth() + 1)
-      .eq("year", now.getFullYear());
+      .eq("month", goalReferenceDate.getMonth() + 1)
+      .eq("year", goalReferenceDate.getFullYear());
 
     if (selectedUnit !== "all") {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
@@ -200,18 +177,9 @@ export default function ManagerReports() {
         });
       }
     }
+  }, [dateRange, selectedBarber, selectedUnit]);
 
-    setStats({
-      totalRevenue,
-      totalCommission,
-      totalClients,
-      averageTicket,
-      goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
-    });
-  };
-
-  const fetchUnits = async () => {
+  const fetchUnits = useCallback(async () => {
     const { data } = await supabase
       .from("units")
       .select("id, name")
@@ -221,9 +189,9 @@ export default function ManagerReports() {
     if (data) {
       setUnits(data);
     }
-  };
+  }, []);
 
-  const fetchBarbers = async () => {
+  const fetchBarbers = useCallback(async () => {
     const { data } = await supabase
       .from("barbers")
       .select("id, name, unit_id")
@@ -234,9 +202,9 @@ export default function ManagerReports() {
       setAllBarbers(data);
       setBarbers(data);
     }
-  };
+  }, []);
 
-  const fetchProductions = async () => {
+  const fetchProductions = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
     
     let query = supabase
@@ -260,7 +228,30 @@ export default function ManagerReports() {
     if (data) {
       setProductions((data ?? []) as DailyProduction[]);
     }
-  };
+  }, [dateRange, selectedBarber, selectedUnit]);
+
+  useEffect(() => {
+    fetchUnits();
+    fetchBarbers();
+  }, [fetchUnits, fetchBarbers]);
+
+  useEffect(() => {
+    // Filtrar barbeiros pela unidade selecionada
+    if (selectedUnit === "all") {
+      setBarbers(allBarbers);
+    } else {
+      setBarbers(allBarbers.filter(b => b.unit_id === selectedUnit));
+    }
+    // Reset do barbeiro selecionado quando a unidade muda
+    setSelectedBarber("all");
+  }, [selectedUnit, allBarbers]);
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchStats();
+      fetchProductions();
+    }
+  }, [dateRange, selectedBarber, selectedUnit, fetchStats, fetchProductions]);
 
   const handleEdit = (production: DailyProduction) => {
     setEditingProduction(production);
