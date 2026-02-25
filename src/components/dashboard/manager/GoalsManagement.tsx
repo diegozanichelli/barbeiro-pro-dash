@@ -112,7 +112,7 @@ export default function GoalsManagement() {
     const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
     const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("organization_holidays")
       .select("date")
       .eq("organization_id", organizationId)
@@ -150,7 +150,7 @@ export default function GoalsManagement() {
       const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
       const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
 
-      const { error: deleteError } = await (supabase as any)
+      const { error: deleteError } = await supabase
         .from("organization_holidays")
         .delete()
         .eq("organization_id", organizationId)
@@ -165,7 +165,7 @@ export default function GoalsManagement() {
           date: format(date, "yyyy-MM-dd"),
         }));
 
-        const { error: insertError } = await (supabase as any)
+        const { error: insertError } = await supabase
           .from("organization_holidays")
           .insert(payload);
 

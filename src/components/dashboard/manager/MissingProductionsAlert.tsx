@@ -40,6 +40,7 @@ export default function MissingProductionsAlert() {
 
   const fetchMissingProductions = useCallback(async () => {
     if (!organizationId) {
+      setMissingData([]);
       setLoading(false);
       return;
     }
@@ -54,6 +55,7 @@ export default function MissingProductionsAlert() {
           name,
           units (name)
         `)
+        .eq("organization_id", organizationId)
         .eq("status", "active");
 
       if (barbersError) throw barbersError;
@@ -76,6 +78,7 @@ export default function MissingProductionsAlert() {
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
         .select("barber_id, date, confirmed_presence, services_basic_total, services_extra_total, products_total")
+        .eq("organization_id", organizationId)
         .gte("date", startOfMonth)
         .lte("date", endOfMonth);
 
