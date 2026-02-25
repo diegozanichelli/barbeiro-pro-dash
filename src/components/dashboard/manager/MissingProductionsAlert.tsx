@@ -39,7 +39,10 @@ export default function MissingProductionsAlert() {
   const { holidayDates } = useOrganizationHolidays({ organizationId, month: selectedMonth, year: selectedYear });
 
   const fetchMissingProductions = useCallback(async () => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 

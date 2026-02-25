@@ -32,7 +32,10 @@ export function useOrganizationHolidays({ organizationId, month, year }: UseOrga
         .order("date", { ascending: true });
 
       if (error) {
-        console.error("Erro ao carregar feriados:", error);
+        // Tabela pode não existir ainda - silenciar erro
+        if (error.code !== 'PGRST205') {
+          console.error("Erro ao carregar feriados:", error);
+        }
         setHolidayDates([]);
       } else {
         setHolidayDates((data || []).map((item) => item.date));
