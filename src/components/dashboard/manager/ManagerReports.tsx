@@ -20,13 +20,21 @@ interface DailyProduction {
   date: string;
   barber_id: string;
   services_total: number;
-  services_basic_total?: number;
-  services_extra_total?: number;
+  services_basic_total?: number | null;
+  services_extra_total?: number | null;
+  tx_basic_total?: number | null;
+  tx_extra_total?: number | null;
+  tx_products_total?: number | null;
   products_total: number;
   services_count: number;
   products_count: number;
   clients_count: number;
   commission_earned: number;
+  barbers?: {
+    id?: string;
+    unit_id?: string;
+    name?: string;
+  } | null;
 }
 
 interface Barber {
@@ -137,23 +145,41 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    // Para verificar metas, precisamos das comissões por barbeiro
-    // Usar query com limite apenas para metas (poucos barbeiros)
-    let goalsAchieved = 0;
-    if (goals && goals.length > 0) {
-      const { data: commissions } = await supabase
-        .from("daily_productions")
-        .select("barber_id, commission_earned, barbers!inner(unit_id)")
-        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("date", format(dateRange.to, "yyyy-MM-dd"));
+    if (productions) {
+      const totalRevenue = productions.reduce(
+        (sum, p: DailyProduction) => {
+          const txServicesTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
+          const txProductsTotal = Number(p.tx_products_total) || 0;
+          const hasTxSource = txServicesTotal > 0 || txProductsTotal > 0;
 
-      if (commissions) {
-        const barberCommissions = new Map<string, number>();
-        commissions.forEach((p: any) => {
-          if (selectedUnit !== "all" && p.barbers?.unit_id !== selectedUnit) return;
-          const current = barberCommissions.get(p.barber_id) || 0;
-          barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
-        });
+          if (hasTxSource) {
+            return sum + txServicesTotal + txProductsTotal;
+          }
+
+          const manualServicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
+            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+            : (Number(p.services_total) || 0);
+          const manualProductsTotal = Number(p.products_total) || 0;
+
+          return sum + manualServicesTotal + manualProductsTotal;
+        },
+        0
+      );
+      const totalCommission = productions.reduce(
+        (sum, p) => sum + Number(p.commission_earned),
+        0
+      );
+      const totalClients = productions.reduce(
+        (sum, p) => sum + Number(p.clients_count),
+        0
+      );
+
+      // Calcular comissão acumulada por barbeiro para verificar metas
+      const barberCommissions = new Map<string, number>();
+      productions.forEach((p) => {
+        const current = barberCommissions.get(p.barber_id) || 0;
+        barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
+      });
 
         goals.forEach((goal: any) => {
           const earned = barberCommissions.get(goal.barber_id) || 0;
@@ -221,7 +247,7 @@ export default function ManagerReports() {
 
     const { data } = await query;
     if (data) {
-      setProductions(data as any);
+      setProductions((data ?? []) as DailyProduction[]);
     }
   };
 
@@ -262,7 +288,7 @@ export default function ManagerReports() {
     }
   };
 
-  const getBarberName = (production: any) => {
+  const getBarberName = (production: DailyProduction) => {
     return production.barbers?.name || "Barbeiro Desconhecido";
   };
 
@@ -386,10 +412,10 @@ export default function ManagerReports() {
                     clientsTotal: number;
                   }>();
 
-                  productions.forEach((production: any) => {
+                  productions.forEach((production: DailyProduction) => {
                     const barberId = production.barber_id;
                     const barberName = production.barbers?.name || "Barbeiro Desconhecido";
-                    
+
                     if (!barberStats.has(barberId)) {
                       barberStats.set(barberId, {
                         name: barberName,
@@ -402,17 +428,25 @@ export default function ManagerReports() {
                     }
 
                     const stats = barberStats.get(barberId)!;
-                    
-                    // Se tiver os campos novos, usa eles separadamente
-                    // Caso contrário, considera tudo como serviços básicos (retrocompatível)
-                    if (production.services_basic_total !== null || production.services_extra_total !== null) {
-                      stats.servicesBasicTotal += (Number(production.services_basic_total) || 0) + (Number(production.tx_basic_total) || 0);
-                      stats.servicesExtraTotal += (Number(production.services_extra_total) || 0) + (Number(production.tx_extra_total) || 0);
+
+                    const txBasic = Number(production.tx_basic_total) || 0;
+                    const txExtra = Number(production.tx_extra_total) || 0;
+                    const txProducts = Number(production.tx_products_total) || 0;
+                    const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+                    if (hasTxSource) {
+                      stats.servicesBasicTotal += txBasic;
+                      stats.servicesExtraTotal += txExtra;
+                      stats.productsTotal += txProducts;
+                    } else if (production.services_basic_total !== null || production.services_extra_total !== null) {
+                      stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
+                      stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
+                      stats.productsTotal += Number(production.products_total) || 0;
                     } else {
                       stats.servicesBasicTotal += Number(production.services_total) || 0;
+                      stats.productsTotal += Number(production.products_total) || 0;
                     }
-                    
-                    stats.productsTotal += (Number(production.products_total) || 0) + (Number(production.tx_products_total) || 0);
+
                     stats.commissionTotal += Number(production.commission_earned);
                     stats.clientsTotal += Number(production.clients_count);
                   });
