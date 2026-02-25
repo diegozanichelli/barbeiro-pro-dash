@@ -1,86 +1,41 @@
 
-# Ajuste da Logica de Producoes Pendentes + Confirmacao Retroativa no Historico
 
-## Problema
+# Plano de Correção dos Erros de Build
 
-O alerta de "Producoes Pendentes" considera pendente qualquer dia sem registro em `daily_productions`. Porem, se o barbeiro trabalhou, nao vendeu nada e nao registrou presenca, o dia continua aparecendo como pendente indefinidamente, mesmo nao havendo producao a lancar.
+## Resumo
 
-## Nova Regra de Pendencia
+Existem 4 arquivos com erros que precisam ser corrigidos. São erros de sintaxe e ordenação de código, não de lógica.
 
-Um dia e pendente quando:
-- Nao existe registro em `daily_productions` para aquela data
-- **OU** existe registro mas `confirmed_presence = false`
+---
 
-Um dia **NAO** e pendente quando `confirmed_presence = true` (independente do `presence_type` ou dos valores).
+## Correções
 
-## Alteracoes
+### 1. `BarberEditProductionModal.tsx` — Import duplicado
 
-### 1. Alerta no Dashboard do Barbeiro (`MissingProductionAlert.tsx`)
+O import do `DropdownMenu` aparece duas vezes (linhas 29-34 e linhas 53-58). Remover o segundo import duplicado (linhas 53-58).
 
-**Antes:** Busca apenas `date` de `daily_productions` e considera pendente qualquer dia util sem registro.
+### 2. `BarberDashboard.tsx` — Variáveis usadas antes da declaração
 
-**Depois:** Busca `date` e `confirmed_presence` de `daily_productions`. Um dia e pendente se:
-- Nao tem registro algum, OU
-- Tem registro com `confirmed_presence = false`
+Os `useEffect` nas linhas 114-198 referenciam `fetchBarberData`, `fetchMonthlyGoal`, `fetchMonthlyStats` e `calculateDailyTarget`, mas essas funções só são declaradas a partir da linha 200. Solução: mover os 3 blocos `useEffect` (linhas 114-198) para depois das declarações das funções (`fetchBarberData`, `fetchMonthlyGoal`, `fetchMonthlyStats`, `calculateDailyTarget`).
 
-A query passa a trazer `date, confirmed_presence` em vez de apenas `date`. A logica de filtragem muda para considerar como "presente" apenas datas com `confirmed_presence = true`.
+### 3. `DailyGoalsTracking.tsx` — Variáveis usadas antes da declaração
 
-### 2. Alerta no Dashboard do Gestor (`MissingProductionsAlert.tsx` - manager)
+O `useEffect` na linha 80-83 referencia `fetchUnits` e `fetchDailyGoals`, declarados nas linhas 85+. Solução: mover o `useEffect` para depois das declarações dessas funções.
 
-Mesma logica: buscar `barber_id, date, confirmed_presence` e considerar pendente os dias sem registro OU com `confirmed_presence = false`.
+### 4. `LiveDashboard.tsx` — Campo `date` ausente na query
 
-### 3. Confirmacao Retroativa no Historico (`BarberEditProductionModal.tsx`)
+A query de `daily_productions` (linhas 206-221) não seleciona o campo `date`, mas o tipo `MonthProduction` exige esse campo. Solução: adicionar `date` ao `.select()` da query.
 
-Quando o barbeiro clica em "Editar" um dia no historico e nao ha transacoes (carrinho vazio), adicionar uma secao **"Confirmar Status do Dia"** com as 3 opcoes de presenca:
-- Trabalhei mas nao vendi (present)
-- Folga (day_off)
-- Falta / Atestado (absence)
+---
 
-Ao salvar com uma dessas opcoes (sem itens no carrinho):
-- Atualizar `daily_productions` com `confirmed_presence = true` e `presence_type` escolhido
-- Manter todos os valores monetarios zerados
-- O dia deixa de aparecer como pendente
+## Detalhes Técnicos
 
-**Importante:** Se o barbeiro adicionar itens ao carrinho, o fluxo atual de salvar transacoes continua funcionando normalmente. A secao de presenca so aparece como alternativa quando o carrinho esta vazio.
+| Arquivo | Erro | Correção |
+|---------|------|----------|
+| `BarberEditProductionModal.tsx` | Import duplicado de DropdownMenu (linhas 53-58) | Remover linhas 53-58 |
+| `BarberDashboard.tsx` | 3 useEffects antes das funções que referenciam | Mover useEffects para após as declarações de funções |
+| `DailyGoalsTracking.tsx` | useEffect antes de fetchUnits/fetchDailyGoals | Mover useEffect para após as declarações |
+| `LiveDashboard.tsx` | `date` ausente no .select() | Adicionar `date` ao select |
 
-### 4. Historico (`ProductionHistory.tsx`)
+Nenhuma alteração de lógica ou banco de dados é necessária.
 
-Os dias com `confirmed_presence = true` e valores zerados ja exibem badges (Presente/Folga/Falta) -- isso nao muda. A unica melhoria e que agora o barbeiro podera definir esses status retroativamente pelo modal de edicao.
-
-## Secao Tecnica
-
-### Arquivos modificados
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/components/dashboard/barber/MissingProductionAlert.tsx` | Buscar `date, confirmed_presence`; filtrar pendentes = sem registro OU `confirmed_presence = false` |
-| `src/components/dashboard/manager/MissingProductionsAlert.tsx` | Mesma logica: buscar `confirmed_presence` e filtrar corretamente |
-| `src/components/dashboard/barber/BarberEditProductionModal.tsx` | Adicionar secao de confirmacao de presenca quando carrinho vazio; salvar `confirmed_presence + presence_type` |
-
-### Logica de filtragem (pseudo-codigo)
-
-```text
-dias_uteis = gerar dias uteis ate ontem (excluindo domingos)
-producoes = SELECT date, confirmed_presence FROM daily_productions WHERE barber_id = X AND date BETWEEN ...
-
-dias_confirmados = producoes.filter(p => p.confirmed_presence === true).map(p => p.date)
-dias_pendentes = dias_uteis.filter(dia => !dias_confirmados.includes(dia))
-```
-
-### Fluxo do modal de edicao (carrinho vazio)
-
-```text
-Barbeiro abre "Editar" no historico
-  -> Modal carrega catalogo + producao existente
-  -> Se carrinho vazio, exibe secao "Confirmar Status do Dia"
-     -> 3 opcoes: present / day_off / absence
-     -> Botao "Confirmar" salva:
-        UPDATE daily_productions SET confirmed_presence = true, presence_type = X WHERE id = Y
-  -> Se carrinho tem itens, fluxo normal de salvar transacoes
-```
-
-### Sem impacto em:
-- Triggers de comissao (`calculate_commission`, `recalculate_daily_production_from_transactions`)
-- Campos `tx_*` (auditoria do gestor)
-- Logica de divergencia
-- Calculo de meta diaria (ja usa `confirmed_presence` corretamente)

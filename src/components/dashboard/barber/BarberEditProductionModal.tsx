@@ -51,7 +51,6 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
-
 interface BarberEditProductionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
