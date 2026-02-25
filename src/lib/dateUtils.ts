@@ -49,12 +49,19 @@ export function getCurrentDay(): number {
  * @param today - Data atual (padrão: data de Manaus)
  * @returns Número de dias entre hoje e o fim do mês (inclusive)
  */
-export function calculateRemainingWorkDays(today: Date = getManausDate()): number {
+export function calculateRemainingWorkDays(today: Date = getManausDate(), holidayDates: string[] = []): number {
   const lastDayOfMonth = endOfMonth(today).getDate();
+  const holidaysSet = new Set(holidayDates);
   let count = 0;
+
   for (let d = today.getDate(); d <= lastDayOfMonth; d++) {
     const date = new Date(today.getFullYear(), today.getMonth(), d);
-    if (date.getDay() !== 0) count++; // Excluir domingos
+    const dateKey = format(date, "yyyy-MM-dd");
+    const isSunday = date.getDay() === 0;
+    const isHoliday = holidaysSet.has(dateKey);
+
+    if (!isSunday && !isHoliday) count++; // Excluir domingos e feriados
   }
+
   return count;
 }
