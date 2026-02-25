@@ -140,11 +140,20 @@ export default function ManagerReports() {
     if (productions) {
       const totalRevenue = productions.reduce(
         (sum, p: any) => {
-          const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
+          const txServicesTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
+          const txProductsTotal = Number(p.tx_products_total) || 0;
+          const hasTxSource = txServicesTotal > 0 || txProductsTotal > 0;
+
+          if (hasTxSource) {
+            return sum + txServicesTotal + txProductsTotal;
+          }
+
+          const manualServicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
             ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
-              + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0)
             : (Number(p.services_total) || 0);
-          return sum + servicesTotal + Number(p.products_total) + (Number(p.tx_products_total) || 0);
+          const manualProductsTotal = Number(p.products_total) || 0;
+
+          return sum + manualServicesTotal + manualProductsTotal;
         },
         0
       );
