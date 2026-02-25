@@ -137,23 +137,41 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    // Para verificar metas, precisamos das comissões por barbeiro
-    // Usar query com limite apenas para metas (poucos barbeiros)
-    let goalsAchieved = 0;
-    if (goals && goals.length > 0) {
-      const { data: commissions } = await supabase
-        .from("daily_productions")
-        .select("barber_id, commission_earned, barbers!inner(unit_id)")
-        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("date", format(dateRange.to, "yyyy-MM-dd"));
+    if (productions) {
+      const totalRevenue = productions.reduce(
+        (sum, p: any) => {
+          const txServicesTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
+          const txProductsTotal = Number(p.tx_products_total) || 0;
+          const hasTxSource = txServicesTotal > 0 || txProductsTotal > 0;
 
-      if (commissions) {
-        const barberCommissions = new Map<string, number>();
-        commissions.forEach((p: any) => {
-          if (selectedUnit !== "all" && p.barbers?.unit_id !== selectedUnit) return;
-          const current = barberCommissions.get(p.barber_id) || 0;
-          barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
-        });
+          if (hasTxSource) {
+            return sum + txServicesTotal + txProductsTotal;
+          }
+
+          const manualServicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
+            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+            : (Number(p.services_total) || 0);
+          const manualProductsTotal = Number(p.products_total) || 0;
+
+          return sum + manualServicesTotal + manualProductsTotal;
+        },
+        0
+      );
+      const totalCommission = productions.reduce(
+        (sum, p) => sum + Number(p.commission_earned),
+        0
+      );
+      const totalClients = productions.reduce(
+        (sum, p) => sum + Number(p.clients_count),
+        0
+      );
+
+      // Calcular comissão acumulada por barbeiro para verificar metas
+      const barberCommissions = new Map<string, number>();
+      productions.forEach((p) => {
+        const current = barberCommissions.get(p.barber_id) || 0;
+        barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
+      });
 
         goals.forEach((goal: any) => {
           const earned = barberCommissions.get(goal.barber_id) || 0;
