@@ -20,6 +20,17 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
 
 const isBrowser = typeof window !== 'undefined';
 
+const getSafeStorage = () => {
+  if (!isBrowser) return undefined;
+
+  try {
+    return window.localStorage;
+  } catch (error) {
+    console.error('[Supabase] localStorage indisponível no contexto atual.', error);
+    return undefined;
+  }
+};
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
@@ -28,7 +39,7 @@ export const supabase = createClient<Database>(
   SUPABASE_PUBLISHABLE_KEY || FALLBACK_SUPABASE_KEY,
   {
     auth: {
-      storage: isBrowser ? window.localStorage : undefined,
+      storage: getSafeStorage(),
       persistSession: true,
       autoRefreshToken: true,
     },
