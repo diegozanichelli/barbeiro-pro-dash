@@ -121,11 +121,12 @@ export default function ManagerReports() {
     const { data: barbersData } = await barbersQuery;
 
     // Buscar metas do mês (filtradas por unidade se selecionada)
+    const goalReferenceDate2 = dateRange.from;
     let goalsQuery = supabase
       .from("monthly_goals")
       .select("*, barbers!inner(id, unit_id)")
-      .eq("month", goalReferenceDate.getMonth() + 1)
-      .eq("year", goalReferenceDate.getFullYear());
+      .eq("month", goalReferenceDate2.getMonth() + 1)
+      .eq("year", goalReferenceDate2.getFullYear());
 
     if (selectedUnit !== "all") {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
@@ -133,51 +134,32 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    if (productions) {
-      const totalRevenue = productions.reduce(
-        (sum, p: DailyProduction) => {
-          const txServicesTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
-          const txProductsTotal = Number(p.tx_products_total) || 0;
-          const hasTxSource = txServicesTotal > 0 || txProductsTotal > 0;
-
-          if (hasTxSource) {
-            return sum + txServicesTotal + txProductsTotal;
-          }
-
-          const manualServicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
-            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
-            : (Number(p.services_total) || 0);
-          const manualProductsTotal = Number(p.products_total) || 0;
-
-          return sum + manualServicesTotal + manualProductsTotal;
-        },
-        0
-      );
-      const totalCommission = productions.reduce(
-        (sum, p) => sum + Number(p.commission_earned),
-        0
-      );
-      const totalClients = productions.reduce(
-        (sum, p) => sum + Number(p.clients_count),
-        0
-      );
-
-      // Calcular comissão acumulada por barbeiro para verificar metas
+    // Calcular comissão acumulada por barbeiro para verificar metas
+    let goalsAchieved = 0;
+    if (productions && goals) {
       const barberCommissions = new Map<string, number>();
       productions.forEach((p) => {
         const current = barberCommissions.get(p.barber_id) || 0;
         barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
       });
 
-        goals.forEach((goal: any) => {
-          const earned = barberCommissions.get(goal.barber_id) || 0;
-          if (earned >= goal.target_commission) {
-            goalsAchieved++;
-          }
-        });
-      }
+      goals.forEach((goal: any) => {
+        const earned = barberCommissions.get(goal.barber_id) || 0;
+        if (earned >= goal.target_commission) {
+          goalsAchieved++;
+        }
+      });
     }
-  }, [dateRange, selectedBarber, selectedUnit]);
+
+    setStats({
+      totalRevenue,
+      totalCommission,
+      totalClients,
+      averageTicket,
+      goalsAchieved,
+      totalBarbers: barbersData?.length || 0,
+    });
+  }, [dateRange, selectedBarber, selectedUnit, productions]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
