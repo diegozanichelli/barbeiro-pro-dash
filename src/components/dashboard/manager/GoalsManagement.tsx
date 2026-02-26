@@ -400,6 +400,37 @@ export default function GoalsManagement() {
             </div>
           </div>
 
+          <Card className="border-dashed">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Landmark className="w-4 h-4" />
+                Feriados da Empresa ({months[filterMonth - 1]}/{filterYear})
+              </CardTitle>
+              <CardDescription>
+                Selecione os dias de feriado em que a empresa não vai funcionar. Esses dias serão desconsiderados nos cálculos de dias restantes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <DateCalendar
+                mode="multiple"
+                selected={holidayDates}
+                onSelect={(dates) => setHolidayDates(dates || [])}
+                month={new Date(filterYear, filterMonth - 1, 1)}
+                onMonthChange={() => undefined}
+                className="rounded-md border"
+              />
+
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm text-muted-foreground">
+                  {holidayDates.length} {holidayDates.length === 1 ? "feriado selecionado" : "feriados selecionados"}
+                </p>
+                <Button onClick={saveHolidaysForMonth} disabled={savingHolidays}>
+                  {savingHolidays ? "Salvando..." : "Salvar Feriados"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Tabela de Metas */}
           <div className="border rounded-lg">
             <Table>
