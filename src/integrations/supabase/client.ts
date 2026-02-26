@@ -18,6 +18,8 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   );
 }
 
+const isBrowser = typeof window !== 'undefined';
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
@@ -26,7 +28,7 @@ export const supabase = createClient<Database>(
   SUPABASE_PUBLISHABLE_KEY || FALLBACK_SUPABASE_KEY,
   {
     auth: {
-      storage: localStorage,
+      storage: isBrowser ? window.localStorage : undefined,
       persistSession: true,
       autoRefreshToken: true,
     },
