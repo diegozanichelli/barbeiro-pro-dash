@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,28 @@ import { CalendarDays, Target, TrendingUp, TrendingDown, CheckCircle, AlertTrian
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+interface GoalQueryRow {
+  barber_id: string;
+  target_commission: number;
+  work_days: number;
+  barbers: {
+    id: string;
+    name: string;
+    unit_id: string;
+    services_commission: number;
+    units: { name: string } | null;
+  } | null;
+}
+
+interface ProductionRow {
+  barber_id: string;
+  date: string;
+  commission_earned: number;
+  confirmed_presence: boolean;
+  presence_type: string | null;
+}
+
 interface BarberDailyGoal {
   barberId: string;
   barberName: string;
@@ -38,13 +60,15 @@ export default function DailyGoalsTracking() {
   const today = getManausDate();
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
   const todayStr = getTodayString();
+  const { holidayDates } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
 
   // Calculate working days passed in the month (excluding Sundays)
   const getWorkingDaysPassed = () => {
     let count = 0;
     for (let d = 1; d <= today.getDate(); d++) {
       const date = new Date(currentYear, currentMonth - 1, d);
-      if (date.getDay() !== 0) { // 0 = Sunday
+      const dateKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) { // 0 = Sunday
         count++;
       }
     }
@@ -56,9 +80,9 @@ export default function DailyGoalsTracking() {
   useEffect(() => {
     fetchUnits();
     fetchDailyGoals();
-  }, [organizationId]);
+  }, [fetchUnits, fetchDailyGoals]);
 
-  const fetchUnits = async () => {
+  const fetchUnits = useCallback(async () => {
     const { data } = await supabase
       .from("units")
       .select("id, name")
@@ -66,9 +90,9 @@ export default function DailyGoalsTracking() {
       .order("name");
 
     if (data) setUnits(data);
-  };
+  }, []);
 
-  const fetchDailyGoals = async () => {
+  const fetchDailyGoals = useCallback(async () => {
     if (!organizationId) return;
 
     setLoading(true);
@@ -108,8 +132,8 @@ export default function DailyGoalsTracking() {
       if (prodError) throw prodError;
 
       // Calculate daily goals for each barber
-      const barberGoalsData: BarberDailyGoal[] = (goals || []).map((goal: any) => {
-        const barberProductions = (productions || []).filter(
+      const barberGoalsData: BarberDailyGoal[] = (goals || []).map((goal: GoalQueryRow) => {
+        const barberProductions = ((productions || []) as ProductionRow[]).filter(
           (p) => p.barber_id === goal.barber_id
         );
 
@@ -127,14 +151,15 @@ export default function DailyGoalsTracking() {
         
         // Verifica se confirmou presença hoje sem vendas e qual tipo
         const confirmedPresenceToday = todayProduction?.confirmed_presence === true && totalEarnedToday === 0;
-        const todayPresenceType = (todayProduction as any)?.presence_type as string | null;
+        const todayPresenceType = todayProduction?.presence_type ?? null;
 
         // Contar dias com produção real OU com presença confirmada (present/null)
         // Excluir domingos da contagem (domingo = bônus, não consome dia útil)
         const daysWorked = barberProductions.filter(p => {
           const dateObj = new Date(p.date + "T12:00:00");
-          if (dateObj.getDay() === 0) return false;
-          return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
+          const dateKey = p.date;
+          if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
+          return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
         }).length;
         
         // Calculate remaining commission to achieve
@@ -142,7 +167,7 @@ export default function DailyGoalsTracking() {
         
         // Calculate remaining work days (same logic as BarberDashboard)
         const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
-        const remainingCalendarDays = calculateRemainingWorkDays();
+        const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
         const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
         
         // Daily commission target based on remaining amount / remaining days
@@ -208,7 +233,7 @@ export default function DailyGoalsTracking() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [organizationId, currentMonth, currentYear, todayStr, holidayDates, workingDaysPassed]);
 
   const filteredGoals = useMemo(() => {
     if (filterUnit === "all") return barberGoals;
