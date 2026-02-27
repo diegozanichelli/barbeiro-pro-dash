@@ -44,7 +44,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
       for (let d = 1; d < today.getDate(); d++) {
         const date = new Date(currentYear, currentMonth - 1, d);
         const dateKey = format(date, "yyyy-MM-dd");
-        if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) {
+        if (!holidayDates.includes(dateKey)) {
           days.push(dateKey);
         }
       }
@@ -55,7 +55,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
 
       const { data: productions, error } = await supabase
         .from("daily_productions")
-        .select("date, confirmed_presence, services_basic_total, services_extra_total, products_total")
+        .select("date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total")
         .eq("barber_id", barberId)
         .gte("date", startOfMonth)
         .lte("date", yesterdayStr);
@@ -65,6 +65,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
       const confirmedDates = (productions || [])
         .filter((p) => {
           if (p.confirmed_presence === true) return true;
+          if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return true;
           const total = (p.services_basic_total || 0) + (p.services_extra_total || 0) + (p.products_total || 0);
           return total > 0;
         })

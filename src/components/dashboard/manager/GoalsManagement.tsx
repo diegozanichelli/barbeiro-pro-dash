@@ -15,6 +15,7 @@ import { Calendar as DateCalendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
 import { Target, Calendar, Plus, Pencil, Trash2, Landmark } from "lucide-react";
 import { format } from "date-fns";
+import { getDaysInMonth } from "date-fns";
 
 interface BarberOption {
   id: string;
@@ -51,7 +52,6 @@ export default function GoalsManagement() {
   // Form states
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
   const [targetCommission, setTargetCommission] = useState("");
-  const [workDays, setWorkDays] = useState("");
   const [editingGoal, setEditingGoal] = useState<MonthlyGoal | null>(null);
   const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null);
   const [holidayDates, setHolidayDates] = useState<Date[]>([]);
@@ -110,9 +110,10 @@ export default function GoalsManagement() {
     if (!organizationId) return;
 
     const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
-    const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+    const monthEnd = getDaysInMonth(new Date(filterYear, filterMonth - 1, 1));
+    const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-${String(monthEnd).padStart(2, "0")}`;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("organization_holidays")
       .select("date")
       .eq("organization_id", organizationId)
@@ -148,9 +149,10 @@ export default function GoalsManagement() {
 
     try {
       const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
-      const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-31`;
+      const monthEnd = getDaysInMonth(new Date(filterYear, filterMonth - 1, 1));
+      const endDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-${String(monthEnd).padStart(2, "0")}`;
 
-      const { error: deleteError } = await (supabase as any)
+      const { error: deleteError } = await supabase
         .from("organization_holidays")
         .delete()
         .eq("organization_id", organizationId)
@@ -165,7 +167,7 @@ export default function GoalsManagement() {
           date: format(date, "yyyy-MM-dd"),
         }));
 
-        const { error: insertError } = await (supabase as any)
+        const { error: insertError } = await supabase
           .from("organization_holidays")
           .insert(payload);
 
@@ -187,7 +189,7 @@ export default function GoalsManagement() {
   };
 
   const handleCreate = async () => {
-    if (!selectedBarberId || !targetCommission || !workDays) {
+    if (!selectedBarberId || !targetCommission) {
       toast.error("Preencha todos os campos");
       return;
     }
@@ -200,6 +202,7 @@ export default function GoalsManagement() {
     setLoading(true);
 
     try {
+      const monthDays = getDaysInMonth(new Date(filterYear, filterMonth - 1, 1));
       const { error } = await supabase
         .from("monthly_goals")
         .insert({
@@ -208,7 +211,7 @@ export default function GoalsManagement() {
           month: filterMonth,
           year: filterYear,
           target_commission: Number(targetCommission),
-          work_days: Number(workDays),
+          work_days: monthDays,
         });
 
       if (error) throw error;
@@ -231,7 +234,7 @@ export default function GoalsManagement() {
   };
 
   const handleEdit = async () => {
-    if (!editingGoal || !targetCommission || !workDays) {
+    if (!editingGoal || !targetCommission) {
       toast.error("Preencha todos os campos");
       return;
     }
@@ -239,11 +242,12 @@ export default function GoalsManagement() {
     setLoading(true);
 
     try {
+      const monthDays = getDaysInMonth(new Date(filterYear, filterMonth - 1, 1));
       const { error } = await supabase
         .from("monthly_goals")
         .update({
           target_commission: Number(targetCommission),
-          work_days: Number(workDays),
+          work_days: monthDays,
         })
         .eq("id", editingGoal.id);
 
@@ -296,7 +300,6 @@ export default function GoalsManagement() {
   const openEditDialog = (goal: MonthlyGoal) => {
     setEditingGoal(goal);
     setTargetCommission(goal.target_commission.toString());
-    setWorkDays(goal.work_days.toString());
     setIsEditDialogOpen(true);
   };
 
@@ -308,7 +311,6 @@ export default function GoalsManagement() {
   const resetForm = () => {
     setSelectedBarberId("");
     setTargetCommission("");
-    setWorkDays("");
     setEditingGoal(null);
   };
 
@@ -438,7 +440,7 @@ export default function GoalsManagement() {
                 <TableRow>
                   <TableHead>Barbeiro</TableHead>
                   <TableHead>Meta de Recebimento (R$)</TableHead>
-                  <TableHead>Dias Úteis de Trabalho</TableHead>
+                  <TableHead>Calendário de Meta</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -458,7 +460,7 @@ export default function GoalsManagement() {
                       <TableCell>
                         R$ {goal.target_commission.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
-                      <TableCell>{goal.work_days} dias</TableCell>
+                      <TableCell>Mês completo (dinâmico)</TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-2 justify-end">
                           <Button
@@ -573,16 +575,9 @@ export default function GoalsManagement() {
                 onChange={(e) => setTargetCommission(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="create-days">Dias Úteis de Trabalho no Mês</Label>
-              <Input
-                id="create-days"
-                type="number"
-                placeholder="22"
-                value={workDays}
-                onChange={(e) => setWorkDays(e.target.value)}
-              />
-            </div>
+            <p className="text-sm text-muted-foreground">
+              O divisor da meta será dinâmico no mês completo, abatendo apenas feriados e ausências registradas.
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setIsCreateDialogOpen(false); resetForm(); }}>
@@ -616,16 +611,9 @@ export default function GoalsManagement() {
                 onChange={(e) => setTargetCommission(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-days">Dias Úteis de Trabalho no Mês</Label>
-              <Input
-                id="edit-days"
-                type="number"
-                placeholder="22"
-                value={workDays}
-                onChange={(e) => setWorkDays(e.target.value)}
-              />
-            </div>
+            <p className="text-sm text-muted-foreground">
+              O calendário de meta é dinâmico (mês completo), com abatimento automático de feriados e ausências.
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setIsEditDialogOpen(false); resetForm(); }}>

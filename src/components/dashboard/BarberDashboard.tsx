@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,26 @@ interface BarberData {
 
 interface MonthlyGoal {
   target_commission: number;
-  work_days: number;
+}
+
+interface EditingProduction {
+  id: string;
+  date: string;
+}
+
+interface DailyProductionRow {
+  id: string;
+  date: string;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  services_total: number | null;
+  products_total: number | null;
+  clients_count: number | null;
+  services_count: number | null;
+  products_count: number | null;
+  commission_earned: number | null;
+  confirmed_presence: boolean | null;
+  presence_type: string | null;
 }
 
 interface EditingProduction {
@@ -87,6 +106,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [stats, setStats] = useState<MonthlyStats | null>(null);
   const [dailyTarget, setDailyTarget] = useState(0);
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
+  const [scheduledOffDates, setScheduledOffDates] = useState<string[]>([]);
   const [missingLink, setMissingLink] = useState(false);
   const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
 const [todayProduction, setTodayProduction] = useState<{
@@ -187,21 +207,24 @@ const [todayProduction, setTodayProduction] = useState<{
       // Usar commission_earned do banco (fonte única de verdade - já considera taxas fixas + ambas fontes)
       const accumulatedCommission = typedProductions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
 
-      // Contar dias com produção real OU com presença confirmada (present/null)
-      // day_off e absence NÃO contam como dia trabalhado
-      // Dias trabalhados - APENAS produção do barbeiro (sem tx_*)
+      // Contar dias trabalhados (mês completo por padrão), excluindo apenas
+      // feriados e status explícitos de não trabalho.
       const daysWithProduction = typedProductions.filter(p => {
         const dateObj = new Date(p.date + "T12:00:00");
         const dateKey = format(dateObj, "yyyy-MM-dd");
 
-        // Excluir domingos e feriados da contagem de dias trabalhados (dias oficiais)
-        // Se trabalhar nesses dias, conta como bônus (faturamento soma, mas não consome dia útil)
-        if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
+        if (holidayDates.includes(dateKey)) return false;
+        if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return false;
 
         const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
                       (Number(p.products_total) || 0);
         return total > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
       }).length;
+
+      const futureOffDates = typedProductions
+        .filter((p) => ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? ""))
+        .map((p) => p.date);
+      setScheduledOffDates(futureOffDates);
 
       // Identificar produção de hoje para o card de confirmação de presença
       const todayStr = getTodayString();
@@ -264,6 +287,7 @@ const [todayProduction, setTodayProduction] = useState<{
         services_conversion: 0,
         products_conversion: 0,
       });
+      setScheduledOffDates([]);
     }
   }, [barber, selectedYear, selectedMonth, holidayDates]);
 
@@ -287,22 +311,17 @@ const [todayProduction, setTodayProduction] = useState<{
       setDailyTargetServices(0);
       return;
     } else if (isCurrentMonth) {
-      // Mês atual: calcular dias restantes baseados nos dias configurados
-      const workDaysConfigured = monthlyGoal.work_days;
-      const daysWorked = stats.days_worked;
-      const remainingWorkDaysFromGoal = workDaysConfigured - daysWorked;
-      
-      // Dias restantes no calendário (para urgência)
+      // Mês atual: cálculo 100% dinâmico (mês completo - ausências futuras - feriados)
       const manausDate = getManausDate();
       const selectedDate = new Date(selectedYear, selectedMonth - 1, manausDate.getDate());
       const remainingCalendarDays = calculateRemainingWorkDays(selectedDate, holidayDates);
-      
-      // Usar o MENOR entre dias configurados restantes e dias no calendário
-      // Isso cria urgência quando o tempo está acabando
-      daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
+      const futureOffCount = scheduledOffDates.filter((date) => date >= format(selectedDate, "yyyy-MM-dd")).length;
+      daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     } else if (isFutureMonth) {
-      // Mês futuro: usar dias cadastrados na meta
-      daysToUse = monthlyGoal.work_days;
+      const firstDayOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
+      const remainingCalendarDays = calculateRemainingWorkDays(firstDayOfMonth, holidayDates);
+      const futureOffCount = scheduledOffDates.length;
+      daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     }
 
     if (daysToUse > 0) {
@@ -316,7 +335,28 @@ const [todayProduction, setTodayProduction] = useState<{
 
       setDailyTargetServices(servicesTarget);
     }
-  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates]);
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
+
+  const pacingCoachMessage = useMemo(() => {
+    if (!isCurrentMonth || !monthlyGoal || !stats) return null;
+
+    const today = getManausDate().getDay();
+    const isThursdayOrFriday = today === 4 || today === 5;
+    if (!isThursdayOrFriday) return null;
+
+    const currentDate = getManausDate();
+    const currentDayOfMonth = currentDate.getDate();
+    const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
+    const elapsedCalendarDays = currentDayOfMonth;
+    const elapsedHolidays = holidayDates.filter((d) => d >= format(monthStart, "yyyy-MM-dd") && d <= format(currentDate, "yyyy-MM-dd")).length;
+    const elapsedOff = scheduledOffDates.filter((d) => d <= format(currentDate, "yyyy-MM-dd")).length;
+    const effectiveElapsed = Math.max(1, elapsedCalendarDays - elapsedHolidays - elapsedOff);
+    const expectedByNow = (monthlyGoal.target_commission / Math.max(1, new Date(selectedYear, selectedMonth, 0).getDate())) * effectiveElapsed;
+
+    if (stats.accumulated_commission >= expectedByNow) return null;
+
+    return "IA: Notei que o seu ritmo esta semana foi mais baixo. Caso a sua barbearia funcione aos domingos, peça pro seu gestor para ir neste, para tentar compensar a semana mais fraca e bater a sua meta mensal.";
+  }, [isCurrentMonth, monthlyGoal, stats, selectedYear, selectedMonth, holidayDates, scheduledOffDates]);
 
   useEffect(() => {
     fetchBarberData();
@@ -810,6 +850,16 @@ const [todayProduction, setTodayProduction] = useState<{
                 )}
               </CardContent>
             </Card>
+
+            {pacingCoachMessage && (
+              <Card className="border-primary/40 bg-primary/5">
+                <CardContent className="pt-4">
+                  <p className="text-sm text-foreground">
+                    <strong>Coach IA:</strong> {pacingCoachMessage}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Card de Faturamento de Hoje com Confirmação de Presença */}
             {isCurrentMonth && todayProduction !== null && (

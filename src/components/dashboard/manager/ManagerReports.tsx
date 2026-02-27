@@ -89,17 +89,21 @@ export default function ManagerReports() {
     
     const goalReferenceDate = dateRange.from;
 
-    // Usar RPC para agregação no banco (evita limite de 1000 linhas)
-    const { data: rpcData, error: rpcError } = await supabase.rpc('get_manager_report_stats', {
-      p_date_from: format(dateRange.from, "yyyy-MM-dd"),
-      p_date_to: format(dateRange.to, "yyyy-MM-dd"),
-      p_unit_id: selectedUnit !== "all" ? selectedUnit : null,
-      p_barber_id: selectedBarber !== "all" ? selectedBarber : null,
-    });
+    // Buscar produções no período selecionado com filtro de unidade/barbeiro
+    let productionsQuery = supabase
+      .from("daily_productions")
+      .select("*, barbers!inner(id, unit_id)")
+      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+      .lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
-    if (rpcError) {
-      console.error("Erro ao buscar stats:", rpcError);
-      return;
+    // Aplicar filtro de unidade
+    if (selectedUnit !== "all") {
+      productionsQuery = productionsQuery.eq("barbers.unit_id", selectedUnit);
+    }
+
+    // Aplicar filtro de barbeiro
+    if (selectedBarber !== "all") {
+      productionsQuery = productionsQuery.eq("barber_id", selectedBarber);
     }
 
     const statsRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
@@ -125,8 +129,8 @@ export default function ManagerReports() {
     let goalsQuery = supabase
       .from("monthly_goals")
       .select("*, barbers!inner(id, unit_id)")
-      .eq("month", goalReferenceDate2.getMonth() + 1)
-      .eq("year", goalReferenceDate2.getFullYear());
+      .eq("month", goalReferenceDate.getMonth() + 1)
+      .eq("year", goalReferenceDate.getFullYear());
 
     if (selectedUnit !== "all") {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
@@ -134,9 +138,36 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    // Calcular comissão acumulada por barbeiro para verificar metas
-    let goalsAchieved = 0;
-    if (productions && goals) {
+    if (productions) {
+      const totalRevenue = productions.reduce(
+        (sum, p: DailyProduction) => {
+          const txServicesTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
+          const txProductsTotal = Number(p.tx_products_total) || 0;
+          const hasTxSource = txServicesTotal > 0 || txProductsTotal > 0;
+
+          if (hasTxSource) {
+            return sum + txServicesTotal + txProductsTotal;
+          }
+
+          const manualServicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
+            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
+            : (Number(p.services_total) || 0);
+          const manualProductsTotal = Number(p.products_total) || 0;
+
+          return sum + manualServicesTotal + manualProductsTotal;
+        },
+        0
+      );
+      const totalCommission = productions.reduce(
+        (sum, p) => sum + Number(p.commission_earned),
+        0
+      );
+      const totalClients = productions.reduce(
+        (sum, p) => sum + Number(p.clients_count),
+        0
+      );
+
+      // Calcular comissão acumulada por barbeiro para verificar metas
       const barberCommissions = new Map<string, number>();
       productions.forEach((p) => {
         const current = barberCommissions.get(p.barber_id) || 0;
@@ -150,16 +181,7 @@ export default function ManagerReports() {
         }
       });
     }
-
-    setStats({
-      totalRevenue,
-      totalCommission,
-      totalClients,
-      averageTicket,
-      goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
-    });
-  }, [dateRange, selectedBarber, selectedUnit, productions]);
+  }, [dateRange, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase

@@ -84,7 +84,7 @@ export default function MissingProductionsAlert() {
       for (let d = 1; d <= lastDay; d++) {
         const date = new Date(selectedYear, selectedMonth - 1, d);
         const dateKey = format(date, "yyyy-MM-dd");
-        if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) {
+        if (!holidayDates.includes(dateKey)) {
           days.push(dateKey);
         }
       }
@@ -94,7 +94,7 @@ export default function MissingProductionsAlert() {
 
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
-        .select("barber_id, date, confirmed_presence, services_basic_total, services_extra_total, products_total")
+        .select("barber_id, date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total")
         .eq("organization_id", organizationId)
         .gte("date", startOfMonth)
         .lte("date", endOfMonth);
@@ -108,6 +108,7 @@ export default function MissingProductionsAlert() {
           .filter((p) => {
             if (p.barber_id !== barber.id) return false;
             if (p.confirmed_presence === true) return true;
+            if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return true;
             const total = (p.services_basic_total || 0) + (p.services_extra_total || 0) + (p.products_total || 0);
             return total > 0;
           })

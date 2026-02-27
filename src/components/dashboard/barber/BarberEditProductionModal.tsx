@@ -93,7 +93,7 @@ interface PreviousCommandItem {
 }
 
 type CategoryTab = "services" | "products";
-type PresenceType = "present" | "day_off" | "absence";
+type PresenceType = "present" | "day_off" | "absence" | "optional_sunday";
 
 let tempIdCounter = 0;
 const generateTempId = () => `edit-${Date.now()}-${++tempIdCounter}`;
@@ -290,6 +290,8 @@ export default function BarberEditProductionModal({
 
     await handleConfirmStatus(selectedStatus);
   };
+
+  const isSunday = useMemo(() => new Date(`${productionDate}T12:00:00`).getDay() === 0, [productionDate]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -538,9 +540,14 @@ export default function BarberEditProductionModal({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem onClick={() => handleRequestStatusConfirm("present")}>Trabalhei mas não vendi</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleRequestStatusConfirm("day_off")}>Folga</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleRequestStatusConfirm("absence")}>Falta / Atestado</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleRequestStatusConfirm("present")}>Registrar Presença sem venda</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleRequestStatusConfirm("day_off")}>Registrar Folga</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleRequestStatusConfirm("absence")}>Registrar Falta</DropdownMenuItem>
+                    {isSunday && (
+                      <DropdownMenuItem onClick={() => handleRequestStatusConfirm("optional_sunday")}>
+                        Não trabalhar este Domingo
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
 

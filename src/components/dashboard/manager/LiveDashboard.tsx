@@ -387,22 +387,15 @@ export default function LiveDashboard() {
       0
     );
 
-    // Count days worked: production > 0 OR confirmed_presence with present/null type
-    const daysWorked = barberMonthProductions.filter((p) => {
-      const dateObj = new Date(p.date + "T12:00:00");
-      const dateKey = p.date;
-      if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
-
-      return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
-    }).length;
-
     // Calculate remaining commission to achieve
     const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
 
-    // Calculate remaining work days (same logic as BarberDashboard)
-    const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
+    // Dynamic divisor: remaining calendar days - future off/absence marks
     const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
-    const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
+    const futureOffDays = barberMonthProductions.filter(
+      (p) => p.date >= selectedDate && ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")
+    ).length;
+    const daysToUse = Math.max(1, remainingCalendarDays - futureOffDays);
 
     // Daily commission target based on remaining amount / remaining days
     const dailyCommissionTarget = remainingCommission / daysToUse;

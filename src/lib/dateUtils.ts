@@ -44,7 +44,7 @@ export function getCurrentDay(): number {
 
 /**
  * Calcula o número de dias restantes no mês atual (incluindo hoje)
- * Considera apenas os dias úteis oficiais (exclui domingos e feriados configurados)
+ * Considera o mês completo e exclui apenas feriados configurados
  * @param today - Data atual (padrão: data de Manaus)
  * @param holidayDates - Lista de datas (yyyy-MM-dd) que devem ser desconsideradas
  * @returns Número de dias entre hoje e o fim do mês (inclusive)
@@ -57,10 +57,9 @@ export function calculateRemainingWorkDays(today: Date = getManausDate(), holida
   for (let d = today.getDate(); d <= lastDayOfMonth; d++) {
     const date = new Date(today.getFullYear(), today.getMonth(), d);
     const dateKey = format(date, "yyyy-MM-dd");
-    const isSunday = date.getDay() === 0;
     const isHoliday = holidaysSet.has(dateKey);
 
-    if (!isSunday && !isHoliday) count++; // Excluir domingos e feriados
+    if (!isHoliday) count++; // Excluir apenas feriados
   }
 
   return count;

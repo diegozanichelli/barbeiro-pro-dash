@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Loader2 } from "lucide-react";
 
-export type PresenceType = "present" | "day_off" | "absence";
+export type PresenceType = "present" | "day_off" | "absence" | "optional_sunday";
 
 interface StatusDoDiaDialogProps {
   open: boolean;

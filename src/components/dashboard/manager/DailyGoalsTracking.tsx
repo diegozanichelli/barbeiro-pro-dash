@@ -62,13 +62,13 @@ export default function DailyGoalsTracking() {
   const todayStr = getTodayString();
   const { holidayDates } = useOrganizationHolidays({ organizationId, month: currentMonth, year: currentYear });
 
-  // Calculate working days passed in the month (excluding Sundays)
+  // Calculate elapsed goal days in month (full month default, excluding holidays only)
   const getWorkingDaysPassed = () => {
     let count = 0;
     for (let d = 1; d <= today.getDate(); d++) {
       const date = new Date(currentYear, currentMonth - 1, d);
       const dateKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      if (date.getDay() !== 0 && !holidayDates.includes(dateKey)) { // 0 = Sunday
+      if (!holidayDates.includes(dateKey)) {
         count++;
       }
     }
@@ -76,6 +76,11 @@ export default function DailyGoalsTracking() {
   };
 
   const workingDaysPassed = getWorkingDaysPassed();
+
+  useEffect(() => {
+    fetchUnits();
+    fetchDailyGoals();
+  }, [fetchUnits, fetchDailyGoals]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
@@ -147,22 +152,23 @@ export default function DailyGoalsTracking() {
         const confirmedPresenceToday = todayProduction?.confirmed_presence === true && totalEarnedToday === 0;
         const todayPresenceType = todayProduction?.presence_type ?? null;
 
-        // Contar dias com produção real OU com presença confirmada (present/null)
-        // Excluir domingos da contagem (domingo = bônus, não consome dia útil)
+        // Contar dias trabalhados em calendário dinâmico
         const daysWorked = barberProductions.filter(p => {
-          const dateObj = new Date(p.date + "T12:00:00");
           const dateKey = p.date;
-          if (dateObj.getDay() === 0 || holidayDates.includes(dateKey)) return false;
+          if (holidayDates.includes(dateKey)) return false;
+          if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return false;
           return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
         }).length;
         
         // Calculate remaining commission to achieve
         const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
         
-        // Calculate remaining work days (same logic as BarberDashboard)
-        const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
+        // Divisor dinâmico: dias restantes no mês - dias futuros marcados como ausência
         const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
-        const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
+        const futureOffDays = barberProductions.filter(
+          (p) => p.date >= todayStr && ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")
+        ).length;
+        const daysToUse = Math.max(1, remainingCalendarDays - futureOffDays);
         
         // Daily commission target based on remaining amount / remaining days
         const dailyCommissionTarget = remainingCommission / daysToUse;
@@ -176,7 +182,8 @@ export default function DailyGoalsTracking() {
         const progressPercent = (totalEarnedMonth / goal.target_commission) * 100;
         
         // Expected progress based on working days passed
-        const expectedProgress = (workingDaysPassed / goal.work_days) * 100;
+        const monthDays = new Date(currentYear, currentMonth, 0).getDate();
+        const expectedProgress = (workingDaysPassed / monthDays) * 100;
         
         // Determine status
         let status: BarberDailyGoal["status"];
@@ -228,11 +235,6 @@ export default function DailyGoalsTracking() {
       setLoading(false);
     }
   }, [organizationId, currentMonth, currentYear, todayStr, holidayDates, workingDaysPassed]);
-
-  useEffect(() => {
-    fetchUnits();
-    fetchDailyGoals();
-  }, [fetchUnits, fetchDailyGoals]);
 
   const filteredGoals = useMemo(() => {
     if (filterUnit === "all") return barberGoals;
