@@ -75,8 +75,10 @@ interface MonthlyStats {
 export default function BarberDashboard({ user }: BarberDashboardProps) {
   const navigate = useNavigate();
   const { hasSubscriptionModule } = useSubscriptionModule();
-  const { month: currentMonthNow, year: currentYearNow } = getCurrentMonthYear();
-  
+  const today = getManausDate();
+  const currentMonthNow = today.getMonth() + 1;
+  const currentYearNow = today.getFullYear();
+
   // Estado para o mês/ano selecionado (default: mês atual)
   const [selectedMonth, setSelectedMonth] = useState(currentMonthNow); // 1-12
   const [selectedYear, setSelectedYear] = useState(currentYearNow);
@@ -210,23 +212,26 @@ const [todayProduction, setTodayProduction] = useState<{
       consolidated_basic_total: number | null;
       consolidated_extra_total: number | null;
       consolidated_products_total: number | null;
-      total_revenue: number | null;
-      total_clients: number | null;
-      total_services: number | null;
+      total_revenue?: number | null;
+      totalRevenue?: number | null;
+      total_clients?: number | null;
+      totalClients?: number | null;
+      total_services?: number | null;
+      totalServices?: number | null;
     }
 
     const typedProductions = (productions || []) as DailyProductionRow[];
     const typedConsolidated = (consolidatedData || []) as ConsolidatedRow[];
 
-    const totalClients = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_clients) || 0), 0);
-    const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_services) || 0), 0);
+    const totalClients = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_clients ?? row.totalClients ?? 0) || 0), 0);
+    const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_services ?? row.totalServices ?? 0) || 0), 0);
 
     const totalServicesRevenue = typedConsolidated.reduce(
       (sum, row) => sum + (Number(row.consolidated_basic_total) || 0) + (Number(row.consolidated_extra_total) || 0),
       0
     );
     const totalProductsRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.consolidated_products_total) || 0), 0);
-    const totalRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_revenue) || 0), 0);
+    const totalRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_revenue ?? row.totalRevenue ?? 0) || 0), 0);
 
     const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
 
@@ -260,7 +265,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
     if (todayProd) {
       const todayConsolidated = typedConsolidated.find((row) => row.date === todayStr);
-      const todayTotal = Number(todayConsolidated?.total_revenue) || 0;
+      const todayTotal = Number(todayConsolidated?.total_revenue ?? todayConsolidated?.totalRevenue ?? 0) || 0;
       setTodayProduction({
         id: todayProd.id,
         total: todayTotal,

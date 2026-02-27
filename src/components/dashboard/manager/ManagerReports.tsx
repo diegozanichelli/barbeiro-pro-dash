@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
@@ -76,10 +76,12 @@ export default function ManagerReports() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
-  const manausNow = useMemo(() => getManausDate(), []);
+  const today = getManausDate();
+  const currentMonth = today.getMonth() + 1;
+  const currentYear = today.getFullYear();
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(manausNow),
-    to: endOfMonth(manausNow),
+    from: startOfMonth(today),
+    to: endOfMonth(today),
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
@@ -153,21 +155,6 @@ export default function ManagerReports() {
 
     const { data: commissionRows } = await commissionsQuery;
 
-    // Chamar RPC para estatísticas agregadas
-    const rpcParams: any = {
-      p_date_from: format(dateRange.from, "yyyy-MM-dd"),
-      p_date_to: format(dateRange.to, "yyyy-MM-dd"),
-    };
-    if (selectedUnit !== "all") rpcParams.p_unit_id = selectedUnit;
-    if (selectedBarber !== "all") rpcParams.p_barber_id = selectedBarber;
-
-    const { data: rpcData } = await supabase.rpc("get_manager_report_stats", rpcParams);
-    const statsRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    const totalRevenue = Number(statsRow?.total_revenue) || 0;
-    const totalCommission = Number(statsRow?.total_commission) || 0;
-    const totalClients = Number(statsRow?.total_clients) || 0;
-    const averageTicket = Number(statsRow?.average_ticket) || 0;
-
     // Buscar barbeiros ativos (filtrados por unidade se selecionada)
     let barbersQuery = supabase
       .from("barbers")
@@ -196,9 +183,12 @@ export default function ManagerReports() {
 
     interface ConsolidatedStatRow {
       barber_id: string;
-      total_revenue: number | null;
-      total_clients: number | null;
-      total_services: number | null;
+      total_revenue?: number | null;
+      totalRevenue?: number | null;
+      total_clients?: number | null;
+      totalClients?: number | null;
+      total_services?: number | null;
+      totalServices?: number | null;
     }
 
     interface CommissionRow {
@@ -209,8 +199,14 @@ export default function ManagerReports() {
     const safeConsolidated = (consolidatedRows || []) as ConsolidatedStatRow[];
     const safeCommissions = (commissionRows || []) as CommissionRow[];
 
-    const totalRevenue = safeConsolidated.reduce((sum, row) => sum + (Number(row.total_revenue) || 0), 0);
-    const totalClients = safeConsolidated.reduce((sum, row) => sum + (Number(row.total_clients) || 0), 0);
+    const totalRevenue = safeConsolidated.reduce((sum, row) => {
+      const revenue = Number(row.total_revenue ?? row.totalRevenue ?? 0) || 0;
+      return sum + revenue;
+    }, 0);
+    const totalClients = safeConsolidated.reduce((sum, row) => {
+      const clients = Number(row.total_clients ?? row.totalClients ?? 0) || 0;
+      return sum + clients;
+    }, 0);
     const totalCommission = safeCommissions.reduce((sum, row) => sum + (Number(row.commission_earned) || 0), 0);
 
     const barberCommissions = new Map<string, number>();
