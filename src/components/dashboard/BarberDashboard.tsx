@@ -158,106 +158,38 @@ const [todayProduction, setTodayProduction] = useState<{
 
     const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
     const lastDay = new Date(selectedYear, selectedMonth, 0);
+    const startDate = format(firstDay, "yyyy-MM-dd");
+    const endDate = format(lastDay, "yyyy-MM-dd");
 
-    const { data: productions } = await supabase
-      .from("daily_productions")
-      .select("*")
-      .eq("barber_id", barber.id)
-      .gte("date", format(firstDay, "yyyy-MM-dd"))
-      .lte("date", format(lastDay, "yyyy-MM-dd"));
+    const [productionsResult, consolidatedResult] = await Promise.all([
+      supabase
+        .from("daily_productions")
+        .select("*")
+        .eq("barber_id", barber.id)
+        .gte("date", startDate)
+        .lte("date", endDate),
+      supabase
+        .from("v_consolidated_daily_production")
+        .select("date, consolidated_basic_total, consolidated_extra_total, consolidated_products_total, total_revenue, total_clients, total_services")
+        .eq("barber_id", barber.id)
+        .gte("date", startDate)
+        .lte("date", endDate),
+    ]);
 
-    const typedProductions = (productions || []) as DailyProductionRow[];
+    const { data: productions, error: productionsError } = productionsResult;
+    const { data: consolidatedData, error: consolidatedError } = consolidatedResult;
 
-    if (typedProductions.length > 0) {
-      const totalClients = typedProductions.reduce((sum, p) => sum + Number(p.clients_count), 0);
-      const totalServicesCount = typedProductions.reduce((sum, p) => sum + Number(p.services_count), 0);
-      const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
-      
-      // Calcular total de serviços - APENAS produção do barbeiro (sem tx_*)
-      const totalServicesRevenue = typedProductions.reduce((sum, p) => {
-        if (p.services_basic_total !== null || p.services_extra_total !== null) {
-          return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
-        }
-        return sum + Number(p.services_total || 0);
-      }, 0);
-      
-      const totalProductsRevenue = typedProductions.reduce((sum, p) => 
-        sum + (Number(p.products_total) || 0), 0);
-      const totalRevenue = totalServicesRevenue + totalProductsRevenue;
-
-      // Usar commission_earned do banco (fonte única de verdade - já considera taxas fixas + ambas fontes)
-      const accumulatedCommission = typedProductions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
-
-      // Contar dias trabalhados (mês completo por padrão), excluindo apenas
-      // feriados e status explícitos de não trabalho.
-      const daysWithProduction = typedProductions.filter(p => {
-        const dateObj = new Date(p.date + "T12:00:00");
-        const dateKey = format(dateObj, "yyyy-MM-dd");
-
-        if (holidayDates.includes(dateKey)) return false;
-        if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return false;
-
-        const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
-                      (Number(p.products_total) || 0);
-        return total > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
-      }).length;
-
-      const futureOffDates = typedProductions
-        .filter((p) => ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? ""))
-        .map((p) => p.date);
-      setScheduledOffDates(futureOffDates);
-
-      // Identificar produção de hoje para o card de confirmação de presença
-      const todayStr = getTodayString();
-      const todayProd = typedProductions.find(p => p.date === todayStr);
-      
-      if (todayProd) {
-        // Faturamento de hoje - APENAS produção do barbeiro (sem tx_*)
-        const todayTotal = (Number(todayProd.services_basic_total) || 0) +
-                          (Number(todayProd.services_extra_total) || 0) +
-                          (Number(todayProd.products_total) || 0);
-        setTodayProduction({
-          id: todayProd.id,
-          total: todayTotal,
-          confirmed_presence: todayProd.confirmed_presence || false,
-          exists: true
-        });
-      } else {
-        // Registro NÃO existe - assumir R$ 0,00 e permitir confirmação
-        setTodayProduction({
-          id: undefined,
-          total: 0,
-          confirmed_presence: false,
-          exists: false
-        });
-      }
-
-      setStats({
-        accumulated_commission: accumulatedCommission,
-        days_worked: daysWithProduction,
-        total_clients: totalClients,
-        total_services: totalServicesRevenue,
-        total_products: totalProductsRevenue,
-        average_ticket: totalClients > 0 ? totalRevenue / totalClients : 0,
-        services_conversion: totalClients > 0 ? (totalServicesCount / totalClients) * 100 : 0,
-        products_conversion: totalClients > 0 ? (totalProductsCount / totalClients) * 100 : 0,
-      });
+    if (consolidatedError) {
+      console.error("ERRO DA VIEW:", consolidatedError, { barberId: barber.id, startDate, endDate });
     } else {
-      // Nenhuma produção no mês - mas ainda precisamos tratar o dia de hoje
-      const { month: todayMonth, year: todayYear } = getCurrentMonthYear();
-      
-      // Só mostrar card de hoje se estamos no mês atual
-      if (selectedMonth === todayMonth && selectedYear === todayYear) {
-        setTodayProduction({
-          id: undefined,
-          total: 0,
-          confirmed_presence: false,
-          exists: false
-        });
-      } else {
-        setTodayProduction(null);
+      console.log("DADOS DA VIEW:", consolidatedData, { barberId: barber.id, startDate, endDate });
+      if ((consolidatedData || []).length === 0) {
+        console.log("DADOS DA VIEW: retorno vazio - conferir filtros de data", { startDate, endDate, selectedMonth, selectedYear });
       }
-      
+    }
+
+    if (productionsError) {
+      console.error("Erro ao buscar daily_productions:", productionsError);
       setStats({
         accumulated_commission: 0,
         days_worked: 0,
@@ -269,7 +201,96 @@ const [todayProduction, setTodayProduction] = useState<{
         products_conversion: 0,
       });
       setScheduledOffDates([]);
+      setTodayProduction(null);
+      return;
     }
+
+    interface ConsolidatedRow {
+      date: string;
+      consolidated_basic_total: number | null;
+      consolidated_extra_total: number | null;
+      consolidated_products_total: number | null;
+      total_revenue: number | null;
+      total_clients: number | null;
+      total_services: number | null;
+    }
+
+    const typedProductions = (productions || []) as DailyProductionRow[];
+    const typedConsolidated = (consolidatedData || []) as ConsolidatedRow[];
+
+    const totalClients = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_clients) || 0), 0);
+    const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_services) || 0), 0);
+
+    const totalServicesRevenue = typedConsolidated.reduce(
+      (sum, row) => sum + (Number(row.consolidated_basic_total) || 0) + (Number(row.consolidated_extra_total) || 0),
+      0
+    );
+    const totalProductsRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.consolidated_products_total) || 0), 0);
+    const totalRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_revenue) || 0), 0);
+
+    const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
+
+    // Usar commission_earned do banco (fonte única de verdade)
+    const accumulatedCommission = typedProductions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
+
+    // Contar dias trabalhados (mês completo por padrão), excluindo apenas
+    // feriados e status explícitos de não trabalho.
+    const daysWithProduction = typedProductions.filter((p) => {
+      const dateObj = new Date(p.date + "T12:00:00");
+      const dateKey = format(dateObj, "yyyy-MM-dd");
+
+      if (holidayDates.includes(dateKey)) return false;
+      if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return false;
+
+      const total =
+        (Number(p.services_basic_total) || 0) +
+        (Number(p.services_extra_total) || 0) +
+        (Number(p.products_total) || 0);
+      return total > 0 || (p.confirmed_presence === true && (p.presence_type === "present" || p.presence_type === null));
+    }).length;
+
+    const futureOffDates = typedProductions
+      .filter((p) => ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? ""))
+      .map((p) => p.date);
+    setScheduledOffDates(futureOffDates);
+
+    // Identificar produção de hoje para o card de confirmação de presença
+    const todayStr = getTodayString();
+    const todayProd = typedProductions.find((p) => p.date === todayStr);
+
+    if (todayProd) {
+      const todayConsolidated = typedConsolidated.find((row) => row.date === todayStr);
+      const todayTotal = Number(todayConsolidated?.total_revenue) || 0;
+      setTodayProduction({
+        id: todayProd.id,
+        total: todayTotal,
+        confirmed_presence: todayProd.confirmed_presence || false,
+        exists: true,
+      });
+    } else {
+      const { month: todayMonth, year: todayYear } = getCurrentMonthYear();
+      if (selectedMonth === todayMonth && selectedYear === todayYear) {
+        setTodayProduction({
+          id: undefined,
+          total: 0,
+          confirmed_presence: false,
+          exists: false,
+        });
+      } else {
+        setTodayProduction(null);
+      }
+    }
+
+    setStats({
+      accumulated_commission: accumulatedCommission,
+      days_worked: daysWithProduction,
+      total_clients: totalClients,
+      total_services: totalServicesRevenue,
+      total_products: totalProductsRevenue,
+      average_ticket: totalClients > 0 ? totalRevenue / totalClients : 0,
+      services_conversion: totalClients > 0 ? (totalServicesCount / totalClients) * 100 : 0,
+      products_conversion: totalClients > 0 ? (totalProductsCount / totalClients) * 100 : 0,
+    });
   }, [barber, selectedYear, selectedMonth, holidayDates]);
 
   const calculateDailyTarget = useCallback(async () => {
