@@ -80,6 +80,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   // Estado para o mês/ano selecionado (default: mês atual)
   const [selectedMonth, setSelectedMonth] = useState(currentMonthNow); // 1-12
   const [selectedYear, setSelectedYear] = useState(currentYearNow);
+  const isCurrentMonth = selectedMonth === currentMonthNow && selectedYear === currentYearNow;
   
   const [barber, setBarber] = useState<BarberData | null>(null);
   const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(null);
@@ -636,8 +637,6 @@ const [todayProduction, setTodayProduction] = useState<{
     : 0;
 
   // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
-  const today = new Date();
-  const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
   const daysLeft = isCurrentMonth ? calculateRemainingWorkDays(getManausDate(), holidayDates) : 0;
   
   // Calcular "Falta Ganhar" com proteção contra NaN
