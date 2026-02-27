@@ -280,25 +280,25 @@ const [todayProduction, setTodayProduction] = useState<{
     // Detectar o tipo de mês selecionado
     const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
     
-    const isCurrentMonth = selectedMonth === currentMonth && selectedYear === currentYear;
-    const isPastMonth = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth);
-    const isFutureMonth = selectedYear > currentYear || (selectedYear === currentYear && selectedMonth > currentMonth);
+    const isSelectedMonthCurrent = selectedMonth === currentMonth && selectedYear === currentYear;
+    const isSelectedMonthPast = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth);
+    const isSelectedMonthFuture = selectedYear > currentYear || (selectedYear === currentYear && selectedMonth > currentMonth);
     
     let daysToUse = 0;
     
-    if (isPastMonth) {
+    if (isSelectedMonthPast) {
       // Mês passado: zerar meta diária
       setDailyTarget(0);
       setDailyTargetServices(0);
       return;
-    } else if (isCurrentMonth) {
+    } else if (isSelectedMonthCurrent) {
       // Mês atual: cálculo 100% dinâmico (mês completo - ausências futuras - feriados)
       const manausDate = getManausDate();
       const selectedDate = new Date(selectedYear, selectedMonth - 1, manausDate.getDate());
       const remainingCalendarDays = calculateRemainingWorkDays(selectedDate, holidayDates);
       const futureOffCount = scheduledOffDates.filter((date) => date >= format(selectedDate, "yyyy-MM-dd")).length;
       daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
-    } else if (isFutureMonth) {
+    } else if (isSelectedMonthFuture) {
       const firstDayOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
       const remainingCalendarDays = calculateRemainingWorkDays(firstDayOfMonth, holidayDates);
       const futureOffCount = scheduledOffDates.length;
