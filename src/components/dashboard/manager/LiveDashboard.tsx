@@ -29,6 +29,22 @@ import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import SubscriptionAuditModal from "./SubscriptionAuditModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+
+interface BarberRow {
+  id: string;
+  name: string;
+  unit_id: string;
+  services_commission: number;
+  units: { name: string };
+}
+
+interface ManagerTransaction {
+  barber_id: string | null;
+  price_sold: number;
+  item_type: string;
+  service_category: string | null;
+}
 
 interface Barber {
   id: string;
@@ -39,6 +55,15 @@ interface Barber {
 }
 
 interface DailyProduction {
+  date: string;
+  presence_type?: string | null;
+  tx_basic_total?: number | null;
+  tx_extra_total?: number | null;
+  tx_products_total?: number | null;
+  manual_basic_total?: number | null;
+  manual_extra_total?: number | null;
+  manual_products_total?: number | null;
+
   barber_id: string;
   services_basic_total: number | null;
   services_extra_total: number | null;
@@ -50,6 +75,9 @@ interface DailyProduction {
 }
 
 interface MonthProduction {
+  date: string;
+  presence_type: string | null;
+
   barber_id: string;
   commission_earned: number;
   confirmed_presence: boolean;
@@ -73,6 +101,12 @@ interface Unit {
 
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
+  const todayManausDate = getManausDate();
+  const { holidayDates } = useOrganizationHolidays({
+    organizationId,
+    month: todayManausDate.getMonth() + 1,
+    year: todayManausDate.getFullYear(),
+  });
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [productions, setProductions] = useState<DailyProduction[]>([]);
   const [monthProductions, setMonthProductions] = useState<MonthProduction[]>([]);
@@ -134,7 +168,7 @@ export default function LiveDashboard() {
         .eq("status", "active");
 
       if (barbersData) {
-        const mappedBarbers = barbersData.map((b: any) => ({
+        const mappedBarbers = (barbersData as BarberRow[]).map((b) => ({
           id: b.id,
           name: b.name,
           unit_id: b.unit_id,
@@ -242,7 +276,7 @@ export default function LiveDashboard() {
   };
 
   // State for manager transactions read directly from sale_transactions
-  const [managerTransactions, setManagerTransactions] = useState<any[]>([]);
+  const [managerTransactions, setManagerTransactions] = useState<ManagerTransaction[]>([]);
 
   // Calculate total revenue from managerTransactions (Ao Vivo)
   useEffect(() => {
@@ -352,18 +386,15 @@ export default function LiveDashboard() {
       0
     );
 
-    // Count days worked: production > 0 OR confirmed_presence with present/null type
-    const daysWorked = barberMonthProductions.filter(
-      (p) => Number(p.commission_earned) > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null))
-    ).length;
-
     // Calculate remaining commission to achieve
     const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
 
-    // Calculate remaining work days (same logic as BarberDashboard)
-    const remainingWorkDaysFromGoal = goal.work_days - daysWorked;
-    const remainingCalendarDays = calculateRemainingWorkDays();
-    const daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
+    // Dynamic divisor: remaining calendar days - future off/absence marks
+    const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
+    const futureOffDays = barberMonthProductions.filter(
+      (p) => p.date >= selectedDate && ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")
+    ).length;
+    const daysToUse = Math.max(1, remainingCalendarDays - futureOffDays);
 
     // Daily commission target based on remaining amount / remaining days
     const dailyCommissionTarget = remainingCommission / daysToUse;
@@ -437,14 +468,14 @@ export default function LiveDashboard() {
     if (!production) return false;
 
     const txTotal = 
-      ((production as any).tx_basic_total || 0) +
-      ((production as any).tx_extra_total || 0) +
-      ((production as any).tx_products_total || 0);
+      (production.tx_basic_total || 0) +
+      (production.tx_extra_total || 0) +
+      (production.tx_products_total || 0);
 
     const manualTotal =
-      ((production as any).manual_basic_total || 0) +
-      ((production as any).manual_extra_total || 0) +
-      ((production as any).manual_products_total || 0);
+      (production.manual_basic_total || 0) +
+      (production.manual_extra_total || 0) +
+      (production.manual_products_total || 0);
 
     // Se tx é zero mas manual tem valor, há pendência de conferência
     return txTotal === 0 && manualTotal > 0;
@@ -474,21 +505,19 @@ export default function LiveDashboard() {
     : barbers.filter((b) => b.unit_id === selectedUnit);
 
   // Ordenar barbeiros: quem está mais longe da meta aparece primeiro (prioridade para o gestor)
-  const sortedBarbers = useMemo(() => {
-    return [...filteredBarbers].sort((a, b) => {
-      const revenueA = getBarberRevenue(a.id);
-      const revenueB = getBarberRevenue(b.id);
-      const targetA = getBarberDailyTarget(a);
-      const targetB = getBarberDailyTarget(b);
-      
-      // Calcular percentual atingido (0-100+)
-      const percentA = targetA > 0 ? (revenueA / targetA) * 100 : 100;
-      const percentB = targetB > 0 ? (revenueB / targetB) * 100 : 100;
-      
-      // Ordenar por menor percentual primeiro (quem mais precisa de atenção)
-      return percentA - percentB;
-    });
-  }, [filteredBarbers, productions, goals, monthProductions]);
+  const sortedBarbers = [...filteredBarbers].sort((a, b) => {
+    const revenueA = getBarberRevenue(a.id);
+    const revenueB = getBarberRevenue(b.id);
+    const targetA = getBarberDailyTarget(a);
+    const targetB = getBarberDailyTarget(b);
+    
+    // Calcular percentual atingido (0-100+)
+    const percentA = targetA > 0 ? (revenueA / targetA) * 100 : 100;
+    const percentB = targetB > 0 ? (revenueB / targetB) * 100 : 100;
+    
+    // Ordenar por menor percentual primeiro (quem mais precisa de atenção)
+    return percentA - percentB;
+  });
 
   const rankingData = filteredBarbers.map((b) => ({
     id: b.id,
@@ -668,10 +697,10 @@ export default function LiveDashboard() {
                         )}
                         {(() => {
                           const prod = getBarberProduction(barber.id);
-                          if (!prod || !(prod as any).confirmed_presence) return null;
+                          if (!prod || !prod.confirmed_presence) return null;
                           const rev = getBarberRevenue(barber.id);
                           if (rev > 0) return null;
-                          const pt = (prod as any).presence_type;
+                          const pt = prod.presence_type;
                           if (pt === 'day_off') return (
                             <Badge className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">
                               <CalendarOff className="w-3 h-3 mr-1" />Folga
