@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -14,7 +14,7 @@ export function useSubscriptionCheck() {
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const checkSubscription = async () => {
+  const checkSubscription = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -94,11 +94,12 @@ export function useSubscriptionCheck() {
       }
     } catch (error) {
       console.error("Subscription check failed:", error);
-      // On catch, don't set status to false - might be temporary network issue
+      // On catch, expose state explicitly to avoid indefinite/ambiguous UI state.
+      setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
   useEffect(() => {
     checkSubscription();
@@ -112,7 +113,7 @@ export function useSubscriptionCheck() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [checkSubscription]);
 
   return { status, loading, refetch: checkSubscription };
 }
