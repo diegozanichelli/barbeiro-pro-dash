@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
@@ -20,13 +20,21 @@ interface DailyProduction {
   date: string;
   barber_id: string;
   services_total: number;
-  services_basic_total?: number;
-  services_extra_total?: number;
+  services_basic_total?: number | null;
+  services_extra_total?: number | null;
+  tx_basic_total?: number | null;
+  tx_extra_total?: number | null;
+  tx_products_total?: number | null;
   products_total: number;
   services_count: number;
   products_count: number;
   clients_count: number;
   commission_earned: number;
+  barbers?: {
+    id?: string;
+    unit_id?: string;
+    name?: string;
+  } | null;
 }
 
 interface Barber {
@@ -38,6 +46,17 @@ interface Barber {
 interface Unit {
   id: string;
   name: string;
+}
+
+interface BarberPerformanceRow {
+  id: string;
+  name: string;
+  servicesBasicTotal: number;
+  servicesExtraTotal: number;
+  productsTotal: number;
+  commissionTotal: number;
+  clientsTotal: number;
+  totalRevenue: number;
 }
 
 export default function ManagerReports() {
@@ -57,60 +76,84 @@ export default function ManagerReports() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
-  const manausNow = useMemo(() => getManausDate(), []);
+  const today = getManausDate();
+  const currentMonth = today.getMonth() + 1;
+  const currentYear = today.getFullYear();
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(manausNow),
-    to: endOfMonth(manausNow),
+    from: startOfMonth(today),
+    to: endOfMonth(today),
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchUnits();
-    fetchBarbers();
-  }, []);
-
-  useEffect(() => {
-    // Filtrar barbeiros pela unidade selecionada
-    if (selectedUnit === "all") {
-      setBarbers(allBarbers);
-    } else {
-      setBarbers(allBarbers.filter(b => b.unit_id === selectedUnit));
-    }
-    // Reset do barbeiro selecionado quando a unidade muda
-    setSelectedBarber("all");
-  }, [selectedUnit, allBarbers]);
-
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchStats();
-      fetchProductions();
-    }
-  }, [dateRange, selectedBarber, selectedUnit]);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
-    
-    const now = new Date();
 
-    // Buscar produções no período selecionado com filtro de unidade/barbeiro
-    let productionsQuery = supabase
-      .from("daily_productions")
-      .select("*, barbers!inner(id, unit_id)")
-      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-      .lte("date", format(dateRange.to, "yyyy-MM-dd"));
+    const goalReferenceDate = dateRange.from;
+    const startDate = format(dateRange.from, "yyyy-MM-dd");
+    const endDate = format(dateRange.to, "yyyy-MM-dd");
 
-    // Aplicar filtro de unidade
-    if (selectedUnit !== "all") {
-      productionsQuery = productionsQuery.eq("barbers.unit_id", selectedUnit);
-    }
+    // Faturamento consolidado via view
+    let consolidatedQuery = supabase
+      .from("v_consolidated_daily_production")
+      .select("barber_id, total_revenue, total_clients, total_services")
+      .gte("date", startDate)
+      .lte("date", endDate);
 
-    // Aplicar filtro de barbeiro
     if (selectedBarber !== "all") {
-      productionsQuery = productionsQuery.eq("barber_id", selectedBarber);
+      consolidatedQuery = consolidatedQuery.eq("barber_id", selectedBarber);
     }
 
-    const { data: productions } = await productionsQuery;
+    if (selectedUnit !== "all") {
+      const { data: unitBarbers } = await supabase
+        .from("barbers")
+        .select("id")
+        .eq("unit_id", selectedUnit)
+        .eq("status", "active");
+
+      const unitBarberIds = (unitBarbers || []).map((b) => b.id);
+      if (unitBarberIds.length === 0) {
+        setStats({
+          totalRevenue: 0,
+          totalCommission: 0,
+          totalClients: 0,
+          averageTicket: 0,
+          goalsAchieved: 0,
+          totalBarbers: 0,
+        });
+        return;
+      }
+
+      consolidatedQuery = consolidatedQuery.in("barber_id", unitBarberIds);
+    }
+
+    const { data: consolidatedRows, error: consolidatedError } = await consolidatedQuery;
+
+    if (consolidatedError) {
+      console.error("ERRO DA VIEW:", consolidatedError, { startDate, endDate, selectedBarber, selectedUnit });
+    } else {
+      console.log("DADOS DA VIEW:", consolidatedRows, { startDate, endDate, selectedBarber, selectedUnit });
+      if ((consolidatedRows || []).length === 0) {
+        console.log("DADOS DA VIEW: retorno vazio - conferir filtros de data", { startDate, endDate, selectedBarber, selectedUnit });
+      }
+    }
+
+    // Buscar comissões no período para cálculo de metas batidas
+    let commissionsQuery = supabase
+      .from("daily_productions")
+      .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
+      .gte("date", startDate)
+      .lte("date", endDate);
+
+    if (selectedUnit !== "all") {
+      commissionsQuery = commissionsQuery.eq("barbers.unit_id", selectedUnit);
+    }
+
+    if (selectedBarber !== "all") {
+      commissionsQuery = commissionsQuery.eq("barber_id", selectedBarber);
+    }
+
+    const { data: commissionRows } = await commissionsQuery;
 
     // Buscar barbeiros ativos (filtrados por unidade se selecionada)
     let barbersQuery = supabase
@@ -128,8 +171,8 @@ export default function ManagerReports() {
     let goalsQuery = supabase
       .from("monthly_goals")
       .select("*, barbers!inner(id, unit_id)")
-      .eq("month", now.getMonth() + 1)
-      .eq("year", now.getFullYear());
+      .eq("month", goalReferenceDate.getMonth() + 1)
+      .eq("year", goalReferenceDate.getFullYear());
 
     if (selectedUnit !== "all") {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
@@ -137,55 +180,61 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    if (productions) {
-      const totalRevenue = productions.reduce(
-        (sum, p: any) => {
-          const servicesTotal = (p.services_basic_total !== null || p.services_extra_total !== null)
-            ? (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0)
-              + (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0)
-            : (Number(p.services_total) || 0);
-          return sum + servicesTotal + Number(p.products_total) + (Number(p.tx_products_total) || 0);
-        },
-        0
-      );
-      const totalCommission = productions.reduce(
-        (sum, p) => sum + Number(p.commission_earned),
-        0
-      );
-      const totalClients = productions.reduce(
-        (sum, p) => sum + Number(p.clients_count),
-        0
-      );
+    interface ConsolidatedStatRow {
+      barber_id: string;
+      total_revenue?: number | null;
+      totalRevenue?: number | null;
+      total_clients?: number | null;
+      totalClients?: number | null;
+      total_services?: number | null;
+      totalServices?: number | null;
+    }
 
-      // Calcular comissão acumulada por barbeiro para verificar metas
-      const barberCommissions = new Map<string, number>();
-      productions.forEach((p) => {
-        const current = barberCommissions.get(p.barber_id) || 0;
-        barberCommissions.set(p.barber_id, current + Number(p.commission_earned));
-      });
+    interface CommissionRow {
+      barber_id: string;
+      commission_earned: number | null;
+    }
 
-      let goalsAchieved = 0;
-      if (goals) {
-        goals.forEach((goal) => {
-          const earned = barberCommissions.get(goal.barber_id) || 0;
-          if (earned >= goal.target_commission) {
-            goalsAchieved++;
-          }
-        });
-      }
+    const safeConsolidated = (consolidatedRows || []) as ConsolidatedStatRow[];
+    const safeCommissions = (commissionRows || []) as CommissionRow[];
 
-      setStats({
-        totalRevenue,
-        totalCommission,
-        totalClients,
-        averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
-        goalsAchieved,
-        totalBarbers: barbersData?.length || 0,
+    const totalRevenue = safeConsolidated.reduce((sum, row) => {
+      const revenue = Number(row.total_revenue ?? row.totalRevenue ?? 0) || 0;
+      return sum + revenue;
+    }, 0);
+    const totalClients = safeConsolidated.reduce((sum, row) => {
+      const clients = Number(row.total_clients ?? row.totalClients ?? 0) || 0;
+      return sum + clients;
+    }, 0);
+    const totalCommission = safeCommissions.reduce((sum, row) => sum + (Number(row.commission_earned) || 0), 0);
+
+    const barberCommissions = new Map<string, number>();
+    safeCommissions.forEach((row) => {
+      const current = barberCommissions.get(row.barber_id) || 0;
+      barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
+    });
+
+    let goalsAchieved = 0;
+    if (goals) {
+      goals.forEach((goal) => {
+        const earned = barberCommissions.get(goal.barber_id) || 0;
+        if (earned >= goal.target_commission) {
+          goalsAchieved++;
+        }
       });
     }
-  };
 
-  const fetchUnits = async () => {
+    setStats({
+      totalRevenue,
+      totalCommission,
+      totalClients,
+      averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
+      goalsAchieved,
+      totalBarbers: barbersData?.length || 0,
+    });
+  }, [dateRange, selectedBarber, selectedUnit]);
+
+  const fetchUnits = useCallback(async () => {
     const { data } = await supabase
       .from("units")
       .select("id, name")
@@ -195,9 +244,9 @@ export default function ManagerReports() {
     if (data) {
       setUnits(data);
     }
-  };
+  }, []);
 
-  const fetchBarbers = async () => {
+  const fetchBarbers = useCallback(async () => {
     const { data } = await supabase
       .from("barbers")
       .select("id, name, unit_id")
@@ -208,9 +257,9 @@ export default function ManagerReports() {
       setAllBarbers(data);
       setBarbers(data);
     }
-  };
+  }, []);
 
-  const fetchProductions = async () => {
+  const fetchProductions = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
     
     let query = supabase
@@ -232,9 +281,32 @@ export default function ManagerReports() {
 
     const { data } = await query;
     if (data) {
-      setProductions(data as any);
+      setProductions((data ?? []) as DailyProduction[]);
     }
-  };
+  }, [dateRange, selectedBarber, selectedUnit]);
+
+  useEffect(() => {
+    fetchUnits();
+    fetchBarbers();
+  }, [fetchUnits, fetchBarbers]);
+
+  useEffect(() => {
+    // Filtrar barbeiros pela unidade selecionada
+    if (selectedUnit === "all") {
+      setBarbers(allBarbers);
+    } else {
+      setBarbers(allBarbers.filter(b => b.unit_id === selectedUnit));
+    }
+    // Reset do barbeiro selecionado quando a unidade muda
+    setSelectedBarber("all");
+  }, [selectedUnit, allBarbers]);
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchStats();
+      fetchProductions();
+    }
+  }, [dateRange, selectedBarber, selectedUnit, fetchStats, fetchProductions]);
 
   const handleEdit = (production: DailyProduction) => {
     setEditingProduction(production);
@@ -273,9 +345,61 @@ export default function ManagerReports() {
     }
   };
 
-  const getBarberName = (production: any) => {
+  const getBarberName = (production: DailyProduction) => {
     return production.barbers?.name || "Barbeiro Desconhecido";
   };
+
+  const barberPerformanceRows = useMemo<BarberPerformanceRow[]>(() => {
+    const barberStats = new Map<string, Omit<BarberPerformanceRow, "id" | "totalRevenue">>();
+
+    productions.forEach((production: DailyProduction) => {
+      const barberId = production.barber_id;
+      const barberName = production.barbers?.name || "Barbeiro Desconhecido";
+
+      if (!barberStats.has(barberId)) {
+        barberStats.set(barberId, {
+          name: barberName,
+          servicesBasicTotal: 0,
+          servicesExtraTotal: 0,
+          productsTotal: 0,
+          commissionTotal: 0,
+          clientsTotal: 0,
+        });
+      }
+
+      const stats = barberStats.get(barberId);
+      if (!stats) return;
+
+      const txBasic = Number(production.tx_basic_total) || 0;
+      const txExtra = Number(production.tx_extra_total) || 0;
+      const txProducts = Number(production.tx_products_total) || 0;
+      const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+      if (hasTxSource) {
+        stats.servicesBasicTotal += txBasic;
+        stats.servicesExtraTotal += txExtra;
+        stats.productsTotal += txProducts;
+      } else if (production.services_basic_total !== null || production.services_extra_total !== null) {
+        stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
+        stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
+        stats.productsTotal += Number(production.products_total) || 0;
+      } else {
+        stats.servicesBasicTotal += Number(production.services_total) || 0;
+        stats.productsTotal += Number(production.products_total) || 0;
+      }
+
+      stats.commissionTotal += Number(production.commission_earned);
+      stats.clientsTotal += Number(production.clients_count);
+    });
+
+    return Array.from(barberStats.entries())
+      .map(([id, stats]) => ({
+        id,
+        ...stats,
+        totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
+      }))
+      .sort((a, b) => b.totalRevenue - a.totalRevenue);
+  }, [productions]);
 
   return (
     <div className="space-y-6">
@@ -386,71 +510,17 @@ export default function ManagerReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(() => {
-                  // Agrupar produções por barbeiro
-                  const barberStats = new Map<string, {
-                    name: string;
-                    servicesBasicTotal: number;
-                    servicesExtraTotal: number;
-                    productsTotal: number;
-                    commissionTotal: number;
-                    clientsTotal: number;
-                  }>();
-
-                  productions.forEach((production: any) => {
-                    const barberId = production.barber_id;
-                    const barberName = production.barbers?.name || "Barbeiro Desconhecido";
-                    
-                    if (!barberStats.has(barberId)) {
-                      barberStats.set(barberId, {
-                        name: barberName,
-                        servicesBasicTotal: 0,
-                        servicesExtraTotal: 0,
-                        productsTotal: 0,
-                        commissionTotal: 0,
-                        clientsTotal: 0,
-                      });
-                    }
-
-                    const stats = barberStats.get(barberId)!;
-                    
-                    // Se tiver os campos novos, usa eles separadamente
-                    // Caso contrário, considera tudo como serviços básicos (retrocompatível)
-                    if (production.services_basic_total !== null || production.services_extra_total !== null) {
-                      stats.servicesBasicTotal += (Number(production.services_basic_total) || 0) + (Number(production.tx_basic_total) || 0);
-                      stats.servicesExtraTotal += (Number(production.services_extra_total) || 0) + (Number(production.tx_extra_total) || 0);
-                    } else {
-                      stats.servicesBasicTotal += Number(production.services_total) || 0;
-                    }
-                    
-                    stats.productsTotal += (Number(production.products_total) || 0) + (Number(production.tx_products_total) || 0);
-                    stats.commissionTotal += Number(production.commission_earned);
-                    stats.clientsTotal += Number(production.clients_count);
-                  });
-
-                  const barberArray = Array.from(barberStats.entries()).map(([id, stats]) => ({
-                    id,
-                    ...stats,
-                    totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
-                  }));
-
-                  // Ordenar por faturamento total (decrescente)
-                  barberArray.sort((a, b) => b.totalRevenue - a.totalRevenue);
-
-                  if (barberArray.length === 0) {
-                    return (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
-                          Nenhum lançamento encontrado no período
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }
-
-                  return barberArray.map((barber) => (
+                {barberPerformanceRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      Nenhum lançamento encontrado no período
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  barberPerformanceRows.map((barber) => (
                     <TableRow key={barber.id}>
                       <TableCell className="font-medium">{barber.name}</TableCell>
-                      <TableCell className="text-right font-bold text-primary">
+                      <TableCell className="text-right font-semibold">
                         R$ {barber.totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">
@@ -462,13 +532,21 @@ export default function ManagerReports() {
                       <TableCell className="text-right">
                         R$ {barber.productsTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
-                      <TableCell className="text-right font-bold text-success">
+                      <TableCell className="text-right text-success">
                         R$ {barber.commissionTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right">{barber.clientsTotal}</TableCell>
+                      <TableCell className="text-right">
+                        {barber.clientsTotal > 0
+                          ? (barber.totalRevenue / barber.clientsTotal).toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })
+                          : "R$ 0,00"}
+                      </TableCell>
                     </TableRow>
-                  ));
-                })()}
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
