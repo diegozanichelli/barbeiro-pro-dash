@@ -821,7 +821,7 @@ const [todayProduction, setTodayProduction] = useState<{
                       N/A
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {selectedMonth < today.getMonth() + 1 || selectedYear < today.getFullYear()
+                      {selectedMonth < currentMonthNow || selectedYear < currentYearNow
                         ? "Este mês já passou"
                         : "Aguardando dados"}
                     </p>
