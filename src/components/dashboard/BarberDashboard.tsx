@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
+import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
 interface BarberDashboardProps {
   user: User;
@@ -38,7 +39,26 @@ interface BarberData {
 
 interface MonthlyGoal {
   target_commission: number;
-  work_days: number;
+}
+
+interface EditingProduction {
+  id: string;
+  date: string;
+}
+
+interface DailyProductionRow {
+  id: string;
+  date: string;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  services_total: number | null;
+  products_total: number | null;
+  clients_count: number | null;
+  services_count: number | null;
+  products_count: number | null;
+  commission_earned: number | null;
+  confirmed_presence: boolean | null;
+  presence_type: string | null;
 }
 
 interface MonthlyStats {
@@ -60,14 +80,16 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   // Estado para o mês/ano selecionado (default: mês atual)
   const [selectedMonth, setSelectedMonth] = useState(currentMonthNow); // 1-12
   const [selectedYear, setSelectedYear] = useState(currentYearNow);
+  const isCurrentMonth = selectedMonth === currentMonthNow && selectedYear === currentYearNow;
   
   const [barber, setBarber] = useState<BarberData | null>(null);
   const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(null);
   const [stats, setStats] = useState<MonthlyStats | null>(null);
   const [dailyTarget, setDailyTarget] = useState(0);
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
+  const [scheduledOffDates, setScheduledOffDates] = useState<string[]>([]);
   const [missingLink, setMissingLink] = useState(false);
-  const [editingProduction, setEditingProduction] = useState<any>(null);
+  const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
 const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
@@ -78,6 +100,11 @@ const [todayProduction, setTodayProduction] = useState<{
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   
   // Estado para notificação de alteração de comissão
+  const { holidayDates } = useOrganizationHolidays({
+    organizationId: barber?.organization_id,
+    month: selectedMonth,
+    year: selectedYear,
+  });
   const [commissionChange, setCommissionChange] = useState<{
     oldServices: number;
     newServices: number;
@@ -85,93 +112,7 @@ const [todayProduction, setTodayProduction] = useState<{
     newProducts: number;
     timestamp: Date;
   } | null>(null);
-  useEffect(() => {
-    fetchBarberData();
-
-    // Realtime listener para atualizar quando gerente alterar comissões
-    const barberChannel = supabase
-      .channel('barbers-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'barbers',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log('Comissão atualizada pelo gerente:', payload);
-          const oldBarber = payload.old as BarberData;
-          const newBarber = payload.new as BarberData;
-          
-          // Verificar se houve mudança nas comissões
-          const servicesChanged = oldBarber.services_commission !== newBarber.services_commission;
-          const productsChanged = oldBarber.products_commission !== newBarber.products_commission;
-          
-          if (servicesChanged || productsChanged) {
-            setCommissionChange({
-              oldServices: oldBarber.services_commission,
-              newServices: newBarber.services_commission,
-              oldProducts: oldBarber.products_commission,
-              newProducts: newBarber.products_commission,
-              timestamp: new Date(),
-            });
-            
-            // Toast de notificação
-            toast.success("Sua comissão foi atualizada pelo gerente!", {
-              description: "Confira as novas taxas no banner acima.",
-              duration: 5000,
-            });
-          }
-          
-          setBarber(newBarber);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(barberChannel);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (barber) {
-      fetchMonthlyGoal();
-      fetchMonthlyStats();
-      
-      // Realtime listener para FORÇAR recálculo quando lançamentos forem alterados
-      const productionsChannel = supabase
-        .channel(`daily-productions-${barber.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // INSERT, UPDATE, DELETE
-            schema: 'public',
-            table: 'daily_productions',
-            filter: `barber_id=eq.${barber.id}`,
-          },
-          (payload) => {
-            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
-            // Forçar recálculo IMEDIATO das estatísticas
-            fetchMonthlyStats();
-            fetchMonthlyGoal();
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(productionsChannel);
-      };
-    }
-  }, [barber, selectedMonth, selectedYear]); // Recarregar quando mês/ano mudar
-
-  useEffect(() => {
-    if (monthlyGoal && stats && barber) {
-      calculateDailyTarget();
-    }
-  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear]);
-
-  const fetchBarberData = async () => {
+  const fetchBarberData = useCallback(async () => {
     const { data, error } = await supabase
       .from("barbers")
       .select("*")
@@ -188,9 +129,9 @@ const [todayProduction, setTodayProduction] = useState<{
     } else {
       setMissingLink(true);
     }
-  };
+  }, [user.id]);
 
-  const fetchMonthlyGoal = async () => {
+  const fetchMonthlyGoal = useCallback(async () => {
     if (!barber) return;
 
     const { data, error } = await supabase
@@ -210,9 +151,9 @@ const [todayProduction, setTodayProduction] = useState<{
     } else {
       setMonthlyGoal(null);
     }
-  };
+  }, [barber, selectedMonth, selectedYear]);
 
-  const fetchMonthlyStats = async () => {
+  const fetchMonthlyStats = useCallback(async () => {
     if (!barber) return;
 
     const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
@@ -225,42 +166,50 @@ const [todayProduction, setTodayProduction] = useState<{
       .gte("date", format(firstDay, "yyyy-MM-dd"))
       .lte("date", format(lastDay, "yyyy-MM-dd"));
 
-    if (productions && productions.length > 0) {
-      const totalClients = productions.reduce((sum, p) => sum + Number(p.clients_count), 0);
-      const totalServicesCount = productions.reduce((sum, p) => sum + Number(p.services_count), 0);
-      const totalProductsCount = productions.reduce((sum, p) => sum + Number(p.products_count), 0);
+    const typedProductions = (productions || []) as DailyProductionRow[];
+
+    if (typedProductions.length > 0) {
+      const totalClients = typedProductions.reduce((sum, p) => sum + Number(p.clients_count), 0);
+      const totalServicesCount = typedProductions.reduce((sum, p) => sum + Number(p.services_count), 0);
+      const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
       
       // Calcular total de serviços - APENAS produção do barbeiro (sem tx_*)
-      const totalServicesRevenue = productions.reduce((sum, p) => {
+      const totalServicesRevenue = typedProductions.reduce((sum, p) => {
         if (p.services_basic_total !== null || p.services_extra_total !== null) {
           return sum + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
         }
         return sum + Number(p.services_total || 0);
       }, 0);
       
-      const totalProductsRevenue = productions.reduce((sum, p) => 
+      const totalProductsRevenue = typedProductions.reduce((sum, p) => 
         sum + (Number(p.products_total) || 0), 0);
       const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
       // Usar commission_earned do banco (fonte única de verdade - já considera taxas fixas + ambas fontes)
-      const accumulatedCommission = productions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
+      const accumulatedCommission = typedProductions.reduce((sum, p) => sum + (Number(p.commission_earned) || 0), 0);
 
-      // Contar dias com produção real OU com presença confirmada (present/null)
-      // day_off e absence NÃO contam como dia trabalhado
-      // Dias trabalhados - APENAS produção do barbeiro (sem tx_*)
-      const daysWithProduction = productions.filter(p => {
-        // Excluir domingos da contagem de dias trabalhados (domingo = bônus, não consome dia útil)
+      // Contar dias trabalhados (mês completo por padrão), excluindo apenas
+      // feriados e status explícitos de não trabalho.
+      const daysWithProduction = typedProductions.filter(p => {
         const dateObj = new Date(p.date + "T12:00:00");
-        if (dateObj.getDay() === 0) return false;
+        const dateKey = format(dateObj, "yyyy-MM-dd");
+
+        if (holidayDates.includes(dateKey)) return false;
+        if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return false;
 
         const total = (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + 
                       (Number(p.products_total) || 0);
-        return total > 0 || (p.confirmed_presence === true && ((p as any).presence_type === 'present' || (p as any).presence_type === null));
+        return total > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
       }).length;
+
+      const futureOffDates = typedProductions
+        .filter((p) => ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? ""))
+        .map((p) => p.date);
+      setScheduledOffDates(futureOffDates);
 
       // Identificar produção de hoje para o card de confirmação de presença
       const todayStr = getTodayString();
-      const todayProd = productions.find(p => p.date === todayStr);
+      const todayProd = typedProductions.find(p => p.date === todayStr);
       
       if (todayProd) {
         // Faturamento de hoje - APENAS produção do barbeiro (sem tx_*)
@@ -319,10 +268,11 @@ const [todayProduction, setTodayProduction] = useState<{
         services_conversion: 0,
         products_conversion: 0,
       });
+      setScheduledOffDates([]);
     }
-  };
+  }, [barber, selectedYear, selectedMonth, holidayDates]);
 
-  const calculateDailyTarget = async () => {
+  const calculateDailyTarget = useCallback(async () => {
     if (!monthlyGoal || !stats || !barber) return;
 
     const remaining = monthlyGoal.target_commission - stats.accumulated_commission;
@@ -330,34 +280,29 @@ const [todayProduction, setTodayProduction] = useState<{
     // Detectar o tipo de mês selecionado
     const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
     
-    const isCurrentMonth = selectedMonth === currentMonth && selectedYear === currentYear;
-    const isPastMonth = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth);
-    const isFutureMonth = selectedYear > currentYear || (selectedYear === currentYear && selectedMonth > currentMonth);
+    const isSelectedMonthCurrent = selectedMonth === currentMonth && selectedYear === currentYear;
+    const isSelectedMonthPast = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth);
+    const isSelectedMonthFuture = selectedYear > currentYear || (selectedYear === currentYear && selectedMonth > currentMonth);
     
     let daysToUse = 0;
     
-    if (isPastMonth) {
+    if (isSelectedMonthPast) {
       // Mês passado: zerar meta diária
       setDailyTarget(0);
       setDailyTargetServices(0);
       return;
-    } else if (isCurrentMonth) {
-      // Mês atual: calcular dias restantes baseados nos dias configurados
-      const workDaysConfigured = monthlyGoal.work_days;
-      const daysWorked = stats.days_worked;
-      const remainingWorkDaysFromGoal = workDaysConfigured - daysWorked;
-      
-      // Dias restantes no calendário (para urgência)
+    } else if (isSelectedMonthCurrent) {
+      // Mês atual: cálculo 100% dinâmico (mês completo - ausências futuras - feriados)
       const manausDate = getManausDate();
       const selectedDate = new Date(selectedYear, selectedMonth - 1, manausDate.getDate());
-      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate);
-      
-      // Usar o MENOR entre dias configurados restantes e dias no calendário
-      // Isso cria urgência quando o tempo está acabando
-      daysToUse = Math.max(1, Math.min(remainingWorkDaysFromGoal, remainingCalendarDays));
-    } else if (isFutureMonth) {
-      // Mês futuro: usar dias cadastrados na meta
-      daysToUse = monthlyGoal.work_days;
+      const remainingCalendarDays = calculateRemainingWorkDays(selectedDate, holidayDates);
+      const futureOffCount = scheduledOffDates.filter((date) => date >= format(selectedDate, "yyyy-MM-dd")).length;
+      daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
+    } else if (isSelectedMonthFuture) {
+      const firstDayOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
+      const remainingCalendarDays = calculateRemainingWorkDays(firstDayOfMonth, holidayDates);
+      const futureOffCount = scheduledOffDates.length;
+      daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     }
 
     if (daysToUse > 0) {
@@ -371,7 +316,115 @@ const [todayProduction, setTodayProduction] = useState<{
 
       setDailyTargetServices(servicesTarget);
     }
-  };
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
+
+  const pacingCoachMessage = useMemo(() => {
+    if (!isCurrentMonth || !monthlyGoal || !stats) return null;
+
+    const today = getManausDate().getDay();
+    const isThursdayOrFriday = today === 4 || today === 5;
+    if (!isThursdayOrFriday) return null;
+
+    const currentDate = getManausDate();
+    const currentDayOfMonth = currentDate.getDate();
+    const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
+    const elapsedCalendarDays = currentDayOfMonth;
+    const elapsedHolidays = holidayDates.filter((d) => d >= format(monthStart, "yyyy-MM-dd") && d <= format(currentDate, "yyyy-MM-dd")).length;
+    const elapsedOff = scheduledOffDates.filter((d) => d <= format(currentDate, "yyyy-MM-dd")).length;
+    const effectiveElapsed = Math.max(1, elapsedCalendarDays - elapsedHolidays - elapsedOff);
+    const expectedByNow = (monthlyGoal.target_commission / Math.max(1, new Date(selectedYear, selectedMonth, 0).getDate())) * effectiveElapsed;
+
+    if (stats.accumulated_commission >= expectedByNow) return null;
+
+    return "IA: Notei que o seu ritmo esta semana foi mais baixo. Caso a sua barbearia funcione aos domingos, peça pro seu gestor para ir neste, para tentar compensar a semana mais fraca e bater a sua meta mensal.";
+  }, [isCurrentMonth, monthlyGoal, stats, selectedYear, selectedMonth, holidayDates, scheduledOffDates]);
+
+  useEffect(() => {
+    fetchBarberData();
+
+    // Realtime listener para atualizar quando gerente alterar comissões
+    const barberChannel = supabase
+      .channel('barbers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'barbers',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Comissão atualizada pelo gerente:', payload);
+          const oldBarber = payload.old as BarberData;
+          const newBarber = payload.new as BarberData;
+          
+          // Verificar se houve mudança nas comissões
+          const servicesChanged = oldBarber.services_commission !== newBarber.services_commission;
+          const productsChanged = oldBarber.products_commission !== newBarber.products_commission;
+          
+          if (servicesChanged || productsChanged) {
+            setCommissionChange({
+              oldServices: oldBarber.services_commission,
+              newServices: newBarber.services_commission,
+              oldProducts: oldBarber.products_commission,
+              newProducts: newBarber.products_commission,
+              timestamp: new Date(),
+            });
+            
+            // Toast de notificação
+            toast.success("Sua comissão foi atualizada pelo gerente!", {
+              description: "Confira as novas taxas no banner acima.",
+              duration: 5000,
+            });
+          }
+          
+          setBarber(newBarber);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(barberChannel);
+    };
+  }, [user, fetchBarberData]);
+
+  useEffect(() => {
+    if (barber) {
+      fetchMonthlyGoal();
+      fetchMonthlyStats();
+      
+      // Realtime listener para FORÇAR recálculo quando lançamentos forem alterados
+      const productionsChannel = supabase
+        .channel(`daily-productions-${barber.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'daily_productions',
+            filter: `barber_id=eq.${barber.id}`,
+          },
+          (payload) => {
+            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
+            // Forçar recálculo IMEDIATO das estatísticas
+            fetchMonthlyStats();
+            fetchMonthlyGoal();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(productionsChannel);
+      };
+    }
+  }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
+
+  useEffect(() => {
+    if (monthlyGoal && stats && barber) {
+      calculateDailyTarget();
+    }
+  }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
+
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -403,7 +456,7 @@ const [todayProduction, setTodayProduction] = useState<{
     setSelectedYear(year);
   };
 
-  const handleEditProduction = (production: any) => {
+  const handleEditProduction = (production: EditingProduction) => {
     setEditingProduction({
       id: production.id,
       date: production.date,
@@ -584,9 +637,7 @@ const [todayProduction, setTodayProduction] = useState<{
     : 0;
 
   // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
-  const today = new Date();
-  const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
-  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays() : 0;
+  const daysLeft = isCurrentMonth ? calculateRemainingWorkDays(getManausDate(), holidayDates) : 0;
   
   // Calcular "Falta Ganhar" com proteção contra NaN
   const remaining = monthlyGoal 
@@ -778,6 +829,16 @@ const [todayProduction, setTodayProduction] = useState<{
                 )}
               </CardContent>
             </Card>
+
+            {pacingCoachMessage && (
+              <Card className="border-primary/40 bg-primary/5">
+                <CardContent className="pt-4">
+                  <p className="text-sm text-foreground">
+                    <strong>Coach IA:</strong> {pacingCoachMessage}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Card de Faturamento de Hoje com Confirmação de Presença */}
             {isCurrentMonth && todayProduction !== null && (
