@@ -92,7 +92,7 @@ export default function ManagerReports() {
     // Buscar produções no período selecionado com filtro de unidade/barbeiro
     let productionsQuery = supabase
       .from("daily_productions")
-      .select("*, barbers!inner(id, unit_id)")
+      .select("*, barbers!inner(id, name, unit_id)")
       .gte("date", format(dateRange.from, "yyyy-MM-dd"))
       .lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
