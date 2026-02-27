@@ -168,6 +168,7 @@ export default function ManagerReports() {
     const { data: barbersData } = await barbersQuery;
 
     // Buscar metas do mês (filtradas por unidade se selecionada)
+    const goalReferenceDate2 = dateRange.from;
     let goalsQuery = supabase
       .from("monthly_goals")
       .select("*, barbers!inner(id, unit_id)")
