@@ -61,6 +61,26 @@ interface DailyProductionRow {
   presence_type: string | null;
 }
 
+interface EditingProduction {
+  id: string;
+  date: string;
+}
+
+interface DailyProductionRow {
+  id: string;
+  date: string;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  services_total: number | null;
+  products_total: number | null;
+  clients_count: number | null;
+  services_count: number | null;
+  products_count: number | null;
+  commission_earned: number | null;
+  confirmed_presence: boolean | null;
+  presence_type: string | null;
+}
+
 interface MonthlyStats {
   accumulated_commission: number;
   days_worked: number;
