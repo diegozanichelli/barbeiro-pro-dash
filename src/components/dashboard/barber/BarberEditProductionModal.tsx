@@ -522,19 +522,25 @@ export default function BarberEditProductionModal({
               )}
             </div>
 
-            <div className="border-t px-4 md:px-6 py-3 flex flex-wrap items-center gap-2 bg-muted/30 shrink-0">
+            <div className="border-t px-4 md:px-6 py-3 bg-muted/30 shrink-0 space-y-2">
               <div className="text-sm text-muted-foreground">
                 {cart.length} {cart.length === 1 ? "item" : "itens"} · <strong className="text-foreground">{formatCurrency(cartTotal)}</strong>
               </div>
 
-              <div className="ml-auto flex items-center gap-2">
-                <Button type="button" variant="outline" className="h-11" onClick={() => handleClose(false)} disabled={isLoading || isSavingPresence}>
+              <div className="grid grid-cols-1 sm:grid-cols-[auto_auto_auto] gap-2 sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full"
+                  onClick={() => handleClose(false)}
+                  disabled={isLoading || isSavingPresence}
+                >
                   Cancelar
                 </Button>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" className="h-11" disabled={isLoading || isSavingPresence}>
+                    <Button type="button" variant="outline" className="h-11 w-full" disabled={isLoading || isSavingPresence}>
                       Registrar Presença
                       <ChevronDown className="h-4 w-4 ml-1" />
                     </Button>
@@ -551,7 +557,11 @@ export default function BarberEditProductionModal({
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Button type="submit" className="h-11" disabled={isLoading || isSavingPresence || cart.length === 0}>
+                <Button
+                  type="submit"
+                  className="h-11 w-full sm:min-w-[180px]"
+                  disabled={isLoading || isSavingPresence || cart.length === 0}
+                >
                   {isLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />

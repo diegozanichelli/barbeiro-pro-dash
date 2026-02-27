@@ -193,16 +193,6 @@ export default function ManagerReports() {
         }
       });
     }
-
-    setProductions(productions || []);
-    setStats({
-      totalRevenue,
-      totalCommission,
-      totalClients,
-      averageTicket,
-      goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
-    });
   }, [dateRange, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {

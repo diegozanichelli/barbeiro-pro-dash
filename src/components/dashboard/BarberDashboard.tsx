@@ -61,26 +61,6 @@ interface DailyProductionRow {
   presence_type: string | null;
 }
 
-interface EditingProduction {
-  id: string;
-  date: string;
-}
-
-interface DailyProductionRow {
-  id: string;
-  date: string;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  services_total: number | null;
-  products_total: number | null;
-  clients_count: number | null;
-  services_count: number | null;
-  products_count: number | null;
-  commission_earned: number | null;
-  confirmed_presence: boolean | null;
-  presence_type: string | null;
-}
-
 interface MonthlyStats {
   accumulated_commission: number;
   days_worked: number;
@@ -336,9 +316,6 @@ const [todayProduction, setTodayProduction] = useState<{
       setDailyTargetServices(servicesTarget);
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
-
-  const { month: _curMonth, year: _curYear } = getCurrentMonthYear();
-  const isCurrentMonth = selectedMonth === _curMonth && selectedYear === _curYear;
 
   const pacingCoachMessage = useMemo(() => {
     if (!isCurrentMonth || !monthlyGoal || !stats) return null;
@@ -660,6 +637,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
   // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
   const today = new Date();
+  const isCurrentMonth = selectedMonth === today.getMonth() + 1 && selectedYear === today.getFullYear();
   const daysLeft = isCurrentMonth ? calculateRemainingWorkDays(getManausDate(), holidayDates) : 0;
   
   // Calcular "Falta Ganhar" com proteção contra NaN
