@@ -88,7 +88,6 @@ export default function DailyGoalsTracking() {
       .select("id, name")
       .eq("status", "active")
       .order("name");
-
     if (data) setUnits(data);
   }, []);
 
