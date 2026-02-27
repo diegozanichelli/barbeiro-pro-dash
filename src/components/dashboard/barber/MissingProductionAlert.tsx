@@ -4,9 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getManausDate, getCurrentMonthYear } from "@/lib/dateUtils";
-import { useOrganization } from "@/hooks/useOrganization";
-import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+import { getManausDate } from "@/lib/dateUtils";
 
 interface MissingProductionAlertProps {
   barberId: string;
@@ -14,52 +12,42 @@ interface MissingProductionAlertProps {
 
 interface ProductionStatusRow {
   date: string;
-  confirmed_presence: boolean | null;
   presence_type: string | null;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  products_total: number | null;
-  tx_basic_total: number | null;
-  tx_extra_total: number | null;
-  tx_products_total: number | null;
 }
 
 const RESOLVED_PRESENCE_TYPES = new Set(["day_off", "absence", "optional_sunday", "holiday"]);
 
 export default function MissingProductionAlert({ barberId }: MissingProductionAlertProps) {
-  const { organizationId } = useOrganization();
   const [productions, setProductions] = useState<ProductionStatusRow[]>([]);
-  const [isLoadingProductions, setIsLoadingProductions] = useState(true);
-  const [hasLoadedAtLeastOnce, setHasLoadedAtLeastOnce] = useState(false);
-
-  const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
-  const { holidayDates, loading: holidaysLoading, error: holidaysError } = useOrganizationHolidays({
-    organizationId,
-    month: currentMonth,
-    year: currentYear,
-  });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
     const fetchProductions = async () => {
-      if (!barberId || holidaysLoading) return;
+      if (!barberId) {
+        if (isMounted) {
+          setProductions([]);
+          setIsLoading(false);
+        }
+        return;
+      }
 
-      if (!hasLoadedAtLeastOnce && isMounted) {
-        setIsLoadingProductions(true);
+      if (isMounted) {
+        setIsLoading(true);
       }
 
       try {
         const today = getManausDate();
+        const currentMonth = today.getMonth() + 1;
+        const currentYear = today.getFullYear();
         const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
         const yesterdayDate = new Date(today.getTime() - 86400000);
         const yesterdayStr = format(yesterdayDate, "yyyy-MM-dd");
 
         const { data, error } = await supabase
           .from("daily_productions")
-          .select(
-            "date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total"
-          )
+          .select("date, presence_type")
           .eq("barber_id", barberId)
           .gte("date", startOfMonth)
           .lte("date", yesterdayStr);
@@ -76,8 +64,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
         }
       } finally {
         if (isMounted) {
-          setIsLoadingProductions(false);
-          setHasLoadedAtLeastOnce(true);
+          setIsLoading(false);
         }
       }
     };
@@ -87,44 +74,43 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
     return () => {
       isMounted = false;
     };
-  }, [barberId, currentMonth, currentYear, holidaysLoading, hasLoadedAtLeastOnce]);
+  }, [barberId]);
+
+  const currentDateKey = format(getManausDate(), "yyyy-MM-dd");
 
   const missingDays = useMemo(() => {
-    const today = getManausDate();
-    const effectiveHolidayDates = holidaysError ? [] : holidayDates;
-    const targetDays: string[] = [];
+    const safeProductions = productions || [];
 
-    for (let d = 1; d < today.getDate(); d++) {
-      const date = new Date(currentYear, currentMonth - 1, d);
-      const dateKey = format(date, "yyyy-MM-dd");
+    const currentDate = new Date(`${currentDateKey}T12:00:00`);
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
 
-      if (!effectiveHolidayDates.includes(dateKey)) {
-        targetDays.push(dateKey);
-      }
+    const expectedDays: string[] = [];
+    for (let day = 1; day < currentDate.getDate(); day++) {
+      const date = new Date(currentYear, currentMonth, day);
+      expectedDays.push(format(date, "yyyy-MM-dd"));
     }
 
-    const resolvedDates = new Set(
-      productions
+    const resolvedDays = new Set(
+      safeProductions
         .filter((production) => {
-          const hasPresence = production.confirmed_presence === true;
-          const hasResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
-          const manualTotal =
-            (production.services_basic_total || 0) +
-            (production.services_extra_total || 0) +
-            (production.products_total || 0);
-          const txTotal = (production.tx_basic_total || 0) + (production.tx_extra_total || 0) + (production.tx_products_total || 0);
-
-          return hasPresence || hasResolvedPresenceType || manualTotal > 0 || txTotal > 0;
+          const hasAnyProductionRecord = Boolean(production?.date);
+          const isResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
+          return hasAnyProductionRecord || isResolvedPresenceType;
         })
         .map((production) => production.date)
     );
 
-    return targetDays.filter((day) => !resolvedDates.has(day));
-  }, [currentMonth, currentYear, holidayDates, holidaysError, productions]);
+    return expectedDays.filter((day) => !resolvedDays.has(day));
+  }, [productions, currentDateKey]);
 
-  const isLoading = holidaysLoading || isLoadingProductions;
+  console.log("Dias pendentes calculados:", missingDays);
 
-  if ((isLoading && !hasLoadedAtLeastOnce) || missingDays.length === 0) {
+  if (isLoading) {
+    return null;
+  }
+
+  if (missingDays.length === 0) {
     return null;
   }
 
