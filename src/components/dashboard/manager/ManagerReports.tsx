@@ -106,6 +106,17 @@ export default function ManagerReports() {
       productionsQuery = productionsQuery.eq("barber_id", selectedBarber);
     }
 
+    const { data: productions } = await productionsQuery;
+
+    // Chamar RPC para estatísticas agregadas
+    const rpcParams: any = {
+      p_date_from: format(dateRange.from, "yyyy-MM-dd"),
+      p_date_to: format(dateRange.to, "yyyy-MM-dd"),
+    };
+    if (selectedUnit !== "all") rpcParams.p_unit_id = selectedUnit;
+    if (selectedBarber !== "all") rpcParams.p_barber_id = selectedBarber;
+
+    const { data: rpcData } = await supabase.rpc("get_manager_report_stats", rpcParams);
     const statsRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
     const totalRevenue = Number(statsRow?.total_revenue) || 0;
     const totalCommission = Number(statsRow?.total_commission) || 0;
@@ -138,6 +149,7 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
+    let goalsAchieved = 0;
     if (productions) {
       const totalRevenue = productions.reduce(
         (sum, p: DailyProduction) => {
@@ -181,6 +193,16 @@ export default function ManagerReports() {
         }
       });
     }
+
+    setProductions(productions || []);
+    setStats({
+      totalRevenue,
+      totalCommission,
+      totalClients,
+      averageTicket,
+      goalsAchieved,
+      totalBarbers: barbersData?.length || 0,
+    });
   }, [dateRange, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {
