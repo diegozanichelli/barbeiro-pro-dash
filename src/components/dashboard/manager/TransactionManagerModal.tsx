@@ -142,7 +142,6 @@ export default function TransactionManagerModal({
         .from("sale_transactions")
         .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
         .eq("barber_id", barberId)
-        .eq("source", auditMode ? "barber" : "manager")
         .gte("created_at", `${date}T00:00:00`)
         .lt("created_at", `${nextDay}T00:00:00`)
         .order("created_at", { ascending: true });
