@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, History, UserCheck, CalendarOff, XCircle } from "lucide-react";
+import { Pencil, History, UserCheck, CalendarOff, XCircle, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -13,6 +13,7 @@ interface ProductionHistoryProps {
   selectedMonth: number;
   selectedYear: number;
   onEdit: (production: DailyProduction) => void;
+  onReview?: (date: string) => void;
 }
 
 interface DailyProduction {
@@ -37,7 +38,8 @@ export default function ProductionHistory({
   barberId, 
   selectedMonth, 
   selectedYear,
-  onEdit 
+  onEdit,
+  onReview 
 }: ProductionHistoryProps) {
   const [productions, setProductions] = useState<DailyProduction[]>([]);
   const [loading, setLoading] = useState(true);

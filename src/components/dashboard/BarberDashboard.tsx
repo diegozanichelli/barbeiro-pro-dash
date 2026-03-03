@@ -19,6 +19,8 @@ import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import BarberEditProductionModal from "./barber/BarberEditProductionModal";
+import PendingDayReviews from "./barber/PendingDayReviews";
+import DayReviewModal from "./barber/DayReviewModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -95,6 +97,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [scheduledOffDates, setScheduledOffDates] = useState<string[]>([]);
   const [missingLink, setMissingLink] = useState(false);
   const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
+  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
 const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
@@ -789,7 +792,12 @@ const [todayProduction, setTodayProduction] = useState<{
           <TabsContent value="daily" className="space-y-6">
             {/* Alerta de Produções Pendentes */}
             {isCurrentMonth && <MissingProductionAlert barberId={barber.id} />}
-            
+
+            {/* Dias Pendentes de Conferência (AO VIVO) */}
+            <PendingDayReviews 
+              barberId={barber.id} 
+              onReview={(date) => setReviewingDate(date)} 
+            />
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
@@ -1037,6 +1045,7 @@ const [todayProduction, setTodayProduction] = useState<{
               selectedMonth={selectedMonth}
               selectedYear={selectedYear}
               onEdit={handleEditProduction}
+              onReview={(date) => setReviewingDate(date)}
             />
           </TabsContent>
 
@@ -1092,6 +1101,18 @@ const [todayProduction, setTodayProduction] = useState<{
           onConfirm={handleConfirmPresence}
           isLoading={confirmingPresence}
         />
+
+        {/* Modal de Conferência do Dia (AO VIVO) */}
+        {reviewingDate && barber && (
+          <DayReviewModal
+            open={!!reviewingDate}
+            onOpenChange={(open) => !open && setReviewingDate(null)}
+            barberId={barber.id}
+            organizationId={barber.organization_id}
+            date={reviewingDate}
+            onSuccess={handleFormSuccess}
+          />
+        )}
 
       </div>
     </div>
