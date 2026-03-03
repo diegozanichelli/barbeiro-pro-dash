@@ -62,6 +62,7 @@ interface Transaction {
   commission_amount: number;
   description: string | null;
   client_name: string | null;
+  source: string;
 }
 
 interface CatalogItem {
@@ -137,7 +138,7 @@ export default function TransactionManagerModal({
     try {
       let query = supabase
         .from("sale_transactions")
-        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
+        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name, source")
         .order("created_at", { ascending: true });
 
       if (dailyProductionId) {
@@ -410,7 +411,12 @@ export default function TransactionManagerModal({
     return null;
   };
 
-  const totalTransactions = transactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
+  // Total oficial: apenas transações do barbeiro (source='barber') para consistência com dashboard
+  const barberTransactions = transactions.filter(t => t.source === 'barber');
+  const managerTransactions = transactions.filter(t => t.source === 'manager');
+  const totalBarber = barberTransactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
+  const totalManager = managerTransactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
+  const hasMultipleSources = barberTransactions.length > 0 && managerTransactions.length > 0;
 
   return (
     <>
@@ -477,9 +483,19 @@ export default function TransactionManagerModal({
                               <p className="font-medium text-sm truncate">
                                 {transaction.item_name}
                               </p>
-                              {getCategoryBadge(
+                          {getCategoryBadge(
                                 transaction.item_type,
                                 transaction.service_category
+                              )}
+                              {hasMultipleSources && (
+                                <Badge variant="outline" className={cn(
+                                  "text-[10px] px-1.5 py-0",
+                                  transaction.source === 'barber' 
+                                    ? "border-green-500/40 text-green-500" 
+                                    : "border-blue-500/40 text-blue-500"
+                                )}>
+                                  {transaction.source === 'barber' ? 'Barbeiro' : 'Recepção'}
+                                </Badge>
                               )}
                             </div>
                             {transaction.client_name && (
@@ -510,11 +526,27 @@ export default function TransactionManagerModal({
               {/* Footer with totals and add button */}
               <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
                 {transactions.length > 0 && (
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
-                    <span className="font-medium">Total ({transactions.length} itens):</span>
-                    <span className="text-xl font-bold text-primary">
-                      {formatCurrency(totalTransactions)}
-                    </span>
+                  <div className="space-y-2">
+                    {hasMultipleSources && (
+                      <>
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-green-500/10 border border-green-500/20 text-sm">
+                          <span className="text-green-400">✅ Barbeiro ({barberTransactions.length} itens):</span>
+                          <span className="font-semibold text-green-400">{formatCurrency(totalBarber)}</span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+                          <span className="text-blue-400">📋 Recepção ({managerTransactions.length} itens):</span>
+                          <span className="font-semibold text-blue-400">{formatCurrency(totalManager)}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
+                      <span className="font-medium">
+                        {hasMultipleSources ? "Total Oficial (Barbeiro):" : `Total (${transactions.length} itens):`}
+                      </span>
+                      <span className="text-xl font-bold text-primary">
+                        {formatCurrency(hasMultipleSources ? totalBarber : barberTransactions.length > 0 ? totalBarber : totalManager)}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <Button
