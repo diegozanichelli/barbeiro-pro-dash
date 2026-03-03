@@ -207,17 +207,10 @@ const [todayProduction, setTodayProduction] = useState<{
     }
 
     const typedConsolidated: ConsolidatedRow[] = typedProductions.map((p) => {
-      const txBasic = Number(p.tx_basic_total) || 0;
-      const txExtra = Number(p.tx_extra_total) || 0;
-      const txProducts = Number(p.tx_products_total) || 0;
-      const hasTx = txBasic + txExtra + txProducts > 0;
-
+      // REGRA: O dashboard do barbeiro usa APENAS seus próprios dados (manual_*/services_*)
+      // Os campos tx_* são dados de auditoria do gestor e NÃO devem ser usados aqui
       let basic: number, extra: number, prods: number;
-      if (hasTx) {
-        basic = txBasic;
-        extra = txExtra;
-        prods = txProducts;
-      } else if (p.services_basic_total != null || p.services_extra_total != null) {
+      if (p.services_basic_total != null || p.services_extra_total != null) {
         basic = Number(p.services_basic_total) || 0;
         extra = Number(p.services_extra_total) || 0;
         prods = Number(p.products_total) || 0;
