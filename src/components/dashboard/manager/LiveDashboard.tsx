@@ -280,22 +280,22 @@ export default function LiveDashboard() {
   const [managerTransactions, setManagerTransactions] = useState<ManagerTransaction[]>([]);
 
   // Calculate total revenue from managerTransactions (Ao Vivo)
+  // Calculate total revenue combining confirmed barber data + unconfirmed manager transactions
   useEffect(() => {
-    const filtered = selectedUnit === "all"
-      ? managerTransactions
-      : managerTransactions.filter((t) => {
-          const barber = barbers.find((b) => b.id === t.barber_id);
-          return barber?.unit_id === selectedUnit;
-        });
+    const relevantBarbers = selectedUnit === "all"
+      ? barbers
+      : barbers.filter((b) => b.unit_id === selectedUnit);
 
-    const newTotal = filtered.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + (t.price_sold || 0), 0);
+    const newTotal = relevantBarbers.reduce((sum, barber) => {
+      return sum + getBarberRevenue(barber.id);
+    }, 0);
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
       setIsGlowing(true);
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [managerTransactions, selectedUnit, barbers, totalRevenue]);
+  }, [managerTransactions, productions, selectedUnit, barbers, totalRevenue]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
@@ -335,7 +335,19 @@ export default function LiveDashboard() {
   }, [organizationId, selectedDate, isViewingToday, fetchData]);
 
   const getBarberRevenue = (barberId: string) => {
-    // Read directly from managerTransactions instead of tx_* fields
+    // If barber has confirmed their production, use the confirmed totals
+    const production = productions.find((p) => p.barber_id === barberId);
+    if (production && production.confirmed_presence) {
+      const manualTotal =
+        (production.manual_basic_total || 0) +
+        (production.manual_extra_total || 0) +
+        (production.manual_products_total || 0);
+      // If barber confirmed with items, use their confirmed total
+      if (manualTotal > 0) return manualTotal;
+      // If confirmed as day_off/absence, return 0
+      if (production.presence_type === 'day_off' || production.presence_type === 'absence') return 0;
+    }
+    // Fallback: read from manager transactions (AO VIVO, not yet confirmed)
     return managerTransactions
       .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
       .reduce((sum, t) => sum + (t.price_sold || 0), 0);
