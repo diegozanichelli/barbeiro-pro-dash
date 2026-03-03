@@ -135,17 +135,25 @@ export default function TransactionManagerModal({
   const fetchTransactions = async () => {
     setLoadingTransactions(true);
     try {
-      const { addDays, parseISO, format: fmtDate } = await import("date-fns");
-      const nextDay = fmtDate(addDays(parseISO(date), 1), "yyyy-MM-dd");
-
-      const { data, error } = await supabase
+      let query = supabase
         .from("sale_transactions")
         .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
-        .eq("barber_id", barberId)
-        .gte("created_at", `${date}T00:00:00`)
-        .lt("created_at", `${nextDay}T00:00:00`)
         .order("created_at", { ascending: true });
 
+      if (dailyProductionId) {
+        // Use daily_production_id for accurate filtering (avoids cross-date issues)
+        query = query.eq("daily_production_id", dailyProductionId);
+      } else {
+        // Fallback to date range when no production record exists
+        const { addDays, parseISO, format: fmtDate } = await import("date-fns");
+        const nextDay = fmtDate(addDays(parseISO(date), 1), "yyyy-MM-dd");
+        query = query
+          .eq("barber_id", barberId)
+          .gte("created_at", `${date}T00:00:00`)
+          .lt("created_at", `${nextDay}T00:00:00`);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setTransactions(data || []);
     } catch (error) {
