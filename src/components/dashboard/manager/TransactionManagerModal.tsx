@@ -51,6 +51,8 @@ interface TransactionManagerModalProps {
   date: string;
   onSuccess: () => void;
   auditMode?: boolean;
+  sourceFilter?: "barber" | "manager";
+  readOnly?: boolean;
 }
 
 interface Transaction {
@@ -93,6 +95,8 @@ export default function TransactionManagerModal({
   date,
   onSuccess,
   auditMode = false,
+  sourceFilter,
+  readOnly = false,
 }: TransactionManagerModalProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -152,6 +156,11 @@ export default function TransactionManagerModal({
           .eq("barber_id", barberId)
           .gte("created_at", `${date}T00:00:00`)
           .lt("created_at", `${nextDay}T00:00:00`);
+      }
+
+      // Apply source filter if provided (e.g., only show manager transactions in Live view)
+      if (sourceFilter) {
+        query = query.eq("source", sourceFilter);
       }
 
       const { data, error } = await query;
@@ -441,7 +450,7 @@ export default function TransactionManagerModal({
               <div>
                 <DialogTitle className="text-lg font-semibold">
                   {viewMode === "list"
-                    ? `${auditMode ? "Auditar" : "Gerenciar"} Produção — ${barberName}`
+                    ? `${readOnly ? "Comandas Recepção" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
                     : "Adicionar Itens"}
                 </DialogTitle>
                 <DialogDescription>
@@ -508,14 +517,16 @@ export default function TransactionManagerModal({
                             </p>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                          onClick={() => setDeleteConfirm({ open: true, transactionId: transaction.id })}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {!readOnly && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            onClick={() => setDeleteConfirm({ open: true, transactionId: transaction.id })}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -549,13 +560,15 @@ export default function TransactionManagerModal({
                     </div>
                   </div>
                 )}
-                <Button
-                  onClick={() => setViewMode("add")}
-                  className="w-full h-12 text-base gap-2"
-                >
-                  <PlusCircle className="h-5 w-5" />
-                  Adicionar Item Retroativo
-                </Button>
+                {!readOnly && (
+                  <Button
+                    onClick={() => setViewMode("add")}
+                    className="w-full h-12 text-base gap-2"
+                  >
+                    <PlusCircle className="h-5 w-5" />
+                    Adicionar Item Retroativo
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
