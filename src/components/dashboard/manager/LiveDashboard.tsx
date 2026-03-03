@@ -847,6 +847,7 @@ export default function LiveDashboard() {
         dailyProductionId={editModal.dailyProductionId}
         date={editModal.date}
         onSuccess={fetchData}
+        sourceFilter="manager"
       />
 
       {/* Subscription Wizard Modal */}
