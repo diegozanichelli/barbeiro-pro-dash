@@ -343,6 +343,21 @@ export default function SubscriptionWizardModal({
 
       if (error) throw error;
 
+      // Record purchase history (best-effort)
+      const purchasedAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
+      await recordClientPurchasesBestEffort(
+        organizationId,
+        registeredClient.clientName,
+        registeredClient.mobilePhone,
+        [{
+          item_name: `Assinatura ${selectedPlan?.name || ""}`,
+          item_type: "subscription",
+          amount: selectedPlan?.price || 0,
+          quantity: 1,
+          purchased_at: purchasedAt,
+        }]
+      );
+
       const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
       toast.success(`Assinatura registrada!`, {
         description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,

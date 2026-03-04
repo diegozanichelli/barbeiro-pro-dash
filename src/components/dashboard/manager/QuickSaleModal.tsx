@@ -527,6 +527,20 @@ export default function QuickSaleModal({
 
       if (error) throw error;
 
+      // Record purchase history (best-effort)
+      await recordClientPurchasesBestEffort(
+        organizationId,
+        registeredClient.clientName,
+        registeredClient.mobilePhone,
+        [{
+          item_name: itemName,
+          item_type: itemType as "service" | "product",
+          amount: numericValue,
+          quantity: 1,
+          purchased_at: selectedDate.toISOString(),
+        }]
+      );
+
       toast.success(`Venda manual registrada para ${barberName}`);
       
       resetForm();
