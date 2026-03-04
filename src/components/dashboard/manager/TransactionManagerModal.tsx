@@ -26,7 +26,6 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -334,7 +333,7 @@ export default function TransactionManagerModal({
     try {
       // Insert transactions
       const transactionsToInsert: any[] = [];
-      const sourceValue = auditMode ? "barber" : "manager";
+      const sourceValue = "manager";
       cart.forEach((item) => {
         for (let i = 0; i < item.quantity; i++) {
           transactionsToInsert.push({
@@ -420,12 +419,9 @@ export default function TransactionManagerModal({
     return null;
   };
 
-  // Total oficial: apenas transações do barbeiro (source='barber') para consistência com dashboard
-  const barberTransactions = transactions.filter(t => t.source === 'barber');
-  const managerTransactions = transactions.filter(t => t.source === 'manager');
-  const totalBarber = barberTransactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
-  const totalManager = managerTransactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
-  const hasMultipleSources = barberTransactions.length > 0 && managerTransactions.length > 0;
+  const totalTransactions = transactions
+    .filter((transaction) => transaction.item_type !== "subscription")
+    .reduce((sum, transaction) => sum + transaction.price_sold, 0);
 
   return (
     <>
@@ -496,16 +492,6 @@ export default function TransactionManagerModal({
                                 transaction.item_type,
                                 transaction.service_category
                               )}
-                              {hasMultipleSources && (
-                                <Badge variant="outline" className={cn(
-                                  "text-[10px] px-1.5 py-0",
-                                  transaction.source === 'barber' 
-                                    ? "border-green-500/40 text-green-500" 
-                                    : "border-blue-500/40 text-blue-500"
-                                )}>
-                                  {transaction.source === 'barber' ? 'Barbeiro' : 'Recepção'}
-                                </Badge>
-                              )}
                             </div>
                             {transaction.client_name && (
                               <p className="text-xs text-muted-foreground/80">
@@ -538,24 +524,10 @@ export default function TransactionManagerModal({
               <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
                 {transactions.length > 0 && (
                   <div className="space-y-2">
-                    {hasMultipleSources && (
-                      <>
-                        <div className="flex items-center justify-between p-2 rounded-lg bg-green-500/10 border border-green-500/20 text-sm">
-                          <span className="text-green-400">✅ Barbeiro ({barberTransactions.length} itens):</span>
-                          <span className="font-semibold text-green-400">{formatCurrency(totalBarber)}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-                          <span className="text-blue-400">📋 Recepção ({managerTransactions.length} itens):</span>
-                          <span className="font-semibold text-blue-400">{formatCurrency(totalManager)}</span>
-                        </div>
-                      </>
-                    )}
                     <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
-                      <span className="font-medium">
-                        {hasMultipleSources ? "Total Oficial (Barbeiro):" : `Total (${transactions.length} itens):`}
-                      </span>
+                      <span className="font-medium">Total ({transactions.length} itens):</span>
                       <span className="text-xl font-bold text-primary">
-                        {formatCurrency(hasMultipleSources ? totalBarber : barberTransactions.length > 0 ? totalBarber : totalManager)}
+                        {formatCurrency(totalTransactions)}
                       </span>
                     </div>
                   </div>
