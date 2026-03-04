@@ -31,6 +31,7 @@ import {
   X,
   Phone,
   Smartphone,
+  Crown,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
@@ -47,7 +48,7 @@ import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
-import { recordClientPurchasesBestEffort } from "@/lib/purchaseHistory";
+import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
 
 
 interface QuickSaleModalProps {
@@ -76,6 +77,8 @@ interface CartItem extends CatalogItem {
 }
 
 type CategoryTab = "services" | "products" | "manual";
+
+type ClientType = "new" | "without_subscription" | "with_subscription";
 
 /**
  * Handle numeric input to fix "leading zero" bug
@@ -128,8 +131,8 @@ export default function QuickSaleModal({
   // Reception mode (no barber attribution)
   const [isReceptionSale, setIsReceptionSale] = useState(false);
 
-  // New client tracking (for conversion metrics)
-  const [isNewClient, setIsNewClient] = useState(initialIsNewClient ?? false);
+  // Client type tracking (for conversion metrics and assinatura status)
+  const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
   const [clientName, setClientName] = useState("");
   const [manualOverride, setManualOverride] = useState(false);
 
@@ -202,7 +205,7 @@ export default function QuickSaleModal({
     setSearchQuery("");
     setActiveTab("services");
     setIsReceptionSale(false);
-    setIsNewClient(initialIsNewClient ?? false);
+    setClientType(initialIsNewClient ? "new" : "without_subscription");
     setClientName("");
     setMobilePhone("");
     setPhoneError(null);
@@ -229,7 +232,7 @@ export default function QuickSaleModal({
     const matchedClient = phoneSuggestions.find((client) => client.mobile_phone === digits);
     if (matchedClient) {
       setClientName(matchedClient.name);
-      if (!manualOverride) setIsNewClient(false);
+      if (!manualOverride) setClientType("without_subscription");
     }
     if (digits.length === 11) {
       if (!isValidPhone(raw)) {
@@ -254,9 +257,9 @@ export default function QuickSaleModal({
 
     if (res.status === "phone_found" && res.suggestedName) {
       setClientName(res.suggestedName);
-      if (!manualOverride) setIsNewClient(false);
+      if (!manualOverride) setClientType("without_subscription");
     } else if (res.status === "name_found") {
-      if (!manualOverride) setIsNewClient(false);
+      if (!manualOverride) setClientType("without_subscription");
     } else if (res.status === "not_found") {
       // Não muda automaticamente — o gestor decide manualmente
     }
@@ -269,16 +272,16 @@ export default function QuickSaleModal({
       if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
         const res = await clientHistory.checkHistory(mobilePhone, clientName);
         if (res && res.status === "name_found" && !manualOverride) {
-          setIsNewClient(false);
+          setClientType("without_subscription");
         }
       }
     }
   }, [mobilePhone, clientName, manualOverride, clientHistory]);
 
   // Handle manual override of client type
-  const handleClientTypeChange = (value: string) => {
+  const handleClientTypeChange = (value: ClientType) => {
     setManualOverride(true);
-    setIsNewClient(value === "new");
+    setClientType(value);
   };
 
   // Cart operations (individualized with tempId)
@@ -424,7 +427,7 @@ export default function QuickSaleModal({
         price_sold: item.customPrice,
         commission_rate_used: 0,
         commission_amount: 0,
-        is_new_client: isNewClient,
+        is_new_client: clientType === "new",
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
         created_at: selectedDate.toISOString(),
@@ -433,19 +436,18 @@ export default function QuickSaleModal({
       const { error } = await supabase.from("sale_transactions").insert(transactions as any);
       if (error) throw error;
 
-      // Record purchase history (best-effort)
-      await recordClientPurchasesBestEffort(
+      await recordClientPurchasesBestEffort({
         organizationId,
-        registeredClient.clientName,
-        registeredClient.mobilePhone,
-        cart.map(item => ({
-          item_name: item.name,
-          item_type: item.type as "service" | "product",
+        clientName: registeredClient.clientName,
+        mobilePhone: registeredClient.mobilePhone,
+        purchases: cart.map((item) => ({
+          itemName: item.name,
+          itemType: item.type,
           amount: item.customPrice,
           quantity: 1,
-          purchased_at: selectedDate.toISOString(),
-        }))
-      );
+          purchasedAt: selectedDate.toISOString(),
+        })),
+      });
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
@@ -527,19 +529,20 @@ export default function QuickSaleModal({
 
       if (error) throw error;
 
-      // Record purchase history (best-effort)
-      await recordClientPurchasesBestEffort(
+      await recordClientPurchasesBestEffort({
         organizationId,
-        registeredClient.clientName,
-        registeredClient.mobilePhone,
-        [{
-          item_name: itemName,
-          item_type: itemType as "service" | "product",
-          amount: numericValue,
-          quantity: 1,
-          purchased_at: selectedDate.toISOString(),
-        }]
-      );
+        clientName: registeredClient.clientName,
+        mobilePhone: registeredClient.mobilePhone,
+        purchases: [
+          {
+            itemName,
+            itemType,
+            amount: numericValue,
+            quantity: 1,
+            purchasedAt: selectedDate.toISOString(),
+          },
+        ],
+      });
 
       toast.success(`Venda manual registrada para ${barberName}`);
       
@@ -710,7 +713,7 @@ export default function QuickSaleModal({
               );
               if (matchedClient) {
                 setMobilePhone(formatPhone(matchedClient.mobile_phone));
-                if (!manualOverride) setIsNewClient(false);
+                if (!manualOverride) setClientType("without_subscription");
               }
             }}
             onBlur={handleNameBlur}
@@ -757,20 +760,12 @@ export default function QuickSaleModal({
           <Label className="text-sm font-medium">Tipo de Cliente</Label>
           <ToggleGroup
             type="single"
-            value={isNewClient ? "new" : "existing"}
+            value={clientType}
             onValueChange={(v) => {
-              if (v) handleClientTypeChange(v);
+              if (v) handleClientTypeChange(v as ClientType);
             }}
             className="justify-start"
           >
-            <ToggleGroupItem
-              value="existing"
-              aria-label="Cliente da Casa"
-              className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            >
-              <Home className="w-4 h-4" />
-              Cliente da Casa
-            </ToggleGroupItem>
             <ToggleGroupItem
               value="new"
               aria-label="Cliente Novo"
@@ -778,6 +773,22 @@ export default function QuickSaleModal({
             >
               <UserPlus className="w-4 h-4" />
               Cliente Novo
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="without_subscription"
+              aria-label="Cliente sem Assinatura"
+              className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            >
+              <Home className="w-4 h-4" />
+              Sem Assinatura
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="with_subscription"
+              aria-label="Cliente com Assinatura"
+              className="flex-1 gap-2 data-[state=on]:bg-amber-500 data-[state=on]:text-black"
+            >
+              <Crown className="w-4 h-4" />
+              Com Assinatura
             </ToggleGroupItem>
           </ToggleGroup>
         </div>

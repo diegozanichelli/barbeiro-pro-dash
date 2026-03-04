@@ -62,7 +62,7 @@ export async function registerClientOrThrow({
     throw new Error("Informe um celular válido com DDD.");
   }
 
-  const { data: byPhone, error: byPhoneError } = await (supabase as any)
+  const { data: byPhone, error: byPhoneError } = await supabase
     .from("clients")
     .select("id, name, mobile_phone")
     .eq("organization_id", organizationId)
@@ -84,7 +84,7 @@ export async function registerClientOrThrow({
     };
   }
 
-  const { data: duplicateName, error: duplicateNameError } = await (supabase as any)
+  const { data: duplicateName, error: duplicateNameError } = await supabase
     .from("clients")
     .select("id")
     .eq("organization_id", organizationId)
@@ -102,7 +102,7 @@ export async function registerClientOrThrow({
     throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");
   }
 
-  const { data: createdClient, error: createError } = await (supabase as any)
+  const { data: createdClient, error: createError } = await supabase
     .from("clients")
     .insert({
       organization_id: organizationId,
@@ -118,7 +118,7 @@ export async function registerClientOrThrow({
     }
 
     if (createError.code === "23505") {
-      const { data: existingByPhone, error: existingByPhoneError } = await (supabase as any)
+      const { data: existingByPhone, error: existingByPhoneError } = await supabase
         .from("clients")
         .select("name, mobile_phone")
         .eq("organization_id", organizationId)
@@ -137,7 +137,7 @@ export async function registerClientOrThrow({
         };
       }
 
-      const { data: existingByName, error: existingByNameError } = await (supabase as any)
+      const { data: existingByName, error: existingByNameError } = await supabase
         .from("clients")
         .select("id")
         .eq("organization_id", organizationId)

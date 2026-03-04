@@ -66,7 +66,7 @@ export function useClientAutocomplete({
       try {
         const [nameResult, phoneResult] = await Promise.all([
           shouldQueryName
-            ? (supabase as any)
+            ? supabase
                 .from("clients")
                 .select("id, name, mobile_phone")
                 .eq("organization_id", organizationId)
@@ -74,7 +74,7 @@ export function useClientAutocomplete({
                 .limit(8)
             : Promise.resolve({ data: [], error: null }),
           shouldQueryPhone
-            ? (supabase as any)
+            ? supabase
                 .from("clients")
                 .select("id, name, mobile_phone")
                 .eq("organization_id", organizationId)

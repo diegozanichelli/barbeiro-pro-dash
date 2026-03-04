@@ -33,6 +33,15 @@ interface DailyProduction {
   tx_products_total?: number | null;
 }
 
+interface SaleHistoryItem {
+  id: string;
+  created_at: string;
+  client_name: string | null;
+  item_name: string;
+  item_type: string;
+  price_sold: number;
+}
+
 export default function ProductionHistory({ 
   barberId, 
   selectedMonth, 
@@ -40,6 +49,7 @@ export default function ProductionHistory({
   onReview 
 }: ProductionHistoryProps) {
   const [productions, setProductions] = useState<DailyProduction[]>([]);
+  const [saleHistory, setSaleHistory] = useState<SaleHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,18 +62,33 @@ export default function ProductionHistory({
     const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
     const lastDay = new Date(selectedYear, selectedMonth, 0);
 
-    const { data, error } = await supabase
-      .from("daily_productions")
-      .select("*")
-      .eq("barber_id", barberId)
-      .gte("date", format(firstDay, "yyyy-MM-dd"))
-      .lte("date", format(lastDay, "yyyy-MM-dd"))
-      .order("date", { ascending: false });
+    const [productionsResponse, salesResponse] = await Promise.all([
+      supabase
+        .from("daily_productions")
+        .select("*")
+        .eq("barber_id", barberId)
+        .gte("date", format(firstDay, "yyyy-MM-dd"))
+        .lte("date", format(lastDay, "yyyy-MM-dd"))
+        .order("date", { ascending: false }),
+      supabase
+        .from("sale_transactions")
+        .select("id, created_at, client_name, item_name, item_type, price_sold")
+        .eq("barber_id", barberId)
+        .gte("created_at", `${format(firstDay, "yyyy-MM-dd")}T00:00:00`)
+        .lte("created_at", `${format(lastDay, "yyyy-MM-dd")}T23:59:59`)
+        .order("created_at", { ascending: false }),
+    ]);
 
-    if (error) {
-      console.error("Erro ao buscar produções:", error);
+    if (productionsResponse.error) {
+      console.error("Erro ao buscar produções:", productionsResponse.error);
     } else {
-      setProductions(data || []);
+      setProductions(productionsResponse.data || []);
+    }
+
+    if (salesResponse.error) {
+      console.error("Erro ao buscar histórico de vendas:", salesResponse.error);
+    } else {
+      setSaleHistory(salesResponse.data || []);
     }
     
     setLoading(false);
@@ -179,6 +204,42 @@ export default function ProductionHistory({
             </Table>
           </div>
         )}
+
+        <div className="mt-8">
+          <h3 className="text-base font-semibold mb-3">Histórico de vendas</h3>
+          {saleHistory.length === 0 ? (
+            <p className="text-center text-muted-foreground py-6">
+              Nenhuma venda encontrada para este mês.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data e hora</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Item comprado</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {saleHistory.map((sale) => (
+                    <TableRow key={sale.id}>
+                      <TableCell className="font-medium">
+                        {format(new Date(sale.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      </TableCell>
+                      <TableCell>{sale.client_name?.trim() || "Cliente não informado"}</TableCell>
+                      <TableCell>{sale.item_name}</TableCell>
+                      <TableCell className="capitalize">{sale.item_type}</TableCell>
+                      <TableCell className="text-right font-semibold">{formatCurrency(sale.price_sold || 0)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

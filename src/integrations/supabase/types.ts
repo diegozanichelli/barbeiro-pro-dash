@@ -164,6 +164,89 @@ export type Database = {
           },
         ]
       }
+      clients: {
+        Row: {
+          created_at: string
+          id: string
+          mobile_phone: string
+          name: string
+          normalized_name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mobile_phone: string
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mobile_phone?: string
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_purchase_history: {
+        Row: {
+          amount: number
+          client_name: string
+          created_at: string
+          id: string
+          item_name: string
+          item_type: string
+          mobile_phone: string
+          organization_id: string
+          purchased_at: string
+          quantity: number
+        }
+        Insert: {
+          amount?: number
+          client_name: string
+          created_at?: string
+          id?: string
+          item_name: string
+          item_type: string
+          mobile_phone: string
+          organization_id: string
+          purchased_at?: string
+          quantity?: number
+        }
+        Update: {
+          amount?: number
+          client_name?: string
+          created_at?: string
+          id?: string
+          item_name?: string
+          item_type?: string
+          mobile_phone?: string
+          organization_id?: string
+          purchased_at?: string
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_purchase_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       catalog_products: {
         Row: {
           created_at: string
@@ -930,7 +1013,6 @@ export type Database = {
     }
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
-      cleanup_old_client_names: { Args: never; Returns: undefined }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
