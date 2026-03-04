@@ -10,15 +10,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
-import DailyProductionForm from "./barber/DailyProductionForm";
-import BarberSaleForm from "./barber/BarberSaleForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
-import BarberEditProductionModal from "./barber/BarberEditProductionModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
@@ -43,10 +40,6 @@ interface MonthlyGoal {
   target_commission: number;
 }
 
-interface EditingProduction {
-  id: string;
-  date: string;
-}
 
 interface DailyProductionRow {
   id: string;
@@ -96,9 +89,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [scheduledOffDates, setScheduledOffDates] = useState<string[]>([]);
   const [missingLink, setMissingLink] = useState(false);
-  const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
-const [todayProduction, setTodayProduction] = useState<{
+  const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
     confirmed_presence: boolean;
@@ -106,6 +98,7 @@ const [todayProduction, setTodayProduction] = useState<{
   } | null>(null);
   const [confirmingPresence, setConfirmingPresence] = useState(false);
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("daily");
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -490,18 +483,10 @@ const [todayProduction, setTodayProduction] = useState<{
     setSelectedYear(year);
   };
 
-  const handleEditProduction = (production: EditingProduction) => {
-    setEditingProduction({
-      id: production.id,
-      date: production.date,
-    });
-  };
-
   const handleFormSuccess = () => {
     // Forçar recálculo de TODOS os dados
     fetchMonthlyStats();
     fetchMonthlyGoal();
-    setEditingProduction(null); // Limpar edição e fechar modal
   };
 
   const handleOpenPresenceModal = () => {
@@ -622,10 +607,6 @@ const [todayProduction, setTodayProduction] = useState<{
     
     // Recarregar estatísticas para refletir o novo cálculo
     fetchMonthlyStats();
-  };
-
-  const handleCloseEditModal = () => {
-    setEditingProduction(null);
   };
 
   if (missingLink) {
@@ -770,7 +751,7 @@ const [todayProduction, setTodayProduction] = useState<{
           </Card>
         )}
 
-        <Tabs defaultValue="daily" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
@@ -1024,12 +1005,46 @@ const [todayProduction, setTodayProduction] = useState<{
               </CardContent>
             </Card>
 
-            {/* Formulário de Lançamento - PDV Visual */}
-            <BarberSaleForm 
-              barberId={barber.id}
-              organizationId={barber.organization_id}
-              onSuccess={handleFormSuccess}
-            />
+            {/* Hub de conferência (somente leitura) */}
+            <Card className="bg-card border-border shadow-card-custom">
+              <CardHeader>
+                <CardTitle className="text-base">Central de Conferência</CardTitle>
+                <CardDescription>
+                  Lançamentos são feitos pela recepção. Aqui você apenas acompanha e confirma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    className="w-full"
+                    onClick={() => setReviewingDate(getTodayString())}
+                    disabled={!isCurrentMonth}
+                  >
+                    Conferir hoje
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setActiveTab("history")}
+                  >
+                    Ver histórico de conferências
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Status de hoje</p>
+                  <p className="text-sm font-semibold">
+                    {todayProduction
+                      ? todayProduction.total > 0
+                        ? `Com lançamentos: R$ ${todayProduction.total.toFixed(2)}`
+                        : todayProduction.confirmed_presence
+                        ? "Presença confirmada sem vendas"
+                        : "Sem confirmação ainda"
+                      : "Sem dados para hoje"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
@@ -1037,7 +1052,6 @@ const [todayProduction, setTodayProduction] = useState<{
               barberId={barber.id}
               selectedMonth={selectedMonth}
               selectedYear={selectedYear}
-              onEdit={handleEditProduction}
               onReview={(date) => setReviewingDate(date)}
             />
           </TabsContent>
@@ -1073,19 +1087,6 @@ const [todayProduction, setTodayProduction] = useState<{
             )}
           </TabsContent>
         </Tabs>
-
-        {/* Modal de Edição por Cards */}
-        {editingProduction && barber && (
-          <BarberEditProductionModal
-            open={!!editingProduction}
-            onOpenChange={(open) => !open && handleCloseEditModal()}
-            barberId={barber.id}
-            organizationId={barber.organization_id}
-            productionId={editingProduction.id}
-            productionDate={editingProduction.date}
-            onSuccess={handleFormSuccess}
-          />
-        )}
 
         {/* Modal de Confirmação de Presença */}
         <ConfirmPresenceModal
