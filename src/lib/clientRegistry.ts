@@ -102,7 +102,7 @@ export async function registerClientOrThrow({
     throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");
   }
 
-  const { data: createdClient, error: createError } = await supabase
+  const { data: createdClient, error: createError } = await (supabase as any)
     .from("clients")
     .insert({
       organization_id: organizationId,
