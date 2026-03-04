@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
@@ -98,6 +98,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [confirmingPresence, setConfirmingPresence] = useState(false);
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("daily");
+  const [isSigningOut, setIsSigningOut] = useState(false);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -453,8 +454,13 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
+    setIsSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+      navigate("/auth");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   // Funções para navegação de mês
@@ -620,7 +626,9 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                   Vinculação pendente
                 </h1>
               </div>
-              <Button variant="outline" onClick={handleSignOut}>Sair</Button>
+              <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                {isSigningOut ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sair"}
+              </Button>
             </div>
           </div>
         </header>
@@ -684,9 +692,18 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 )}
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
+            <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+              {isSigningOut ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saindo...
+                </>
+              ) : (
+                <>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sair
+                </>
+              )}
             </Button>
           </div>
         </div>
