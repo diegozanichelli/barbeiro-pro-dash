@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, History, UserCheck, CalendarOff, XCircle, Eye } from "lucide-react";
+import { History, UserCheck, CalendarOff, XCircle, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -12,7 +12,6 @@ interface ProductionHistoryProps {
   barberId: string;
   selectedMonth: number;
   selectedYear: number;
-  onEdit: (production: DailyProduction) => void;
   onReview?: (date: string) => void;
 }
 
@@ -38,7 +37,6 @@ export default function ProductionHistory({
   barberId, 
   selectedMonth, 
   selectedYear,
-  onEdit,
   onReview 
 }: ProductionHistoryProps) {
   const [productions, setProductions] = useState<DailyProduction[]>([]);
@@ -109,7 +107,7 @@ export default function ProductionHistory({
           Meu Histórico de Lançamentos
         </CardTitle>
         <CardDescription>
-          Visualize e edite seus lançamentos de {format(new Date(selectedYear, selectedMonth - 1), "MMMM 'de' yyyy", { locale: ptBR })}
+          Visualize e confirme seus lançamentos de {format(new Date(selectedYear, selectedMonth - 1), "MMMM 'de' yyyy", { locale: ptBR })}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -169,10 +167,10 @@ export default function ProductionHistory({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => onEdit(production)}
+                        onClick={() => onReview?.(production.date)}
                       >
-                        <Pencil className="w-4 h-4 mr-1" />
-                        Editar
+                        <Eye className="w-4 h-4 mr-1" />
+                        Ver e confirmar
                       </Button>
                     </TableCell>
                   </TableRow>
