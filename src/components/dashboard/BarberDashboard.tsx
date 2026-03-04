@@ -652,7 +652,16 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   }
 
   if (!barber || !stats) {
-    return <div>Carregando...</div>;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <Card className="w-full max-w-sm bg-card border-border shadow-card-custom">
+          <CardContent className="py-8 flex flex-col items-center gap-3">
+            <Loader2 className="w-7 h-7 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Carregando seu painel...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
   const progressPercentage = monthlyGoal && monthlyGoal.target_commission > 0
     ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
