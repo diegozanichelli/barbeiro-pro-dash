@@ -31,6 +31,7 @@ interface ClientRow {
   mobile_phone: string;
   subscription_plan_id: string | null;
   updated_at: string;
+  canEdit: boolean;
 }
 
 interface SubscriptionPlan {
@@ -44,6 +45,12 @@ interface PurchaseHistoryRow {
   purchased_at: string;
 }
 
+interface PurchaseFallbackClient {
+  client_name: string | null;
+  mobile_phone: string | null;
+  created_at: string;
+}
+
 interface ClientSummary {
   hasPurchases: boolean;
   topItems: string[];
@@ -55,6 +62,57 @@ const formatPhone = (digits: string) => {
   if (only.length <= 2) return only.length ? `(${only}` : "";
   if (only.length <= 7) return `(${only.slice(0, 2)}) ${only.slice(2)}`;
   return `(${only.slice(0, 2)}) ${only.slice(2, 7)}-${only.slice(7)}`;
+};
+
+const isMissingSchemaError = (error: unknown, tableName: string) => {
+  const err = error as { code?: string; message?: string; details?: string } | null;
+  const code = String(err?.code || "").toUpperCase();
+  const message = String(err?.message || "").toLowerCase();
+  const details = String(err?.details || "").toLowerCase();
+  const table = tableName.toLowerCase();
+
+  return (
+    code === "PGRST205" ||
+    code === "42P01" ||
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    message.includes(table) ||
+    details.includes(table)
+  );
+};
+
+const buildClientsFromSaleTransactions = (rows: PurchaseFallbackClient[]): ClientRow[] => {
+  const byPhone = new Map<string, ClientRow>();
+
+  rows.forEach((row) => {
+    const phone = String(row.mobile_phone || "").replace(/\D/g, "").slice(0, 11);
+    const name = String(row.client_name || "").trim();
+
+    if (phone.length !== 11 || name.length < 3) return;
+
+    const existing = byPhone.get(phone);
+    if (!existing) {
+      byPhone.set(phone, {
+        id: `fallback-${phone}`,
+        name,
+        mobile_phone: phone,
+        subscription_plan_id: null,
+        updated_at: row.created_at,
+        canEdit: false,
+      });
+      return;
+    }
+
+    if (new Date(row.created_at).getTime() > new Date(existing.updated_at).getTime()) {
+      byPhone.set(phone, {
+        ...existing,
+        name,
+        updated_at: row.created_at,
+      });
+    }
+  });
+
+  return [...byPhone.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 };
 
 export default function ClientsManagement() {
@@ -73,7 +131,14 @@ export default function ClientsManagement() {
   const [formPlanId, setFormPlanId] = useState<string>("none");
 
   const loadData = async () => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      setClients([]);
+      setPlans([]);
+      setPurchases([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
     const [clientsRes, plansRes, historyRes] = await Promise.all([
@@ -97,22 +162,53 @@ export default function ClientsManagement() {
     ]);
 
     if (clientsRes.error) {
-      toast.error("Erro ao carregar clientes");
-      console.error(clientsRes.error);
+      if (isMissingSchemaError(clientsRes.error, "clients")) {
+        const { data: fallbackRows, error: fallbackError } = await supabase
+          .from("sale_transactions")
+          .select("client_name, mobile_phone, created_at")
+          .eq("organization_id", organizationId)
+          .not("client_name", "is", null)
+          .not("mobile_phone", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(3000);
+
+        if (fallbackError) {
+          toast.error("Erro ao carregar clientes");
+          console.error(fallbackError);
+          setClients([]);
+        } else {
+          setClients(buildClientsFromSaleTransactions((fallbackRows || []) as PurchaseFallbackClient[]));
+          toast.warning("Cadastro de clientes ainda não disponível. Exibindo clientes do histórico de vendas.");
+        }
+      } else {
+        toast.error("Erro ao carregar clientes");
+        console.error(clientsRes.error);
+        setClients([]);
+      }
     } else {
-      setClients(clientsRes.data || []);
+      const rows = (clientsRes.data || []).map((client) => ({
+        ...client,
+        canEdit: true,
+      }));
+      setClients(rows);
     }
 
     if (plansRes.error) {
-      toast.error("Erro ao carregar planos");
-      console.error(plansRes.error);
+      if (!isMissingSchemaError(plansRes.error, "subscription_plans")) {
+        toast.error("Erro ao carregar planos");
+        console.error(plansRes.error);
+      }
+      setPlans([]);
     } else {
       setPlans(plansRes.data || []);
     }
 
     if (historyRes.error) {
-      toast.error("Erro ao carregar histórico de recompra");
-      console.error(historyRes.error);
+      if (!isMissingSchemaError(historyRes.error, "client_purchase_history")) {
+        toast.error("Erro ao carregar histórico de recompra");
+        console.error(historyRes.error);
+      }
+      setPurchases([]);
     } else {
       setPurchases(historyRes.data || []);
     }
@@ -166,7 +262,7 @@ export default function ClientsManagement() {
     if (!q) return clients;
 
     return clients.filter((client) => {
-      const planName = client.subscription_plan_id ? (planNameById.get(client.subscription_plan_id) || "") : "";
+      const planName = client.subscription_plan_id ? planNameById.get(client.subscription_plan_id) || "" : "";
       return (
         client.name.toLowerCase().includes(q) ||
         client.mobile_phone.includes(q.replace(/\D/g, "")) ||
@@ -176,6 +272,11 @@ export default function ClientsManagement() {
   }, [clients, search, planNameById]);
 
   const openEdit = (client: ClientRow) => {
+    if (!client.canEdit) {
+      toast.info("Este cliente veio do histórico de vendas. Aplique as migrations para editar via cadastro.");
+      return;
+    }
+
     setSelectedClient(client);
     setFormName(client.name);
     setFormPhone(client.mobile_phone);
@@ -264,7 +365,7 @@ export default function ClientsManagement() {
                 {filteredClients.map((client) => {
                   const summary = purchaseSummaryByPhone.get(client.mobile_phone);
                   const planName = client.subscription_plan_id
-                    ? (planNameById.get(client.subscription_plan_id) || "Plano não encontrado")
+                    ? planNameById.get(client.subscription_plan_id) || "Plano não encontrado"
                     : "Sem plano";
 
                   return (
