@@ -4,6 +4,36 @@ import { isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 const normalizeName = (name: string) => name.trim().replace(/\s+/g, " ");
 const normalizedKey = (name: string) => normalizeName(name).toLowerCase();
 
+let warnedMissingClientsSchema = false;
+
+const isClientsSchemaMissing = (error: any) => {
+  const message = String(error?.message || "").toLowerCase();
+  const details = String(error?.details || "").toLowerCase();
+  const code = String(error?.code || "").toUpperCase();
+
+  return (
+    code === "PGRST205" ||
+    code === "42P01" ||
+    message.includes("public.clients") ||
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    details.includes("public.clients")
+  );
+};
+
+const fallbackWithoutRegistry = (name: string, phone: string): RegisterClientResult => {
+  if (!warnedMissingClientsSchema) {
+    warnedMissingClientsSchema = true;
+    console.warn("Tabela public.clients não encontrada. Seguindo sem registry até aplicar migration.");
+  }
+
+  return {
+    clientName: name,
+    mobilePhone: phone,
+    reusedByPhone: false,
+  };
+};
+
 interface RegisterClientInput {
   organizationId: string;
   clientName: string;
@@ -39,7 +69,12 @@ export async function registerClientOrThrow({
     .eq("mobile_phone", phone)
     .maybeSingle();
 
-  if (byPhoneError) throw byPhoneError;
+  if (byPhoneError) {
+    if (isClientsSchemaMissing(byPhoneError)) {
+      return fallbackWithoutRegistry(name, phone);
+    }
+    throw byPhoneError;
+  }
 
   if (byPhone) {
     return {
@@ -56,7 +91,12 @@ export async function registerClientOrThrow({
     .eq("normalized_name", normalizedKey(name))
     .maybeSingle();
 
-  if (duplicateNameError) throw duplicateNameError;
+  if (duplicateNameError) {
+    if (isClientsSchemaMissing(duplicateNameError)) {
+      return fallbackWithoutRegistry(name, phone);
+    }
+    throw duplicateNameError;
+  }
 
   if (duplicateName) {
     throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");
@@ -73,13 +113,21 @@ export async function registerClientOrThrow({
     .single();
 
   if (createError) {
+    if (isClientsSchemaMissing(createError)) {
+      return fallbackWithoutRegistry(name, phone);
+    }
+
     if (createError.code === "23505") {
-      const { data: existingByPhone } = await supabase
+      const { data: existingByPhone, error: existingByPhoneError } = await supabase
         .from("clients")
         .select("name, mobile_phone")
         .eq("organization_id", organizationId)
         .eq("mobile_phone", phone)
         .maybeSingle();
+
+      if (existingByPhoneError && !isClientsSchemaMissing(existingByPhoneError)) {
+        throw existingByPhoneError;
+      }
 
       if (existingByPhone) {
         return {
@@ -89,12 +137,16 @@ export async function registerClientOrThrow({
         };
       }
 
-      const { data: existingByName } = await supabase
+      const { data: existingByName, error: existingByNameError } = await supabase
         .from("clients")
         .select("id")
         .eq("organization_id", organizationId)
         .eq("normalized_name", normalizedKey(name))
         .maybeSingle();
+
+      if (existingByNameError && !isClientsSchemaMissing(existingByNameError)) {
+        throw existingByNameError;
+      }
 
       if (existingByName) {
         throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");

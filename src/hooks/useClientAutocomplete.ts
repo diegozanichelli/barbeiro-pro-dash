@@ -2,6 +2,23 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizePhone } from "@/lib/phoneUtils";
 
+let warnedMissingClientsSchema = false;
+
+const isClientsSchemaMissing = (error: any) => {
+  const message = String(error?.message || "").toLowerCase();
+  const details = String(error?.details || "").toLowerCase();
+  const code = String(error?.code || "").toUpperCase();
+
+  return (
+    code === "PGRST205" ||
+    code === "42P01" ||
+    message.includes("public.clients") ||
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    details.includes("public.clients")
+  );
+};
+
 export interface ClientSuggestion {
   id: string;
   name: string;
@@ -73,8 +90,16 @@ export function useClientAutocomplete({
 
         setNameSuggestions((nameResult.data || []) as ClientSuggestion[]);
         setPhoneSuggestions((phoneResult.data || []) as ClientSuggestion[]);
-      } catch (error) {
-        console.error("Erro ao carregar sugestões de clientes:", error);
+      } catch (error: any) {
+        if (isClientsSchemaMissing(error)) {
+          if (!warnedMissingClientsSchema) {
+            warnedMissingClientsSchema = true;
+            console.warn("Tabela public.clients não encontrada. Autocomplete desabilitado até aplicar migration.");
+          }
+        } else {
+          console.error("Erro ao carregar sugestões de clientes:", error);
+        }
+
         if (!cancelled) {
           setNameSuggestions([]);
           setPhoneSuggestions([]);
