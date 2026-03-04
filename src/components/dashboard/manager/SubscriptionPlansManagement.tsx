@@ -16,12 +16,19 @@ interface SubscriptionPlan {
   active: boolean;
 }
 
+interface CatalogService {
+  id: string;
+  name: string;
+}
+
 export default function SubscriptionPlansManagement() {
   const { organizationId } = useOrganization();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
+  const [availableServices, setAvailableServices] = useState<CatalogService[]>([]);
+  const [planServiceIds, setPlanServiceIds] = useState<Record<string, string[]>>({});
 
   const fetchPlans = async () => {
     if (!organizationId) return;
@@ -41,10 +48,53 @@ export default function SubscriptionPlansManagement() {
 
   useEffect(() => {
     fetchPlans();
+    fetchServices();
+    fetchPlanServiceLinks();
   }, [organizationId]);
 
-  const handleSave = async (name: string, price: number) => {
+  const fetchServices = async () => {
     if (!organizationId) return;
+    const { data, error } = await supabase
+      .from("catalog_services")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("is_active", true)
+      .order("name");
+
+    if (error) {
+      toast.error("Erro ao carregar serviços");
+      return;
+    }
+
+    setAvailableServices(data || []);
+  };
+
+  const fetchPlanServiceLinks = async () => {
+    if (!organizationId) return;
+
+    const { data, error } = await supabase
+      .from("subscription_plan_services")
+      .select("subscription_plan_id, catalog_service_id")
+      .eq("organization_id", organizationId);
+
+    if (error) {
+      console.error("Erro ao carregar vínculos de planos:", error);
+      return;
+    }
+
+    const grouped = (data || []).reduce<Record<string, string[]>>((acc, row) => {
+      if (!acc[row.subscription_plan_id]) acc[row.subscription_plan_id] = [];
+      acc[row.subscription_plan_id].push(row.catalog_service_id);
+      return acc;
+    }, {});
+
+    setPlanServiceIds(grouped);
+  };
+
+  const handleSave = async (name: string, price: number, serviceIds: string[]) => {
+    if (!organizationId) return;
+
+    let planId = editingPlan?.id;
 
     if (editingPlan) {
       const { error } = await supabase
@@ -54,13 +104,41 @@ export default function SubscriptionPlansManagement() {
       if (error) throw error;
       toast.success("Plano atualizado!");
     } else {
-      const { error } = await supabase
+      const { data: insertedPlan, error } = await supabase
         .from("subscription_plans")
-        .insert({ name, price, organization_id: organizationId });
+        .insert({ name, price, organization_id: organizationId })
+        .select("id")
+        .single();
       if (error) throw error;
+      if (insertedPlan?.id) planId = insertedPlan.id;
       toast.success("Plano criado!");
     }
+
+    if (planId) {
+      const { error: deleteError } = await supabase
+        .from("subscription_plan_services")
+        .delete()
+        .eq("subscription_plan_id", planId);
+
+      if (deleteError) throw deleteError;
+
+      if (serviceIds.length > 0) {
+        const payload = serviceIds.map((serviceId) => ({
+          organization_id: organizationId,
+          subscription_plan_id: planId,
+          catalog_service_id: serviceId,
+        }));
+
+        const { error: insertError } = await supabase
+          .from("subscription_plan_services")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+    }
+
     fetchPlans();
+    fetchPlanServiceLinks();
   };
 
   const handleToggleActive = async (plan: SubscriptionPlan) => {
@@ -148,6 +226,8 @@ export default function SubscriptionPlansManagement() {
         open={modalOpen}
         onOpenChange={setModalOpen}
         plan={editingPlan}
+        availableServices={availableServices}
+        initialServiceIds={editingPlan ? (planServiceIds[editingPlan.id] || []) : []}
         onSave={handleSave}
       />
     </Card>

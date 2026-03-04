@@ -947,6 +947,52 @@ export type Database = {
           },
         ]
       }
+      subscription_plan_services: {
+        Row: {
+          catalog_service_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          subscription_plan_id: string
+        }
+        Insert: {
+          catalog_service_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          subscription_plan_id: string
+        }
+        Update: {
+          catalog_service_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          subscription_plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_plan_services_catalog_service_id_fkey"
+            columns: ["catalog_service_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_plan_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_plan_services_subscription_plan_id_fkey"
+            columns: ["subscription_plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       units: {
         Row: {
           created_at: string

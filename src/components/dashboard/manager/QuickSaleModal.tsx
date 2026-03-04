@@ -103,25 +103,49 @@ const normalizeServiceLabel = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const getSubscriptionIncludedServices = (planName: string) => {
-  const normalized = normalizePlanLabel(planName);
-  const includes = new Set<string>(["corte"]);
+const getSubscriptionIncludedServices = (planName: string, availableServiceNames: string[]) => {
+  const normalizedPlan = normalizePlanLabel(planName);
+  const includes = new Set<string>();
 
-  if (normalized.includes("barba")) {
+  const hasInfantilService = availableServiceNames.some((name) =>
+    normalizeServiceLabel(name).includes("infantil")
+  );
+
+  // Regra específica: clube da barba cobre apenas barba
+  if (normalizedPlan.includes("clube da barba")) {
+    includes.add("barba");
+    return includes;
+  }
+
+  // Regra específica: plano infantil cobre corte infantil; fallback para corte adulto
+  if (normalizedPlan.includes("infantil")) {
+    includes.add(hasInfantilService ? "corte_infantil" : "corte");
+    return includes;
+  }
+
+  // Regra geral dos planos de assinatura da casa
+  includes.add("corte");
+
+  if (normalizedPlan.includes("barba")) {
     includes.add("barba");
   }
 
-  if (normalized.includes("gold")) {
+  if (normalizedPlan.includes("gold")) {
     includes.add("sobrancelha");
   }
 
   return includes;
 };
 
-const serviceIsIncludedInPlan = (serviceName: string, planName: string) => {
+const serviceIsIncludedInPlan = (
+  serviceName: string,
+  planName: string,
+  availableServiceNames: string[]
+) => {
   const normalizedService = normalizeServiceLabel(serviceName);
-  const includedServices = getSubscriptionIncludedServices(planName);
+  const includedServices = getSubscriptionIncludedServices(planName, availableServiceNames);
 
+  if (includedServices.has("corte_infantil") && normalizedService.includes("infantil")) return true;
   if (includedServices.has("corte") && normalizedService.includes("corte")) return true;
   if (includedServices.has("barba") && normalizedService.includes("barba")) return true;
   if (includedServices.has("sobrancelha") && normalizedService.includes("sobrancelha")) return true;
@@ -202,6 +226,7 @@ export default function QuickSaleModal({
   const [selectedSubscriptionPlanId, setSelectedSubscriptionPlanId] = useState<string>("");
   const [subscriptionPlanAutoDetected, setSubscriptionPlanAutoDetected] = useState(false);
   const [isResolvingSubscription, setIsResolvingSubscription] = useState(false);
+  const [selectedPlanIncludedServiceIds, setSelectedPlanIncludedServiceIds] = useState<string[]>([]);
 
   // Client history hook
   const clientHistory = useClientHistory(organizationId);
@@ -300,6 +325,7 @@ export default function QuickSaleModal({
     setSelectedSubscriptionPlanId("");
     setSubscriptionPlanAutoDetected(false);
     setIsResolvingSubscription(false);
+    setSelectedPlanIncludedServiceIds([]);
     setManualOverride(false);
     clientHistory.reset();
     setSelectedDate(new Date());
@@ -454,10 +480,39 @@ export default function QuickSaleModal({
 
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
+  const availableServiceNames = useMemo(
+    () => services.map((service) => service.name),
+    [services]
+  );
   const selectedSubscriptionPlan = useMemo(
     () => subscriptionPlans.find((plan) => plan.id === selectedSubscriptionPlanId) || null,
     [subscriptionPlans, selectedSubscriptionPlanId]
   );
+
+  useEffect(() => {
+    const fetchIncludedServices = async () => {
+      if (!selectedSubscriptionPlanId) {
+        setSelectedPlanIncludedServiceIds([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("subscription_plan_services")
+        .select("catalog_service_id")
+        .eq("subscription_plan_id", selectedSubscriptionPlanId)
+        .eq("organization_id", organizationId);
+
+      if (error) {
+        console.error("Erro ao carregar serviços do plano:", error);
+        setSelectedPlanIncludedServiceIds([]);
+        return;
+      }
+
+      setSelectedPlanIncludedServiceIds((data || []).map((row) => row.catalog_service_id));
+    };
+
+    void fetchIncludedServices();
+  }, [organizationId, selectedSubscriptionPlanId]);
 
   const resolveSubscriptionForClient = useCallback(async () => {
     if (clientType !== "with_subscription") {
@@ -507,8 +562,9 @@ export default function QuickSaleModal({
     if (
       clientType === "with_subscription" &&
       item.type === "service" &&
-      selectedSubscriptionPlan?.name &&
-      serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name)
+      (selectedPlanIncludedServiceIds.includes(item.id) ||
+        (selectedSubscriptionPlan?.name &&
+          serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name, availableServiceNames)))
     ) {
       return 0;
     }
@@ -523,7 +579,7 @@ export default function QuickSaleModal({
           clientType === "with_subscription" &&
           item.type === "service" &&
           selectedSubscriptionPlan?.name &&
-          serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name)
+          serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name, availableServiceNames)
         ) {
           return {
             ...item,
@@ -535,14 +591,14 @@ export default function QuickSaleModal({
         return item;
       })
     );
-  }, [clientType, selectedSubscriptionPlan]);
+  }, [availableServiceNames, clientType, selectedSubscriptionPlan]);
 
   const cartItemIncludedBySubscription = (item: CartItem) => {
     return (
       clientType === "with_subscription" &&
       item.type === "service" &&
       !!selectedSubscriptionPlan?.name &&
-      serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name)
+      serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name, availableServiceNames)
     );
   };
 
@@ -1063,12 +1119,24 @@ export default function QuickSaleModal({
 
               {selectedSubscriptionPlan && (
                 <p className="text-xs text-muted-foreground">
-                  Serviços incluídos e zerados automaticamente: corte
-                  {getSubscriptionIncludedServices(selectedSubscriptionPlan.name).has("barba") ? ", barba" : ""}
-                  {getSubscriptionIncludedServices(selectedSubscriptionPlan.name).has("sobrancelha")
-                    ? ", sobrancelha"
-                    : ""}
-                  .
+                  {(() => {
+                    const labels = services
+                      .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
+                      .map((service) => service.name);
+
+                    if (labels.length === 0) {
+                      const included = getSubscriptionIncludedServices(
+                        selectedSubscriptionPlan.name,
+                        availableServiceNames
+                      );
+                      if (included.has("corte_infantil")) labels.push("corte infantil");
+                      if (included.has("corte")) labels.push("corte");
+                      if (included.has("barba")) labels.push("barba");
+                      if (included.has("sobrancelha")) labels.push("sobrancelha");
+                    }
+
+                    return `Serviços incluídos e zerados automaticamente: ${labels.join(", ") || "—"}.`;
+                  })()}
                 </p>
               )}
             </div>
