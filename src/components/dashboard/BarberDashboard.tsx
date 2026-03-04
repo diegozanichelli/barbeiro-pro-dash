@@ -10,8 +10,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
-import DailyProductionForm from "./barber/DailyProductionForm";
-import BarberSaleForm from "./barber/BarberSaleForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
@@ -99,6 +97,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   } | null>(null);
   const [confirmingPresence, setConfirmingPresence] = useState(false);
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("daily");
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -751,7 +750,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           </Card>
         )}
 
-        <Tabs defaultValue="daily" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
@@ -1003,12 +1002,46 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
               </CardContent>
             </Card>
 
-            {/* Formulário de Lançamento - PDV Visual */}
-            <BarberSaleForm 
-              barberId={barber.id}
-              organizationId={barber.organization_id}
-              onSuccess={handleFormSuccess}
-            />
+            {/* Hub de conferência (somente leitura) */}
+            <Card className="bg-card border-border shadow-card-custom">
+              <CardHeader>
+                <CardTitle className="text-base">Central de Conferência</CardTitle>
+                <CardDescription>
+                  Lançamentos são feitos pela recepção. Aqui você apenas acompanha e confirma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    className="w-full"
+                    onClick={() => setReviewingDate(getTodayString())}
+                    disabled={!isCurrentMonth}
+                  >
+                    Conferir hoje
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setActiveTab("history")}
+                  >
+                    Ver histórico de conferências
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Status de hoje</p>
+                  <p className="text-sm font-semibold">
+                    {todayProduction
+                      ? todayProduction.total > 0
+                        ? `Com lançamentos: R$ ${todayProduction.total.toFixed(2)}`
+                        : todayProduction.confirmed_presence
+                        ? "Presença confirmada sem vendas"
+                        : "Sem confirmação ainda"
+                      : "Sem dados para hoje"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
