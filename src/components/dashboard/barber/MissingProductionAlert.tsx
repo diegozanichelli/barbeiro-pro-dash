@@ -12,22 +12,47 @@ interface MissingProductionAlertProps {
 
 interface ProductionStatusRow {
   date: string;
+  confirmed_presence: boolean | null;
   presence_type: string | null;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  products_total: number | null;
 }
 
-const RESOLVED_PRESENCE_TYPES = new Set(["day_off", "absence", "optional_sunday", "holiday"]);
+interface TransactionDateRow {
+  created_at: string;
+}
+
+const RESOLVED_PRESENCE_TYPES = new Set(["day_off", "absence", "optional_sunday", "holiday", "present"]);
+
+const toManausDateKey = (isoDateTime: string) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Manaus",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(isoDateTime));
+
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+};
 
 export default function MissingProductionAlert({ barberId }: MissingProductionAlertProps) {
   const [productions, setProductions] = useState<ProductionStatusRow[]>([]);
+  const [transactionDates, setTransactionDates] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchProductions = async () => {
+    const fetchPendingContext = async () => {
       if (!barberId) {
         if (isMounted) {
           setProductions([]);
+          setTransactionDates([]);
           setIsLoading(false);
         }
         return;
@@ -45,22 +70,38 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
         const yesterdayDate = new Date(today.getTime() - 86400000);
         const yesterdayStr = format(yesterdayDate, "yyyy-MM-dd");
 
-        const { data, error } = await supabase
-          .from("daily_productions")
-          .select("date, presence_type")
-          .eq("barber_id", barberId)
-          .gte("date", startOfMonth)
-          .lte("date", yesterdayStr);
+        const [productionsRes, transactionsRes] = await Promise.all([
+          supabase
+            .from("daily_productions")
+            .select("date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total")
+            .eq("barber_id", barberId)
+            .gte("date", startOfMonth)
+            .lte("date", yesterdayStr),
+          supabase
+            .from("sale_transactions")
+            .select("created_at")
+            .eq("barber_id", barberId)
+            .gte("created_at", `${startOfMonth}T00:00:00-04:00`)
+            .lt("created_at", `${format(today, "yyyy-MM-dd")}T00:00:00-04:00`),
+        ]);
 
-        if (error) throw error;
+        if (productionsRes.error) throw productionsRes.error;
+        if (transactionsRes.error) throw transactionsRes.error;
 
         if (isMounted) {
-          setProductions((data || []) as ProductionStatusRow[]);
+          const txDateSet = new Set(
+            ((transactionsRes.data || []) as TransactionDateRow[])
+              .map((transaction) => toManausDateKey(transaction.created_at))
+          );
+
+          setProductions((productionsRes.data || []) as ProductionStatusRow[]);
+          setTransactionDates(Array.from(txDateSet));
         }
       } catch (error) {
         console.error("Erro ao verificar dias pendentes:", error);
         if (isMounted) {
           setProductions([]);
+          setTransactionDates([]);
         }
       } finally {
         if (isMounted) {
@@ -69,7 +110,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
       }
     };
 
-    fetchProductions();
+    fetchPendingContext();
 
     return () => {
       isMounted = false;
@@ -79,8 +120,6 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
   const currentDateKey = format(getManausDate(), "yyyy-MM-dd");
 
   const missingDays = useMemo(() => {
-    const safeProductions = productions || [];
-
     const currentDate = new Date(`${currentDateKey}T12:00:00`);
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
@@ -91,26 +130,30 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
       expectedDays.push(format(date, "yyyy-MM-dd"));
     }
 
-    const resolvedDays = new Set(
-      safeProductions
+    const resolvedFromTransactions = new Set(transactionDates);
+
+    const resolvedFromProduction = new Set(
+      productions
         .filter((production) => {
-          const hasAnyProductionRecord = Boolean(production?.date);
-          const isResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
-          return hasAnyProductionRecord || isResolvedPresenceType;
+          const totalValue =
+            (Number(production.services_basic_total) || 0) +
+            (Number(production.services_extra_total) || 0) +
+            (Number(production.products_total) || 0);
+
+          const hasConfirmedPresence = production.confirmed_presence === true;
+          const hasResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
+
+          return totalValue > 0 || hasConfirmedPresence || hasResolvedPresenceType;
         })
         .map((production) => production.date)
     );
 
+    const resolvedDays = new Set([...resolvedFromTransactions, ...resolvedFromProduction]);
+
     return expectedDays.filter((day) => !resolvedDays.has(day));
-  }, [productions, currentDateKey]);
+  }, [productions, transactionDates, currentDateKey]);
 
-  console.log("Dias pendentes calculados:", missingDays);
-
-  if (isLoading) {
-    return null;
-  }
-
-  if (missingDays.length === 0) {
+  if (isLoading || missingDays.length === 0) {
     return null;
   }
 
@@ -122,8 +165,8 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
             <AlertCircle className="w-5 h-5 text-red-500" />
           </div>
           <div className="space-y-2 flex-1">
-            <h3 className="font-bold text-red-500 flex items-center gap-2">⚠️ Produções Pendentes!</h3>
-            <p className="text-sm text-foreground">Você ainda não lançou a produção dos seguintes dias:</p>
+            <h3 className="font-bold text-red-500 flex items-center gap-2">⚠️ Dias pendentes de conferência</h3>
+            <p className="text-sm text-foreground">Ainda existem dias sem lançamento da recepção ou sem status confirmado:</p>
             <div className="flex flex-wrap gap-2 mt-2">
               {missingDays.map((day) => (
                 <span key={day} className="inline-flex items-center gap-1 px-2 py-1 bg-red-500/20 text-red-500 rounded text-sm font-medium">
@@ -132,7 +175,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
                 </span>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Lance sua produção diária para manter seu acompanhamento em dia.</p>
+            <p className="text-xs text-muted-foreground mt-2">A recepção deve lançar as vendas ou registrar folga/falta/presença sem venda nesses dias.</p>
           </div>
         </div>
       </CardContent>
