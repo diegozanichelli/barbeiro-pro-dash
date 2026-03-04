@@ -883,7 +883,6 @@ export type Database = {
     }
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
-      cleanup_old_client_names: { Args: never; Returns: undefined }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
