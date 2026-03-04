@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
@@ -74,6 +74,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   });
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newAccountData, setNewAccountData] = useState({
@@ -289,8 +290,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
+    setIsSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+      navigate("/auth");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   const fetchManagers = async () => {
@@ -572,9 +578,18 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   </Button>
                 </>
               )}
-              <Button variant="outline" onClick={handleSignOut}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Sair
+              <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saindo...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sair
+                  </>
+                )}
               </Button>
             </div>
           </div>
