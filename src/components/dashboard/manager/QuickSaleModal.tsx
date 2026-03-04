@@ -45,7 +45,6 @@ import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
-import { registerClientOrThrow } from "@/lib/clientRegistry";
 
 
 interface QuickSaleModalProps {
@@ -352,8 +351,8 @@ export default function QuickSaleModal({
   // Check if phone is valid for proceeding
   const phoneDigits = sanitizePhone(mobilePhone);
   const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
-  const hasClientName = clientName.trim().length >= 3;
-  const canProceedStep1 = isPhoneComplete && hasClientName && !clientHistory.checking && !phoneError;
+  const isPhoneEmpty = phoneDigits.length === 0;
+  const canProceedStep1 = (isPhoneEmpty || isPhoneComplete) && !clientHistory.checking && !phoneError;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
@@ -369,21 +368,6 @@ export default function QuickSaleModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
-      if (!phoneSanitized || !clientName.trim()) {
-        toast.error("Preencha nome e celular do cliente");
-        return;
-      }
-
-      const registeredClient = await registerClientOrThrow({
-        organizationId,
-        clientName,
-        mobilePhone: phoneSanitized,
-      });
-
-      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
-        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
-      }
-
       // Look up existing daily_production (do NOT create one)
       let productionId: string | null = null;
       
@@ -412,8 +396,8 @@ export default function QuickSaleModal({
         commission_rate_used: 0,
         commission_amount: 0,
         is_new_client: isNewClient,
-        client_name: registeredClient.clientName,
-        mobile_phone: registeredClient.mobilePhone,
+        client_name: clientName.trim() || null,
+        mobile_phone: phoneSanitized,
         created_at: selectedDate.toISOString(),
       }));
 
@@ -628,7 +612,7 @@ export default function QuickSaleModal({
         {/* Client Name */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label htmlFor="client-name" className="text-sm font-medium">
-            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "*"}
+            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "(opcional)"}
           </Label>
           <Input
             id="client-name"
