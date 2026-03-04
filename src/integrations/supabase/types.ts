@@ -332,6 +332,53 @@ export type Database = {
           },
         ]
       }
+      client_purchase_history: {
+        Row: {
+          amount: number
+          client_name: string
+          created_at: string
+          id: string
+          item_name: string
+          item_type: string
+          mobile_phone: string
+          organization_id: string
+          purchased_at: string
+          quantity: number
+        }
+        Insert: {
+          amount?: number
+          client_name: string
+          created_at?: string
+          id?: string
+          item_name: string
+          item_type: string
+          mobile_phone: string
+          organization_id: string
+          purchased_at?: string
+          quantity?: number
+        }
+        Update: {
+          amount?: number
+          client_name?: string
+          created_at?: string
+          id?: string
+          item_name?: string
+          item_type?: string
+          mobile_phone?: string
+          organization_id?: string
+          purchased_at?: string
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_purchase_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_productions: {
         Row: {
           barber_id: string
