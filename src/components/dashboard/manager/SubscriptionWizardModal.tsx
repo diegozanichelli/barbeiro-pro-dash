@@ -46,6 +46,16 @@ import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
 
+const isSubscriptionPlanFieldMissing = (error: any) => {
+  const message = String(error?.message || "").toLowerCase();
+  const details = String(error?.details || "").toLowerCase();
+  return (
+    message.includes("subscription_plan_id") ||
+    details.includes("subscription_plan_id") ||
+    message.includes("schema cache")
+  );
+};
+
 interface SubscriptionWizardModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -268,6 +278,14 @@ export default function SubscriptionWizardModal({
         clientName,
         mobilePhone: phoneSanitized,
       });
+
+      const { error: assignPlanError } = await supabase
+        .from("clients")
+        .update({ subscription_plan_id: selectedPlanId })
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", registeredClient.mobilePhone);
+
+      if (assignPlanError && !isSubscriptionPlanFieldMissing(assignPlanError)) throw assignPlanError;
 
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
         toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);

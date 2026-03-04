@@ -172,6 +172,7 @@ export type Database = {
           name: string
           normalized_name: string
           organization_id: string
+          subscription_plan_id: string | null
           updated_at: string
         }
         Insert: {
@@ -180,6 +181,7 @@ export type Database = {
           mobile_phone: string
           name: string
           organization_id: string
+          subscription_plan_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -188,6 +190,7 @@ export type Database = {
           mobile_phone?: string
           name?: string
           organization_id?: string
+          subscription_plan_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -196,6 +199,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_subscription_plan_id_fkey"
+            columns: ["subscription_plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
             referencedColumns: ["id"]
           },
         ]
