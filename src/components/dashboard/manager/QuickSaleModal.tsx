@@ -47,6 +47,7 @@ import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
+import { recordClientPurchasesBestEffort } from "@/lib/purchaseHistory";
 
 
 interface QuickSaleModalProps {
@@ -432,6 +433,20 @@ export default function QuickSaleModal({
       const { error } = await supabase.from("sale_transactions").insert(transactions as any);
       if (error) throw error;
 
+      // Record purchase history (best-effort)
+      await recordClientPurchasesBestEffort(
+        organizationId,
+        registeredClient.clientName,
+        registeredClient.mobilePhone,
+        cart.map(item => ({
+          item_name: item.name,
+          item_type: item.type as "service" | "product",
+          amount: item.customPrice,
+          quantity: 1,
+          purchased_at: selectedDate.toISOString(),
+        }))
+      );
+
       const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
@@ -511,6 +526,20 @@ export default function QuickSaleModal({
       } as any);
 
       if (error) throw error;
+
+      // Record purchase history (best-effort)
+      await recordClientPurchasesBestEffort(
+        organizationId,
+        registeredClient.clientName,
+        registeredClient.mobilePhone,
+        [{
+          item_name: itemName,
+          item_type: itemType as "service" | "product",
+          amount: numericValue,
+          quantity: 1,
+          purchased_at: selectedDate.toISOString(),
+        }]
+      );
 
       toast.success(`Venda manual registrada para ${barberName}`);
       

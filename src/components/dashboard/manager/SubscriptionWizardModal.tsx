@@ -44,6 +44,7 @@ import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
+import { recordClientPurchasesBestEffort } from "@/lib/purchaseHistory";
 
 interface SubscriptionWizardModalProps {
   open: boolean;
@@ -341,6 +342,21 @@ export default function SubscriptionWizardModal({
       } as any);
 
       if (error) throw error;
+
+      // Record purchase history (best-effort)
+      const purchasedAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
+      await recordClientPurchasesBestEffort(
+        organizationId,
+        registeredClient.clientName,
+        registeredClient.mobilePhone,
+        [{
+          item_name: `Assinatura ${selectedPlan?.name || ""}`,
+          item_type: "subscription",
+          amount: selectedPlan?.price || 0,
+          quantity: 1,
+          purchased_at: purchasedAt,
+        }]
+      );
 
       const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
       toast.success(`Assinatura registrada!`, {
