@@ -17,6 +17,9 @@ interface ProductionStatusRow {
   services_basic_total: number | null;
   services_extra_total: number | null;
   products_total: number | null;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
 }
 
 interface TransactionDateRow {
@@ -73,7 +76,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
         const [productionsRes, transactionsRes] = await Promise.all([
           supabase
             .from("daily_productions")
-            .select("date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total")
+            .select("date, presence_type, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total")
             .eq("barber_id", barberId)
             .gte("date", startOfMonth)
             .lte("date", yesterdayStr),
@@ -81,6 +84,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
             .from("sale_transactions")
             .select("created_at")
             .eq("barber_id", barberId)
+            .eq("source", "manager")
             .gte("created_at", `${startOfMonth}T00:00:00-04:00`)
             .lt("created_at", `${format(today, "yyyy-MM-dd")}T00:00:00-04:00`),
         ]);
@@ -140,10 +144,14 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
             (Number(production.services_extra_total) || 0) +
             (Number(production.products_total) || 0);
 
-          const hasConfirmedPresence = production.confirmed_presence === true;
+          const txTotalValue =
+            (Number(production.tx_basic_total) || 0) +
+            (Number(production.tx_extra_total) || 0) +
+            (Number(production.tx_products_total) || 0);
+
           const hasResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
 
-          return totalValue > 0 || hasConfirmedPresence || hasResolvedPresenceType;
+          return totalValue > 0 || txTotalValue > 0 || hasResolvedPresenceType;
         })
         .map((production) => production.date)
     );
