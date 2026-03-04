@@ -118,7 +118,7 @@ export async function registerClientOrThrow({
     }
 
     if (createError.code === "23505") {
-      const { data: existingByPhone, error: existingByPhoneError } = await supabase
+      const { data: existingByPhone, error: existingByPhoneError } = await (supabase as any)
         .from("clients")
         .select("name, mobile_phone")
         .eq("organization_id", organizationId)
