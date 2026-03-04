@@ -62,7 +62,7 @@ export async function registerClientOrThrow({
     throw new Error("Informe um celular válido com DDD.");
   }
 
-  const { data: byPhone, error: byPhoneError } = await supabase
+  const { data: byPhone, error: byPhoneError } = await (supabase as any)
     .from("clients")
     .select("id, name, mobile_phone")
     .eq("organization_id", organizationId)
