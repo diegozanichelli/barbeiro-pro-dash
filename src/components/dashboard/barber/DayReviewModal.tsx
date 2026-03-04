@@ -534,30 +534,7 @@ export default function DayReviewModal({
                   <Label className="text-sm font-semibold">
                     Clientes Atendidos
                   </Label>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-12 w-12"
-                      onClick={() =>
-                        setClientsCount((prev) => Math.max(0, prev - 1))
-                      }
-                      disabled={clientsCount <= 0}
-                    >
-                      <Minus className="h-5 w-5" />
-                    </Button>
-                    <span className="w-10 text-center text-xl font-black">
-                      {clientsCount}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-12 w-12"
-                      onClick={() => setClientsCount((prev) => prev + 1)}
-                    >
-                      <Plus className="h-5 w-5" />
-                    </Button>
-                  </div>
+                  <span className="text-xl font-black">{clientsCount}</span>
                 </div>
               </div>
 
@@ -610,49 +587,13 @@ export default function DayReviewModal({
                             </span>
                           )}
                         </div>
-                        <CurrencyInput
-                          value={item.customPrice}
-                          onChange={(val) =>
-                            updateCartItemPrice(item.tempId, val)
-                          }
-                          className="w-28 h-9 text-right text-sm"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 text-destructive/70 hover:text-destructive shrink-0"
-                          onClick={() => removeFromCart(item.tempId)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="w-28 h-9 rounded-md border bg-muted/30 flex items-center justify-end px-2 text-sm font-medium">
+                          {formatCurrency(item.customPrice)}
+                        </div>
                       </div>
                     ))
                   )}
 
-                  {/* Add item button */}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full border-dashed"
-                    onClick={() => setAddItemDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Adicionar Item
-                  </Button>
-
-                  {/* Status do dia (folga/falta) */}
-                  <div className="pt-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-muted-foreground"
-                      onClick={() => setStatusDialogOpen(true)}
-                    >
-                      Não trabalhei neste dia (folga / falta)
-                    </Button>
-                  </div>
                 </div>
 
                 {/* Footer */}
