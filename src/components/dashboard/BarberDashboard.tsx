@@ -18,7 +18,6 @@ import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
-import BarberEditProductionModal from "./barber/BarberEditProductionModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
@@ -43,10 +42,6 @@ interface MonthlyGoal {
   target_commission: number;
 }
 
-interface EditingProduction {
-  id: string;
-  date: string;
-}
 
 interface DailyProductionRow {
   id: string;
@@ -96,9 +91,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [scheduledOffDates, setScheduledOffDates] = useState<string[]>([]);
   const [missingLink, setMissingLink] = useState(false);
-  const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
-const [todayProduction, setTodayProduction] = useState<{
+  const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
     confirmed_presence: boolean;
@@ -490,18 +484,10 @@ const [todayProduction, setTodayProduction] = useState<{
     setSelectedYear(year);
   };
 
-  const handleEditProduction = (production: EditingProduction) => {
-    setEditingProduction({
-      id: production.id,
-      date: production.date,
-    });
-  };
-
   const handleFormSuccess = () => {
     // Forçar recálculo de TODOS os dados
     fetchMonthlyStats();
     fetchMonthlyGoal();
-    setEditingProduction(null); // Limpar edição e fechar modal
   };
 
   const handleOpenPresenceModal = () => {
@@ -622,10 +608,6 @@ const [todayProduction, setTodayProduction] = useState<{
     
     // Recarregar estatísticas para refletir o novo cálculo
     fetchMonthlyStats();
-  };
-
-  const handleCloseEditModal = () => {
-    setEditingProduction(null);
   };
 
   if (missingLink) {
@@ -1037,7 +1019,6 @@ const [todayProduction, setTodayProduction] = useState<{
               barberId={barber.id}
               selectedMonth={selectedMonth}
               selectedYear={selectedYear}
-              onEdit={handleEditProduction}
               onReview={(date) => setReviewingDate(date)}
             />
           </TabsContent>
@@ -1073,19 +1054,6 @@ const [todayProduction, setTodayProduction] = useState<{
             )}
           </TabsContent>
         </Tabs>
-
-        {/* Modal de Edição por Cards */}
-        {editingProduction && barber && (
-          <BarberEditProductionModal
-            open={!!editingProduction}
-            onOpenChange={(open) => !open && handleCloseEditModal()}
-            barberId={barber.id}
-            organizationId={barber.organization_id}
-            productionId={editingProduction.id}
-            productionDate={editingProduction.date}
-            onSuccess={handleFormSuccess}
-          />
-        )}
 
         {/* Modal de Confirmação de Presença */}
         <ConfirmPresenceModal
