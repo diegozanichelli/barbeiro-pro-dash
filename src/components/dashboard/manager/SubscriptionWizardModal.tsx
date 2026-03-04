@@ -42,6 +42,7 @@ import BarberCombobox from "./BarberCombobox";
 import { getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
+import { registerClientOrThrow } from "@/lib/clientRegistry";
 
 interface SubscriptionWizardModalProps {
   open: boolean;
@@ -244,6 +245,21 @@ export default function SubscriptionWizardModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
+      if (!phoneSanitized) {
+        toast.error("Celular do cliente é obrigatório");
+        return;
+      }
+
+      const registeredClient = await registerClientOrThrow({
+        organizationId,
+        clientName,
+        mobilePhone: phoneSanitized,
+      });
+
+      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
+        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+      }
+
       let productionId: string | null = null;
       let unitIdToSave: string | null = selectedUnitId;
 
@@ -295,9 +311,9 @@ export default function SubscriptionWizardModal({
         unit_id: unitIdToSave,
         item_type: "subscription",
         item_name: `Assinatura ${selectedPlan?.name || ""}`,
-        description: clientName.trim(),
-        client_name: clientName.trim(),
-        mobile_phone: phoneSanitized,
+        description: registeredClient.clientName,
+        client_name: registeredClient.clientName,
+        mobile_phone: registeredClient.mobilePhone,
         price_sold: selectedPlan?.price || 0,
         service_category: null,
         catalog_service_id: null,
