@@ -261,7 +261,7 @@ export default function BarberSaleForm({ barberId, organizationId, onSuccess }: 
               cart.length > 0 ? "text-base md:text-2xl" : ""
             )}>
               <DollarSign className={cn("text-primary", cart.length > 0 ? "w-4 h-4 md:w-5 md:h-5" : "w-5 h-5")} />
-              REGISTRAR VENDA
+              CONFERÊNCIA DOS LANÇAMENTOS
             </CardTitle>
           </div>
         </CardHeader>
