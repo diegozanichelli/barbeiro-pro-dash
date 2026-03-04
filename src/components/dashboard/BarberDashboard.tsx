@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
-import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
@@ -791,8 +790,6 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
           <TabsContent value="daily" className="space-y-6">
             {/* Alerta de Produções Pendentes */}
-            {isCurrentMonth && <MissingProductionAlert barberId={barber.id} />}
-
             {/* Dias Pendentes de Conferência (AO VIVO) */}
             <PendingDayReviews 
               barberId={barber.id} 
