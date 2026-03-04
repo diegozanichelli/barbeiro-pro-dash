@@ -47,6 +47,7 @@ import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
+import { recordClientPurchasesBestEffort } from "@/lib/purchaseHistory";
 
 
 interface QuickSaleModalProps {
