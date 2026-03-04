@@ -4,7 +4,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { LogOut, Loader2 } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
 import BarbersManagement from "./manager/BarbersManagement";
@@ -33,6 +33,7 @@ interface ManagerDashboardProps {
 export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("live");
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const { hasSubscriptionModule } = useSubscriptionModule();
 
   // Auto-replicar metas silenciosamente ao carregar o dashboard
@@ -57,8 +58,13 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   }, []);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
+    setIsSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+      navigate("/auth");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   return (
@@ -93,9 +99,18 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             </div>
 
             {/* Far Right: Sign Out */}
-            <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0">
-              <LogOut className="w-4 h-4 md:mr-2" />
-              <span className="hidden md:inline">Sair</span>
+            <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>
+              {isSigningOut ? (
+                <>
+                  <Loader2 className="w-4 h-4 md:mr-2 animate-spin" />
+                  <span className="hidden md:inline">Saindo...</span>
+                </>
+              ) : (
+                <>
+                  <LogOut className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Sair</span>
+                </>
+              )}
             </Button>
           </div>
         </div>

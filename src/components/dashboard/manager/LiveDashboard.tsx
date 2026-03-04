@@ -11,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -382,6 +383,78 @@ export default function LiveDashboard() {
       dailyProductionId: "",
       date: selectedDate,
     });
+  };
+
+  const handleRegisterDayStatus = async (barber: Barber, status: "present" | "day_off" | "absence" | "optional_sunday") => {
+    if (!organizationId) return;
+
+    const revenue = getBarberRevenue(barber.id);
+    if (revenue > 0) {
+      toast.error("Este barbeiro já possui vendas no dia. Remova as vendas antes de marcar status.");
+      return;
+    }
+
+    try {
+      const { data: existingProduction, error: fetchError } = await supabase
+        .from("daily_productions")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("barber_id", barber.id)
+        .eq("date", selectedDate)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      const payload = {
+        confirmed_presence: true,
+        presence_type: status,
+        services_basic_total: 0,
+        services_extra_total: 0,
+        services_total: 0,
+        products_total: 0,
+        clients_count: 0,
+        services_count: 0,
+        products_count: 0,
+        manual_basic_total: 0,
+        manual_extra_total: 0,
+        manual_products_total: 0,
+        manual_clients_count: 0,
+      };
+
+      if (existingProduction?.id) {
+        const { error: updateError } = await supabase
+          .from("daily_productions")
+          .update(payload)
+          .eq("id", existingProduction.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("daily_productions")
+          .insert({
+            organization_id: organizationId,
+            barber_id: barber.id,
+            date: selectedDate,
+            commission_earned: 0,
+            ...payload,
+          });
+
+        if (insertError) throw insertError;
+      }
+
+      const labels = {
+        present: "Presença sem venda",
+        day_off: "Folga",
+        absence: "Falta",
+        optional_sunday: "Domingo opcional",
+      } as const;
+
+      toast.success(`${labels[status]} registrada para ${barber.name}.`);
+      fetchData();
+    } catch (error) {
+      console.error("Erro ao registrar status do dia:", error);
+      toast.error("Não foi possível registrar o status do dia.");
+    }
   };
 
   const getBarberDailyTarget = (barber: Barber) => {
@@ -755,6 +828,33 @@ export default function LiveDashboard() {
                         <Pencil className="w-4 h-4" />
                       </Button>
                     )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          title="Registrar status do dia"
+                        >
+                          <EllipsisVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "present")}>
+                          Registrar Presença sem venda
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "day_off")}>
+                          Registrar Folga
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "absence")}>
+                          Registrar Falta
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "optional_sunday")}>
+                          Registrar Domingo opcional
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
                     <Button
                       size="sm"
                       className="h-8 w-8 p-0"

@@ -45,6 +45,8 @@ import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
+import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
+import { registerClientOrThrow } from "@/lib/clientRegistry";
 
 
 interface QuickSaleModalProps {
@@ -136,6 +138,12 @@ export default function QuickSaleModal({
 
   // Client history hook
   const clientHistory = useClientHistory(organizationId);
+  const { nameSuggestions, phoneSuggestions, loading: loadingClientSuggestions } = useClientAutocomplete({
+    organizationId,
+    nameQuery: clientName,
+    phoneQuery: mobilePhone,
+    enabled: open,
+  });
 
   // Date picker state
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -217,6 +225,11 @@ export default function QuickSaleModal({
     setMobilePhone(formatted);
 
     const digits = sanitizePhone(raw);
+    const matchedClient = phoneSuggestions.find((client) => client.mobile_phone === digits);
+    if (matchedClient) {
+      setClientName(matchedClient.name);
+      if (!manualOverride) setIsNewClient(false);
+    }
     if (digits.length === 11) {
       if (!isValidPhone(raw)) {
         setPhoneError("Telefone inválido");
@@ -351,8 +364,8 @@ export default function QuickSaleModal({
   // Check if phone is valid for proceeding
   const phoneDigits = sanitizePhone(mobilePhone);
   const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
-  const isPhoneEmpty = phoneDigits.length === 0;
-  const canProceedStep1 = (isPhoneEmpty || isPhoneComplete) && !clientHistory.checking && !phoneError;
+  const hasClientName = clientName.trim().length >= 3;
+  const canProceedStep1 = isPhoneComplete && hasClientName && !clientHistory.checking && !phoneError;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
@@ -368,6 +381,21 @@ export default function QuickSaleModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
+      if (!phoneSanitized || !clientName.trim()) {
+        toast.error("Preencha nome e celular do cliente");
+        return;
+      }
+
+      const registeredClient = await registerClientOrThrow({
+        organizationId,
+        clientName,
+        mobilePhone: phoneSanitized,
+      });
+
+      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
+        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+      }
+
       // Look up existing daily_production (do NOT create one)
       let productionId: string | null = null;
       
@@ -396,8 +424,8 @@ export default function QuickSaleModal({
         commission_rate_used: 0,
         commission_amount: 0,
         is_new_client: isNewClient,
-        client_name: clientName.trim() || null,
-        mobile_phone: phoneSanitized,
+        client_name: registeredClient.clientName,
+        mobile_phone: registeredClient.mobilePhone,
         created_at: selectedDate.toISOString(),
       }));
 
@@ -412,9 +440,9 @@ export default function QuickSaleModal({
       resetForm();
       onOpenChange(false);
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error registering sale:", error);
-      toast.error("Erro ao registrar venda");
+      toast.error(error?.message || "Erro ao registrar venda");
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -434,6 +462,22 @@ export default function QuickSaleModal({
     const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
+      const phoneSanitized = sanitizePhone(mobilePhone);
+      if (!phoneSanitized || !clientName.trim()) {
+        toast.error("Preencha nome e celular do cliente");
+        return;
+      }
+
+      const registeredClient = await registerClientOrThrow({
+        organizationId,
+        clientName,
+        mobilePhone: phoneSanitized,
+      });
+
+      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
+        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+      }
+
       // Buscar daily_production existente (sem criar)
       const { data: existingProduction } = await supabase
         .from("daily_productions")
@@ -461,6 +505,8 @@ export default function QuickSaleModal({
         commission_rate_used: 0,
         commission_amount: 0,
         source: "manager",
+        client_name: registeredClient.clientName,
+        mobile_phone: registeredClient.mobilePhone,
         created_at: selectedDate.toISOString(),
       } as any);
 
@@ -471,9 +517,9 @@ export default function QuickSaleModal({
       resetForm();
       onOpenChange(false);
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error registering manual sale:", error);
-      toast.error("Erro ao registrar venda");
+      toast.error(error?.message || "Erro ao registrar venda");
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -602,28 +648,58 @@ export default function QuickSaleModal({
               onBlur={handlePhoneBlur}
               className={cn("h-10 pl-10", phoneError && "border-destructive")}
               maxLength={15}
+              list="quick-sale-phone-suggestions"
             />
           </div>
           {phoneError && (
             <p className="text-xs text-destructive font-medium">{phoneError}</p>
           )}
+          <datalist id="quick-sale-phone-suggestions">
+            {phoneSuggestions.map((client) => (
+              <option key={client.id} value={formatPhone(client.mobile_phone)}>
+                {client.name}
+              </option>
+            ))}
+          </datalist>
         </div>
 
         {/* Client Name */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label htmlFor="client-name" className="text-sm font-medium">
-            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "(opcional)"}
+            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "*"}
           </Label>
           <Input
             id="client-name"
             type="text"
             placeholder="Ex: João"
             value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setClientName(nextName);
+              const matchedClient = nameSuggestions.find(
+                (client) => client.name.toLowerCase() === nextName.trim().toLowerCase()
+              );
+              if (matchedClient) {
+                setMobilePhone(formatPhone(matchedClient.mobile_phone));
+                if (!manualOverride) setIsNewClient(false);
+              }
+            }}
             onBlur={handleNameBlur}
             className="h-10"
+            list="quick-sale-name-suggestions"
           />
         </div>
+        <datalist id="quick-sale-name-suggestions">
+          {nameSuggestions.map((client) => (
+            <option key={client.id} value={client.name}>
+              {formatPhone(client.mobile_phone)}
+            </option>
+          ))}
+        </datalist>
+
+        {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
+          <p className="px-1 text-xs text-muted-foreground">Buscando sugestões de clientes...</p>
+        )}
 
         {/* Client Status Badge */}
         {renderClientBadge() && (

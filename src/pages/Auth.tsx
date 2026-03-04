@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { signInSchema, signUpSchema, type SignInFormData, type SignUpFormData } from "@/lib/validations/auth";
 import logo from "@/assets/performance-barber-logo-transparent.png";
+import { Loader2 } from "lucide-react";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -120,7 +121,12 @@ export default function Auth() {
                     className="w-full"
                     disabled={signInForm.formState.isSubmitting}
                   >
-                    {signInForm.formState.isSubmitting ? "Entrando..." : "Entrar"}
+                    {signInForm.formState.isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Entrando...
+                      </>
+                    ) : "Entrar"}
                   </Button>
                   <div className="text-center mt-4">
                     <Button
