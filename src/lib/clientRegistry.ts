@@ -84,7 +84,7 @@ export async function registerClientOrThrow({
     };
   }
 
-  const { data: duplicateName, error: duplicateNameError } = await supabase
+  const { data: duplicateName, error: duplicateNameError } = await (supabase as any)
     .from("clients")
     .select("id")
     .eq("organization_id", organizationId)
