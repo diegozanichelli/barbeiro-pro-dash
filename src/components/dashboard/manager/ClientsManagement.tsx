@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,11 @@ interface ClientSummary {
   lastPurchaseAt: string | null;
 }
 
+interface ClientsQuerySuccess {
+  rows: ClientRow[];
+  missingPlanSupport: boolean;
+}
+
 const formatPhone = (digits: string) => {
   const only = String(digits || "").replace(/\D/g, "").slice(0, 11);
   if (only.length <= 2) return only.length ? `(${only}` : "";
@@ -78,6 +83,20 @@ const isMissingSchemaError = (error: unknown, tableName: string) => {
     message.includes("does not exist") ||
     message.includes(table) ||
     details.includes(table)
+  );
+};
+
+const isMissingColumnError = (error: unknown) => {
+  const err = error as { code?: string; message?: string; details?: string } | null;
+  const code = String(err?.code || "").toUpperCase();
+  const message = String(err?.message || "").toLowerCase();
+  const details = String(err?.details || "").toLowerCase();
+
+  return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    (message.includes("column") && message.includes("does not exist")) ||
+    (details.includes("column") && details.includes("does not exist"))
   );
 };
 
@@ -115,6 +134,51 @@ const buildClientsFromSaleTransactions = (rows: PurchaseFallbackClient[]): Clien
   return [...byPhone.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 };
 
+const mapClientRows = (
+  rows: Array<{ id: string; name: string; mobile_phone: string; updated_at?: string; subscription_plan_id?: string | null }>,
+  missingPlanSupport: boolean,
+): ClientRow[] => rows.map((client) => ({
+  id: client.id,
+  name: client.name,
+  mobile_phone: client.mobile_phone,
+  subscription_plan_id: missingPlanSupport ? null : client.subscription_plan_id || null,
+  updated_at: client.updated_at || new Date().toISOString(),
+  canEdit: true,
+}));
+
+const fetchClients = async (organizationId: string): Promise<ClientsQuerySuccess | { missingSchema: true } | { error: unknown }> => {
+  const queries = [
+    { select: "id, name, mobile_phone, subscription_plan_id, updated_at", missingPlanSupport: false },
+    { select: "id, name, mobile_phone, updated_at", missingPlanSupport: true },
+    { select: "id, name, mobile_phone", missingPlanSupport: true },
+  ] as const;
+
+  for (const query of queries) {
+    const result = await supabase
+      .from("clients")
+      .select(query.select)
+      .eq("organization_id", organizationId)
+      .order("name");
+
+    if (!result.error) {
+      return {
+        rows: mapClientRows((result.data || []) as any[], query.missingPlanSupport),
+        missingPlanSupport: query.missingPlanSupport,
+      };
+    }
+
+    if (isMissingSchemaError(result.error, "clients")) {
+      return { missingSchema: true };
+    }
+
+    if (!isMissingColumnError(result.error)) {
+      return { error: result.error };
+    }
+  }
+
+  return { error: new Error("Não foi possível carregar clientes") };
+};
+
 export default function ClientsManagement() {
   const { organizationId } = useOrganization();
   const [loading, setLoading] = useState(true);
@@ -130,6 +194,9 @@ export default function ClientsManagement() {
   const [formPhone, setFormPhone] = useState("");
   const [formPlanId, setFormPlanId] = useState<string>("none");
 
+  const warnedFallbackRef = useRef(false);
+  const warnedPlanRef = useRef(false);
+
   const loadData = async () => {
     if (!organizationId) {
       setClients([]);
@@ -141,12 +208,8 @@ export default function ClientsManagement() {
 
     setLoading(true);
 
-    const [clientsRes, plansRes, historyRes] = await Promise.all([
-      supabase
-        .from("clients")
-        .select("id, name, mobile_phone, subscription_plan_id, updated_at")
-        .eq("organization_id", organizationId)
-        .order("name"),
+    const [clientsResult, plansRes, historyRes] = await Promise.all([
+      fetchClients(organizationId),
       supabase
         .from("subscription_plans")
         .select("id, name")
@@ -161,36 +224,37 @@ export default function ClientsManagement() {
         .limit(1500),
     ]);
 
-    if (clientsRes.error) {
-      if (isMissingSchemaError(clientsRes.error, "clients")) {
-        const { data: fallbackRows, error: fallbackError } = await supabase
-          .from("sale_transactions")
-          .select("client_name, mobile_phone, created_at")
-          .eq("organization_id", organizationId)
-          .not("client_name", "is", null)
-          .not("mobile_phone", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(3000);
+    if ("rows" in clientsResult) {
+      setClients(clientsResult.rows);
+      if (clientsResult.missingPlanSupport && !warnedPlanRef.current) {
+        warnedPlanRef.current = true;
+        toast.warning("Seu banco ainda não possui a coluna de plano em clientes. Aplique as migrations para habilitar plano.");
+      }
+    } else if ("missingSchema" in clientsResult) {
+      const { data: fallbackRows, error: fallbackError } = await supabase
+        .from("sale_transactions")
+        .select("client_name, mobile_phone, created_at")
+        .eq("organization_id", organizationId)
+        .not("client_name", "is", null)
+        .not("mobile_phone", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(3000);
 
-        if (fallbackError) {
-          toast.error("Erro ao carregar clientes");
-          console.error(fallbackError);
-          setClients([]);
-        } else {
-          setClients(buildClientsFromSaleTransactions((fallbackRows || []) as PurchaseFallbackClient[]));
+      if (fallbackError) {
+        toast.error("Erro ao carregar clientes");
+        console.error(fallbackError);
+        setClients([]);
+      } else {
+        setClients(buildClientsFromSaleTransactions((fallbackRows || []) as PurchaseFallbackClient[]));
+        if (!warnedFallbackRef.current) {
+          warnedFallbackRef.current = true;
           toast.warning("Cadastro de clientes ainda não disponível. Exibindo clientes do histórico de vendas.");
         }
-      } else {
-        toast.error("Erro ao carregar clientes");
-        console.error(clientsRes.error);
-        setClients([]);
       }
     } else {
-      const rows = (clientsRes.data || []).map((client) => ({
-        ...client,
-        canEdit: true,
-      }));
-      setClients(rows);
+      toast.error("Erro ao carregar clientes");
+      console.error(clientsResult.error);
+      setClients([]);
     }
 
     if (plansRes.error) {
