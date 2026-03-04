@@ -42,6 +42,9 @@ import BarberCombobox from "./BarberCombobox";
 import { getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
+import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
+import { registerClientOrThrow } from "@/lib/clientRegistry";
+import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
 
 interface SubscriptionWizardModalProps {
   open: boolean;
@@ -97,6 +100,12 @@ export default function SubscriptionWizardModal({
 
   // Client history
   const clientHistory = useClientHistory(organizationId);
+  const { nameSuggestions, phoneSuggestions, loading: loadingClientSuggestions } = useClientAutocomplete({
+    organizationId,
+    nameQuery: clientName,
+    phoneQuery: mobilePhone,
+    enabled: open,
+  });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -138,6 +147,11 @@ export default function SubscriptionWizardModal({
     setMobilePhone(formatted);
 
     const digits = sanitizePhone(raw);
+    const matchedClient = phoneSuggestions.find((client) => client.mobile_phone === digits);
+    if (matchedClient) {
+      setClientName(matchedClient.name);
+      if (!manualOverride) setIsNewClient(false);
+    }
     if (digits.length === 11) {
       if (!isValidPhone(raw)) {
         setPhoneError("Telefone inválido");
@@ -244,6 +258,21 @@ export default function SubscriptionWizardModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
+      if (!phoneSanitized) {
+        toast.error("Celular do cliente é obrigatório");
+        return;
+      }
+
+      const registeredClient = await registerClientOrThrow({
+        organizationId,
+        clientName,
+        mobilePhone: phoneSanitized,
+      });
+
+      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
+        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+      }
+
       let productionId: string | null = null;
       let unitIdToSave: string | null = selectedUnitId;
 
@@ -295,9 +324,9 @@ export default function SubscriptionWizardModal({
         unit_id: unitIdToSave,
         item_type: "subscription",
         item_name: `Assinatura ${selectedPlan?.name || ""}`,
-        description: clientName.trim(),
-        client_name: clientName.trim(),
-        mobile_phone: phoneSanitized,
+        description: registeredClient.clientName,
+        client_name: registeredClient.clientName,
+        mobile_phone: registeredClient.mobilePhone,
         price_sold: selectedPlan?.price || 0,
         service_category: null,
         catalog_service_id: null,
@@ -314,6 +343,21 @@ export default function SubscriptionWizardModal({
 
       if (error) throw error;
 
+      await recordClientPurchasesBestEffort({
+        organizationId,
+        clientName: registeredClient.clientName,
+        mobilePhone: registeredClient.mobilePhone,
+        purchases: [
+          {
+            itemName: `Assinatura ${selectedPlan?.name || ""}`,
+            itemType: "subscription",
+            amount: selectedPlan?.price || 0,
+            quantity: 1,
+            purchasedAt: createdAt,
+          },
+        ],
+      });
+
       const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
       toast.success(`Assinatura registrada!`, {
         description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
@@ -323,7 +367,7 @@ export default function SubscriptionWizardModal({
       setStep("success");
     } catch (error: any) {
       console.error("Erro ao registrar assinatura:", error);
-      toast.error("Erro ao registrar assinatura");
+      toast.error(error?.message || "Erro ao registrar assinatura");
     } finally {
       setLoading(false);
     }
@@ -435,11 +479,19 @@ export default function SubscriptionWizardModal({
                     onBlur={handlePhoneBlur}
                     className={cn("h-10 pl-10", phoneError && "border-destructive")}
                     maxLength={15}
+                    list="subscription-phone-suggestions"
                   />
                 </div>
                 {phoneError && (
                   <p className="text-xs text-destructive font-medium">{phoneError}</p>
                 )}
+                <datalist id="subscription-phone-suggestions">
+                  {phoneSuggestions.map((client) => (
+                    <option key={client.id} value={formatPhone(client.mobile_phone)}>
+                      {client.name}
+                    </option>
+                  ))}
+                </datalist>
               </div>
 
               {/* Client Name (required) */}
@@ -454,10 +506,32 @@ export default function SubscriptionWizardModal({
                   id="sub-client-name"
                   placeholder="Nome completo para conferência"
                   value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
+                  onChange={(e) => {
+                    const nextName = e.target.value;
+                    setClientName(nextName);
+                    const matchedClient = nameSuggestions.find(
+                      (client) => client.name.toLowerCase() === nextName.trim().toLowerCase()
+                    );
+                    if (matchedClient) {
+                      setMobilePhone(formatPhone(matchedClient.mobile_phone));
+                      if (!manualOverride) setIsNewClient(false);
+                    }
+                  }}
                   onBlur={handleNameBlur}
+                  list="subscription-name-suggestions"
                 />
               </div>
+              <datalist id="subscription-name-suggestions">
+                {nameSuggestions.map((client) => (
+                  <option key={client.id} value={client.name}>
+                    {formatPhone(client.mobile_phone)}
+                  </option>
+                ))}
+              </datalist>
+
+              {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
+                <p className="text-xs text-muted-foreground">Buscando sugestões de clientes...</p>
+              )}
 
               {/* Client Status Badge */}
               {renderClientBadge() && (
