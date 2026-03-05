@@ -173,10 +173,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <SubscriptionsTracking />
           </TabsContent>
 
-          <TabsContent value="clients" className="mt-0">
-            <ClientsManagement />
-          </TabsContent>
-
           {hasSubscriptionModule && (
             <TabsContent value="plans" className="mt-0">
               <SubscriptionPlansManagement />

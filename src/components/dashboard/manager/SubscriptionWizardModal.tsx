@@ -279,8 +279,8 @@ export default function SubscriptionWizardModal({
         mobilePhone: phoneSanitized,
       });
 
-      const { error: assignPlanError } = await supabase
-        .from("clients")
+      const { error: assignPlanError } = await (supabase
+        .from("clients") as any)
         .update({ subscription_plan_id: selectedPlanId })
         .eq("organization_id", organizationId)
         .eq("mobile_phone", registeredClient.mobilePhone);
