@@ -619,8 +619,8 @@ export default function QuickSaleModal({
       throw new Error("Selecione a assinatura do cliente para continuar.");
     }
 
-    const { error } = await supabase
-      .from("clients")
+    const { error } = await (supabase
+      .from("clients") as any)
       .update({ subscription_plan_id: selectedSubscriptionPlanId })
       .eq("organization_id", organizationId)
       .eq("mobile_phone", mobilePhoneSanitized);
