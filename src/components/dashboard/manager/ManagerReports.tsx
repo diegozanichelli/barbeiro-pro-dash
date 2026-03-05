@@ -580,13 +580,34 @@ export default function ManagerReports() {
                       <TableCell>{format(parse(production.date as string, "yyyy-MM-dd", new Date()), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{getBarberName(production)}</TableCell>
                       <TableCell className="text-right">
-                        R$ {(Number(production.services_basic_total ?? production.services_total ?? 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(() => {
+                          const manual = Number(production.manual_basic_total ?? 0);
+                          const tx = Number(production.tx_basic_total ?? 0);
+                          const legacy = Number(production.services_basic_total ?? production.services_total ?? 0);
+                          const hasManual = (manual + Number(production.manual_extra_total ?? 0) + Number(production.manual_products_total ?? 0)) > 0;
+                          const hasTx = (tx + Number(production.tx_extra_total ?? 0) + Number(production.tx_products_total ?? 0)) > 0;
+                          return (hasManual ? manual : hasTx ? tx : legacy).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {(Number(production.services_extra_total ?? 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(() => {
+                          const manual = Number(production.manual_extra_total ?? 0);
+                          const tx = Number(production.tx_extra_total ?? 0);
+                          const legacy = Number(production.services_extra_total ?? 0);
+                          const hasManual = (Number(production.manual_basic_total ?? 0) + manual + Number(production.manual_products_total ?? 0)) > 0;
+                          const hasTx = (Number(production.tx_basic_total ?? 0) + tx + Number(production.tx_products_total ?? 0)) > 0;
+                          return (hasManual ? manual : hasTx ? tx : legacy).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {Number(production.products_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(() => {
+                          const manual = Number(production.manual_products_total ?? 0);
+                          const tx = Number(production.tx_products_total ?? 0);
+                          const legacy = Number(production.products_total ?? 0);
+                          const hasManual = (Number(production.manual_basic_total ?? 0) + Number(production.manual_extra_total ?? 0) + manual) > 0;
+                          const hasTx = (Number(production.tx_basic_total ?? 0) + Number(production.tx_extra_total ?? 0) + tx) > 0;
+                          return (hasManual ? manual : hasTx ? tx : legacy).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">{production.services_count}</TableCell>
                       <TableCell className="text-right">{production.products_count}</TableCell>
