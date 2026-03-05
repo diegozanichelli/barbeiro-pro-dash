@@ -572,15 +572,14 @@ export default function QuickSaleModal({
 
   useEffect(() => {
     setCart((prev) => {
-      const planName = selectedSubscriptionPlan?.name;
-      if (clientType !== "with_subscription" || !planName) return prev;
+      if (clientType !== "with_subscription" || selectedPlanIncludedServiceIds.length === 0) return prev;
 
       let changed = false;
       const next = prev.map((item) => {
         if (
           item.type === "service" &&
           item.customPrice !== 0 &&
-          serviceIsIncludedInPlan(item.name, planName, availableServiceNames)
+          selectedPlanIncludedServiceIds.includes(item.catalogItemId)
         ) {
           changed = true;
           return { ...item, customPrice: 0, customPriceInput: "0,00" };
@@ -590,7 +589,7 @@ export default function QuickSaleModal({
 
       return changed ? next : prev;
     });
-  }, [clientType, selectedSubscriptionPlan?.name, selectedSubscriptionPlan?.id]);
+  }, [clientType, selectedPlanIncludedServiceIds]);
 
   const cartItemIncludedBySubscription = (item: CartItem) => {
     return (
