@@ -415,10 +415,6 @@ export default function QuickSaleModal({
 
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
-  const availableServiceNames = useMemo(
-    () => services.map((service) => service.name),
-    [services]
-  );
   const selectedSubscriptionPlan = useMemo(
     () => subscriptionPlans.find((plan) => plan.id === selectedSubscriptionPlanId) || null,
     [subscriptionPlans, selectedSubscriptionPlanId]
