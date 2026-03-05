@@ -788,7 +788,8 @@ export default function QuickSaleModal({
         toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
       }
 
-      // Buscar daily_production existente (sem criar)
+      // Buscar ou criar daily_production
+      let productionId: string | null = null;
       const { data: existingProduction } = await supabase
         .from("daily_productions")
         .select("id")
@@ -796,7 +797,27 @@ export default function QuickSaleModal({
         .eq("date", dateStr)
         .maybeSingle();
 
-      const productionId = existingProduction?.id || null;
+      if (existingProduction) {
+        productionId = existingProduction.id;
+      } else {
+        const { data: newProd } = await supabase
+          .from("daily_productions")
+          .insert({
+            organization_id: organizationId,
+            barber_id: barberId,
+            date: dateStr,
+            services_total: 0,
+            products_total: 0,
+            clients_count: 0,
+            services_count: 0,
+            products_count: 0,
+            commission_earned: 0,
+            confirmed_presence: false,
+          })
+          .select("id")
+          .single();
+        productionId = newProd?.id || null;
+      }
 
       const itemType = manualCategory === "product" ? "product" : "service";
       const serviceCategory = manualCategory === "basic" ? "basic" : manualCategory === "extra" ? "extra" : null;

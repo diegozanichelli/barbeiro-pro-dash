@@ -296,7 +296,7 @@ export default function LiveDashboard() {
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [managerTransactions, productions, selectedUnit, barbers, totalRevenue]);
+  }, [managerTransactions, productions, selectedUnit, barbers]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
