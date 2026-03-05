@@ -342,6 +342,101 @@ export type Database = {
           },
         ]
       }
+      client_purchase_history: {
+        Row: {
+          amount: number
+          client_name: string
+          created_at: string
+          id: string
+          item_name: string
+          item_type: string
+          mobile_phone: string
+          organization_id: string
+          purchased_at: string
+          quantity: number
+        }
+        Insert: {
+          amount?: number
+          client_name: string
+          created_at?: string
+          id?: string
+          item_name: string
+          item_type: string
+          mobile_phone: string
+          organization_id: string
+          purchased_at?: string
+          quantity?: number
+        }
+        Update: {
+          amount?: number
+          client_name?: string
+          created_at?: string
+          id?: string
+          item_name?: string
+          item_type?: string
+          mobile_phone?: string
+          organization_id?: string
+          purchased_at?: string
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_purchase_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          created_at: string
+          id: string
+          mobile_phone: string
+          name: string
+          normalized_name: string | null
+          organization_id: string
+          subscription_plan_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mobile_phone: string
+          name: string
+          normalized_name?: string | null
+          organization_id: string
+          subscription_plan_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mobile_phone?: string
+          name?: string
+          normalized_name?: string | null
+          organization_id?: string
+          subscription_plan_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_subscription_plan_id_fkey"
+            columns: ["subscription_plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_productions: {
         Row: {
           barber_id: string
@@ -858,6 +953,52 @@ export type Database = {
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscription_plan_services: {
+        Row: {
+          catalog_service_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          subscription_plan_id: string
+        }
+        Insert: {
+          catalog_service_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          subscription_plan_id: string
+        }
+        Update: {
+          catalog_service_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          subscription_plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_plan_services_catalog_service_id_fkey"
+            columns: ["catalog_service_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_plan_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_plan_services_subscription_plan_id_fkey"
+            columns: ["subscription_plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
             referencedColumns: ["id"]
           },
         ]

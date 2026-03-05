@@ -145,6 +145,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <CatalogManagement />
           </TabsContent>
 
+          <TabsContent value="clients" className="mt-0">
+            <ClientsManagement />
+          </TabsContent>
+
           <TabsContent value="goals" className="mt-0">
             <GoalsManagement />
           </TabsContent>
