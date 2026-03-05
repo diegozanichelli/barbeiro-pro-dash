@@ -529,8 +529,8 @@ export default function QuickSaleModal({
     setIsResolvingSubscription(true);
 
     try {
-      const { data, error } = await supabase
-        .from("clients")
+      const { data, error } = await (supabase
+        .from("clients") as any)
         .select("subscription_plan_id")
         .eq("organization_id", organizationId)
         .eq("mobile_phone", phoneDigitsToLookup)
@@ -619,8 +619,8 @@ export default function QuickSaleModal({
       throw new Error("Selecione a assinatura do cliente para continuar.");
     }
 
-    const { error } = await supabase
-      .from("clients")
+    const { error } = await (supabase
+      .from("clients") as any)
       .update({ subscription_plan_id: selectedSubscriptionPlanId })
       .eq("organization_id", organizationId)
       .eq("mobile_phone", mobilePhoneSanitized);
