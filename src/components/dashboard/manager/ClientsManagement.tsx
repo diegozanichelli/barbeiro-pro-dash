@@ -62,6 +62,8 @@ interface ClientsQuerySuccess {
   missingPlanSupport: boolean;
 }
 
+const CLIENTS_PER_PAGE = 30;
+
 const formatPhone = (digits: string) => {
   const only = String(digits || "").replace(/\D/g, "").slice(0, 11);
   if (only.length <= 2) return only.length ? `(${only}` : "";
@@ -188,6 +190,7 @@ export default function ClientsManagement() {
   const [purchases, setPurchases] = useState<PurchaseHistoryRow[]>([]);
 
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [editOpen, setEditOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
   const [formName, setFormName] = useState("");
@@ -335,6 +338,21 @@ export default function ClientsManagement() {
     });
   }, [clients, search, planNameById]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, clients.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / CLIENTS_PER_PAGE));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+
+  const paginatedClients = useMemo(() => {
+    const start = (currentPageSafe - 1) * CLIENTS_PER_PAGE;
+    return filteredClients.slice(start, start + CLIENTS_PER_PAGE);
+  }, [filteredClients, currentPageSafe]);
+
+  const startClientNumber = filteredClients.length === 0 ? 0 : (currentPageSafe - 1) * CLIENTS_PER_PAGE + 1;
+  const endClientNumber = Math.min(currentPageSafe * CLIENTS_PER_PAGE, filteredClients.length);
+
   const openEdit = (client: ClientRow) => {
     if (!client.canEdit) {
       toast.info("Este cliente veio do histórico de vendas. Aplique as migrations para editar via cadastro.");
@@ -413,6 +431,7 @@ export default function ClientsManagement() {
         ) : filteredClients.length === 0 ? (
           <p className="text-sm text-muted-foreground py-10 text-center">Nenhum cliente encontrado.</p>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -426,7 +445,7 @@ export default function ClientsManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredClients.map((client) => {
+                {paginatedClients.map((client) => {
                   const summary = purchaseSummaryByPhone.get(client.mobile_phone);
                   const planName = client.subscription_plan_id
                     ? planNameById.get(client.subscription_plan_id) || "Plano não encontrado"
@@ -465,6 +484,37 @@ export default function ClientsManagement() {
               </TableBody>
             </Table>
           </div>
+
+          <div className="flex flex-col gap-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Exibindo {startClientNumber}–{endClientNumber} de {filteredClients.length} clientes
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPageSafe <= 1}
+              >
+                Anterior
+              </Button>
+
+              <span className="text-sm text-muted-foreground">
+                Página {currentPageSafe} de {totalPages}
+              </span>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPageSafe >= totalPages}
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
+          </>
         )}
       </CardContent>
 
