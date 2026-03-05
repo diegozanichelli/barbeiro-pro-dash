@@ -1162,17 +1162,6 @@ export default function QuickSaleModal({
                       .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
                       .map((service) => service.name);
 
-                    if (labels.length === 0) {
-                      const included = getSubscriptionIncludedServices(
-                        selectedSubscriptionPlan.name,
-                        availableServiceNames
-                      );
-                      if (included.has("corte_infantil")) labels.push("corte infantil");
-                      if (included.has("corte")) labels.push("corte");
-                      if (included.has("barba")) labels.push("barba");
-                      if (included.has("sobrancelha")) labels.push("sobrancelha");
-                    }
-
                     return `Serviços incluídos e zerados automaticamente: ${labels.join(", ") || "—"}.`;
                   })()}
                 </p>
