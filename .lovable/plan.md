@@ -1,44 +1,66 @@
 
 
-# Plano de Correção: Build Errors + Tabela de Feriados
+## Plan: Fix Orphaned Transactions Not Appearing in Rankings
 
-## Problemas Identificados
+### Root Cause
 
-1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
-2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
-3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
-4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
+The `QuickSaleModal` does NOT create a `daily_productions` record when one doesn't exist. It only looks for an existing one, and if absent, inserts transactions with `daily_production_id = NULL`.
 
----
+This means:
+- The `link_orphan_transactions` trigger (fires on `daily_productions` INSERT) never fires
+- The `recalculate_daily_production_from_transactions` trigger never updates `tx_*` fields
+- The `get_organization_rankings` RPC reads from `daily_productions`, finds nothing, and the barber is invisible in rankings
 
-## Correções
+**Affected data right now (Barbearia Novante):**
+- DYOGO MANOEL: 20 orphaned transactions, R$232, zero `daily_productions` records
+- ARIEL ZANELA: 2 orphaned transactions
+- LUCAS DANIEL: 2 orphaned transactions
 
-### 1. Criar tabela `organization_holidays` no banco
-Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
+The LiveDashboard "AO VIVO" works because it queries `sale_transactions` directly as fallback, but the Leaderboard/Rankings only read `daily_productions`.
 
-### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
-Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
+### Fix
 
-A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
+**1. QuickSaleModal: Create `daily_productions` if not exists (cart sale + manual sale)**
 
-### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
-Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
+In both `handleCartSale` and `handleManualSale`, after looking up the existing production and finding none, upsert a new `daily_productions` record with zeroed values. This triggers `link_orphan_transactions` which links the transaction, then `recalculate_daily_production_from_transactions` updates `tx_*` fields.
 
-### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
-- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
-- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
-- Incluir `goalsAchieved` no `setStats` ao final do callback
+The change: replace the "lookup only" pattern with "lookup or create":
+```
+// Current: just lookup
+const { data: existingProduction } = await supabase
+  .from("daily_productions").select("id")...maybeSingle();
+productionId = existingProduction?.id || null;
 
----
+// Fixed: lookup, and if not found, create
+if (!existingProduction) {
+  const { data: newProd } = await supabase
+    .from("daily_productions")
+    .insert({ organization_id, barber_id, date: dateStr, ... zeroed fields })
+    .select("id").single();
+  productionId = newProd?.id || null;
+} else {
+  productionId = existingProduction.id;
+}
+```
 
-## Detalhes Técnicos
+This ensures every sale from the manager creates a production record, allowing the trigger chain to work.
 
-| Arquivo | Erro | Correção |
-|---------|------|----------|
-| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
-| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
-| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
-| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
-| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
-| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
+**2. Fix the infinite render loop (console error)**
+
+The console shows `Maximum update depth exceeded` in QuickSaleModal at line ~437. This is the `useEffect` that computes `totalRevenue` in LiveDashboard (line 285-299) — it has `totalRevenue` in the dependency array but also sets it, creating a loop. Fix: remove `totalRevenue` from the dependency array.
+
+**3. Database migration: Link existing orphaned transactions**
+
+Run a one-time migration to create `daily_productions` records for barbers that have orphaned transactions, then link them:
+
+```sql
+-- For each barber+date combo with orphaned transactions, create daily_productions if missing
+-- Then update orphaned transactions to link to the production
+```
+
+### Files to Change
+
+1. **`src/components/dashboard/manager/QuickSaleModal.tsx`** — Create `daily_productions` record if not exists in both cart and manual sale flows
+2. **`src/components/dashboard/manager/LiveDashboard.tsx`** — Remove `totalRevenue` from useEffect dependency to fix infinite loop
+3. **Database migration** — Link existing orphaned transactions for Novante (and any other org)
 
