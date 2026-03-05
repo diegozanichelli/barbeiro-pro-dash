@@ -26,11 +26,13 @@ interface PlanInfo {
 }
 
 export default function ClientsManagement() {
+  const CLIENTS_PER_PAGE = 30;
   const { organizationId } = useOrganization();
   const [clients, setClients] = useState<Client[]>([]);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -75,6 +77,20 @@ export default function ClientsManagement() {
     );
   });
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / CLIENTS_PER_PAGE));
+  const pageStart = (currentPage - 1) * CLIENTS_PER_PAGE;
+  const paginatedClients = filtered.slice(pageStart, pageStart + CLIENTS_PER_PAGE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, organizationId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const handleClientClick = (client: Client) => {
     setSelectedClient(client);
     setModalOpen(true);
@@ -116,8 +132,9 @@ export default function ClientsManagement() {
           </CardContent>
         </Card>
       ) : (
+        <>
         <div className="grid gap-2">
-          {filtered.map((client) => {
+          {paginatedClients.map((client) => {
             const plan = client.subscription_plan_id
               ? planMap.get(client.subscription_plan_id)
               : null;
@@ -154,6 +171,36 @@ export default function ClientsManagement() {
             );
           })}
         </div>
+
+        {filtered.length > CLIENTS_PER_PAGE && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
+            <p className="text-xs text-muted-foreground">
+              Mostrando {pageStart + 1}–{Math.min(pageStart + CLIENTS_PER_PAGE, filtered.length)} de {filtered.length} clientes
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 text-sm rounded-md border disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                Anterior
+              </button>
+              <span className="text-sm text-muted-foreground">
+                Página {currentPage} de {totalPages}
+              </span>
+              <button
+                type="button"
+                className="px-3 py-1.5 text-sm rounded-md border disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       <ClientDetailModal
