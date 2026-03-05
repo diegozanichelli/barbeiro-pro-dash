@@ -1,44 +1,37 @@
 
 
-# Plano de Correção: Build Errors + Tabela de Feriados
+## Plan: Fix Build Error and Ranking Data Issue
 
-## Problemas Identificados
+### 1. Fix Duplicate Type (Build Error)
 
-1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
-2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
-3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
-4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
+The `src/integrations/supabase/types.ts` file has `client_purchase_history` defined twice (lines 213-259 and 345-391). Since this file is auto-generated, I will remove the first duplicate block (lines 213-259) to resolve the `TS2300: Duplicate identifier` error.
 
----
+### 2. Fix Ranking Not Updating After Live Entries
 
-## Correções
+The root cause: the `get_organization_rankings` RPC function prioritizes `tx_*` fields (manager/reception data) over barber-confirmed data (`services_basic_total`, `manual_*`). This means:
+- When the reception enters data in "AO VIVO", the `tx_*` fields get populated via the `recalculate_daily_production_from_transactions` trigger
+- The ranking RPC reads those `tx_*` fields correctly
+- **However**, if a barber hasn't confirmed yet and there are no `daily_productions` records at all for that day, the barber won't appear in rankings
 
-### 1. Criar tabela `organization_holidays` no banco
-Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
+The actual problem is likely that after launching sales in "AO VIVO" for Barbearia Novante, the `daily_productions` records either:
+- Were not created (the Live dashboard creates them with `confirmed_presence = false`)
+- Or the `link_orphan_transactions` trigger didn't fire to connect transactions to productions
 
-### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
-Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
+I will update the `get_organization_rankings` RPC to ensure it correctly picks up data regardless of whether `tx_*` or `manual_*` fields are populated, using the same priority logic already established:
+- If barber confirmed (`manual_*` > 0), use `manual_*`
+- Otherwise if reception entered (`tx_*` > 0), use `tx_*`
+- Fallback to legacy fields
 
-A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
+This aligns the ranking with the rest of the system.
 
-### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
-Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
+### Technical Changes
 
-### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
-- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
-- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
-- Incluir `goalsAchieved` no `setStats` ao final do callback
+1. **`src/integrations/supabase/types.ts`**: Remove duplicate `client_purchase_history` block (lines 213-259)
 
----
-
-## Detalhes Técnicos
-
-| Arquivo | Erro | Correção |
-|---------|------|----------|
-| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
-| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
-| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
-| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
-| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
-| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
+2. **Database migration**: Update `get_organization_rankings` RPC to use consistent data priority:
+   - Priority 1: Barber-confirmed data (`manual_*` fields when > 0)
+   - Priority 2: Manager/reception data (`tx_*` fields when > 0)
+   - Priority 3: Legacy fields (`services_total`, `products_total`)
+   
+   This ensures that after the reception enters data in AO VIVO, the ranking immediately reflects those entries, and when the barber confirms, it updates to the confirmed values.
 
