@@ -170,6 +170,49 @@ export default function ManagerReports() {
     return txCount > 0 ? txCount : Number(production.clients_count) || 0;
   }, [productionClientCounts]);
 
+  const getProductionTotals = useCallback((production: DailyProduction) => {
+    const manualBasic = Number(production.manual_basic_total ?? 0);
+    const manualExtra = Number(production.manual_extra_total ?? 0);
+    const manualProducts = Number(production.manual_products_total ?? 0);
+    const txBasic = Number(production.tx_basic_total ?? 0);
+    const txExtra = Number(production.tx_extra_total ?? 0);
+    const txProducts = Number(production.tx_products_total ?? 0);
+    const legacyBasic = Number(production.services_basic_total ?? production.services_total ?? 0);
+    const legacyExtra = Number(production.services_extra_total ?? 0);
+    const legacyProducts = Number(production.products_total ?? 0);
+
+    const hasManual = manualBasic + manualExtra + manualProducts > 0;
+    const hasTx = txBasic + txExtra + txProducts > 0;
+
+    if (hasManual) {
+      return { basic: manualBasic, extra: manualExtra, products: manualProducts };
+    }
+
+    if (hasTx) {
+      return { basic: txBasic, extra: txExtra, products: txProducts };
+    }
+
+    return { basic: legacyBasic, extra: legacyExtra, products: legacyProducts };
+  }, []);
+
+  const getEffectiveCommission = useCallback((production: DailyProduction) => {
+    const savedCommission = Number(production.commission_earned) || 0;
+    if (savedCommission > 0) {
+      return savedCommission;
+    }
+
+    const { basic, extra, products } = getProductionTotals(production);
+    const totalRevenue = basic + extra + products;
+    if (totalRevenue <= 0) {
+      return 0;
+    }
+
+    const servicesRate = Number(production.barbers?.services_commission ?? 0) / 100;
+    const productsRate = Number(production.barbers?.products_commission ?? 0) / 100;
+
+    return ((basic + extra) * servicesRate) + (products * productsRate);
+  }, [getProductionTotals]);
+
   const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
 
@@ -758,3 +801,4 @@ export default function ManagerReports() {
     </div>
   );
 }
+
