@@ -595,8 +595,7 @@ export default function QuickSaleModal({
     return (
       clientType === "with_subscription" &&
       item.type === "service" &&
-      !!selectedSubscriptionPlan?.name &&
-      serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name, availableServiceNames)
+      selectedPlanIncludedServiceIds.includes(item.catalogItemId)
     );
   };
 
