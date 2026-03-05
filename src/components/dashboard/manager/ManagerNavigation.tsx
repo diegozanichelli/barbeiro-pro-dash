@@ -61,6 +61,7 @@ export default function ManagerNavigation({
 
   const gestaoItems: NavItem[] = [
     { id: "barbers", label: "Barbeiros", icon: Users },
+    { id: "clients", label: "Clientes", icon: UserRound },
     { id: "units", label: "Unidades", icon: Building2 },
     { id: "goals", label: "Metas", icon: Target },
   ];
