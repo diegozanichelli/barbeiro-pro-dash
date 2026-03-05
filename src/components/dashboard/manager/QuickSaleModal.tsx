@@ -562,9 +562,7 @@ export default function QuickSaleModal({
     if (
       clientType === "with_subscription" &&
       item.type === "service" &&
-      (selectedPlanIncludedServiceIds.includes(item.id) ||
-        (selectedSubscriptionPlan?.name &&
-          serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name, availableServiceNames)))
+      selectedPlanIncludedServiceIds.includes(item.id)
     ) {
       return 0;
     }
@@ -574,15 +572,14 @@ export default function QuickSaleModal({
 
   useEffect(() => {
     setCart((prev) => {
-      const planName = selectedSubscriptionPlan?.name;
-      if (clientType !== "with_subscription" || !planName) return prev;
+      if (clientType !== "with_subscription" || selectedPlanIncludedServiceIds.length === 0) return prev;
 
       let changed = false;
       const next = prev.map((item) => {
         if (
           item.type === "service" &&
           item.customPrice !== 0 &&
-          serviceIsIncludedInPlan(item.name, planName, availableServiceNames)
+          selectedPlanIncludedServiceIds.includes(item.id)
         ) {
           changed = true;
           return { ...item, customPrice: 0, customPriceInput: "0,00" };
@@ -592,14 +589,13 @@ export default function QuickSaleModal({
 
       return changed ? next : prev;
     });
-  }, [clientType, selectedSubscriptionPlan?.name, selectedSubscriptionPlan?.id]);
+  }, [clientType, selectedPlanIncludedServiceIds]);
 
   const cartItemIncludedBySubscription = (item: CartItem) => {
     return (
       clientType === "with_subscription" &&
       item.type === "service" &&
-      !!selectedSubscriptionPlan?.name &&
-      serviceIsIncludedInPlan(item.name, selectedSubscriptionPlan.name, availableServiceNames)
+      selectedPlanIncludedServiceIds.includes(item.id)
     );
   };
 
@@ -1165,17 +1161,6 @@ export default function QuickSaleModal({
                     const labels = services
                       .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
                       .map((service) => service.name);
-
-                    if (labels.length === 0) {
-                      const included = getSubscriptionIncludedServices(
-                        selectedSubscriptionPlan.name,
-                        availableServiceNames
-                      );
-                      if (included.has("corte_infantil")) labels.push("corte infantil");
-                      if (included.has("corte")) labels.push("corte");
-                      if (included.has("barba")) labels.push("barba");
-                      if (included.has("sobrancelha")) labels.push("sobrancelha");
-                    }
 
                     return `Serviços incluídos e zerados automaticamente: ${labels.join(", ") || "—"}.`;
                   })()}
