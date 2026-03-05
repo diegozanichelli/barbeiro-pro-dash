@@ -12,6 +12,7 @@ interface MissingProductionAlertProps {
 
 interface ProductionStatusRow {
   date: string;
+  confirmed_presence: boolean | null;
   presence_type: string | null;
   services_basic_total: number | null;
   services_extra_total: number | null;

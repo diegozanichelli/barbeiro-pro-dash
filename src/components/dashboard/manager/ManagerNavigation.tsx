@@ -26,6 +26,7 @@ import {
   FileText,
   DollarSign,
   Calculator,
+  UserRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 

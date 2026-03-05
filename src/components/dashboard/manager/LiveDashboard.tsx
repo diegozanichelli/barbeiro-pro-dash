@@ -296,7 +296,7 @@ export default function LiveDashboard() {
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [managerTransactions, productions, selectedUnit, barbers, totalRevenue]);
+  }, [managerTransactions, productions, selectedUnit, barbers]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
@@ -817,7 +817,7 @@ export default function LiveDashboard() {
                     >
                       <Eye className="w-4 h-4" />
                     </Button>
-                    {revenue > 0 && (
+                    {(revenue > 0 || managerTransactions.some(t => t.barber_id === barber.id)) && (
                       <Button
                         size="sm"
                         variant="outline"
