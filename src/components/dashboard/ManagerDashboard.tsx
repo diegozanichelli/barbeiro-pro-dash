@@ -25,6 +25,7 @@ import SubscriptionsTracking from "./manager/SubscriptionsTracking";
 import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
+import ClientsManagement from "./manager/ClientsManagement";
 
 interface ManagerDashboardProps {
   user: User;
