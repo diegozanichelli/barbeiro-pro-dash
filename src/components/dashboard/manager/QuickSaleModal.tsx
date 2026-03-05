@@ -579,7 +579,7 @@ export default function QuickSaleModal({
         if (
           item.type === "service" &&
           item.customPrice !== 0 &&
-          selectedPlanIncludedServiceIds.includes(item.catalogItemId)
+          selectedPlanIncludedServiceIds.includes(item.id)
         ) {
           changed = true;
           return { ...item, customPrice: 0, customPriceInput: "0,00" };
