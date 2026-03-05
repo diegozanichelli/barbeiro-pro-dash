@@ -87,71 +87,6 @@ type CategoryTab = "services" | "products" | "manual";
 
 type ClientType = "new" | "without_subscription" | "with_subscription";
 
-const normalizePlanLabel = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const normalizeServiceLabel = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const getSubscriptionIncludedServices = (planName: string, availableServiceNames: string[]) => {
-  const normalizedPlan = normalizePlanLabel(planName);
-  const includes = new Set<string>();
-
-  const hasInfantilService = availableServiceNames.some((name) =>
-    normalizeServiceLabel(name).includes("infantil")
-  );
-
-  // Regra específica: clube da barba cobre apenas barba
-  if (normalizedPlan.includes("clube da barba")) {
-    includes.add("barba");
-    return includes;
-  }
-
-  // Regra específica: plano infantil cobre corte infantil; fallback para corte adulto
-  if (normalizedPlan.includes("infantil")) {
-    includes.add(hasInfantilService ? "corte_infantil" : "corte");
-    return includes;
-  }
-
-  // Regra geral dos planos de assinatura da casa
-  includes.add("corte");
-
-  if (normalizedPlan.includes("barba")) {
-    includes.add("barba");
-  }
-
-  if (normalizedPlan.includes("gold")) {
-    includes.add("sobrancelha");
-  }
-
-  return includes;
-};
-
-const serviceIsIncludedInPlan = (
-  serviceName: string,
-  planName: string,
-  availableServiceNames: string[]
-) => {
-  const normalizedService = normalizeServiceLabel(serviceName);
-  const includedServices = getSubscriptionIncludedServices(planName, availableServiceNames);
-
-  if (includedServices.has("corte_infantil") && normalizedService.includes("infantil")) return true;
-  if (includedServices.has("corte") && normalizedService.includes("corte")) return true;
-  if (includedServices.has("barba") && normalizedService.includes("barba")) return true;
-  if (includedServices.has("sobrancelha") && normalizedService.includes("sobrancelha")) return true;
-
-  return false;
-};
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
@@ -480,10 +415,6 @@ export default function QuickSaleModal({
 
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
-  const availableServiceNames = useMemo(
-    () => services.map((service) => service.name),
-    [services]
-  );
   const selectedSubscriptionPlan = useMemo(
     () => subscriptionPlans.find((plan) => plan.id === selectedSubscriptionPlanId) || null,
     [subscriptionPlans, selectedSubscriptionPlanId]
