@@ -1003,7 +1003,10 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                       <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
                     )}
                     {last3DaysProduction.map((day) => {
-                      const services = (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0) + (Number(day.services_total) || 0);
+                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
+                      const services = hasSplitServices
+                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
+                        : (Number(day.services_total) || 0);
                       const products = Number(day.products_total) || 0;
                       const total = services + products;
 
