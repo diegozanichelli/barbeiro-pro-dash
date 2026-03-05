@@ -37,6 +37,8 @@ interface DailyProduction {
     id?: string;
     unit_id?: string;
     name?: string;
+    services_commission?: number;
+    products_commission?: number;
   } | null;
 }
 
@@ -89,6 +91,49 @@ export default function ManagerReports() {
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
 
+  const getProductionTotals = useCallback((production: DailyProduction) => {
+    const manualBasic = Number(production.manual_basic_total ?? 0);
+    const manualExtra = Number(production.manual_extra_total ?? 0);
+    const manualProducts = Number(production.manual_products_total ?? 0);
+    const txBasic = Number(production.tx_basic_total ?? 0);
+    const txExtra = Number(production.tx_extra_total ?? 0);
+    const txProducts = Number(production.tx_products_total ?? 0);
+    const legacyBasic = Number(production.services_basic_total ?? production.services_total ?? 0);
+    const legacyExtra = Number(production.services_extra_total ?? 0);
+    const legacyProducts = Number(production.products_total ?? 0);
+
+    const hasManual = manualBasic + manualExtra + manualProducts > 0;
+    const hasTx = txBasic + txExtra + txProducts > 0;
+
+    if (hasManual) {
+      return { basic: manualBasic, extra: manualExtra, products: manualProducts };
+    }
+
+    if (hasTx) {
+      return { basic: txBasic, extra: txExtra, products: txProducts };
+    }
+
+    return { basic: legacyBasic, extra: legacyExtra, products: legacyProducts };
+  }, []);
+
+  const getEffectiveCommission = useCallback((production: DailyProduction) => {
+    const savedCommission = Number(production.commission_earned) || 0;
+    if (savedCommission > 0) {
+      return savedCommission;
+    }
+
+    const { basic, extra, products } = getProductionTotals(production);
+    const totalRevenue = basic + extra + products;
+    if (totalRevenue <= 0) {
+      return 0;
+    }
+
+    const servicesRate = Number(production.barbers?.services_commission ?? 0) / 100;
+    const productsRate = Number(production.barbers?.products_commission ?? 0) / 100;
+
+    return ((basic + extra) * servicesRate) + (products * productsRate);
+  }, [getProductionTotals]);
+
   const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
 
@@ -104,21 +149,9 @@ export default function ManagerReports() {
     if (selectedUnit !== "all") rpcParams.p_unit_id = selectedUnit;
     if (selectedBarber !== "all") rpcParams.p_barber_id = selectedBarber;
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_manager_report_stats", rpcParams);
-
-    if (rpcError) {
-      console.error("Erro RPC get_manager_report_stats:", rpcError);
-    }
-
-    const rpcRow = rpcData?.[0];
-    const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
-    const totalClients = Number(rpcRow?.total_clients ?? 0);
-    const totalCommissionFromRpc = Number(rpcRow?.total_commission ?? 0);
-
-    // Buscar comissões por barbeiro para cálculo de metas batidas
     let commissionsQuery = supabase
       .from("daily_productions")
-      .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
+      .select("barber_id, commission_earned, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, barbers!inner(id, unit_id, services_commission, products_commission)")
       .gte("date", startDate)
       .lte("date", endDate);
 
@@ -130,8 +163,6 @@ export default function ManagerReports() {
       commissionsQuery = commissionsQuery.eq("barber_id", selectedBarber);
     }
 
-    const { data: commissionRows } = await commissionsQuery;
-
     // Buscar barbeiros ativos
     let barbersQuery = supabase
       .from("barbers")
@@ -141,8 +172,6 @@ export default function ManagerReports() {
     if (selectedUnit !== "all") {
       barbersQuery = barbersQuery.eq("unit_id", selectedUnit);
     }
-
-    const { data: barbersData } = await barbersQuery;
 
     // Buscar metas do mês
     let goalsQuery = supabase
@@ -155,24 +184,36 @@ export default function ManagerReports() {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
     }
 
-    const { data: goals } = await goalsQuery;
+    const [rpcRes, commissionsRes, barbersRes, goalsRes] = await Promise.all([
+      supabase.rpc("get_manager_report_stats", rpcParams),
+      commissionsQuery,
+      barbersQuery,
+      goalsQuery,
+    ]);
 
-    interface CommissionRow {
-      barber_id: string;
-      commission_earned: number | null;
+    if (rpcRes.error) {
+      console.error("Erro RPC get_manager_report_stats:", rpcRes.error);
     }
 
-    const safeCommissions = (commissionRows || []) as CommissionRow[];
+    const rpcRow = rpcRes.data?.[0];
+    const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
+    const totalClients = Number(rpcRow?.total_clients ?? 0);
+
+    const safeCommissions = (commissionsRes.data || []) as DailyProduction[];
+    const totalCommission = safeCommissions.reduce(
+      (sum, production) => sum + getEffectiveCommission(production),
+      0,
+    );
 
     const barberCommissions = new Map<string, number>();
     safeCommissions.forEach((row) => {
       const current = barberCommissions.get(row.barber_id) || 0;
-      barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
+      barberCommissions.set(row.barber_id, current + getEffectiveCommission(row));
     });
 
     let goalsAchieved = 0;
-    if (goals) {
-      goals.forEach((goal) => {
+    if (goalsRes.data) {
+      goalsRes.data.forEach((goal) => {
         const earned = barberCommissions.get(goal.barber_id) || 0;
         if (earned >= goal.target_commission) {
           goalsAchieved++;
@@ -182,13 +223,13 @@ export default function ManagerReports() {
 
     setStats({
       totalRevenue,
-      totalCommission: totalCommissionFromRpc,
+      totalCommission,
       totalClients,
       averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
       goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
+      totalBarbers: barbersRes.data?.length || 0,
     });
-  }, [dateRange, selectedBarber, selectedUnit]);
+  }, [dateRange, getEffectiveCommission, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
@@ -220,7 +261,7 @@ export default function ManagerReports() {
     
     let query = supabase
       .from("daily_productions")
-      .select("*, barbers!inner(name, unit_id)")
+      .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
       .gte("date", format(dateRange.from, "yyyy-MM-dd"))
       .lte("date", format(dateRange.to, "yyyy-MM-dd"))
       .order("date", { ascending: false });
@@ -326,25 +367,11 @@ export default function ManagerReports() {
       const stats = barberStats.get(barberId);
       if (!stats) return;
 
-      const txBasic = Number(production.tx_basic_total) || 0;
-      const txExtra = Number(production.tx_extra_total) || 0;
-      const txProducts = Number(production.tx_products_total) || 0;
-      const hasTxSource = txBasic + txExtra + txProducts > 0;
-
-      if (hasTxSource) {
-        stats.servicesBasicTotal += txBasic;
-        stats.servicesExtraTotal += txExtra;
-        stats.productsTotal += txProducts;
-      } else if (production.services_basic_total !== null || production.services_extra_total !== null) {
-        stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
-        stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
-        stats.productsTotal += Number(production.products_total) || 0;
-      } else {
-        stats.servicesBasicTotal += Number(production.services_total) || 0;
-        stats.productsTotal += Number(production.products_total) || 0;
-      }
-
-      stats.commissionTotal += Number(production.commission_earned);
+      const totals = getProductionTotals(production);
+      stats.servicesBasicTotal += totals.basic;
+      stats.servicesExtraTotal += totals.extra;
+      stats.productsTotal += totals.products;
+      stats.commissionTotal += getEffectiveCommission(production);
       stats.clientsTotal += Number(production.clients_count);
     });
 
@@ -355,7 +382,7 @@ export default function ManagerReports() {
         totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [productions]);
+  }, [productions, getEffectiveCommission, getProductionTotals]);
 
   return (
     <div className="space-y-6">
@@ -584,39 +611,27 @@ export default function ManagerReports() {
                       <TableCell>{getBarberName(production)}</TableCell>
                       <TableCell className="text-right">
                         R$ {(() => {
-                          const manual = Number(production.manual_basic_total ?? 0);
-                          const tx = Number(production.tx_basic_total ?? 0);
-                          const legacy = Number(production.services_basic_total ?? production.services_total ?? 0);
-                          const hasManual = (manual + Number(production.manual_extra_total ?? 0) + Number(production.manual_products_total ?? 0)) > 0;
-                          const hasTx = (tx + Number(production.tx_extra_total ?? 0) + Number(production.tx_products_total ?? 0)) > 0;
-                          return (hasManual ? manual : hasTx ? tx : legacy).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                          const totals = getProductionTotals(production);
+                          return totals.basic.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
                         })()}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {(() => {
-                          const manual = Number(production.manual_extra_total ?? 0);
-                          const tx = Number(production.tx_extra_total ?? 0);
-                          const legacy = Number(production.services_extra_total ?? 0);
-                          const hasManual = (Number(production.manual_basic_total ?? 0) + manual + Number(production.manual_products_total ?? 0)) > 0;
-                          const hasTx = (Number(production.tx_basic_total ?? 0) + tx + Number(production.tx_products_total ?? 0)) > 0;
-                          return (hasManual ? manual : hasTx ? tx : legacy).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                          const totals = getProductionTotals(production);
+                          return totals.extra.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
                         })()}
                       </TableCell>
                       <TableCell className="text-right">
                         R$ {(() => {
-                          const manual = Number(production.manual_products_total ?? 0);
-                          const tx = Number(production.tx_products_total ?? 0);
-                          const legacy = Number(production.products_total ?? 0);
-                          const hasManual = (Number(production.manual_basic_total ?? 0) + Number(production.manual_extra_total ?? 0) + manual) > 0;
-                          const hasTx = (Number(production.tx_basic_total ?? 0) + Number(production.tx_extra_total ?? 0) + tx) > 0;
-                          return (hasManual ? manual : hasTx ? tx : legacy).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                          const totals = getProductionTotals(production);
+                          return totals.products.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
                         })()}
                       </TableCell>
                       <TableCell className="text-right">{production.services_count}</TableCell>
                       <TableCell className="text-right">{production.products_count}</TableCell>
                       <TableCell className="text-right">{production.clients_count}</TableCell>
                       <TableCell className="text-right">
-                        R$ {Number(production.commission_earned).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {getEffectiveCommission(production).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-center gap-2">
@@ -678,3 +693,4 @@ export default function ManagerReports() {
     </div>
   );
 }
+
