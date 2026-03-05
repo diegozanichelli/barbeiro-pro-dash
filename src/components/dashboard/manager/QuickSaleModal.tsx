@@ -529,8 +529,8 @@ export default function QuickSaleModal({
     setIsResolvingSubscription(true);
 
     try {
-      const { data, error } = await supabase
-        .from("clients")
+      const { data, error } = await (supabase
+        .from("clients") as any)
         .select("subscription_plan_id")
         .eq("organization_id", organizationId)
         .eq("mobile_phone", phoneDigitsToLookup)
