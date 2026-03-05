@@ -25,6 +25,9 @@ interface DailyProduction {
   tx_basic_total?: number | null;
   tx_extra_total?: number | null;
   tx_products_total?: number | null;
+  manual_basic_total?: number | null;
+  manual_extra_total?: number | null;
+  manual_products_total?: number | null;
   products_total: number;
   services_count: number;
   products_count: number;
