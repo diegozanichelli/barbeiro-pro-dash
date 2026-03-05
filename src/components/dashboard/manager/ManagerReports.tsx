@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parse } from "date-fns";
-import { getManausDate } from "@/lib/dateUtils";
+import { formatInTimeZone } from "date-fns-tz";
+import { getManausDate, TIMEZONE } from "@/lib/dateUtils";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -34,6 +35,8 @@ interface DailyProduction {
     id?: string;
     unit_id?: string;
     name?: string;
+    services_commission?: number | null;
+    products_commission?: number | null;
   } | null;
 }
 
@@ -46,6 +49,14 @@ interface Barber {
 interface Unit {
   id: string;
   name: string;
+}
+
+
+interface SaleTransactionLite {
+  daily_production_id: string | null;
+  barber_id: string | null;
+  commission_amount: number | null;
+  created_at: string;
 }
 
 interface BarberPerformanceRow {
@@ -71,6 +82,7 @@ export default function ManagerReports() {
   });
   
   const [productions, setProductions] = useState<DailyProduction[]>([]);
+  const [transactions, setTransactions] = useState<SaleTransactionLite[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [allBarbers, setAllBarbers] = useState<Barber[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -214,27 +226,43 @@ export default function ManagerReports() {
 
   const fetchProductions = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
-    
-    let query = supabase
+
+    const fromDate = format(dateRange.from, "yyyy-MM-dd");
+    const toDate = format(dateRange.to, "yyyy-MM-dd");
+
+    let productionsQuery = supabase
       .from("daily_productions")
-      .select("*, barbers!inner(name, unit_id)")
-      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-      .lte("date", format(dateRange.to, "yyyy-MM-dd"))
+      .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
+      .gte("date", fromDate)
+      .lte("date", toDate)
       .order("date", { ascending: false });
 
-    // Aplicar filtro de unidade
+    let transactionsQuery = supabase
+      .from("sale_transactions")
+      .select("daily_production_id, barber_id, commission_amount, created_at, barbers!inner(unit_id)")
+      .gte("created_at", `${fromDate}T00:00:00`)
+      .lte("created_at", `${toDate}T23:59:59`);
+
     if (selectedUnit !== "all") {
-      query = query.eq("barbers.unit_id", selectedUnit);
+      productionsQuery = productionsQuery.eq("barbers.unit_id", selectedUnit);
+      transactionsQuery = transactionsQuery.eq("barbers.unit_id", selectedUnit);
     }
 
-    // Aplicar filtro de barbeiro
     if (selectedBarber !== "all") {
-      query = query.eq("barber_id", selectedBarber);
+      productionsQuery = productionsQuery.eq("barber_id", selectedBarber);
+      transactionsQuery = transactionsQuery.eq("barber_id", selectedBarber);
     }
 
-    const { data } = await query;
-    if (data) {
-      setProductions((data ?? []) as DailyProduction[]);
+    const [productionsRes, transactionsRes] = await Promise.all([productionsQuery, transactionsQuery]);
+
+    if (productionsRes.data) {
+      setProductions((productionsRes.data ?? []) as DailyProduction[]);
+    }
+
+    if (transactionsRes.data) {
+      setTransactions((transactionsRes.data ?? []) as SaleTransactionLite[]);
+    } else {
+      setTransactions([]);
     }
   }, [dateRange, selectedBarber, selectedUnit]);
 
@@ -302,6 +330,59 @@ export default function ManagerReports() {
     return production.barbers?.name || "Barbeiro Desconhecido";
   };
 
+
+
+  const transactionCommissionByProductionId = useMemo(() => {
+    const map = new Map<string, number>();
+
+    transactions.forEach((tx) => {
+      if (!tx.daily_production_id) return;
+      const current = map.get(tx.daily_production_id) || 0;
+      map.set(tx.daily_production_id, current + (Number(tx.commission_amount) || 0));
+    });
+
+    return map;
+  }, [transactions]);
+
+  const transactionCommissionByBarberDate = useMemo(() => {
+    const map = new Map<string, number>();
+
+    transactions.forEach((tx) => {
+      if (!tx.barber_id) return;
+      const dateKey = formatInTimeZone(new Date(tx.created_at), TIMEZONE, "yyyy-MM-dd");
+      const key = `${tx.barber_id}|${dateKey}`;
+      const current = map.get(key) || 0;
+      map.set(key, current + (Number(tx.commission_amount) || 0));
+    });
+
+    return map;
+  }, [transactions]);
+
+  const getProductionCommission = useCallback((production: DailyProduction) => {
+    const storedCommission = Number(production.commission_earned) || 0;
+    if (storedCommission > 0) return storedCommission;
+
+    const txByProduction = transactionCommissionByProductionId.get(production.id) || 0;
+    if (txByProduction > 0) return Number(txByProduction.toFixed(2));
+
+    const byBarberDateKey = `${production.barber_id}|${production.date}`;
+    const txByBarberDate = transactionCommissionByBarberDate.get(byBarberDateKey) || 0;
+    if (txByBarberDate > 0) return Number(txByBarberDate.toFixed(2));
+
+    const servicesTotal = (Number(production.tx_basic_total) || Number(production.services_basic_total) || Number(production.services_total) || 0) +
+      (Number(production.tx_extra_total) || Number(production.services_extra_total) || 0);
+    const productsTotal = Number(production.tx_products_total) || Number(production.products_total) || 0;
+
+    const hasSales = servicesTotal > 0 || productsTotal > 0;
+    if (!hasSales) return 0;
+
+    const servicesRate = Number(production.barbers?.services_commission ?? 50);
+    const productsRate = Number(production.barbers?.products_commission ?? 0);
+
+    const calculated = (servicesTotal * servicesRate) / 100 + (productsTotal * productsRate) / 100;
+    return Number(calculated.toFixed(2));
+  }, [transactionCommissionByProductionId, transactionCommissionByBarberDate]);
+
   const barberPerformanceRows = useMemo<BarberPerformanceRow[]>(() => {
     const barberStats = new Map<string, Omit<BarberPerformanceRow, "id" | "totalRevenue">>();
 
@@ -341,7 +422,7 @@ export default function ManagerReports() {
         stats.productsTotal += Number(production.products_total) || 0;
       }
 
-      stats.commissionTotal += Number(production.commission_earned);
+      stats.commissionTotal += getProductionCommission(production);
       stats.clientsTotal += Number(production.clients_count);
     });
 
@@ -352,7 +433,7 @@ export default function ManagerReports() {
         totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [productions]);
+  }, [productions, getProductionCommission]);
 
   return (
     <div className="space-y-6">
@@ -592,7 +673,7 @@ export default function ManagerReports() {
                       <TableCell className="text-right">{production.products_count}</TableCell>
                       <TableCell className="text-right">{production.clients_count}</TableCell>
                       <TableCell className="text-right">
-                        R$ {Number(production.commission_earned).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {getProductionCommission(production).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-center gap-2">
