@@ -529,8 +529,8 @@ export default function QuickSaleModal({
     setIsResolvingSubscription(true);
 
     try {
-      const { data, error } = await (supabase
-        .from("clients") as any)
+      const { data, error } = await supabase
+        .from("clients")
         .select("subscription_plan_id")
         .eq("organization_id", organizationId)
         .eq("mobile_phone", phoneDigitsToLookup)
@@ -619,8 +619,8 @@ export default function QuickSaleModal({
       throw new Error("Selecione a assinatura do cliente para continuar.");
     }
 
-    const { error } = await (supabase
-      .from("clients") as any)
+    const { error } = await supabase
+      .from("clients")
       .update({ subscription_plan_id: selectedSubscriptionPlanId })
       .eq("organization_id", organizationId)
       .eq("mobile_phone", mobilePhoneSanitized);
@@ -668,7 +668,7 @@ export default function QuickSaleModal({
         toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
       }
 
-      // Look up or create daily_production
+      // Look up existing daily_production (do NOT create one)
       let productionId: string | null = null;
       
       if (!isReceptionSale) {
@@ -788,8 +788,7 @@ export default function QuickSaleModal({
         toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
       }
 
-      // Buscar ou criar daily_production
-      let productionId: string | null = null;
+      // Buscar daily_production existente (sem criar)
       const { data: existingProduction } = await supabase
         .from("daily_productions")
         .select("id")

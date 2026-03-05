@@ -11,6 +11,7 @@ import {
   Radio,
   BarChart3,
   Users,
+  UserCircle,
   Building2,
   Target,
   Package,
@@ -62,7 +63,7 @@ export default function ManagerNavigation({
 
   const gestaoItems: NavItem[] = [
     { id: "barbers", label: "Barbeiros", icon: Users },
-    { id: "clients", label: "Clientes", icon: UserRound },
+    { id: "clients", label: "Clientes", icon: UserCircle },
     { id: "units", label: "Unidades", icon: Building2 },
     { id: "goals", label: "Metas", icon: Target },
   ];
