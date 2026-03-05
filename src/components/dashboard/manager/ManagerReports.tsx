@@ -64,6 +64,14 @@ interface BarberPerformanceRow {
   totalRevenue: number;
 }
 
+interface ClientCountTransaction {
+  daily_production_id: string | null;
+  source: string | null;
+  created_at: string;
+  client_name: string | null;
+  mobile_phone: string | null;
+}
+
 export default function ManagerReports() {
   const { organizationId } = useOrganization();
   const [stats, setStats] = useState({
@@ -90,6 +98,77 @@ export default function ManagerReports() {
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
+  const [productionClientCounts, setProductionClientCounts] = useState<Map<string, number>>(new Map());
+
+  const getProductionTotals = useCallback((production: DailyProduction) => {
+    const manualBasic = Number(production.manual_basic_total ?? 0);
+    const manualExtra = Number(production.manual_extra_total ?? 0);
+    const manualProducts = Number(production.manual_products_total ?? 0);
+    const txBasic = Number(production.tx_basic_total ?? 0);
+    const txExtra = Number(production.tx_extra_total ?? 0);
+    const txProducts = Number(production.tx_products_total ?? 0);
+    const legacyBasic = Number(production.services_basic_total ?? production.services_total ?? 0);
+    const legacyExtra = Number(production.services_extra_total ?? 0);
+    const legacyProducts = Number(production.products_total ?? 0);
+
+    const hasManual = manualBasic + manualExtra + manualProducts > 0;
+    const hasTx = txBasic + txExtra + txProducts > 0;
+
+    if (hasManual) {
+      return { basic: manualBasic, extra: manualExtra, products: manualProducts };
+    }
+
+    if (hasTx) {
+      return { basic: txBasic, extra: txExtra, products: txProducts };
+    }
+
+    return { basic: legacyBasic, extra: legacyExtra, products: legacyProducts };
+  }, []);
+
+  const getEffectiveCommission = useCallback((production: DailyProduction) => {
+    const savedCommission = Number(production.commission_earned) || 0;
+    if (savedCommission > 0) {
+      return savedCommission;
+    }
+
+    const { basic, extra, products } = getProductionTotals(production);
+    const totalRevenue = basic + extra + products;
+    if (totalRevenue <= 0) {
+      return 0;
+    }
+
+    const servicesRate = Number(production.barbers?.services_commission ?? 0) / 100;
+    const productsRate = Number(production.barbers?.products_commission ?? 0) / 100;
+
+    return ((basic + extra) * servicesRate) + (products * productsRate);
+  }, [getProductionTotals]);
+
+  const buildClientCountMap = useCallback((transactions: ClientCountTransaction[]) => {
+    const grouped = new Map<string, Set<string>>();
+
+    transactions.forEach((tx) => {
+      if (!tx.daily_production_id) return;
+
+      const checkoutIdentity = [
+        tx.source || "unknown",
+        tx.mobile_phone || tx.client_name || "sem-cliente",
+        tx.created_at,
+      ].join("|");
+
+      if (!grouped.has(tx.daily_production_id)) {
+        grouped.set(tx.daily_production_id, new Set());
+      }
+
+      grouped.get(tx.daily_production_id)?.add(checkoutIdentity);
+    });
+
+    return new Map(Array.from(grouped.entries()).map(([id, keys]) => [id, keys.size]));
+  }, []);
+
+  const getProductionClientsCount = useCallback((production: DailyProduction) => {
+    const txCount = productionClientCounts.get(production.id) || 0;
+    return txCount > 0 ? txCount : Number(production.clients_count) || 0;
+  }, [productionClientCounts]);
 
   const getProductionTotals = useCallback((production: DailyProduction) => {
     const manualBasic = Number(production.manual_basic_total ?? 0);
@@ -151,7 +230,7 @@ export default function ManagerReports() {
 
     let commissionsQuery = supabase
       .from("daily_productions")
-      .select("barber_id, commission_earned, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, barbers!inner(id, unit_id, services_commission, products_commission)")
+      .select("id, barber_id, commission_earned, clients_count, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, barbers!inner(id, unit_id, services_commission, products_commission)")
       .gte("date", startDate)
       .lte("date", endDate);
 
@@ -195,11 +274,26 @@ export default function ManagerReports() {
       console.error("Erro RPC get_manager_report_stats:", rpcRes.error);
     }
 
+    const safeCommissions = (commissionsRes.data || []) as DailyProduction[];
+    const commissionProductionIds = safeCommissions.map((p) => p.id).filter(Boolean);
+
+    let commissionClientMap = new Map<string, number>();
+    if (commissionProductionIds.length > 0) {
+      const { data: txData } = await supabase
+        .from("sale_transactions")
+        .select("daily_production_id, source, created_at, client_name, mobile_phone")
+        .in("daily_production_id", commissionProductionIds);
+
+      commissionClientMap = buildClientCountMap((txData || []) as ClientCountTransaction[]);
+    }
+
     const rpcRow = rpcRes.data?.[0];
     const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
-    const totalClients = Number(rpcRow?.total_clients ?? 0);
+    const totalClients = safeCommissions.reduce((sum, production) => {
+      const txCount = commissionClientMap.get(production.id) || 0;
+      return sum + (txCount > 0 ? txCount : Number(production.clients_count) || 0);
+    }, 0);
 
-    const safeCommissions = (commissionsRes.data || []) as DailyProduction[];
     const totalCommission = safeCommissions.reduce(
       (sum, production) => sum + getEffectiveCommission(production),
       0,
@@ -229,7 +323,7 @@ export default function ManagerReports() {
       goalsAchieved,
       totalBarbers: barbersRes.data?.length || 0,
     });
-  }, [dateRange, getEffectiveCommission, selectedBarber, selectedUnit]);
+  }, [buildClientCountMap, dateRange, getEffectiveCommission, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
@@ -278,9 +372,23 @@ export default function ManagerReports() {
 
     const { data } = await query;
     if (data) {
-      setProductions((data ?? []) as DailyProduction[]);
+      const typedProductions = (data ?? []) as DailyProduction[];
+      setProductions(typedProductions);
+
+      const productionIds = typedProductions.map((p) => p.id);
+      if (productionIds.length === 0) {
+        setProductionClientCounts(new Map());
+        return;
+      }
+
+      const { data: txData } = await supabase
+        .from("sale_transactions")
+        .select("daily_production_id, source, created_at, client_name, mobile_phone")
+        .in("daily_production_id", productionIds);
+
+      setProductionClientCounts(buildClientCountMap((txData || []) as ClientCountTransaction[]));
     }
-  }, [dateRange, selectedBarber, selectedUnit]);
+  }, [buildClientCountMap, dateRange, selectedBarber, selectedUnit]);
 
   useEffect(() => {
     fetchUnits();
@@ -372,7 +480,7 @@ export default function ManagerReports() {
       stats.servicesExtraTotal += totals.extra;
       stats.productsTotal += totals.products;
       stats.commissionTotal += getEffectiveCommission(production);
-      stats.clientsTotal += Number(production.clients_count);
+      stats.clientsTotal += getProductionClientsCount(production);
     });
 
     return Array.from(barberStats.entries())
@@ -382,7 +490,7 @@ export default function ManagerReports() {
         totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [productions, getEffectiveCommission, getProductionTotals]);
+  }, [productions, getEffectiveCommission, getProductionClientsCount, getProductionTotals]);
 
   return (
     <div className="space-y-6">
@@ -629,7 +737,7 @@ export default function ManagerReports() {
                       </TableCell>
                       <TableCell className="text-right">{production.services_count}</TableCell>
                       <TableCell className="text-right">{production.products_count}</TableCell>
-                      <TableCell className="text-right">{production.clients_count}</TableCell>
+                      <TableCell className="text-right">{getProductionClientsCount(production)}</TableCell>
                       <TableCell className="text-right">
                         R$ {getEffectiveCommission(production).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
