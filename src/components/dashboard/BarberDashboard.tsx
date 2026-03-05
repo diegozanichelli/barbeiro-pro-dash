@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2 } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
@@ -69,6 +69,31 @@ interface MonthlyStats {
   products_conversion: number;
 }
 
+interface LastDaysProduction {
+  id: string;
+  date: string;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  services_total: number | null;
+  products_total: number | null;
+  confirmed_presence: boolean | null;
+}
+
+interface LiveSale {
+  id: string;
+  created_at: string;
+  client_name: string | null;
+  item_name: string;
+  item_type: string;
+  price_sold: number;
+}
+
+interface LiveTodayBreakdown {
+  services: number;
+  products: number;
+  total: number;
+}
+
 export default function BarberDashboard({ user }: BarberDashboardProps) {
   const navigate = useNavigate();
   const { hasSubscriptionModule } = useSubscriptionModule();
@@ -99,6 +124,9 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("daily");
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
+  const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
+  const [liveTodayBreakdown, setLiveTodayBreakdown] = useState<LiveTodayBreakdown>({ services: 0, products: 0, total: 0 });
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -452,6 +480,101 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
+  const fetchLivePanelData = useCallback(async () => {
+    if (!barber) return;
+
+    const todayStr = getTodayString();
+
+    const [daysResponse, salesResponse, todayResponse] = await Promise.all([
+      supabase
+        .from("daily_productions")
+        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
+        .eq("barber_id", barber.id)
+        .lte("date", todayStr)
+        .order("date", { ascending: false })
+        .limit(3),
+      supabase
+        .from("sale_transactions")
+        .select("id, created_at, client_name, item_name, item_type, price_sold")
+        .eq("barber_id", barber.id)
+        .gte("created_at", `${todayStr}T00:00:00-04:00`)
+        .lte("created_at", `${todayStr}T23:59:59-04:00`)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("daily_productions")
+        .select("services_basic_total, services_extra_total, services_total, products_total")
+        .eq("barber_id", barber.id)
+        .eq("date", todayStr)
+        .maybeSingle(),
+    ]);
+
+    if (!daysResponse.error) {
+      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
+    }
+
+    if (!salesResponse.error) {
+      setLiveSales((salesResponse.data || []) as LiveSale[]);
+    }
+
+    if (!todayResponse.error) {
+      const todayData = todayResponse.data;
+      const hasSplitServices = (todayData?.services_basic_total ?? null) !== null || (todayData?.services_extra_total ?? null) !== null;
+      const services = hasSplitServices
+        ? (Number(todayData?.services_basic_total) || 0) + (Number(todayData?.services_extra_total) || 0)
+        : (Number(todayData?.services_total) || 0);
+      const products = Number(todayData?.products_total) || 0;
+      setLiveTodayBreakdown({
+        services,
+        products,
+        total: services + products,
+      });
+    }
+  }, [barber]);
+
+  useEffect(() => {
+    fetchLivePanelData();
+  }, [fetchLivePanelData]);
+  useEffect(() => {
+    if (!barber) return;
+
+    const liveDailyChannel = supabase
+      .channel(`barber-live-daily-${barber.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "daily_productions",
+          filter: `barber_id=eq.${barber.id}`,
+        },
+        () => {
+          fetchLivePanelData();
+        }
+      )
+      .subscribe();
+
+    const liveSalesChannel = supabase
+      .channel(`barber-live-sales-${barber.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sale_transactions",
+          filter: `barber_id=eq.${barber.id}`,
+        },
+        () => {
+          fetchLivePanelData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(liveDailyChannel);
+      supabase.removeChannel(liveSalesChannel);
+    };
+  }, [barber, fetchLivePanelData]);
+
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -492,6 +615,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     // Forçar recálculo de TODOS os dados
     fetchMonthlyStats();
     fetchMonthlyGoal();
+    fetchLivePanelData();
   };
 
   const handleOpenPresenceModal = () => {
@@ -612,6 +736,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     
     // Recarregar estatísticas para refletir o novo cálculo
     fetchMonthlyStats();
+    fetchLivePanelData();
   };
 
   if (missingLink) {
@@ -777,8 +902,12 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
+            <TabsTrigger value="live" className="flex items-center gap-1">
+              <Radio className="w-3 h-3" />
+              Ao vivo
+            </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
             <TabsTrigger value="ai-tips" className="flex items-center gap-1">
@@ -883,23 +1012,43 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
               </Card>
             )}
 
-            {/* Card de Faturamento de Hoje com Confirmação de Presença */}
+            {/* Histórico dos últimos 3 dias lançados */}
             {isCurrentMonth && todayProduction !== null && (
               <Card className="bg-card border-border shadow-card-custom">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <DollarSign className="w-5 h-5 text-primary" />
-                    MEU FATURAMENTO HOJE
+                    HISTÓRICO DOS ÚLTIMOS 3 DIAS
                   </CardTitle>
                   <CardDescription>
-                    {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                    Acompanhe seus últimos lançamentos e a confirmação de presença
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="text-center">
-                    <p className="text-4xl font-bold text-foreground">
-                      R$ {todayProduction.total.toFixed(2)}
-                    </p>
+                  <div className="space-y-3">
+                    {last3DaysProduction.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
+                    )}
+                    {last3DaysProduction.map((day) => {
+                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
+                      const services = hasSplitServices
+                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
+                        : (Number(day.services_total) || 0);
+                      const products = Number(day.products_total) || 0;
+                      const total = services + products;
+
+                      return (
+                        <div key={day.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {day.confirmed_presence ? "Presença confirmada" : "Sem confirmação de presença"}
+                            </p>
+                          </div>
+                          <p className="text-lg font-bold">R$ {total.toFixed(2)}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                   
                   {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
@@ -1065,6 +1214,68 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                         : "Sem confirmação ainda"
                       : "Sem dados para hoje"}
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="live" className="space-y-6">
+            <Card className="bg-card border-border shadow-card-custom">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-primary" />
+                  AO VIVO - SUA PRODUÇÃO DE HOJE
+                </CardTitle>
+                <CardDescription>
+                  Painel somente leitura com meta diária, progresso e vendas realizadas.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Produção de hoje</p>
+                    <p className="text-2xl font-bold">R$ {liveTodayBreakdown.total.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Meta diária (comissão)</p>
+                    <p className="text-2xl font-bold">R$ {dailyTarget.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Meta diária (serviços)</p>
+                    <p className="text-2xl font-bold">R$ {dailyTargetServices.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Serviços hoje</p>
+                    <p className="text-xl font-bold">R$ {liveTodayBreakdown.services.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Produtos hoje</p>
+                    <p className="text-xl font-bold">R$ {liveTodayBreakdown.products.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">O que e para quem você já vendeu hoje</h3>
+                  {liveSales.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma venda registrada até o momento.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {liveSales.map((sale) => (
+                        <div key={sale.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{sale.client_name?.trim() || "Cliente não informado"}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {sale.item_name} ({sale.item_type}) • {format(new Date(sale.created_at), "HH:mm")}
+                            </p>
+                          </div>
+                          <p className="font-bold">R$ {Number(sale.price_sold || 0).toFixed(2)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
