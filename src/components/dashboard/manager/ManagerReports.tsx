@@ -149,21 +149,9 @@ export default function ManagerReports() {
     if (selectedUnit !== "all") rpcParams.p_unit_id = selectedUnit;
     if (selectedBarber !== "all") rpcParams.p_barber_id = selectedBarber;
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_manager_report_stats", rpcParams);
-
-    if (rpcError) {
-      console.error("Erro RPC get_manager_report_stats:", rpcError);
-    }
-
-    const rpcRow = rpcData?.[0];
-    const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
-    const totalClients = Number(rpcRow?.total_clients ?? 0);
-    const totalCommissionFromRpc = Number(rpcRow?.total_commission ?? 0);
-
-    // Buscar comissões por barbeiro para cálculo de metas batidas
     let commissionsQuery = supabase
       .from("daily_productions")
-      .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
+      .select("barber_id, commission_earned, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, barbers!inner(id, unit_id, services_commission, products_commission)")
       .gte("date", startDate)
       .lte("date", endDate);
 
@@ -175,8 +163,6 @@ export default function ManagerReports() {
       commissionsQuery = commissionsQuery.eq("barber_id", selectedBarber);
     }
 
-    const { data: commissionRows } = await commissionsQuery;
-
     // Buscar barbeiros ativos
     let barbersQuery = supabase
       .from("barbers")
@@ -186,8 +172,6 @@ export default function ManagerReports() {
     if (selectedUnit !== "all") {
       barbersQuery = barbersQuery.eq("unit_id", selectedUnit);
     }
-
-    const { data: barbersData } = await barbersQuery;
 
     // Buscar metas do mês
     let goalsQuery = supabase
@@ -200,24 +184,36 @@ export default function ManagerReports() {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
     }
 
-    const { data: goals } = await goalsQuery;
+    const [rpcRes, commissionsRes, barbersRes, goalsRes] = await Promise.all([
+      supabase.rpc("get_manager_report_stats", rpcParams),
+      commissionsQuery,
+      barbersQuery,
+      goalsQuery,
+    ]);
 
-    interface CommissionRow {
-      barber_id: string;
-      commission_earned: number | null;
+    if (rpcRes.error) {
+      console.error("Erro RPC get_manager_report_stats:", rpcRes.error);
     }
 
-    const safeCommissions = (commissionRows || []) as CommissionRow[];
+    const rpcRow = rpcRes.data?.[0];
+    const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
+    const totalClients = Number(rpcRow?.total_clients ?? 0);
+
+    const safeCommissions = (commissionsRes.data || []) as DailyProduction[];
+    const totalCommission = safeCommissions.reduce(
+      (sum, production) => sum + getEffectiveCommission(production),
+      0,
+    );
 
     const barberCommissions = new Map<string, number>();
     safeCommissions.forEach((row) => {
       const current = barberCommissions.get(row.barber_id) || 0;
-      barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
+      barberCommissions.set(row.barber_id, current + getEffectiveCommission(row));
     });
 
     let goalsAchieved = 0;
-    if (goals) {
-      goals.forEach((goal) => {
+    if (goalsRes.data) {
+      goalsRes.data.forEach((goal) => {
         const earned = barberCommissions.get(goal.barber_id) || 0;
         if (earned >= goal.target_commission) {
           goalsAchieved++;
@@ -227,13 +223,13 @@ export default function ManagerReports() {
 
     setStats({
       totalRevenue,
-      totalCommission: totalCommissionFromRpc,
+      totalCommission,
       totalClients,
       averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
       goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
+      totalBarbers: barbersRes.data?.length || 0,
     });
-  }, [dateRange, selectedBarber, selectedUnit]);
+  }, [dateRange, getEffectiveCommission, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
