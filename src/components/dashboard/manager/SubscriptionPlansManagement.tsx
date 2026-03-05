@@ -79,6 +79,7 @@ export default function SubscriptionPlansManagement() {
 
     if (error) {
       console.error("Erro ao carregar vínculos de planos:", error);
+      toast.error("Erro ao carregar serviços dos planos");
       return;
     }
 
@@ -96,49 +97,55 @@ export default function SubscriptionPlansManagement() {
 
     let planId = editingPlan?.id;
 
-    if (editingPlan) {
-      const { error } = await supabase
-        .from("subscription_plans")
-        .update({ name, price })
-        .eq("id", editingPlan.id);
-      if (error) throw error;
-      toast.success("Plano atualizado!");
-    } else {
-      const { data: insertedPlan, error } = await supabase
-        .from("subscription_plans")
-        .insert({ name, price, organization_id: organizationId })
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (insertedPlan?.id) planId = insertedPlan.id;
-      toast.success("Plano criado!");
-    }
-
-    if (planId) {
-      const { error: deleteError } = await supabase
-        .from("subscription_plan_services")
-        .delete()
-        .eq("subscription_plan_id", planId);
-
-      if (deleteError) throw deleteError;
-
-      if (serviceIds.length > 0) {
-        const payload = serviceIds.map((serviceId) => ({
-          organization_id: organizationId,
-          subscription_plan_id: planId,
-          catalog_service_id: serviceId,
-        }));
-
-        const { error: insertError } = await supabase
-          .from("subscription_plan_services")
-          .insert(payload);
-
-        if (insertError) throw insertError;
+    try {
+      if (editingPlan) {
+        const { error } = await supabase
+          .from("subscription_plans")
+          .update({ name, price })
+          .eq("id", editingPlan.id);
+        if (error) throw error;
+      } else {
+        const { data: insertedPlan, error } = await supabase
+          .from("subscription_plans")
+          .insert({ name, price, organization_id: organizationId })
+          .select("id")
+          .single();
+        if (error) throw error;
+        if (insertedPlan?.id) planId = insertedPlan.id;
       }
-    }
 
-    fetchPlans();
-    fetchPlanServiceLinks();
+      if (planId) {
+        const { error: deleteError } = await supabase
+          .from("subscription_plan_services")
+          .delete()
+          .eq("subscription_plan_id", planId)
+          .eq("organization_id", organizationId);
+
+        if (deleteError) throw deleteError;
+
+        if (serviceIds.length > 0) {
+          const payload = serviceIds.map((serviceId) => ({
+            organization_id: organizationId,
+            subscription_plan_id: planId,
+            catalog_service_id: serviceId,
+          }));
+
+          const { error: insertError } = await supabase
+            .from("subscription_plan_services")
+            .insert(payload);
+
+          if (insertError) throw insertError;
+        }
+      }
+
+      await fetchPlans();
+      await fetchPlanServiceLinks();
+      toast.success(editingPlan ? "Plano atualizado!" : "Plano criado!");
+    } catch (error: any) {
+      console.error("Erro ao salvar plano:", error);
+      toast.error(error?.message || "Erro ao salvar plano e serviços");
+      throw error;
+    }
   };
 
   const handleToggleActive = async (plan: SubscriptionPlan) => {
@@ -160,7 +167,22 @@ export default function SubscriptionPlansManagement() {
     setModalOpen(true);
   };
 
-  const openEdit = (plan: SubscriptionPlan) => {
+  const openEdit = async (plan: SubscriptionPlan) => {
+    if (organizationId) {
+      const { data, error } = await supabase
+        .from("subscription_plan_services")
+        .select("catalog_service_id")
+        .eq("organization_id", organizationId)
+        .eq("subscription_plan_id", plan.id);
+
+      if (!error) {
+        setPlanServiceIds((prev) => ({
+          ...prev,
+          [plan.id]: (data || []).map((row) => row.catalog_service_id),
+        }));
+      }
+    }
+
     setEditingPlan(plan);
     setModalOpen(true);
   };
