@@ -44,8 +44,8 @@ export default function PendingDayReviews({ barberId, onReview }: PendingDayRevi
         .select("created_at, price_sold")
         .eq("barber_id", barberId)
         .eq("source", "manager")
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${today}T23:59:59`);
+        .gte("created_at", `${startDate}T00:00:00-04:00`)
+        .lte("created_at", `${today}T23:59:59-04:00`);
 
       if (!transactions || transactions.length === 0) {
         setPendingDays([]);
