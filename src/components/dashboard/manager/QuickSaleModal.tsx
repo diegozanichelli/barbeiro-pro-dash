@@ -355,11 +355,17 @@ export default function QuickSaleModal({
 
   // Handle manual override of client type
   const handleClientTypeChange = (value: ClientType) => {
-    setManualOverride(true);
-    setClientType(value);
-    if (value !== "with_subscription") {
-      setSelectedSubscriptionPlanId("");
-      setSubscriptionPlanAutoDetected(false);
+    try {
+      console.log("[QuickSaleModal] handleClientTypeChange:", value);
+      setManualOverride(true);
+      setClientType(value);
+      if (value !== "with_subscription") {
+        setSelectedSubscriptionPlanId("");
+        setSubscriptionPlanAutoDetected(false);
+      }
+    } catch (error) {
+      console.error("[QuickSaleModal] Erro ao mudar tipo de cliente:", error);
+      toast.error("Erro ao alterar tipo de cliente.");
     }
   };
 
