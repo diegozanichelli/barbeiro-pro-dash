@@ -653,20 +653,17 @@ export default function QuickSaleModal({
       }
 
       // Build transaction payload for RPC
-      const transactions = cart.map(item => {
-        const effectivePrice = getEffectiveItemPrice(item, item.customPrice);
-        return {
-          item_type: item.type,
-          catalog_service_id: item.type === "service" ? item.id : null,
-          catalog_product_id: item.type === "product" ? item.id : null,
-          item_name: item.name,
-          service_category: item.type === "service" ? (item.category || null) : null,
-          price_sold: effectivePrice,
-          is_new_client: clientType === "new",
-          client_name: safeClientName,
-          mobile_phone: registeredClient.mobilePhone,
-        };
-      });
+      const transactions = cart.map(item => ({
+        item_type: item.type,
+        catalog_service_id: item.type === "service" ? item.id : null,
+        catalog_product_id: item.type === "product" ? item.id : null,
+        item_name: item.name,
+        service_category: item.type === "service" ? (item.category || null) : null,
+        price_sold: item.customPrice,
+        is_new_client: clientType === "new",
+        client_name: safeClientName,
+        mobile_phone: registeredClient.mobilePhone,
+      }));
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
