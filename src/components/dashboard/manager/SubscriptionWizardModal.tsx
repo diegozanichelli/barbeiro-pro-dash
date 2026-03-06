@@ -618,7 +618,20 @@ export default function SubscriptionWizardModal({
               {isNewClient === false && (
                 <div className="space-y-3 pt-2">
                   <Label className="text-sm font-medium text-muted-foreground">Qual a ação?</Label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
+                    <Button
+                      type="button"
+                      variant={subscriptionAction === "new" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto py-3 flex flex-col items-center gap-1 text-xs",
+                        subscriptionAction === "new" && "ring-2 ring-primary ring-offset-2"
+                      )}
+                      onClick={() => handleSelectAction("new")}
+                    >
+                      <Crown className="w-5 h-5" />
+                      <span className="font-medium">Nova</span>
+                      <span className="text-[10px] text-muted-foreground">1ª assinatura</span>
+                    </Button>
                     <Button
                       type="button"
                       variant={subscriptionAction === "renew" ? "default" : "outline"}
