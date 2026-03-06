@@ -57,6 +57,11 @@ interface DailyProductionRow {
   commission_earned: number | null;
   confirmed_presence: boolean | null;
   presence_type: string | null;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
+  tx_clients_count: number | null;
+  tx_services_count: number | null;
 }
 
 interface MonthlyStats {
