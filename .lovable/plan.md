@@ -1,73 +1,44 @@
 
 
-# Plano: Lançamento Atômico via RPC + Eliminação de Hardcode de Fuso
+# Plano de Correção: Build Errors + Tabela de Feriados
 
-## Problemas Atuais
+## Problemas Identificados
 
-1. **Hardcode `-04:00`** no `created_at` das transações — frágil e quebra se houver unidades em outros fusos.
-2. **3+ chamadas ao banco** no frontend (buscar production → inserir production → inserir transações) — lento em 3G/4G e sujeito a race conditions.
-3. **`handleManualSale` ainda usa `.toISOString()`** na linha 809, contradizendo a padronização.
-4. **Trigger `link_orphan_transactions`** usa comparação de timestamp em vez de data pura.
+1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
+2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
+3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
+4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
+
+---
 
 ## Correções
 
-### 1. Criar RPC `create_sale_and_ensure_production`
+### 1. Criar tabela `organization_holidays` no banco
+Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
 
-Função PostgreSQL que recebe:
-- `p_organization_id`, `p_barber_id` (nullable para recepção), `p_date` (tipo `date`, apenas YYYY-MM-DD)
-- `p_transactions` (tipo `jsonb[]` com os itens da venda)
+### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
+Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
 
-Dentro de uma única transação SQL:
-- Faz `INSERT ... ON CONFLICT (barber_id, date) DO NOTHING` + `SELECT` para obter o `daily_production_id`
-- Insere todas as `sale_transactions` com o `daily_production_id` já vinculado
-- Retorna o `daily_production_id` criado/encontrado
+A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
 
-Isso elimina as 3 chamadas do frontend e garante atomicidade.
+### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
+Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
 
-### 2. Corrigir `link_orphan_transactions` para comparação por data pura
-
-Substituir:
-```sql
-AND created_at >= NEW.date::timestamp
-AND created_at < v_next_day::timestamp
-```
-Por:
-```sql
-AND (created_at AT TIME ZONE 'America/Manaus')::date = NEW.date
-```
-
-Isso torna o trigger independente de fuso hardcoded.
-
-### 3. Simplificar `QuickSaleModal.tsx`
-
-- **`handleCartCheckout`**: Remover toda a lógica de buscar/criar `daily_production` (linhas 626-658). Substituir por uma única chamada `supabase.rpc('create_sale_and_ensure_production', { ... })`.
-- **`handleManualSale`**: Mesma simplificação (linhas 752-781). Remover `.toISOString()` da linha 809.
-- Enviar apenas `format(selectedDate, 'yyyy-MM-dd')` como string de data — sem horário, sem fuso.
-- O `created_at` das transações será definido pelo banco (`DEFAULT now()` ou data pura + `12:00:00` calculado server-side).
-
-### 4. Migração de resgate das 71 transações órfãs
-
-```sql
-UPDATE sale_transactions st
-SET daily_production_id = dp.id
-FROM daily_productions dp
-WHERE st.daily_production_id IS NULL
-  AND st.barber_id IS NOT NULL
-  AND st.barber_id = dp.barber_id
-  AND (st.created_at AT TIME ZONE 'America/Manaus')::date = dp.date;
-```
-
-Comparação data-por-data, sem depender de minutos/segundos.
+### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
+- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
+- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
+- Incluir `goalsAchieved` no `setStats` ao final do callback
 
 ---
 
 ## Detalhes Técnicos
 
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Criar RPC `create_sale_and_ensure_production` |
-| **Migration SQL** | Corrigir trigger `link_orphan_transactions` (data pura) |
-| **Migration SQL** | Vincular transações órfãs existentes |
-| **QuickSaleModal.tsx** | Substituir lógica de upsert por chamada RPC única |
-| **QuickSaleModal.tsx** | Remover hardcode `-04:00` e `.toISOString()` |
+| Arquivo | Erro | Correção |
+|---------|------|----------|
+| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
+| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
+| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
+| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
+| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
+| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
 
