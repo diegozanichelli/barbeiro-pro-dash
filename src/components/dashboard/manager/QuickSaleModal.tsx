@@ -225,6 +225,7 @@ export default function QuickSaleModal({
   useEffect(() => {
     if (open && organizationId) {
       fetchCatalog();
+      fetchSubscriptionPlans();
     }
   }, [open, organizationId, barberId, fetchCatalog]);
 
