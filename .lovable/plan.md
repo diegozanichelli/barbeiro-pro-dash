@@ -1,44 +1,40 @@
 
 
-# Plano de Correção: Build Errors + Tabela de Feriados
+# Plano: Corrigir Dashboard Zerado — Eliminar View Inexistente
 
-## Problemas Identificados
+## Diagnóstico
 
-1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
-2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
-3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
-4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
+O problema **não é** o `selectedMonth` nem o `fetchMonthlyGoal`. Os logs de console mostram claramente:
 
----
+```
+Could not find the table 'public.v_consolidated_daily_production' in the schema cache
+```
 
-## Correções
+A função `fetchMonthlyStats` (linha 213) faz uma query à view `v_consolidated_daily_production` que **não existe no banco**. Como essa view é a fonte de dados para `totalClients`, `totalServicesCount`, `totalRevenue`, e `todayProduction.total`, tudo retorna zero — resultando no dashboard zerado e "META DIÁRIA: N/A".
 
-### 1. Criar tabela `organization_holidays` no banco
-Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
+A query a `daily_productions` funciona (sem erro), mas os dados dela são usados apenas parcialmente (comissão acumulada, dias trabalhados). Os dados visuais principais vêm da view quebrada.
 
-### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
-Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
+A memória do projeto (`architecture/data-source-reliability`) confirma: **views devem ser evitadas**; usar diretamente `daily_productions`.
 
-A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
+## Correção
 
-### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
-Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
+### Arquivo: `src/components/dashboard/BarberDashboard.tsx`
 
-### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
-- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
-- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
-- Incluir `goalsAchieved` no `setStats` ao final do callback
+**Remover a query à view `v_consolidated_daily_production`** e calcular todos os campos consolidados diretamente da query `daily_productions` que já funciona.
 
----
+Campos a calcular a partir de `daily_productions`:
+- `consolidated_basic_total` → prioridade `tx_basic_total` > `services_basic_total` > 0
+- `consolidated_extra_total` → prioridade `tx_extra_total` > `services_extra_total` > 0  
+- `consolidated_products_total` → prioridade `tx_products_total` > `products_total` > 0
+- `total_revenue` → soma dos três acima
+- `total_clients` → `clients_count`
+- `total_services` → `services_count`
 
-## Detalhes Técnicos
-
-| Arquivo | Erro | Correção |
-|---------|------|----------|
-| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
-| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
-| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
-| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
-| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
-| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
+Mudanças específicas:
+1. Remover a segunda query do `Promise.all` (linhas 220-225) — a view inexistente
+2. Remover os logs de erro/debug da view (linhas 231-238)
+3. Remover a interface `ConsolidatedRow` (linhas 257-268)
+4. Recalcular `totalClients`, `totalServicesCount`, `totalServicesRevenue`, `totalProductsRevenue`, `totalRevenue` usando os dados de `typedProductions` com a lógica de prioridade tx > manual > legado (mesmo padrão da RPC `get_manager_report_stats`)
+5. Ajustar `todayProduction.total` para usar cálculo direto em vez da view
+6. Adicionar o log de diagnóstico solicitado no `fetchMonthlyGoal`
 
