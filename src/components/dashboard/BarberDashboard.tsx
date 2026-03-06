@@ -119,6 +119,8 @@ const [todayProduction, setTodayProduction] = useState<{
   
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
+  const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
+  const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
