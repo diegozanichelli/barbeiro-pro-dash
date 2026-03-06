@@ -185,6 +185,14 @@ export default function QuickSaleModal({
   });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
+  // Sync date when modal opens with initialDate
+  useEffect(() => {
+    if (open && initialDate) {
+      const [y, m, d] = initialDate.split("-").map(Number);
+      setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
+    }
+  }, [open, initialDate]);
+
   // Fetch catalog items
   useEffect(() => {
     if (open && organizationId) {
