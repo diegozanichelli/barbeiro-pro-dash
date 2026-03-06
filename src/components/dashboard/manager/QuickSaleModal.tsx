@@ -658,7 +658,8 @@ export default function QuickSaleModal({
         is_new_client: clientType === "new",
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
-        created_at: selectedDate.toISOString(),
+        source: "manager",
+        created_at: `${dateStr}T12:00:00-04:00`,
       }});
 
       const { error } = await supabase.from("sale_transactions").insert(transactions as any);
