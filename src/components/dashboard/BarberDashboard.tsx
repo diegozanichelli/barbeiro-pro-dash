@@ -1224,7 +1224,7 @@ const [todayProduction, setTodayProduction] = useState<{
             open={showWarPlanWizard}
             onOpenChange={setShowWarPlanWizard}
             organizationId={barber.organization_id}
-            dailyTarget={dailyTarget}
+            dailyTarget={dailyTargetServices > 0 ? dailyTargetServices : dailyTarget}
             todayRevenue={todayProduction?.total || 0}
             onComplete={handleWarPlanComplete}
           />
