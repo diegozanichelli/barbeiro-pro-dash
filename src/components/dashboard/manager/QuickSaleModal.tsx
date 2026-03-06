@@ -747,7 +747,7 @@ export default function QuickSaleModal({
             itemType,
             amount: effectiveManualPrice,
             quantity: 1,
-            purchasedAt: selectedDate.toISOString(),
+            purchasedAt: `${dateStr}T12:00:00`,
           },
         ],
       });
