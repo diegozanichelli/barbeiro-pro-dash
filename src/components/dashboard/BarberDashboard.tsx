@@ -210,32 +210,12 @@ const [todayProduction, setTodayProduction] = useState<{
     const startDate = format(firstDay, "yyyy-MM-dd");
     const endDate = format(lastDay, "yyyy-MM-dd");
 
-    const [productionsResult, consolidatedResult] = await Promise.all([
-      supabase
-        .from("daily_productions")
-        .select("*")
-        .eq("barber_id", barber.id)
-        .gte("date", startDate)
-        .lte("date", endDate),
-      (supabase as any)
-        .from("v_consolidated_daily_production")
-        .select("date, consolidated_basic_total, consolidated_extra_total, consolidated_products_total, total_revenue, total_clients, total_services")
-        .eq("barber_id", barber.id)
-        .gte("date", startDate)
-        .lte("date", endDate),
-    ]);
-
-    const { data: productions, error: productionsError } = productionsResult;
-    const { data: consolidatedData, error: consolidatedError } = consolidatedResult;
-
-    if (consolidatedError) {
-      console.error("ERRO DA VIEW:", consolidatedError, { barberId: barber.id, startDate, endDate });
-    } else {
-      console.log("DADOS DA VIEW:", consolidatedData, { barberId: barber.id, startDate, endDate });
-      if ((consolidatedData || []).length === 0) {
-        console.log("DADOS DA VIEW: retorno vazio - conferir filtros de data", { startDate, endDate, selectedMonth, selectedYear });
-      }
-    }
+    const { data: productions, error: productionsError } = await supabase
+      .from("daily_productions")
+      .select("*")
+      .eq("barber_id", barber.id)
+      .gte("date", startDate)
+      .lte("date", endDate);
 
     if (productionsError) {
       console.error("Erro ao buscar daily_productions:", productionsError);
@@ -254,31 +234,44 @@ const [todayProduction, setTodayProduction] = useState<{
       return;
     }
 
-    interface ConsolidatedRow {
-      date: string;
-      consolidated_basic_total: number | null;
-      consolidated_extra_total: number | null;
-      consolidated_products_total: number | null;
-      total_revenue?: number | null;
-      totalRevenue?: number | null;
-      total_clients?: number | null;
-      totalClients?: number | null;
-      total_services?: number | null;
-      totalServices?: number | null;
-    }
-
     const typedProductions = (productions || []) as DailyProductionRow[];
-    const typedConsolidated = (consolidatedData || []) as unknown as ConsolidatedRow[];
 
-    const totalClients = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_clients ?? row.totalClients ?? 0) || 0), 0);
-    const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_services ?? row.totalServices ?? 0) || 0), 0);
+    // Calcular consolidados diretamente de daily_productions
+    // Prioridade: tx (gestor) > manual (barbeiro) > legado
+    const getConsolidated = (p: DailyProductionRow) => {
+      const txTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
+      if (txTotal > 0) {
+        return {
+          basic: Number(p.tx_basic_total) || 0,
+          extra: Number(p.tx_extra_total) || 0,
+          products: Number(p.tx_products_total) || 0,
+          clients: Number(p.tx_clients_count) || 0,
+          services: Number(p.tx_services_count) || 0,
+        };
+      }
+      if (p.services_basic_total != null || p.services_extra_total != null) {
+        return {
+          basic: Number(p.services_basic_total) || 0,
+          extra: Number(p.services_extra_total) || 0,
+          products: Number(p.products_total) || 0,
+          clients: Number(p.clients_count) || 0,
+          services: Number(p.services_count) || 0,
+        };
+      }
+      return {
+        basic: Number(p.services_total) || 0,
+        extra: 0,
+        products: Number(p.products_total) || 0,
+        clients: Number(p.clients_count) || 0,
+        services: Number(p.services_count) || 0,
+      };
+    };
 
-    const totalServicesRevenue = typedConsolidated.reduce(
-      (sum, row) => sum + (Number(row.consolidated_basic_total) || 0) + (Number(row.consolidated_extra_total) || 0),
-      0
-    );
-    const totalProductsRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.consolidated_products_total) || 0), 0);
-    const totalRevenue = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_revenue ?? row.totalRevenue ?? 0) || 0), 0);
+    const totalClients = typedProductions.reduce((sum, p) => sum + getConsolidated(p).clients, 0);
+    const totalServicesCount = typedProductions.reduce((sum, p) => sum + getConsolidated(p).services, 0);
+    const totalServicesRevenue = typedProductions.reduce((sum, p) => { const c = getConsolidated(p); return sum + c.basic + c.extra; }, 0);
+    const totalProductsRevenue = typedProductions.reduce((sum, p) => sum + getConsolidated(p).products, 0);
+    const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
     const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
 
