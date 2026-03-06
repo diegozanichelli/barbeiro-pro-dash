@@ -174,8 +174,15 @@ export default function QuickSaleModal({
     enabled: open,
   });
 
-  // Date picker state
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Date picker state - use initialDate from LiveDashboard if provided
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    if (initialDate) {
+      // Parse yyyy-MM-dd as local date
+      const [y, m, d] = initialDate.split("-").map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0);
+    }
+    return new Date();
+  });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   // Fetch catalog items
