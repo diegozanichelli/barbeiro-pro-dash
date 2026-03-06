@@ -1208,6 +1208,18 @@ const [todayProduction, setTodayProduction] = useState<{
           />
         )}
 
+        {/* War Plan Wizard */}
+        {barber && isCurrentMonth && monthlyGoal && (
+          <WarPlanWizard
+            open={showWarPlanWizard}
+            onOpenChange={setShowWarPlanWizard}
+            organizationId={barber.organization_id}
+            dailyTarget={dailyTarget}
+            todayRevenue={todayProduction?.total || 0}
+            onComplete={handleWarPlanComplete}
+          />
+        )}
+
       </div>
     </div>
   );
