@@ -193,7 +193,7 @@ const [todayProduction, setTodayProduction] = useState<{
     }
 
     if (!goalResponse.error && goalResponse.data) {
-      setMonthlyGoal(goalResponse.data.target_commission);
+      setMonthlyGoal({ target_commission: goalResponse.data.target_commission });
     } else {
       setMonthlyGoal(null);
     }
