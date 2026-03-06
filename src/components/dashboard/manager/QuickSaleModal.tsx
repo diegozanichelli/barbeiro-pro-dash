@@ -623,64 +623,29 @@ export default function QuickSaleModal({
         toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
       }
 
-      // Look up or create daily_production
-      let productionId: string | null = null;
-      
-      if (!isReceptionSale) {
-        const { data: existingProduction } = await supabase
-          .from("daily_productions")
-          .select("id")
-          .eq("barber_id", barberId)
-          .eq("date", dateStr)
-          .maybeSingle();
-
-        if (existingProduction) {
-          productionId = existingProduction.id;
-        } else {
-          const { data: newProd } = await supabase
-            .from("daily_productions")
-            .insert({
-              organization_id: organizationId,
-              barber_id: barberId,
-              date: dateStr,
-              services_total: 0,
-              products_total: 0,
-              clients_count: 0,
-              services_count: 0,
-              products_count: 0,
-              commission_earned: 0,
-              confirmed_presence: false,
-            })
-            .select("id")
-            .single();
-          productionId = newProd?.id || null;
-        }
-      }
-
-      // 1 transaction per cart item (individualized)
+      // Build transaction payload for RPC
       const transactions = cart.map(item => {
         const effectivePrice = getEffectiveItemPrice(item, item.customPrice);
-
         return {
-        organization_id: organizationId,
-        barber_id: effectiveBarberId,
-        daily_production_id: productionId,
-        item_type: item.type,
-        catalog_service_id: item.type === "service" ? item.id : null,
-        catalog_product_id: item.type === "product" ? item.id : null,
-        item_name: item.name,
-        service_category: item.type === "service" ? item.category : null,
-        price_sold: effectivePrice,
-        commission_rate_used: 0,
-        commission_amount: 0,
-        is_new_client: clientType === "new",
-        client_name: registeredClient.clientName,
-        mobile_phone: registeredClient.mobilePhone,
-        source: "manager",
-        created_at: `${dateStr}T12:00:00-04:00`,
-      }});
+          item_type: item.type,
+          catalog_service_id: item.type === "service" ? item.id : null,
+          catalog_product_id: item.type === "product" ? item.id : null,
+          item_name: item.name,
+          service_category: item.type === "service" ? (item.category || null) : null,
+          price_sold: effectivePrice,
+          is_new_client: clientType === "new",
+          client_name: registeredClient.clientName,
+          mobile_phone: registeredClient.mobilePhone,
+        };
+      });
 
-      const { error } = await supabase.from("sale_transactions").insert(transactions);
+      const { error } = await supabase.rpc("create_sale_and_ensure_production", {
+        p_organization_id: organizationId,
+        p_barber_id: effectiveBarberId,
+        p_date: dateStr,
+        p_transactions: transactions,
+        p_source: "manager",
+      });
       if (error) throw error;
 
       await recordClientPurchasesBestEffort({
