@@ -194,7 +194,7 @@ export default function ManagerReports() {
       commission_earned: number | null;
     }
 
-    const safeConsolidated = (consolidatedRows || []) as ConsolidatedStatRow[];
+    const safeConsolidated = (consolidatedRows || []) as unknown as ConsolidatedStatRow[];
     const safeCommissions = (commissionRows || []) as CommissionRow[];
 
     const totalRevenue = safeConsolidated.reduce((sum, row) => {
