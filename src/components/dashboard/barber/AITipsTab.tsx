@@ -164,17 +164,21 @@ export default function AITipsTab({
         </div>
       </div>
 
-      {/* Dica do Coach IA */}
-      <AIDailyCoachCard
-        barberId={barberId}
-        organizationId={organizationId}
-        barberName={barberName}
-        monthlyGoal={monthlyGoal}
-        soldToday={soldToday}
-        soldThisMonth={soldThisMonth}
-        daysRemaining={daysRemaining}
-        dailyTarget={dailyTarget}
-      />
+      {/* Plano de Guerra ou Dica do Coach IA */}
+      {warPlan ? (
+        <WarPlanCard planText={warPlan} />
+      ) : (
+        <AIDailyCoachCard
+          barberId={barberId}
+          organizationId={organizationId}
+          barberName={barberName}
+          monthlyGoal={monthlyGoal}
+          soldToday={soldToday}
+          soldThisMonth={soldThisMonth}
+          daysRemaining={daysRemaining}
+          dailyTarget={dailyTarget}
+        />
+      )}
 
       {/* Dica de Vendas */}
       <CoachingNudgeCard barberId={barberId} />
