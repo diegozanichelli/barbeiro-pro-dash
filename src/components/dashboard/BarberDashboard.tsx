@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
-import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
+
 import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
