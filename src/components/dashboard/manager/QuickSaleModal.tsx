@@ -681,7 +681,7 @@ export default function QuickSaleModal({
         purchases: cart.map((item) => ({
           itemName: item.name,
           itemType: item.type,
-          amount: getEffectiveItemPrice(item, item.customPrice),
+          amount: item.customPrice,
           quantity: 1,
           purchasedAt: `${dateStr}T12:00:00`,
         })),
