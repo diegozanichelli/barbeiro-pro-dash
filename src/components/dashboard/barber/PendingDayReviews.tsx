@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, Eye, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getTodayString } from "@/lib/dateUtils";
+import { formatInTimeZone } from "date-fns-tz";
+import { getTodayString, TIMEZONE } from "@/lib/dateUtils";
 
 interface PendingReviewDay {
   date: string;
