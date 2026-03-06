@@ -368,12 +368,13 @@ export default function DayReviewModal({
       if (existingProd) {
         dailyProductionId = existingProd.id;
 
-        // Replace all previous transactions from the day with the reviewed cart
+        // Replace only previous BARBER transactions (RLS only allows source='barber')
         await supabase
           .from("sale_transactions")
           .delete()
           .eq("daily_production_id", dailyProductionId)
-          .eq("barber_id", barberId);
+          .eq("barber_id", barberId)
+          .eq("source", "barber");
       } else {
         const { data: newProd, error: insertError } = await supabase
           .from("daily_productions")
