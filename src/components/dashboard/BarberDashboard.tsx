@@ -75,15 +75,6 @@ interface MonthlyStats {
   products_conversion: number;
 }
 
-interface LastDaysProduction {
-  id: string;
-  date: string;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  services_total: number | null;
-  products_total: number | null;
-  confirmed_presence: boolean | null;
-}
 
 interface LiveSale {
   id: string;
