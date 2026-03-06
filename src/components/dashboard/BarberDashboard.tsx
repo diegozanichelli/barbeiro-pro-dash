@@ -361,30 +361,14 @@ const [todayProduction, setTodayProduction] = useState<{
       daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     }
 
-    const liveSalesChannel = supabase
-      .channel(`barber-live-sales-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sale_transactions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
+    const dailyTarget = daysToUse > 0 ? Math.max(0, remaining / daysToUse) : 0;
+    setDailyTarget(dailyTarget);
 
-    return () => {
-      supabase.removeChannel(liveDailyChannel);
-      supabase.removeChannel(liveSalesChannel);
-    };
-  }, [barber, fetchLivePanelData]);
-
-      setDailyTargetServices(servicesTarget);
-    }
+    // Calcular meta diária de serviços (mesma lógica proporcional)
+    const servicesTarget = monthlyGoal.target_commission > 0 
+      ? dailyTarget * (stats.total_services / Math.max(1, stats.accumulated_commission))
+      : 0;
+    setDailyTargetServices(servicesTarget);
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
 
   const pacingCoachMessage = useMemo(() => {
