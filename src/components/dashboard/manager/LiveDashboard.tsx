@@ -582,6 +582,21 @@ export default function LiveDashboard() {
     return { cuts: Math.ceil(remaining / avgTicket), monetaryRemaining: remaining };
   };
 
+  // Helper para verificar se há lançamento manual pendente de conferência
+  const hasPendingManualEntry = (barberId: string) => {
+    const production = productions.find((p) => p.barber_id === barberId);
+    if (!production) return false;
+    const txTotal = 
+      (production.tx_basic_total || 0) +
+      (production.tx_extra_total || 0) +
+      (production.tx_products_total || 0);
+    const manualTotal =
+      (production.manual_basic_total || 0) +
+      (production.manual_extra_total || 0) +
+      (production.manual_products_total || 0);
+    return txTotal === 0 && manualTotal > 0;
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
