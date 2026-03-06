@@ -204,7 +204,7 @@ const [todayProduction, setTodayProduction] = useState<{
         .eq("barber_id", barber.id)
         .gte("date", startDate)
         .lte("date", endDate),
-      supabase
+      (supabase as any)
         .from("v_consolidated_daily_production")
         .select("date, consolidated_basic_total, consolidated_extra_total, consolidated_products_total, total_revenue, total_clients, total_services")
         .eq("barber_id", barber.id)
