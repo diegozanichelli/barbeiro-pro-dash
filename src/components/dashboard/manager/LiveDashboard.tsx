@@ -375,12 +375,19 @@ export default function LiveDashboard() {
     });
   };
 
-  const handleViewTransactions = (barber: Barber) => {
+  const handleViewTransactions = async (barber: Barber) => {
+    const { data: production } = await supabase
+      .from("daily_productions")
+      .select("id")
+      .eq("barber_id", barber.id)
+      .eq("date", selectedDate)
+      .maybeSingle();
+
     setViewTransactionsModal({
       open: true,
       barberId: barber.id,
       barberName: barber.name,
-      dailyProductionId: "",
+      dailyProductionId: production?.id || "",
       date: selectedDate,
     });
   };
