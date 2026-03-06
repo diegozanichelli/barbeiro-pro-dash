@@ -60,6 +60,7 @@ interface QuickSaleModalProps {
   organizationId: string;
   onSuccess: () => void;
   initialIsNewClient?: boolean;
+  initialDate?: string; // yyyy-MM-dd from LiveDashboard
 }
 
 interface CatalogItem {

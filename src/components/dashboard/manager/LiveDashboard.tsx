@@ -936,6 +936,7 @@ export default function LiveDashboard() {
         organizationId={organizationId || ""}
         onSuccess={fetchData}
         initialIsNewClient={quickSaleModal.fromBridge ? false : undefined}
+        initialDate={selectedDate}
       />
 
       {/* Edit Production Modal - Transaction Manager */}
