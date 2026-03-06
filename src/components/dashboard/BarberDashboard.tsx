@@ -121,6 +121,7 @@ const [todayProduction, setTodayProduction] = useState<{
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
+  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
