@@ -160,7 +160,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
     const todayStr = getTodayString();
 
-    const [daysResponse, salesResponse] = await Promise.all([
+    const [daysResponse, salesResponse, goalResponse] = await Promise.all([
       supabase
         .from("daily_productions")
         .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
@@ -175,6 +175,13 @@ const [todayProduction, setTodayProduction] = useState<{
         .gte("created_at", `${todayStr}T00:00:00-04:00`)
         .lte("created_at", `${todayStr}T23:59:59-04:00`)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("monthly_goals")
+        .select("target_commission, work_days")
+        .eq("barber_id", barber.id)
+        .eq("month", selectedMonth)
+        .eq("year", selectedYear)
+        .maybeSingle(),
     ]);
 
     if (!daysResponse.error) {
@@ -183,6 +190,12 @@ const [todayProduction, setTodayProduction] = useState<{
 
     if (!salesResponse.error) {
       setLiveSales((salesResponse.data || []) as LiveSale[]);
+    }
+
+    if (!goalResponse.error && goalResponse.data) {
+      setMonthlyGoal({ target_commission: goalResponse.data.target_commission });
+    } else {
+      setMonthlyGoal(null);
     }
   }, [barber, selectedMonth, selectedYear]);
 
