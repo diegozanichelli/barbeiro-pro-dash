@@ -60,6 +60,7 @@ interface AITipsTabProps {
   soldThisMonth: number;
   daysRemaining: number;
   dailyTarget: number;
+  warPlan?: string | null;
 }
 
 export default function AITipsTab({
