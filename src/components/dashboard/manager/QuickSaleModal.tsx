@@ -128,6 +128,7 @@ export default function QuickSaleModal({
   organizationId,
   onSuccess,
   initialIsNewClient,
+  initialDate,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
