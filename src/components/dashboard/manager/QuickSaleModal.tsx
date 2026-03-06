@@ -1074,11 +1074,17 @@ export default function QuickSaleModal({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {subscriptionPlans.map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id}>
-                      {plan.name}
-                    </SelectItem>
-                  ))}
+                  {subscriptionPlans.length > 0 ? (
+                    subscriptionPlans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      Nenhum plano cadastrado
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
 
