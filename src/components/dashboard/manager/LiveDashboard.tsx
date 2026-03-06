@@ -336,19 +336,13 @@ export default function LiveDashboard() {
   }, [organizationId, selectedDate, isViewingToday, fetchData]);
 
   const getBarberRevenue = (barberId: string) => {
-    // If barber has confirmed their production, use the confirmed totals
+    // Verificar se é folga/falta
     const production = productions.find((p) => p.barber_id === barberId);
-    if (production && production.confirmed_presence) {
-      const manualTotal =
-        (production.manual_basic_total || 0) +
-        (production.manual_extra_total || 0) +
-        (production.manual_products_total || 0);
-      // If barber confirmed with items, use their confirmed total
-      if (manualTotal > 0) return manualTotal;
-      // If confirmed as day_off/absence, return 0
-      if (production.presence_type === 'day_off' || production.presence_type === 'absence') return 0;
+    if (production && production.confirmed_presence && 
+        (production.presence_type === 'day_off' || production.presence_type === 'absence')) {
+      return 0;
     }
-    // Fallback: read from manager transactions (AO VIVO, not yet confirmed)
+    // AO VIVO é sempre a fonte de verdade - usar transações do gestor
     return managerTransactions
       .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
       .reduce((sum, t) => sum + (t.price_sold || 0), 0);
