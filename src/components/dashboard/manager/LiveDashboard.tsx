@@ -941,16 +941,27 @@ export default function LiveDashboard() {
                 </div>
 
                 {/* Cuts Remaining */}
-                {target > 0 && cutsRemaining > 0 && (
+                {target > 0 && cutsRemaining.cuts !== null && cutsRemaining.cuts > 0 && (
                   <div className="text-center py-2 px-3 bg-muted/50 rounded-lg">
                     <p className="text-sm text-muted-foreground">
                       Faltam{" "}
-                      <span className="font-bold text-primary">{cutsRemaining}</span>{" "}
+                      <span className="font-bold text-primary">{cutsRemaining.cuts}</span>{" "}
                       cortes para bater a meta
                     </p>
                   </div>
                 )}
-                {target > 0 && cutsRemaining === 0 && revenue > 0 && (
+                {target > 0 && cutsRemaining.cuts === null && cutsRemaining.monetaryRemaining > 0 && (
+                  <div className="text-center py-2 px-3 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      Faltam{" "}
+                      <span className="font-bold text-primary">
+                        R$ {cutsRemaining.monetaryRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>{" "}
+                      para bater a meta
+                    </p>
+                  </div>
+                )}
+                {target > 0 && cutsRemaining.cuts === 0 && revenue > 0 && (
                   <div className="text-center py-2 px-3 bg-green-500/20 rounded-lg">
                     <p className="text-sm text-green-500 font-bold">
                       🎉 Meta batida!
