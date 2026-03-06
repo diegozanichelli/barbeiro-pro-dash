@@ -149,12 +149,8 @@ export default function TransactionManagerModal({
         .order("created_at", { ascending: true });
 
       if (dailyProductionId) {
-        // Use daily_production_id, but keep date bounds to avoid cross-date leakage
-        // from retroactive edits with mismatched created_at values.
-        query = query
-          .eq("daily_production_id", dailyProductionId)
-          .gte("created_at", `${date}T00:00:00-04:00`)
-          .lt("created_at", `${nextDay}T00:00:00-04:00`);
+        // Use daily_production_id only — no date bounds needed, the FK is the source of truth
+        query = query.eq("daily_production_id", dailyProductionId);
       } else {
         // Fallback to date range when no production record exists
         query = query
