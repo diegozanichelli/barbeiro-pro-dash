@@ -272,7 +272,12 @@ export default function QuickSaleModal({
     setSelectedPlanIncludedServiceIds([]);
     setManualOverride(false);
     clientHistory.reset();
-    setSelectedDate(new Date());
+    if (initialDate) {
+      const [y, m, d] = initialDate.split("-").map(Number);
+      setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
+    } else {
+      setSelectedDate(new Date());
+    }
     setDatePickerOpen(false);
   };
 
