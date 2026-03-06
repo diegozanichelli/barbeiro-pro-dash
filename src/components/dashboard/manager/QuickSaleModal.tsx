@@ -60,6 +60,7 @@ interface QuickSaleModalProps {
   organizationId: string;
   onSuccess: () => void;
   initialIsNewClient?: boolean;
+  initialDate?: string; // yyyy-MM-dd from LiveDashboard
 }
 
 interface CatalogItem {
@@ -127,6 +128,7 @@ export default function QuickSaleModal({
   organizationId,
   onSuccess,
   initialIsNewClient,
+  initialDate,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -172,9 +174,24 @@ export default function QuickSaleModal({
     enabled: open,
   });
 
-  // Date picker state
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Date picker state - use initialDate from LiveDashboard if provided
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    if (initialDate) {
+      // Parse yyyy-MM-dd as local date
+      const [y, m, d] = initialDate.split("-").map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0);
+    }
+    return new Date();
+  });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  // Sync date when modal opens with initialDate
+  useEffect(() => {
+    if (open && initialDate) {
+      const [y, m, d] = initialDate.split("-").map(Number);
+      setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
+    }
+  }, [open, initialDate]);
 
   // Fetch catalog items
   useEffect(() => {
@@ -263,7 +280,12 @@ export default function QuickSaleModal({
     setSelectedPlanIncludedServiceIds([]);
     setManualOverride(false);
     clientHistory.reset();
-    setSelectedDate(new Date());
+    if (initialDate) {
+      const [y, m, d] = initialDate.split("-").map(Number);
+      setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
+    } else {
+      setSelectedDate(new Date());
+    }
     setDatePickerOpen(false);
   };
 
@@ -649,7 +671,8 @@ export default function QuickSaleModal({
         is_new_client: clientType === "new",
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
-        created_at: selectedDate.toISOString(),
+        source: "manager",
+        created_at: `${dateStr}T12:00:00-04:00`,
       }});
 
       const { error } = await supabase.from("sale_transactions").insert(transactions as any);
@@ -775,7 +798,7 @@ export default function QuickSaleModal({
         source: "manager",
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
-        created_at: selectedDate.toISOString(),
+        created_at: `${dateStr}T12:00:00-04:00`,
       } as any);
 
       if (error) throw error;
