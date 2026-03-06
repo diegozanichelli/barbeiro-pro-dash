@@ -255,7 +255,7 @@ const [todayProduction, setTodayProduction] = useState<{
     }
 
     const typedProductions = (productions || []) as DailyProductionRow[];
-    const typedConsolidated = (consolidatedData || []) as ConsolidatedRow[];
+    const typedConsolidated = (consolidatedData || []) as unknown as ConsolidatedRow[];
 
     const totalClients = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_clients ?? row.totalClients ?? 0) || 0), 0);
     const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_services ?? row.totalServices ?? 0) || 0), 0);
