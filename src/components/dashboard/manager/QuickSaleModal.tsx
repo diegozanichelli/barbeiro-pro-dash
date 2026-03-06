@@ -766,10 +766,10 @@ export default function QuickSaleModal({
         service_category: serviceCategory,
         price_sold: effectiveManualPrice,
         is_new_client: clientType === "new",
-        client_name: registeredClient.clientName,
-        mobile_phone: registeredClient.mobilePhone,
-        catalog_service_id: null,
-        catalog_product_id: null,
+          client_name: safeClientName,
+          mobile_phone: registeredClient.mobilePhone,
+          catalog_service_id: null,
+          catalog_product_id: null,
       };
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
