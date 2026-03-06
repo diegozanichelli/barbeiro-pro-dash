@@ -163,6 +163,7 @@ export default function QuickSaleModal({
   const [subscriptionPlanAutoDetected, setSubscriptionPlanAutoDetected] = useState(false);
   const [isResolvingSubscription, setIsResolvingSubscription] = useState(false);
   const [selectedPlanIncludedServiceIds, setSelectedPlanIncludedServiceIds] = useState<string[]>([]);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
 
   // Client history hook
   const clientHistory = useClientHistory(organizationId);

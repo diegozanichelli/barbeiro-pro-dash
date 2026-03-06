@@ -186,6 +186,9 @@ const [todayProduction, setTodayProduction] = useState<{
     }
   }, [barber, selectedMonth, selectedYear]);
 
+  // Alias for backward compat
+  const fetchLivePanelData = fetchMonthlyGoal;
+
   const fetchMonthlyStats = useCallback(async () => {
     if (!barber) return;
 
