@@ -111,6 +111,25 @@ export default function Dashboard() {
     );
   }
 
+  if (!userRole) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="max-w-md w-full rounded-lg border border-border bg-card p-6 text-center space-y-3">
+          <h2 className="text-lg font-semibold">Não foi possível identificar seu perfil</h2>
+          <p className="text-sm text-muted-foreground">
+            Faça login novamente. Se o erro persistir, verifique o vínculo de papel do usuário.
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Tentar novamente
+            </Button>
+            <Button onClick={() => navigate("/auth")}>Ir para login</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background">

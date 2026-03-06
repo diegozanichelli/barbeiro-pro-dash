@@ -7,18 +7,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot } from "lucide-react";
+import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
-import DailyProductionForm from "./barber/DailyProductionForm";
-import BarberSaleForm from "./barber/BarberSaleForm";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
-import MissingProductionAlert from "./barber/MissingProductionAlert";
 import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
 import AITipsTab from "./barber/AITipsTab";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
-import BarberEditProductionModal from "./barber/BarberEditProductionModal";
+import PendingDayReviews from "./barber/PendingDayReviews";
+import DayReviewModal from "./barber/DayReviewModal";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -72,6 +70,25 @@ interface MonthlyStats {
   products_conversion: number;
 }
 
+interface LastDaysProduction {
+  id: string;
+  date: string;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  services_total: number | null;
+  products_total: number | null;
+  confirmed_presence: boolean | null;
+}
+
+interface LiveSale {
+  id: string;
+  created_at: string;
+  client_name: string | null;
+  item_name: string;
+  item_type: string;
+  price_sold: number;
+}
+
 export default function BarberDashboard({ user }: BarberDashboardProps) {
   const navigate = useNavigate();
   const { hasSubscriptionModule } = useSubscriptionModule();
@@ -100,6 +117,10 @@ const [todayProduction, setTodayProduction] = useState<{
   } | null>(null);
   const [confirmingPresence, setConfirmingPresence] = useState(false);
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("daily");
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
+  const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -136,22 +157,31 @@ const [todayProduction, setTodayProduction] = useState<{
   const fetchMonthlyGoal = useCallback(async () => {
     if (!barber) return;
 
-    const { data, error } = await supabase
-      .from("monthly_goals")
-      .select("*")
-      .eq("barber_id", barber.id)
-      .eq("month", selectedMonth)
-      .eq("year", selectedYear)
-      .maybeSingle();
+    const todayStr = getTodayString();
 
-    if (error) {
-      console.error("Erro ao buscar meta mensal:", error);
+    const [daysResponse, salesResponse] = await Promise.all([
+      supabase
+        .from("daily_productions")
+        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
+        .eq("barber_id", barber.id)
+        .lte("date", todayStr)
+        .order("date", { ascending: false })
+        .limit(3),
+      supabase
+        .from("sale_transactions")
+        .select("id, created_at, client_name, item_name, item_type, price_sold")
+        .eq("barber_id", barber.id)
+        .gte("created_at", `${todayStr}T00:00:00-04:00`)
+        .lte("created_at", `${todayStr}T23:59:59-04:00`)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (!daysResponse.error) {
+      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
     }
 
-    if (data) {
-      setMonthlyGoal(data);
-    } else {
-      setMonthlyGoal(null);
+    if (!salesResponse.error) {
+      setLiveSales((salesResponse.data || []) as LiveSale[]);
     }
   }, [barber, selectedMonth, selectedYear]);
 
@@ -331,14 +361,27 @@ const [todayProduction, setTodayProduction] = useState<{
       daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     }
 
-    if (daysToUse > 0) {
-      const dailyCommission = remaining / daysToUse;
-      setDailyTarget(dailyCommission);
+    const liveSalesChannel = supabase
+      .channel(`barber-live-sales-${barber.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sale_transactions",
+          filter: `barber_id=eq.${barber.id}`,
+        },
+        () => {
+          fetchLivePanelData();
+        }
+      )
+      .subscribe();
 
-      // Calcular meta de serviços: 100% da meta diária convertida para venda de serviços
-      const servicesTarget = barber.services_commission > 0 
-        ? dailyCommission / (barber.services_commission / 100)
-        : 0;
+    return () => {
+      supabase.removeChannel(liveDailyChannel);
+      supabase.removeChannel(liveSalesChannel);
+    };
+  }, [barber, fetchLivePanelData]);
 
       setDailyTargetServices(servicesTarget);
     }
@@ -453,8 +496,13 @@ const [todayProduction, setTodayProduction] = useState<{
 
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
+    setIsSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+      navigate("/auth");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   // Funções para navegação de mês
@@ -493,7 +541,7 @@ const [todayProduction, setTodayProduction] = useState<{
     // Forçar recálculo de TODOS os dados
     fetchMonthlyStats();
     fetchMonthlyGoal();
-    setEditingProduction(null); // Limpar edição e fechar modal
+    fetchLivePanelData();
   };
 
   const handleOpenPresenceModal = () => {
@@ -614,10 +662,7 @@ const [todayProduction, setTodayProduction] = useState<{
     
     // Recarregar estatísticas para refletir o novo cálculo
     fetchMonthlyStats();
-  };
-
-  const handleCloseEditModal = () => {
-    setEditingProduction(null);
+    fetchLivePanelData();
   };
 
   if (missingLink) {
@@ -632,7 +677,9 @@ const [todayProduction, setTodayProduction] = useState<{
                   Vinculação pendente
                 </h1>
               </div>
-              <Button variant="outline" onClick={handleSignOut}>Sair</Button>
+              <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                {isSigningOut ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sair"}
+              </Button>
             </div>
           </div>
         </header>
@@ -656,7 +703,16 @@ const [todayProduction, setTodayProduction] = useState<{
   }
 
   if (!barber || !stats) {
-    return <div>Carregando...</div>;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <Card className="w-full max-w-sm bg-card border-border shadow-card-custom">
+          <CardContent className="py-8 flex flex-col items-center gap-3">
+            <Loader2 className="w-7 h-7 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Carregando seu painel...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
   const progressPercentage = monthlyGoal && monthlyGoal.target_commission > 0
     ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
@@ -696,9 +752,18 @@ const [todayProduction, setTodayProduction] = useState<{
                 )}
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
+            <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+              {isSigningOut ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saindo...
+                </>
+              ) : (
+                <>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sair
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -762,9 +827,13 @@ const [todayProduction, setTodayProduction] = useState<{
           </Card>
         )}
 
-        <Tabs defaultValue="daily" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
+            <TabsTrigger value="live" className="flex items-center gap-1">
+              <Radio className="w-3 h-3" />
+              Ao vivo
+            </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
             <TabsTrigger value="ai-tips" className="flex items-center gap-1">
@@ -776,8 +845,11 @@ const [todayProduction, setTodayProduction] = useState<{
 
           <TabsContent value="daily" className="space-y-6">
             {/* Alerta de Produções Pendentes */}
-            {isCurrentMonth && <MissingProductionAlert barberId={barber.id} />}
-            
+            {/* Dias Pendentes de Conferência (AO VIVO) */}
+            <PendingDayReviews 
+              barberId={barber.id} 
+              onReview={(date) => setReviewingDate(date)} 
+            />
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
@@ -872,17 +944,37 @@ const [todayProduction, setTodayProduction] = useState<{
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <DollarSign className="w-5 h-5 text-primary" />
-                    MEU FATURAMENTO HOJE
+                    HISTÓRICO DOS ÚLTIMOS 3 DIAS
                   </CardTitle>
                   <CardDescription>
-                    {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                    Acompanhe seus últimos lançamentos e a confirmação de presença
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="text-center">
-                    <p className="text-4xl font-bold text-foreground">
-                      R$ {todayProduction.total.toFixed(2)}
-                    </p>
+                  <div className="space-y-3">
+                    {last3DaysProduction.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
+                    )}
+                    {last3DaysProduction.map((day) => {
+                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
+                      const services = hasSplitServices
+                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
+                        : (Number(day.services_total) || 0);
+                      const products = Number(day.products_total) || 0;
+                      const total = services + products;
+
+                      return (
+                        <div key={day.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {day.confirmed_presence ? "Presença confirmada" : "Sem confirmação de presença"}
+                            </p>
+                          </div>
+                          <p className="text-lg font-bold">R$ {total.toFixed(2)}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                   
                   {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
@@ -1011,12 +1103,97 @@ const [todayProduction, setTodayProduction] = useState<{
               </CardContent>
             </Card>
 
-            {/* Formulário de Lançamento - PDV Visual */}
-            <BarberSaleForm 
-              barberId={barber.id}
-              organizationId={barber.organization_id}
-              onSuccess={handleFormSuccess}
-            />
+            {/* Hub de conferência (somente leitura) */}
+            <Card className="bg-card border-border shadow-card-custom">
+              <CardHeader>
+                <CardTitle className="text-base">Central de Conferência</CardTitle>
+                <CardDescription>
+                  Lançamentos são feitos pela recepção. Aqui você apenas acompanha e confirma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    className="w-full"
+                    onClick={() => setReviewingDate(getTodayString())}
+                    disabled={!isCurrentMonth}
+                  >
+                    Conferir hoje
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setActiveTab("history")}
+                  >
+                    Ver histórico de conferências
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Status de hoje</p>
+                  <p className="text-sm font-semibold">
+                    {todayProduction
+                      ? todayProduction.total > 0
+                        ? `Com lançamentos: R$ ${todayProduction.total.toFixed(2)}`
+                        : todayProduction.confirmed_presence
+                        ? "Presença confirmada sem vendas"
+                        : "Sem confirmação ainda"
+                      : "Sem dados para hoje"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="live" className="space-y-6">
+            <Card className="bg-card border-border shadow-card-custom">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-primary" />
+                  AO VIVO - SUA PRODUÇÃO DE HOJE
+                </CardTitle>
+                <CardDescription>
+                  Painel somente leitura com meta diária, progresso e vendas realizadas.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Produção de hoje</p>
+                    <p className="text-2xl font-bold">R$ {todayProduction?.total.toFixed(2) ?? "0.00"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Meta diária (comissão)</p>
+                    <p className="text-2xl font-bold">R$ {dailyTarget.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Meta diária (serviços)</p>
+                    <p className="text-2xl font-bold">R$ {dailyTargetServices.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">O que e para quem você já vendeu hoje</h3>
+                  {liveSales.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma venda registrada até o momento.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {liveSales.map((sale) => (
+                        <div key={sale.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{sale.client_name?.trim() || "Cliente não informado"}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {sale.item_name} ({sale.item_type}) • {format(new Date(sale.created_at), "HH:mm")}
+                            </p>
+                          </div>
+                          <p className="font-bold">R$ {Number(sale.price_sold || 0).toFixed(2)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
@@ -1024,7 +1201,7 @@ const [todayProduction, setTodayProduction] = useState<{
               barberId={barber.id}
               selectedMonth={selectedMonth}
               selectedYear={selectedYear}
-              onEdit={handleEditProduction}
+              onReview={(date) => setReviewingDate(date)}
             />
           </TabsContent>
 
@@ -1060,19 +1237,6 @@ const [todayProduction, setTodayProduction] = useState<{
           </TabsContent>
         </Tabs>
 
-        {/* Modal de Edição por Cards */}
-        {editingProduction && barber && (
-          <BarberEditProductionModal
-            open={!!editingProduction}
-            onOpenChange={(open) => !open && handleCloseEditModal()}
-            barberId={barber.id}
-            organizationId={barber.organization_id}
-            productionId={editingProduction.id}
-            productionDate={editingProduction.date}
-            onSuccess={handleFormSuccess}
-          />
-        )}
-
         {/* Modal de Confirmação de Presença */}
         <ConfirmPresenceModal
           open={presenceModalOpen}
@@ -1080,6 +1244,18 @@ const [todayProduction, setTodayProduction] = useState<{
           onConfirm={handleConfirmPresence}
           isLoading={confirmingPresence}
         />
+
+        {/* Modal de Conferência do Dia (AO VIVO) */}
+        {reviewingDate && barber && (
+          <DayReviewModal
+            open={!!reviewingDate}
+            onOpenChange={(open) => !open && setReviewingDate(null)}
+            barberId={barber.id}
+            organizationId={barber.organization_id}
+            date={reviewingDate}
+            onSuccess={handleFormSuccess}
+          />
+        )}
 
       </div>
     </div>

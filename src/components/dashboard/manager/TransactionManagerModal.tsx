@@ -26,10 +26,10 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,6 +51,8 @@ interface TransactionManagerModalProps {
   date: string;
   onSuccess: () => void;
   auditMode?: boolean;
+  sourceFilter?: "barber" | "manager";
+  readOnly?: boolean;
 }
 
 interface Transaction {
@@ -62,6 +64,7 @@ interface Transaction {
   commission_amount: number;
   description: string | null;
   client_name: string | null;
+  source: string;
 }
 
 interface CatalogItem {
@@ -92,6 +95,8 @@ export default function TransactionManagerModal({
   date,
   onSuccess,
   auditMode = false,
+  sourceFilter,
+  readOnly = false,
 }: TransactionManagerModalProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -138,15 +143,28 @@ export default function TransactionManagerModal({
       const { addDays, parseISO, format: fmtDate } = await import("date-fns");
       const nextDay = fmtDate(addDays(parseISO(date), 1), "yyyy-MM-dd");
 
-      const { data, error } = await supabase
+      let query = supabase
         .from("sale_transactions")
-        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name")
-        .eq("barber_id", barberId)
-        .eq("source", auditMode ? "barber" : "manager")
-        .gte("created_at", `${date}T00:00:00`)
-        .lt("created_at", `${nextDay}T00:00:00`)
+        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name, source")
         .order("created_at", { ascending: true });
 
+      if (dailyProductionId) {
+        // Use daily_production_id only — no date bounds needed, the FK is the source of truth
+        query = query.eq("daily_production_id", dailyProductionId);
+      } else {
+        // Fallback to date range when no production record exists
+        query = query
+          .eq("barber_id", barberId)
+          .gte("created_at", `${date}T00:00:00-04:00`)
+          .lt("created_at", `${nextDay}T00:00:00-04:00`);
+      }
+
+      // Apply source filter if provided (e.g., only show manager transactions in Live view)
+      if (sourceFilter) {
+        query = query.eq("source", sourceFilter);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setTransactions(data || []);
     } catch (error) {
@@ -333,6 +351,7 @@ export default function TransactionManagerModal({
             commission_rate_used: 0,
             commission_amount: 0,
             source: sourceValue,
+            created_at: `${date}T12:00:00-04:00`,
           });
         }
       });
@@ -403,7 +422,9 @@ export default function TransactionManagerModal({
     return null;
   };
 
-  const totalTransactions = transactions.filter(t => t.item_type !== 'subscription').reduce((sum, t) => sum + t.price_sold, 0);
+  const totalTransactions = transactions
+    .filter((transaction) => transaction.item_type !== "subscription")
+    .reduce((sum, transaction) => sum + transaction.price_sold, 0);
 
   return (
     <>
@@ -428,7 +449,7 @@ export default function TransactionManagerModal({
               <div>
                 <DialogTitle className="text-lg font-semibold">
                   {viewMode === "list"
-                    ? `${auditMode ? "Auditar" : "Gerenciar"} Produção — ${barberName}`
+                    ? `${readOnly ? "Comandas Recepção" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
                     : "Adicionar Itens"}
                 </DialogTitle>
                 <DialogDescription>
@@ -470,7 +491,7 @@ export default function TransactionManagerModal({
                               <p className="font-medium text-sm truncate">
                                 {transaction.item_name}
                               </p>
-                              {getCategoryBadge(
+                          {getCategoryBadge(
                                 transaction.item_type,
                                 transaction.service_category
                               )}
@@ -485,14 +506,16 @@ export default function TransactionManagerModal({
                             </p>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                          onClick={() => setDeleteConfirm({ open: true, transactionId: transaction.id })}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {!readOnly && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            onClick={() => setDeleteConfirm({ open: true, transactionId: transaction.id })}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -503,20 +526,24 @@ export default function TransactionManagerModal({
               {/* Footer with totals and add button */}
               <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
                 {transactions.length > 0 && (
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
-                    <span className="font-medium">Total ({transactions.length} itens):</span>
-                    <span className="text-xl font-bold text-primary">
-                      {formatCurrency(totalTransactions)}
-                    </span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
+                      <span className="font-medium">Total ({transactions.length} itens):</span>
+                      <span className="text-xl font-bold text-primary">
+                        {formatCurrency(totalTransactions)}
+                      </span>
+                    </div>
                   </div>
                 )}
-                <Button
-                  onClick={() => setViewMode("add")}
-                  className="w-full h-12 text-base gap-2"
-                >
-                  <PlusCircle className="h-5 w-5" />
-                  Adicionar Item Retroativo
-                </Button>
+                {!readOnly && (
+                  <Button
+                    onClick={() => setViewMode("add")}
+                    className="w-full h-12 text-base gap-2"
+                  >
+                    <PlusCircle className="h-5 w-5" />
+                    Adicionar Item Retroativo
+                  </Button>
+                )}
               </div>
             </div>
           ) : (

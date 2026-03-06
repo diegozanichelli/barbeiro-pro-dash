@@ -166,9 +166,7 @@ export default function ManagerReports() {
       barbersQuery = barbersQuery.eq("unit_id", selectedUnit);
     }
 
-    const { data: barbersData } = await barbersQuery;
-
-    // Buscar metas do mês (filtradas por unidade se selecionada)
+    // Buscar metas do mês
     let goalsQuery = supabase
       .from("monthly_goals")
       .select("*, barbers!inner(id, unit_id)")
@@ -265,7 +263,7 @@ export default function ManagerReports() {
     
     let query = supabase
       .from("daily_productions")
-      .select("*, barbers!inner(name, unit_id)")
+      .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
       .gte("date", format(dateRange.from, "yyyy-MM-dd"))
       .lte("date", format(dateRange.to, "yyyy-MM-dd"))
       .order("date", { ascending: false });
@@ -649,19 +647,28 @@ export default function ManagerReports() {
                       <TableCell>{format(parse(production.date as string, "yyyy-MM-dd", new Date()), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{getBarberName(production)}</TableCell>
                       <TableCell className="text-right">
-                        R$ {(Number(production.services_basic_total ?? production.services_total ?? 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(() => {
+                          const totals = getProductionTotals(production);
+                          return totals.basic.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {(Number(production.services_extra_total ?? 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(() => {
+                          const totals = getProductionTotals(production);
+                          return totals.extra.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        R$ {Number(production.products_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(() => {
+                          const totals = getProductionTotals(production);
+                          return totals.products.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">{production.services_count}</TableCell>
                       <TableCell className="text-right">{production.products_count}</TableCell>
-                      <TableCell className="text-right">{production.clients_count}</TableCell>
+                      <TableCell className="text-right">{getProductionClientsCount(production)}</TableCell>
                       <TableCell className="text-right">
-                        R$ {Number(production.commission_earned).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {getEffectiveCommission(production).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-center gap-2">
@@ -723,3 +730,4 @@ export default function ManagerReports() {
     </div>
   );
 }
+

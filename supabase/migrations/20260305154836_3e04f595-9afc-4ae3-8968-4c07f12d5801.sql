@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN subscription_plan_id uuid REFERENCES public.subscription_plans(id) ON DELETE SET NULL DEFAULT NULL;

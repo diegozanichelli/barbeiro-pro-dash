@@ -31,10 +31,12 @@ import {
   X,
   Phone,
   Smartphone,
+  Crown,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +47,9 @@ import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
+import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
+import { registerClientOrThrow } from "@/lib/clientRegistry";
+import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
 
 
 interface QuickSaleModalProps {
@@ -55,6 +60,7 @@ interface QuickSaleModalProps {
   organizationId: string;
   onSuccess: () => void;
   initialIsNewClient?: boolean;
+  initialDate?: string; // yyyy-MM-dd from LiveDashboard
 }
 
 interface CatalogItem {
@@ -72,7 +78,26 @@ interface CartItem extends CatalogItem {
   customPriceInput: string;
 }
 
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+}
+
 type CategoryTab = "services" | "products" | "manual";
+
+type ClientType = "new" | "without_subscription" | "with_subscription";
+
+
+const isSubscriptionPlanFieldMissing = (error: any) => {
+  const message = String(error?.message || "").toLowerCase();
+  const details = String(error?.details || "").toLowerCase();
+  return (
+    message.includes("subscription_plan_id") ||
+    details.includes("subscription_plan_id") ||
+    message.includes("schema cache")
+  );
+};
 
 /**
  * Handle numeric input to fix "leading zero" bug
@@ -103,6 +128,7 @@ export default function QuickSaleModal({
   organizationId,
   onSuccess,
   initialIsNewClient,
+  initialDate,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -125,20 +151,37 @@ export default function QuickSaleModal({
   // Reception mode (no barber attribution)
   const [isReceptionSale, setIsReceptionSale] = useState(false);
 
-  // New client tracking (for conversion metrics)
-  const [isNewClient, setIsNewClient] = useState(initialIsNewClient ?? false);
+  // Client type tracking (for conversion metrics and assinatura status)
+  const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
   const [clientName, setClientName] = useState("");
   const [manualOverride, setManualOverride] = useState(false);
 
   // Phone state
   const [mobilePhone, setMobilePhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [selectedSubscriptionPlanId, setSelectedSubscriptionPlanId] = useState<string>("");
+  const [subscriptionPlanAutoDetected, setSubscriptionPlanAutoDetected] = useState(false);
+  const [isResolvingSubscription, setIsResolvingSubscription] = useState(false);
+  const [selectedPlanIncludedServiceIds, setSelectedPlanIncludedServiceIds] = useState<string[]>([]);
 
   // Client history hook
   const clientHistory = useClientHistory(organizationId);
+  const { nameSuggestions, phoneSuggestions, loading: loadingClientSuggestions } = useClientAutocomplete({
+    organizationId,
+    nameQuery: clientName,
+    phoneQuery: mobilePhone,
+    enabled: open,
+  });
 
-  // Date picker state
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Date picker state - use initialDate from LiveDashboard if provided
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    if (initialDate) {
+      // Parse yyyy-MM-dd as local date
+      const [y, m, d] = initialDate.split("-").map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0);
+    }
+    return new Date();
+  });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const fetchCatalog = useCallback(async () => {
@@ -193,6 +236,30 @@ export default function QuickSaleModal({
     }
   }, [open, organizationId]);
 
+  const fetchSubscriptionPlans = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("subscription_plans")
+        .select("id, name, price")
+        .eq("organization_id", organizationId)
+        .eq("active", true)
+        .order("name");
+
+      if (error) {
+        if (isSubscriptionPlanFieldMissing(error)) {
+          setSelectedSubscriptionPlanId("");
+          setSubscriptionPlanAutoDetected(false);
+          return;
+        }
+        throw error;
+      }
+      setSubscriptionPlans(data || []);
+    } catch (error) {
+      console.error("Erro ao carregar planos de assinatura:", error);
+      setSubscriptionPlans([]);
+    }
+  };
+
   const resetForm = () => {
     setStep(1);
     setCart([]);
@@ -202,13 +269,22 @@ export default function QuickSaleModal({
     setSearchQuery("");
     setActiveTab("services");
     setIsReceptionSale(false);
-    setIsNewClient(initialIsNewClient ?? false);
+    setClientType(initialIsNewClient ? "new" : "without_subscription");
     setClientName("");
     setMobilePhone("");
     setPhoneError(null);
+    setSelectedSubscriptionPlanId("");
+    setSubscriptionPlanAutoDetected(false);
+    setIsResolvingSubscription(false);
+    setSelectedPlanIncludedServiceIds([]);
     setManualOverride(false);
     clientHistory.reset();
-    setSelectedDate(new Date());
+    if (initialDate) {
+      const [y, m, d] = initialDate.split("-").map(Number);
+      setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
+    } else {
+      setSelectedDate(new Date());
+    }
     setDatePickerOpen(false);
   };
 
@@ -226,6 +302,11 @@ export default function QuickSaleModal({
     setMobilePhone(formatted);
 
     const digits = sanitizePhone(raw);
+    const matchedClient = phoneSuggestions.find((client) => client.mobile_phone === digits);
+    if (matchedClient) {
+      setClientName(matchedClient.name);
+      if (!manualOverride) setClientType("without_subscription");
+    }
     if (digits.length === 11) {
       if (!isValidPhone(raw)) {
         setPhoneError("Telefone inválido");
@@ -249,9 +330,9 @@ export default function QuickSaleModal({
 
     if (res.status === "phone_found" && res.suggestedName) {
       setClientName(res.suggestedName);
-      if (!manualOverride) setIsNewClient(false);
+      if (!manualOverride) setClientType("without_subscription");
     } else if (res.status === "name_found") {
-      if (!manualOverride) setIsNewClient(false);
+      if (!manualOverride) setClientType("without_subscription");
     } else if (res.status === "not_found") {
       // Não muda automaticamente — o gestor decide manualmente
     }
@@ -264,26 +345,35 @@ export default function QuickSaleModal({
       if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
         const res = await clientHistory.checkHistory(mobilePhone, clientName);
         if (res && res.status === "name_found" && !manualOverride) {
-          setIsNewClient(false);
+          setClientType("without_subscription");
         }
       }
     }
   }, [mobilePhone, clientName, manualOverride, clientHistory]);
 
   // Handle manual override of client type
-  const handleClientTypeChange = (value: string) => {
+  const handleClientTypeChange = (value: ClientType) => {
     setManualOverride(true);
-    setIsNewClient(value === "new");
+    setClientType(value);
+    if (value !== "with_subscription") {
+      setSelectedSubscriptionPlanId("");
+      setSubscriptionPlanAutoDetected(false);
+    }
   };
 
   // Cart operations (individualized with tempId)
   const handleAddToCart = (item: CatalogItem) => {
+    const effectivePrice = getEffectiveItemPrice(item, item.default_price);
     setCart(prev => [...prev, {
       ...item,
       tempId: crypto.randomUUID(),
-      customPrice: item.default_price,
-      customPriceInput: item.default_price.toFixed(2).replace(".", ","),
+      customPrice: effectivePrice,
+      customPriceInput: effectivePrice.toFixed(2).replace(".", ","),
     }]);
+
+    if (effectivePrice === 0 && selectedSubscriptionPlan?.name) {
+      toast.info(`Serviço incluído na assinatura ${selectedSubscriptionPlan.name}. Valor zerado automaticamente.`);
+    }
   };
 
   const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
@@ -346,6 +436,120 @@ export default function QuickSaleModal({
 
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
+  const selectedSubscriptionPlan = useMemo(
+    () => subscriptionPlans.find((plan) => plan.id === selectedSubscriptionPlanId) || null,
+    [subscriptionPlans, selectedSubscriptionPlanId]
+  );
+
+  useEffect(() => {
+    const fetchIncludedServices = async () => {
+      if (!selectedSubscriptionPlanId) {
+        setSelectedPlanIncludedServiceIds([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("subscription_plan_services")
+        .select("catalog_service_id")
+        .eq("subscription_plan_id", selectedSubscriptionPlanId)
+        .eq("organization_id", organizationId);
+
+      if (error) {
+        console.error("Erro ao carregar serviços do plano:", error);
+        setSelectedPlanIncludedServiceIds([]);
+        return;
+      }
+
+      setSelectedPlanIncludedServiceIds((data || []).map((row) => row.catalog_service_id));
+    };
+
+    void fetchIncludedServices();
+  }, [organizationId, selectedSubscriptionPlanId]);
+
+  const resolveSubscriptionForClient = useCallback(async () => {
+    if (clientType !== "with_subscription") {
+      return;
+    }
+
+    const phoneDigitsToLookup = sanitizePhone(mobilePhone);
+    if (phoneDigitsToLookup.length !== 11 || !isValidPhone(mobilePhone)) {
+      setSelectedSubscriptionPlanId("");
+      setSubscriptionPlanAutoDetected(false);
+      return;
+    }
+
+    setIsResolvingSubscription(true);
+
+    try {
+      const { data, error } = await (supabase
+        .from("clients") as any)
+        .select("subscription_plan_id")
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", phoneDigitsToLookup)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data?.subscription_plan_id) {
+        setSelectedSubscriptionPlanId(data.subscription_plan_id);
+        setSubscriptionPlanAutoDetected(true);
+      } else {
+        setSelectedSubscriptionPlanId("");
+        setSubscriptionPlanAutoDetected(false);
+      }
+    } catch (error) {
+      console.error("Erro ao identificar assinatura do cliente:", error);
+      setSelectedSubscriptionPlanId("");
+      setSubscriptionPlanAutoDetected(false);
+    } finally {
+      setIsResolvingSubscription(false);
+    }
+  }, [clientType, mobilePhone, organizationId]);
+
+  useEffect(() => {
+    void resolveSubscriptionForClient();
+  }, [resolveSubscriptionForClient]);
+
+  const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
+    if (
+      clientType === "with_subscription" &&
+      item.type === "service" &&
+      selectedPlanIncludedServiceIds.includes(item.id)
+    ) {
+      return 0;
+    }
+
+    return enteredPrice;
+  };
+
+  useEffect(() => {
+    setCart((prev) => {
+      if (clientType !== "with_subscription" || selectedPlanIncludedServiceIds.length === 0) return prev;
+
+      let changed = false;
+      const next = prev.map((item) => {
+        if (
+          item.type === "service" &&
+          item.customPrice !== 0 &&
+          selectedPlanIncludedServiceIds.includes(item.id)
+        ) {
+          changed = true;
+          return { ...item, customPrice: 0, customPriceInput: "0,00" };
+        }
+        return item;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [clientType, selectedPlanIncludedServiceIds]);
+
+  const cartItemIncludedBySubscription = (item: CartItem) => {
+    return (
+      clientType === "with_subscription" &&
+      item.type === "service" &&
+      selectedPlanIncludedServiceIds.includes(item.id)
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -357,11 +561,30 @@ export default function QuickSaleModal({
     }
   };
 
+  const ensureSubscriptionAssigned = async (mobilePhoneSanitized: string) => {
+    if (clientType !== "with_subscription") return;
+
+    if (!selectedSubscriptionPlanId) {
+      throw new Error("Selecione a assinatura do cliente para continuar.");
+    }
+
+    const { error } = await (supabase
+      .from("clients") as any)
+      .update({ subscription_plan_id: selectedSubscriptionPlanId })
+      .eq("organization_id", organizationId)
+      .eq("mobile_phone", mobilePhoneSanitized);
+
+    if (error && !isSubscriptionPlanFieldMissing(error)) throw error;
+  };
+
   // Check if phone is valid for proceeding
   const phoneDigits = sanitizePhone(mobilePhone);
   const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
-  const isPhoneEmpty = phoneDigits.length === 0;
-  const canProceedStep1 = (isPhoneEmpty || isPhoneComplete) && !clientHistory.checking && !phoneError;
+  const hasClientName = clientName.trim().length >= 3;
+  const hasSubscriptionResolved =
+    clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
+  const canProceedStep1 =
+    isPhoneComplete && hasClientName && !clientHistory.checking && !phoneError && hasSubscriptionResolved;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
@@ -382,7 +605,24 @@ export default function QuickSaleModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
-      // Look up existing daily_production (do NOT create one)
+      if (!phoneSanitized || !clientName.trim()) {
+        toast.error("Preencha nome e celular do cliente");
+        return;
+      }
+
+      const registeredClient = await registerClientOrThrow({
+        organizationId,
+        clientName,
+        mobilePhone: phoneSanitized,
+      });
+
+      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
+
+      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
+        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+      }
+
+      // Look up or create daily_production
       let productionId: string | null = null;
       
       if (!isReceptionSale) {
@@ -393,11 +633,34 @@ export default function QuickSaleModal({
           .eq("date", dateStr)
           .maybeSingle();
 
-        productionId = existingProduction?.id || null;
+        if (existingProduction) {
+          productionId = existingProduction.id;
+        } else {
+          const { data: newProd } = await supabase
+            .from("daily_productions")
+            .insert({
+              organization_id: organizationId,
+              barber_id: barberId,
+              date: dateStr,
+              services_total: 0,
+              products_total: 0,
+              clients_count: 0,
+              services_count: 0,
+              products_count: 0,
+              commission_earned: 0,
+              confirmed_presence: false,
+            })
+            .select("id")
+            .single();
+          productionId = newProd?.id || null;
+        }
       }
 
       // 1 transaction per cart item (individualized)
-      const transactions = cart.map(item => ({
+      const transactions = cart.map(item => {
+        const effectivePrice = getEffectiveItemPrice(item, item.customPrice);
+
+        return {
         organization_id: organizationId,
         barber_id: effectiveBarberId,
         daily_production_id: productionId,
@@ -406,17 +669,31 @@ export default function QuickSaleModal({
         catalog_product_id: item.type === "product" ? item.id : null,
         item_name: item.name,
         service_category: item.type === "service" ? item.category : null,
-        price_sold: item.customPrice,
+        price_sold: effectivePrice,
         commission_rate_used: 0,
         commission_amount: 0,
-        is_new_client: isNewClient,
-        client_name: clientName.trim() || null,
-        mobile_phone: phoneSanitized,
-        created_at: selectedDate.toISOString(),
-      }));
+        is_new_client: clientType === "new",
+        client_name: registeredClient.clientName,
+        mobile_phone: registeredClient.mobilePhone,
+        source: "manager",
+        created_at: `${dateStr}T12:00:00-04:00`,
+      }});
 
       const { error } = await supabase.from("sale_transactions").insert(transactions);
       if (error) throw error;
+
+      await recordClientPurchasesBestEffort({
+        organizationId,
+        clientName: registeredClient.clientName,
+        mobilePhone: registeredClient.mobilePhone,
+        purchases: cart.map((item) => ({
+          itemName: item.name,
+          itemType: item.type,
+          amount: getEffectiveItemPrice(item, item.customPrice),
+          quantity: 1,
+          purchasedAt: selectedDate.toISOString(),
+        })),
+      });
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
@@ -426,9 +703,9 @@ export default function QuickSaleModal({
       resetForm();
       onOpenChange(false);
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error registering sale:", error);
-      toast.error("Erro ao registrar venda");
+      toast.error(error?.message || "Erro ao registrar venda");
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -453,7 +730,26 @@ export default function QuickSaleModal({
     const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     try {
-      // Buscar daily_production existente (sem criar)
+      const phoneSanitized = sanitizePhone(mobilePhone);
+      if (!phoneSanitized || !clientName.trim()) {
+        toast.error("Preencha nome e celular do cliente");
+        return;
+      }
+
+      const registeredClient = await registerClientOrThrow({
+        organizationId,
+        clientName,
+        mobilePhone: phoneSanitized,
+      });
+
+      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
+
+      if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
+        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+      }
+
+      // Buscar ou criar daily_production
+      let productionId: string | null = null;
       const { data: existingProduction } = await supabase
         .from("daily_productions")
         .select("id")
@@ -461,13 +757,42 @@ export default function QuickSaleModal({
         .eq("date", dateStr)
         .maybeSingle();
 
-      const productionId = existingProduction?.id || null;
+      if (existingProduction) {
+        productionId = existingProduction.id;
+      } else {
+        const { data: newProd } = await supabase
+          .from("daily_productions")
+          .insert({
+            organization_id: organizationId,
+            barber_id: barberId,
+            date: dateStr,
+            services_total: 0,
+            products_total: 0,
+            clients_count: 0,
+            services_count: 0,
+            products_count: 0,
+            commission_earned: 0,
+            confirmed_presence: false,
+          })
+          .select("id")
+          .single();
+        productionId = newProd?.id || null;
+      }
 
       const itemType = manualCategory === "product" ? "product" : "service";
       const serviceCategory = manualCategory === "basic" ? "basic" : manualCategory === "extra" ? "extra" : null;
       const itemName = manualCategory === "basic" ? "Serviço básico (manual)" 
         : manualCategory === "extra" ? "Serviço extra (manual)" 
         : "Produto (manual)";
+      const manualItemForPricing: CatalogItem = {
+        id: "manual",
+        name: itemName,
+        type: itemType,
+        default_price: numericValue,
+        fixed_commission: 0,
+        category: serviceCategory || undefined,
+      };
+      const effectiveManualPrice = getEffectiveItemPrice(manualItemForPricing, numericValue);
 
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: barberId,
@@ -476,7 +801,7 @@ export default function QuickSaleModal({
         item_type: itemType,
         item_name: itemName,
         service_category: serviceCategory,
-        price_sold: numericValue,
+        price_sold: effectiveManualPrice,
         commission_rate_used: 0,
         commission_amount: 0,
         source: "manager",
@@ -485,14 +810,29 @@ export default function QuickSaleModal({
 
       if (error) throw error;
 
+      await recordClientPurchasesBestEffort({
+        organizationId,
+        clientName: registeredClient.clientName,
+        mobilePhone: registeredClient.mobilePhone,
+        purchases: [
+          {
+            itemName,
+            itemType,
+            amount: effectiveManualPrice,
+            quantity: 1,
+            purchasedAt: selectedDate.toISOString(),
+          },
+        ],
+      });
+
       toast.success(`Venda manual registrada para ${barberName}`);
       
       resetForm();
       onOpenChange(false);
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error registering manual sale:", error);
-      toast.error("Erro ao registrar venda");
+      toast.error(error?.message || "Erro ao registrar venda");
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -626,28 +966,58 @@ export default function QuickSaleModal({
               onBlur={handlePhoneBlur}
               className={cn("h-10 pl-10", phoneError && "border-destructive")}
               maxLength={15}
+              list="quick-sale-phone-suggestions"
             />
           </div>
           {phoneError && (
             <p className="text-xs text-destructive font-medium">{phoneError}</p>
           )}
+          <datalist id="quick-sale-phone-suggestions">
+            {phoneSuggestions.map((client) => (
+              <option key={client.id} value={formatPhone(client.mobile_phone)}>
+                {client.name}
+              </option>
+            ))}
+          </datalist>
         </div>
 
         {/* Client Name */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label htmlFor="client-name" className="text-sm font-medium">
-            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "(opcional)"}
+            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "*"}
           </Label>
           <Input
             id="client-name"
             type="text"
             placeholder="Ex: João"
             value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setClientName(nextName);
+              const matchedClient = nameSuggestions.find(
+                (client) => client.name.toLowerCase() === nextName.trim().toLowerCase()
+              );
+              if (matchedClient) {
+                setMobilePhone(formatPhone(matchedClient.mobile_phone));
+                if (!manualOverride) setClientType("without_subscription");
+              }
+            }}
             onBlur={handleNameBlur}
             className="h-10"
+            list="quick-sale-name-suggestions"
           />
         </div>
+        <datalist id="quick-sale-name-suggestions">
+          {nameSuggestions.map((client) => (
+            <option key={client.id} value={client.name}>
+              {formatPhone(client.mobile_phone)}
+            </option>
+          ))}
+        </datalist>
+
+        {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
+          <p className="px-1 text-xs text-muted-foreground">Buscando sugestões de clientes...</p>
+        )}
 
         {/* Client Status Badge */}
         {renderClientBadge() && (
@@ -676,20 +1046,12 @@ export default function QuickSaleModal({
           <Label className="text-sm font-medium">Tipo de Cliente</Label>
           <ToggleGroup
             type="single"
-            value={isNewClient ? "new" : "existing"}
+            value={clientType}
             onValueChange={(v) => {
-              if (v) handleClientTypeChange(v);
+              if (v) handleClientTypeChange(v as ClientType);
             }}
             className="justify-start"
           >
-            <ToggleGroupItem
-              value="existing"
-              aria-label="Cliente da Casa"
-              className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            >
-              <Home className="w-4 h-4" />
-              Cliente da Casa
-            </ToggleGroupItem>
             <ToggleGroupItem
               value="new"
               aria-label="Cliente Novo"
@@ -698,7 +1060,80 @@ export default function QuickSaleModal({
               <UserPlus className="w-4 h-4" />
               Cliente Novo
             </ToggleGroupItem>
+            <ToggleGroupItem
+              value="without_subscription"
+              aria-label="Cliente sem Assinatura"
+              className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            >
+              <Home className="w-4 h-4" />
+              Sem Assinatura
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="with_subscription"
+              aria-label="Cliente com Assinatura"
+              className="flex-1 gap-2 data-[state=on]:bg-amber-500 data-[state=on]:text-black"
+            >
+              <Crown className="w-4 h-4" />
+              Com Assinatura
+            </ToggleGroupItem>
           </ToggleGroup>
+
+          {clientType === "with_subscription" && (
+            <div className="space-y-2 rounded-lg border bg-background p-3">
+              <Label className="text-xs font-medium">Plano de assinatura</Label>
+              <Select
+                value={selectedSubscriptionPlanId}
+                onValueChange={(value) => {
+                  setSelectedSubscriptionPlanId(value);
+                  setSubscriptionPlanAutoDetected(false);
+                }}
+                disabled={isResolvingSubscription}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      isResolvingSubscription
+                        ? "Lendo assinatura do cliente..."
+                        : "Selecione a assinatura do cliente"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptionPlans.map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id}>
+                      {plan.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedSubscriptionPlan && (
+                <Badge variant="secondary" className="text-[11px]">
+                  {subscriptionPlanAutoDetected
+                    ? `Assinatura identificada automaticamente: ${selectedSubscriptionPlan.name}`
+                    : `Assinatura selecionada: ${selectedSubscriptionPlan.name}`}
+                </Badge>
+              )}
+
+              {!selectedSubscriptionPlanId && !isResolvingSubscription && (
+                <p className="text-xs text-muted-foreground">
+                  Cliente sem assinatura atribuída: selecione o plano para atribuir e continuar.
+                </p>
+              )}
+
+              {selectedSubscriptionPlan && (
+                <p className="text-xs text-muted-foreground">
+                  {(() => {
+                    const labels = services
+                      .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
+                      .map((service) => service.name);
+
+                    return `Serviços incluídos e zerados automaticamente: ${labels.join(", ") || "—"}.`;
+                  })()}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -918,6 +1353,11 @@ export default function QuickSaleModal({
                 {cart.map((item) => (
                   <div key={item.tempId} className="flex items-center gap-2 p-1.5 rounded-lg bg-background border min-h-[44px]">
                     <span className="truncate text-xs font-medium flex-1 min-w-0 pl-1">{item.name}</span>
+                    {cartItemIncludedBySubscription(item) && (
+                      <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
+                        Assinatura
+                      </Badge>
+                    )}
                     {item.fixed_commission !== null && (
                       <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
                         <Zap className="h-2 w-2 mr-0.5" />
@@ -932,6 +1372,7 @@ export default function QuickSaleModal({
                       onFocus={handleCartItemPriceFocus}
                       onBlur={() => finalizeCartItemPrice(item.tempId)}
                       className="w-20 text-right font-bold text-xs h-8"
+                      disabled={cartItemIncludedBySubscription(item)}
                     />
                     <Button
                       type="button"
