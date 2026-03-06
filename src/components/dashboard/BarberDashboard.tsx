@@ -18,6 +18,7 @@ import WarPlanWizard from "./barber/WarPlanWizard";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
+import MissingProductionAlert from "./barber/MissingProductionAlert";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
