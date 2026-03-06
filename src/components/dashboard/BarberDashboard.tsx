@@ -115,7 +115,7 @@ const [todayProduction, setTodayProduction] = useState<{
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("daily");
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
+  
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
   
