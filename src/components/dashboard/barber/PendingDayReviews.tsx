@@ -56,7 +56,7 @@ export default function PendingDayReviews({ barberId, onReview }: PendingDayRevi
       // Group by date
       const byDate = new Map<string, { count: number; total: number }>();
       transactions.forEach((tx) => {
-        const txDate = tx.created_at.split("T")[0];
+        const txDate = formatInTimeZone(new Date(tx.created_at), TIMEZONE, "yyyy-MM-dd");
         const existing = byDate.get(txDate) || { count: 0, total: 0 };
         existing.count++;
         existing.total += tx.price_sold;

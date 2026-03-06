@@ -166,7 +166,7 @@ export default function AITipsTab({
 
       {/* Plano de Guerra ou Dica do Coach IA */}
       {warPlan ? (
-        <WarPlanCard planText={warPlan} />
+        <WarPlanCard planText={warPlan} soldToday={soldToday} dailyTarget={dailyTarget} />
       ) : (
         <AIDailyCoachCard
           barberId={barberId}

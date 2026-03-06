@@ -74,8 +74,8 @@ export default function ProductionHistory({
         .from("sale_transactions")
         .select("id, created_at, client_name, item_name, item_type, price_sold")
         .eq("barber_id", barberId)
-        .gte("created_at", `${format(firstDay, "yyyy-MM-dd")}T00:00:00`)
-        .lte("created_at", `${format(lastDay, "yyyy-MM-dd")}T23:59:59`)
+        .gte("created_at", `${format(firstDay, "yyyy-MM-dd")}T00:00:00-04:00`)
+        .lte("created_at", `${format(lastDay, "yyyy-MM-dd")}T23:59:59-04:00`)
         .order("created_at", { ascending: false }),
     ]);
 
