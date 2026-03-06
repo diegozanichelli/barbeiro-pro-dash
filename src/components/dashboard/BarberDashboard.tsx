@@ -156,14 +156,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
     const todayStr = getTodayString();
 
-    const [daysResponse, salesResponse, goalResponse] = await Promise.all([
-      supabase
-        .from("daily_productions")
-        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
-        .eq("barber_id", barber.id)
-        .lte("date", todayStr)
-        .order("date", { ascending: false })
-        .limit(3),
+    const [salesResponse, goalResponse] = await Promise.all([
       supabase
         .from("sale_transactions")
         .select("id, created_at, client_name, item_name, item_type, price_sold")
@@ -179,10 +172,6 @@ const [todayProduction, setTodayProduction] = useState<{
         .eq("year", selectedYear)
         .maybeSingle(),
     ]);
-
-    if (!daysResponse.error) {
-      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
-    }
 
     if (!salesResponse.error) {
       setLiveSales((salesResponse.data || []) as LiveSale[]);
