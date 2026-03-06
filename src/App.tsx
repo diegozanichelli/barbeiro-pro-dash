@@ -18,10 +18,13 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
-// Simple loading fallback
+// Loading fallback with explicit UX feedback
 const PageLoader = () => (
-  <div className="min-h-screen flex items-center justify-center bg-background">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="text-center space-y-3">
+      <div className="mx-auto animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      <p className="text-sm text-muted-foreground">Carregando aplicação...</p>
+    </div>
   </div>
 );
 

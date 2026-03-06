@@ -86,7 +86,7 @@ function handleNumericInput(
     setter("");
     return;
   }
-  const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+  const cleaned = newValue.replace(/[^\d,.-]/g, "");
   if ((currentValue === "0" || currentValue === "0,00") && /^\d/.test(cleaned)) {
     const withoutLeadingZeros = cleaned.replace(/^0+(?=\d)/, "");
     setter(withoutLeadingZeros || cleaned);
@@ -107,7 +107,7 @@ export default function QuickSaleModal({
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
-  const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   
@@ -141,14 +141,7 @@ export default function QuickSaleModal({
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Fetch catalog items
-  useEffect(() => {
-    if (open && organizationId) {
-      fetchCatalog();
-    }
-  }, [open, organizationId, barberId]);
-
-  const fetchCatalog = async () => {
+  const fetchCatalog = useCallback(async () => {
     setLoadingCatalog(true);
     
     try {
@@ -182,7 +175,23 @@ export default function QuickSaleModal({
     } finally {
       setLoadingCatalog(false);
     }
-  };
+  }, [organizationId]);
+
+  // Fetch catalog items
+  useEffect(() => {
+    if (open && organizationId) {
+      fetchCatalog();
+    }
+  }, [open, organizationId, barberId, fetchCatalog]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (!organizationId) {
+      setLoadingCatalog(false);
+      toast.error("Organização não identificada. Feche e recarregue a página.");
+    }
+  }, [open, organizationId]);
 
   const resetForm = () => {
     setStep(1);
@@ -291,7 +300,7 @@ export default function QuickSaleModal({
         return { ...item, customPriceInput: "", customPrice: 0 };
       }
 
-      const cleaned = newValue.replace(/[^\d,.\-]/g, "");
+      const cleaned = newValue.replace(/[^\d,.-]/g, "");
       const parsed = parseFloat(cleaned.replace(",", ".")) || 0;
       
       return { 
@@ -356,6 +365,11 @@ export default function QuickSaleModal({
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
+    if (!organizationId) {
+      toast.error("Organização não identificada");
+      return;
+    }
+
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
       return;
@@ -401,7 +415,7 @@ export default function QuickSaleModal({
         created_at: selectedDate.toISOString(),
       }));
 
-      const { error } = await supabase.from("sale_transactions").insert(transactions as any);
+      const { error } = await supabase.from("sale_transactions").insert(transactions);
       if (error) throw error;
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
@@ -423,6 +437,11 @@ export default function QuickSaleModal({
 
   const handleManualSale = async () => {
     if (isSubmittingRef.current) return;
+    if (!organizationId) {
+      toast.error("Organização não identificada");
+      return;
+    }
+
     const numericValue = parseFloat(manualValue.replace(",", "."));
     if (isNaN(numericValue) || numericValue <= 0) {
       toast.error("Informe um valor válido");
@@ -462,7 +481,7 @@ export default function QuickSaleModal({
         commission_amount: 0,
         source: "manager",
         created_at: selectedDate.toISOString(),
-      } as any);
+      });
 
       if (error) throw error;
 
@@ -548,6 +567,11 @@ export default function QuickSaleModal({
       </DialogHeader>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        {!organizationId && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Organização não identificada. Feche o modal e recarregue a página.
+          </div>
+        )}
         {/* DatePicker */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label className="text-sm font-medium">Data da Venda</Label>
