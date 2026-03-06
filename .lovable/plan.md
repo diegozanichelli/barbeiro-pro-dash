@@ -1,47 +1,44 @@
 
 
-# Plano: "Plano de Guerra" — Wizard de Estratégia Diária do Barbeiro
+# Plano de Correção: Build Errors + Tabela de Feriados
 
-## Resumo
+## Problemas Identificados
 
-Ao abrir o dashboard, o barbeiro vê uma caixa flutuante perguntando "Vamos montar sua estratégia do dia?". Ao clicar, passa por 2 passos (agenda + serviços confiantes), recebe um plano tático calculado, e ao finalizar é redirecionado para a aba "Dicas da IA" onde o card "Dica do Coach" é substituído pelo "PLANO DE GUERRA" até o fim do dia.
+1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
+2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
+3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
+4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
 
-## Arquivos
+---
 
-### 1. Novo: `src/components/dashboard/barber/WarPlanWizard.tsx`
-Componente modal/wizard com 3 etapas:
+## Correções
 
-- **Step 1 (Agenda)**: Input numérico "Quantos clientes na agenda hoje?"
-- **Step 2 (Skillset)**: Busca `catalog_services` da organização (filtro `is_active = true`). Lista de seleção múltipla com checkboxes: "Em quais serviços você está mais confiante hoje?"
-- **Step 3 (Resultado — Plano de Guerra)**: Calcula e exibe o plano tático
+### 1. Criar tabela `organization_holidays` no banco
+Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
 
-**Lógica de cálculo (Step 3)**:
-- `gapToGoal = dailyTarget - todayRevenue`
-- Dos serviços selecionados, calcula quantos clientes precisam fazer cada serviço para fechar o gap
-- Identifica serviços de baixo ticket (< R$30 ou categorias como sobrancelha, depilação) como "estratégia extra"
-- Gera texto dinâmico: "Para bater sua meta de R$ [X], foque em oferecer [Serviço] para [N] clientes. Como estratégia extra, adicione [Serviço Baixo Ticket] para aumentar seu ticket médio em [Z]%."
+### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
+Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
 
-**Persistência**: Salva o plano no `localStorage` com chave `war_plan_YYYY-MM-DD_barberId`. Ao carregar, se existe plano para hoje, não mostra o wizard de novo — vai direto para o plano na aba IA.
+A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
 
-### 2. Novo: `src/components/dashboard/barber/WarPlanCard.tsx`
-Card visual "PLANO DE GUERRA" com estética motivacional (gradiente, icones de alvo/espada). Mostra o plano gerado. Substitui o `AIDailyCoachCard` na `AITipsTab` quando existe plano para hoje.
+### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
+Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
 
-### 3. Modificar: `src/components/dashboard/barber/AITipsTab.tsx`
-- Receber prop `warPlan` (string | null)
-- Se `warPlan` existe, renderizar `WarPlanCard` em vez de `AIDailyCoachCard`
+### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
+- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
+- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
+- Incluir `goalsAchieved` no `setStats` ao final do callback
 
-### 4. Modificar: `src/components/dashboard/BarberDashboard.tsx`
-- State: `warPlanMessage` (string | null), `showWarPlanWizard` (boolean)
-- No `useEffect` inicial, checar localStorage por plano de hoje. Se não existe, setar `showWarPlanWizard = true`
-- Renderizar `WarPlanWizard` como dialog flutuante
-- Ao finalizar wizard: salvar no localStorage, setar `warPlanMessage`, setar `activeTab = "ai-tips"`
-- Passar `warPlan` para `AITipsTab`
+---
 
-### Props necessárias para o Wizard
-- `organizationId`, `dailyTarget`, `todayRevenue` (para calcular gap)
-- `onComplete(planText: string)` callback
-- `open` / `onOpenChange`
+## Detalhes Técnicos
 
-## Visual
-O card "PLANO DE GUERRA" terá fundo gradiente escuro com bordas douradas/primárias, ícone de alvo, e o texto do plano com formatação destacada (valores em negrito/cor primária).
+| Arquivo | Erro | Correção |
+|---------|------|----------|
+| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
+| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
+| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
+| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
+| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
+| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
 

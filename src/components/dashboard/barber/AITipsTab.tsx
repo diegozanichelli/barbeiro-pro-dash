@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import AIDailyCoachCard from "./AIDailyCoachCard";
 import CoachingNudgeCard from "./CoachingNudgeCard";
+import WarPlanCard from "./WarPlanCard";
 
 const SCENARIOS = [
   {
@@ -59,6 +60,7 @@ interface AITipsTabProps {
   soldThisMonth: number;
   daysRemaining: number;
   dailyTarget: number;
+  warPlan?: string | null;
 }
 
 export default function AITipsTab({
@@ -70,6 +72,7 @@ export default function AITipsTab({
   soldThisMonth,
   daysRemaining,
   dailyTarget,
+  warPlan,
 }: AITipsTabProps) {
   const [loading, setLoading] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
@@ -161,17 +164,21 @@ export default function AITipsTab({
         </div>
       </div>
 
-      {/* Dica do Coach IA */}
-      <AIDailyCoachCard
-        barberId={barberId}
-        organizationId={organizationId}
-        barberName={barberName}
-        monthlyGoal={monthlyGoal}
-        soldToday={soldToday}
-        soldThisMonth={soldThisMonth}
-        daysRemaining={daysRemaining}
-        dailyTarget={dailyTarget}
-      />
+      {/* Plano de Guerra ou Dica do Coach IA */}
+      {warPlan ? (
+        <WarPlanCard planText={warPlan} />
+      ) : (
+        <AIDailyCoachCard
+          barberId={barberId}
+          organizationId={organizationId}
+          barberName={barberName}
+          monthlyGoal={monthlyGoal}
+          soldToday={soldToday}
+          soldThisMonth={soldThisMonth}
+          daysRemaining={daysRemaining}
+          dailyTarget={dailyTarget}
+        />
+      )}
 
       {/* Dica de Vendas */}
       <CoachingNudgeCard barberId={barberId} />

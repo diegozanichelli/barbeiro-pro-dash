@@ -14,6 +14,7 @@ import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 
 import AITipsTab from "./barber/AITipsTab";
+import WarPlanWizard from "./barber/WarPlanWizard";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
@@ -118,6 +119,8 @@ const [todayProduction, setTodayProduction] = useState<{
   
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
+  const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
+  const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -473,7 +476,27 @@ const [todayProduction, setTodayProduction] = useState<{
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
+  // Check localStorage for existing war plan
+  useEffect(() => {
+    if (!barber) return;
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    const saved = localStorage.getItem(todayKey);
+    if (saved) {
+      setWarPlanMessage(saved);
+      setShowWarPlanWizard(false);
+    } else {
+      setShowWarPlanWizard(true);
+    }
+  }, [barber]);
 
+  const handleWarPlanComplete = (planText: string) => {
+    if (!barber) return;
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    localStorage.setItem(todayKey, planText);
+    setWarPlanMessage(planText);
+    setShowWarPlanWizard(false);
+    setActiveTab("ai-tips");
+  };
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
@@ -1147,6 +1170,7 @@ const [todayProduction, setTodayProduction] = useState<{
                 soldThisMonth={stats.accumulated_commission}
                 daysRemaining={daysLeft}
                 dailyTarget={dailyTarget}
+                warPlan={warPlanMessage}
               />
             ) : (
               <Card className="bg-card border-border">
@@ -1181,6 +1205,18 @@ const [todayProduction, setTodayProduction] = useState<{
             organizationId={barber.organization_id}
             date={reviewingDate}
             onSuccess={handleFormSuccess}
+          />
+        )}
+
+        {/* War Plan Wizard */}
+        {barber && isCurrentMonth && monthlyGoal && (
+          <WarPlanWizard
+            open={showWarPlanWizard}
+            onOpenChange={setShowWarPlanWizard}
+            organizationId={barber.organization_id}
+            dailyTarget={dailyTarget}
+            todayRevenue={todayProduction?.total || 0}
+            onComplete={handleWarPlanComplete}
           />
         )}
 
