@@ -309,8 +309,8 @@ const [todayProduction, setTodayProduction] = useState<{
     const todayProd = typedProductions.find((p) => p.date === todayStr);
 
     if (todayProd) {
-      const todayConsolidated = typedConsolidated.find((row) => row.date === todayStr);
-      const todayTotal = Number(todayConsolidated?.total_revenue ?? todayConsolidated?.totalRevenue ?? 0) || 0;
+      const c = getConsolidated(todayProd);
+      const todayTotal = c.basic + c.extra + c.products;
       setTodayProduction({
         id: todayProd.id,
         total: todayTotal,
