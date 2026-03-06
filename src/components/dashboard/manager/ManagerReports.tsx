@@ -95,7 +95,7 @@ export default function ManagerReports() {
     const endDate = format(dateRange.to, "yyyy-MM-dd");
 
     // Faturamento consolidado via view
-    let consolidatedQuery = supabase
+    let consolidatedQuery = (supabase as any)
       .from("v_consolidated_daily_production")
       .select("barber_id, total_revenue, total_clients, total_services")
       .gte("date", startDate)
