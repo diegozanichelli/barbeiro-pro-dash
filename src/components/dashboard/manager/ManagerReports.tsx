@@ -229,7 +229,7 @@ export default function ManagerReports() {
       totalClients,
       averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
       goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
+      totalBarbers: allBarbers?.length || 0,
     });
   }, [dateRange, selectedBarber, selectedUnit]);
 
