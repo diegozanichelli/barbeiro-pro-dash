@@ -14,6 +14,7 @@ import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
 
 import AITipsTab from "./barber/AITipsTab";
+import WarPlanWizard from "./barber/WarPlanWizard";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
