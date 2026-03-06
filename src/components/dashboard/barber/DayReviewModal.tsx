@@ -66,6 +66,9 @@ interface CartItem extends CatalogItem {
   customPrice: number;
   catalogRefId: string | null;
   fromLive: boolean; // true = veio do AO VIVO
+  clientName: string | null;
+  mobilePhone: string | null;
+  description: string | null;
 }
 
 interface LiveTransaction {
@@ -76,6 +79,9 @@ interface LiveTransaction {
   catalog_service_id: string | null;
   catalog_product_id: string | null;
   price_sold: number;
+  client_name: string | null;
+  mobile_phone: string | null;
+  description: string | null;
 }
 
 type CategoryTab = "services" | "products";
@@ -122,7 +128,7 @@ export default function DayReviewModal({
         "yyyy-MM-dd"
       );
 
-      const [servicesRes, productsRes, liveRes] = await Promise.all([
+      const [servicesRes, productsRes, liveRes, productionRes] = await Promise.all([
         supabase
           .from("catalog_services")
           .select("id, name, default_price, fixed_commission, category")
@@ -137,12 +143,18 @@ export default function DayReviewModal({
           .order("name"),
         supabase
           .from("sale_transactions")
-          .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold")
+          .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold, client_name, mobile_phone, description")
           .eq("barber_id", barberId)
           .eq("source", "manager")
           .gte("created_at", `${date}T00:00:00`)
           .lt("created_at", `${nextDay}T00:00:00`)
           .order("created_at", { ascending: true }),
+        supabase
+          .from("daily_productions")
+          .select("clients_count, manual_clients_count")
+          .eq("barber_id", barberId)
+          .eq("date", date)
+          .maybeSingle(),
       ]);
 
       const services: CatalogItem[] = (servicesRes.data ?? []).map((item) => ({
@@ -176,14 +188,24 @@ export default function DayReviewModal({
             ? tx.catalog_service_id
             : tx.catalog_product_id,
         fromLive: true,
+        clientName: tx.client_name ?? null,
+        mobilePhone: tx.mobile_phone ?? null,
+        description: tx.description ?? null,
       }));
       setCart(cartFromLive);
 
-      // Estimate clients from basic services count
-      const basicServicesCount = live.filter(
-        (tx) => tx.item_type === "service" && tx.service_category === "basic"
-      ).length;
-      setClientsCount(Math.max(1, basicServicesCount));
+      // Prioritize saved clients count from daily production to keep consistency with AO VIVO launch
+      const savedClientsCount =
+        productionRes.data?.manual_clients_count ?? productionRes.data?.clients_count ?? 0;
+
+      if (savedClientsCount > 0) {
+        setClientsCount(savedClientsCount);
+      } else {
+        const basicServicesCount = live.filter(
+          (tx) => tx.item_type === "service" && tx.service_category === "basic"
+        ).length;
+        setClientsCount(Math.max(1, basicServicesCount));
+      }
     } catch (error) {
       console.error("Erro ao buscar dados de conferência:", error);
       toast.error("Erro ao carregar dados do dia");
@@ -223,6 +245,9 @@ export default function DayReviewModal({
         customPrice: item.default_price,
         catalogRefId: item.id,
         fromLive: false,
+        clientName: null,
+        mobilePhone: null,
+        description: null,
       },
     ]);
   };
@@ -335,13 +360,12 @@ export default function DayReviewModal({
       if (existingProd) {
         dailyProductionId = existingProd.id;
 
-        // Delete previous barber transactions
+        // Replace all previous transactions from the day with the reviewed cart
         await supabase
           .from("sale_transactions")
           .delete()
           .eq("daily_production_id", dailyProductionId)
-          .eq("barber_id", barberId)
-          .eq("source", "barber");
+          .eq("barber_id", barberId);
       } else {
         const { data: newProd, error: insertError } = await supabase
           .from("daily_productions")
@@ -379,6 +403,9 @@ export default function DayReviewModal({
         price_sold: item.customPrice,
         commission_rate_used: 0,
         commission_amount: 0,
+        client_name: item.clientName,
+        mobile_phone: item.mobilePhone,
+        description: item.description,
         source: "barber",
         created_at: `${date}T12:00:00`,
       }));
