@@ -480,38 +480,6 @@ export default function SubscriptionWizardModal({
           {/* STEP 1: Client Identification + Plan */}
           {step === "client_type" && (
             <div className="space-y-4">
-              {/* Mobile Phone (required) */}
-              <div className="space-y-1">
-                <Label htmlFor="sub-mobile-phone" className="text-sm font-medium">
-                  Celular do Cliente <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="sub-mobile-phone"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="(11) 99999-9999"
-                    value={mobilePhone}
-                    onChange={handlePhoneChange}
-                    onBlur={handlePhoneBlur}
-                    className={cn("h-10 pl-10", phoneError && "border-destructive")}
-                    maxLength={15}
-                    list="subscription-phone-suggestions"
-                  />
-                </div>
-                {phoneError && (
-                  <p className="text-xs text-destructive font-medium">{phoneError}</p>
-                )}
-                <datalist id="subscription-phone-suggestions">
-                  {phoneSuggestions.map((client) => (
-                    <option key={client.id} value={formatPhone(client.mobile_phone)}>
-                      {client.name}
-                    </option>
-                  ))}
-                </datalist>
-              </div>
-
               {/* Client Name (required) */}
               <div className="space-y-1">
                 <Label htmlFor="sub-client-name" className="text-sm font-medium">
@@ -546,6 +514,38 @@ export default function SubscriptionWizardModal({
                   </option>
                 ))}
               </datalist>
+
+              {/* Mobile Phone (required) */}
+              <div className="space-y-1">
+                <Label htmlFor="sub-mobile-phone" className="text-sm font-medium">
+                  Celular do Cliente <span className="text-destructive">*</span>
+                </Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="sub-mobile-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="(11) 99999-9999"
+                    value={mobilePhone}
+                    onChange={handlePhoneChange}
+                    onBlur={handlePhoneBlur}
+                    className={cn("h-10 pl-10", phoneError && "border-destructive")}
+                    maxLength={15}
+                    list="subscription-phone-suggestions"
+                  />
+                </div>
+                {phoneError && (
+                  <p className="text-xs text-destructive font-medium">{phoneError}</p>
+                )}
+                <datalist id="subscription-phone-suggestions">
+                  {phoneSuggestions.map((client) => (
+                    <option key={client.id} value={formatPhone(client.mobile_phone)}>
+                      {client.name}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
 
               {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
                 <p className="text-xs text-muted-foreground">Buscando sugestões de clientes...</p>
