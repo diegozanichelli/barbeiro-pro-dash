@@ -1,42 +1,44 @@
 
 
-# Plano: Corrigir Tela Preta ao Selecionar "Cliente Novo" no QuickSaleModal
+# Plano de Correção: Build Errors + Tabela de Feriados
 
-## Diagnóstico
+## Problemas Identificados
 
-Analisando o código do `QuickSaleModal.tsx`, identifiquei dois problemas potenciais que podem causar a tela preta:
+1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
+2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
+3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
+4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
 
-### Causa Provável 1: Interação Focus Trap (Radix Dialog) + ToggleGroup em Mobile
-O `ToggleGroupItem` do Radix pode causar um conflito de foco com o `Dialog` em dispositivos móveis. Quando o usuário toca no botão "Cliente Novo", o foco sai momentaneamente do Dialog, o que pode fazer o focus trap do Radix fechar o Dialog. O overlay escuro (`bg-black/80`) permanece por um instante, dando a impressão de "tela preta".
-
-### Causa Provável 2: `fetchSubscriptionPlans` nunca é chamada
-A função `fetchSubscriptionPlans` (linha 240) é **definida mas nunca executada** em nenhum `useEffect`. Isso significa que `subscriptionPlans` é sempre `[]`. Embora não cause crash diretamente, se algum código downstream depender de ter planos carregados quando `clientType` muda, pode gerar erro silencioso.
-
-### Causa Provável 3: Promise rejection não tratada
-Quando o `clientType` muda, o `useEffect` na linha 510 executa `resolveSubscriptionForClient()`. Se o componente for desmontado ou o state mudar durante essa chamada async, pode haver uma rejeição de promise não tratada que crash o React tree.
+---
 
 ## Correções
 
-### 1. Proteger interação do ToggleGroup no Dialog
-- Adicionar `onPointerDown={(e) => e.preventDefault()}` nos `ToggleGroupItem` para evitar que o Radix Dialog interprete o clique como perda de foco.
-- Garantir que `handleClientTypeChange` está envolvido em try/catch.
+### 1. Criar tabela `organization_holidays` no banco
+Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
 
-### 2. Chamar `fetchSubscriptionPlans` no `useEffect` de abertura
-- Adicionar chamada no `useEffect` existente (linha 225) para carregar os planos de assinatura junto com o catálogo.
+### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
+Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
 
-### 3. Proteção contra unmount em operações async
-- Adicionar flag `isMounted` nos efeitos assíncronos de `resolveSubscriptionForClient` para evitar `setState` após unmount.
-- Envolver `handleClientTypeChange` em try/catch com toast de erro.
+A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
 
-### 4. Adicionar console.log de diagnóstico
-- Adicionar logs em pontos críticos (seleção de tipo de cliente, abertura/fechamento do dialog) para capturar o erro caso persista.
+### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
+Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
+
+### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
+- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
+- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
+- Incluir `goalsAchieved` no `setStats` ao final do callback
+
+---
 
 ## Detalhes Técnicos
 
-| Arquivo | Mudança |
-|---|---|
-| `QuickSaleModal.tsx` | Proteger ToggleGroupItems contra conflito de foco |
-| `QuickSaleModal.tsx` | Chamar `fetchSubscriptionPlans` no useEffect de abertura |
-| `QuickSaleModal.tsx` | Proteção async com isMounted |
-| `QuickSaleModal.tsx` | Console logs de diagnóstico nos handlers críticos |
+| Arquivo | Erro | Correção |
+|---------|------|----------|
+| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
+| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
+| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
+| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
+| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
+| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
 

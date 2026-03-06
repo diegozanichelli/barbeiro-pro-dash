@@ -225,6 +225,7 @@ export default function QuickSaleModal({
   useEffect(() => {
     if (open && organizationId) {
       fetchCatalog();
+      fetchSubscriptionPlans();
     }
   }, [open, organizationId, barberId, fetchCatalog]);
 
@@ -354,11 +355,17 @@ export default function QuickSaleModal({
 
   // Handle manual override of client type
   const handleClientTypeChange = (value: ClientType) => {
-    setManualOverride(true);
-    setClientType(value);
-    if (value !== "with_subscription") {
-      setSelectedSubscriptionPlanId("");
-      setSubscriptionPlanAutoDetected(false);
+    try {
+      console.log("[QuickSaleModal] handleClientTypeChange:", value);
+      setManualOverride(true);
+      setClientType(value);
+      if (value !== "with_subscription") {
+        setSelectedSubscriptionPlanId("");
+        setSubscriptionPlanAutoDetected(false);
+      }
+    } catch (error) {
+      console.error("[QuickSaleModal] Erro ao mudar tipo de cliente:", error);
+      toast.error("Erro ao alterar tipo de cliente.");
     }
   };
 
@@ -508,7 +515,18 @@ export default function QuickSaleModal({
   }, [clientType, mobilePhone, organizationId]);
 
   useEffect(() => {
-    void resolveSubscriptionForClient();
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await resolveSubscriptionForClient();
+      } catch (error) {
+        if (!cancelled) {
+          console.error("[QuickSaleModal] Erro em resolveSubscriptionForClient:", error);
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
   }, [resolveSubscriptionForClient]);
 
   const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
@@ -998,6 +1016,7 @@ export default function QuickSaleModal({
               value="new"
               aria-label="Cliente Novo"
               className="flex-1 gap-2 data-[state=on]:bg-green-600 data-[state=on]:text-white"
+              onPointerDown={(e) => e.preventDefault()}
             >
               <UserPlus className="w-4 h-4" />
               Cliente Novo
@@ -1006,6 +1025,7 @@ export default function QuickSaleModal({
               value="without_subscription"
               aria-label="Cliente sem Assinatura"
               className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              onPointerDown={(e) => e.preventDefault()}
             >
               <Home className="w-4 h-4" />
               Sem Assinatura
@@ -1014,6 +1034,7 @@ export default function QuickSaleModal({
               value="with_subscription"
               aria-label="Cliente com Assinatura"
               className="flex-1 gap-2 data-[state=on]:bg-amber-500 data-[state=on]:text-black"
+              onPointerDown={(e) => e.preventDefault()}
             >
               <Crown className="w-4 h-4" />
               Com Assinatura
