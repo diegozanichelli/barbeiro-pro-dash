@@ -146,8 +146,8 @@ export default function DayReviewModal({
           .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold, client_name, mobile_phone, description")
           .eq("barber_id", barberId)
           .eq("source", "manager")
-          .gte("created_at", `${date}T00:00:00`)
-          .lt("created_at", `${nextDay}T00:00:00`)
+          .gte("created_at", `${date}T00:00:00-04:00`)
+          .lt("created_at", `${nextDay}T00:00:00-04:00`)
           .order("created_at", { ascending: true }),
         supabase
           .from("daily_productions")
