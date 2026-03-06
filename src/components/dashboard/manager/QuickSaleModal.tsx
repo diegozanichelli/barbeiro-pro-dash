@@ -785,7 +785,7 @@ export default function QuickSaleModal({
         source: "manager",
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
-        created_at: selectedDate.toISOString(),
+        created_at: `${dateStr}T12:00:00-04:00`,
       } as any);
 
       if (error) throw error;
