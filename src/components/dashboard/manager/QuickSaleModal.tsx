@@ -714,6 +714,21 @@ export default function QuickSaleModal({
         toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
       }
 
+      const itemType = manualCategory === "product" ? "product" : "service";
+      const serviceCategory = manualCategory === "basic" ? "basic" : manualCategory === "extra" ? "extra" : null;
+      const itemName = manualCategory === "basic" ? "Serviço básico (manual)" 
+        : manualCategory === "extra" ? "Serviço extra (manual)" 
+        : "Produto (manual)";
+      const manualItemForPricing: CatalogItem = {
+        id: "manual",
+        name: itemName,
+        type: itemType,
+        default_price: numericValue,
+        fixed_commission: 0,
+        category: serviceCategory || undefined,
+      };
+      const effectiveManualPrice = getEffectiveItemPrice(manualItemForPricing, numericValue);
+
       // Use atomic RPC
       const transaction = {
         item_type: itemType,
