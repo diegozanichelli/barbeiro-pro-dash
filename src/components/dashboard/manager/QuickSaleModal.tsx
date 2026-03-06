@@ -639,6 +639,11 @@ export default function QuickSaleModal({
         mobilePhone: phoneSanitized,
       });
 
+      if (!registeredClient?.clientName || !registeredClient?.mobilePhone) {
+        console.error("[QuickSaleModal] registerClientOrThrow retornou dados inválidos:", registeredClient);
+        throw new Error("Falha ao obter dados do cliente para a venda. Tente novamente.");
+      }
+
       const safeClientName = registeredClient.clientName || clientName.trim() || "Cliente";
 
       await ensureSubscriptionAssigned(registeredClient.mobilePhone);
