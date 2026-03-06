@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
@@ -25,9 +25,6 @@ interface DailyProduction {
   tx_basic_total?: number | null;
   tx_extra_total?: number | null;
   tx_products_total?: number | null;
-  manual_basic_total?: number | null;
-  manual_extra_total?: number | null;
-  manual_products_total?: number | null;
   products_total: number;
   services_count: number;
   products_count: number;
@@ -37,8 +34,6 @@ interface DailyProduction {
     id?: string;
     unit_id?: string;
     name?: string;
-    services_commission?: number;
-    products_commission?: number;
   } | null;
 }
 
@@ -62,14 +57,6 @@ interface BarberPerformanceRow {
   commissionTotal: number;
   clientsTotal: number;
   totalRevenue: number;
-}
-
-interface ClientCountTransaction {
-  daily_production_id: string | null;
-  source: string | null;
-  created_at: string;
-  client_name: string | null;
-  mobile_phone: string | null;
 }
 
 export default function ManagerReports() {
@@ -98,78 +85,7 @@ export default function ManagerReports() {
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
-  const [productionClientCounts, setProductionClientCounts] = useState<Map<string, number>>(new Map());
-
-  const getProductionTotals = useCallback((production: DailyProduction) => {
-    const manualBasic = Number(production.manual_basic_total ?? 0);
-    const manualExtra = Number(production.manual_extra_total ?? 0);
-    const manualProducts = Number(production.manual_products_total ?? 0);
-    const txBasic = Number(production.tx_basic_total ?? 0);
-    const txExtra = Number(production.tx_extra_total ?? 0);
-    const txProducts = Number(production.tx_products_total ?? 0);
-    const legacyBasic = Number(production.services_basic_total ?? production.services_total ?? 0);
-    const legacyExtra = Number(production.services_extra_total ?? 0);
-    const legacyProducts = Number(production.products_total ?? 0);
-
-    const hasManual = manualBasic + manualExtra + manualProducts > 0;
-    const hasTx = txBasic + txExtra + txProducts > 0;
-
-    if (hasManual) {
-      return { basic: manualBasic, extra: manualExtra, products: manualProducts };
-    }
-
-    if (hasTx) {
-      return { basic: txBasic, extra: txExtra, products: txProducts };
-    }
-
-    return { basic: legacyBasic, extra: legacyExtra, products: legacyProducts };
-  }, []);
-
-  const getEffectiveCommission = useCallback((production: DailyProduction) => {
-    const savedCommission = Number(production.commission_earned) || 0;
-    if (savedCommission > 0) {
-      return savedCommission;
-    }
-
-    const { basic, extra, products } = getProductionTotals(production);
-    const totalRevenue = basic + extra + products;
-    if (totalRevenue <= 0) {
-      return 0;
-    }
-
-    const servicesRate = Number(production.barbers?.services_commission ?? 0) / 100;
-    const productsRate = Number(production.barbers?.products_commission ?? 0) / 100;
-
-    return ((basic + extra) * servicesRate) + (products * productsRate);
-  }, [getProductionTotals]);
-
-  const buildClientCountMap = useCallback((transactions: ClientCountTransaction[]) => {
-    const grouped = new Map<string, Set<string>>();
-
-    transactions.forEach((tx) => {
-      if (!tx.daily_production_id) return;
-
-      const checkoutIdentity = [
-        tx.source || "unknown",
-        tx.mobile_phone || tx.client_name || "sem-cliente",
-        tx.created_at,
-      ].join("|");
-
-      if (!grouped.has(tx.daily_production_id)) {
-        grouped.set(tx.daily_production_id, new Set());
-      }
-
-      grouped.get(tx.daily_production_id)?.add(checkoutIdentity);
-    });
-
-    return new Map(Array.from(grouped.entries()).map(([id, keys]) => [id, keys.size]));
-  }, []);
-
-  const getProductionClientsCount = useCallback((production: DailyProduction) => {
-    const txCount = productionClientCounts.get(production.id) || 0;
-    return txCount > 0 ? txCount : Number(production.clients_count) || 0;
-  }, [productionClientCounts]);
-
+  const [isLoadingView, setIsLoadingView] = useState(true);
 
   const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
@@ -178,17 +94,55 @@ export default function ManagerReports() {
     const startDate = format(dateRange.from, "yyyy-MM-dd");
     const endDate = format(dateRange.to, "yyyy-MM-dd");
 
-    // Faturamento consolidado via RPC (sem view)
-    const rpcParams: { p_date_from: string; p_date_to: string; p_unit_id?: string; p_barber_id?: string } = {
-      p_date_from: startDate,
-      p_date_to: endDate,
-    };
-    if (selectedUnit !== "all") rpcParams.p_unit_id = selectedUnit;
-    if (selectedBarber !== "all") rpcParams.p_barber_id = selectedBarber;
+    // Faturamento consolidado via view
+    let consolidatedQuery = supabase
+      .from("v_consolidated_daily_production")
+      .select("barber_id, total_revenue, total_clients, total_services")
+      .gte("date", startDate)
+      .lte("date", endDate);
 
+    if (selectedBarber !== "all") {
+      consolidatedQuery = consolidatedQuery.eq("barber_id", selectedBarber);
+    }
+
+    if (selectedUnit !== "all") {
+      const { data: unitBarbers } = await supabase
+        .from("barbers")
+        .select("id")
+        .eq("unit_id", selectedUnit)
+        .eq("status", "active");
+
+      const unitBarberIds = (unitBarbers || []).map((b) => b.id);
+      if (unitBarberIds.length === 0) {
+        setStats({
+          totalRevenue: 0,
+          totalCommission: 0,
+          totalClients: 0,
+          averageTicket: 0,
+          goalsAchieved: 0,
+          totalBarbers: 0,
+        });
+        return;
+      }
+
+      consolidatedQuery = consolidatedQuery.in("barber_id", unitBarberIds);
+    }
+
+    const { data: consolidatedRows, error: consolidatedError } = await consolidatedQuery;
+
+    if (consolidatedError) {
+      console.error("ERRO DA VIEW:", consolidatedError, { startDate, endDate, selectedBarber, selectedUnit });
+    } else {
+      console.log("DADOS DA VIEW:", consolidatedRows, { startDate, endDate, selectedBarber, selectedUnit });
+      if ((consolidatedRows || []).length === 0) {
+        console.log("DADOS DA VIEW: retorno vazio - conferir filtros de data", { startDate, endDate, selectedBarber, selectedUnit });
+      }
+    }
+
+    // Buscar comissões no período para cálculo de metas batidas
     let commissionsQuery = supabase
       .from("daily_productions")
-      .select("id, barber_id, commission_earned, clients_count, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, barbers!inner(id, unit_id, services_commission, products_commission)")
+      .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
       .gte("date", startDate)
       .lte("date", endDate);
 
@@ -200,7 +154,9 @@ export default function ManagerReports() {
       commissionsQuery = commissionsQuery.eq("barber_id", selectedBarber);
     }
 
-    // Buscar barbeiros ativos
+    const { data: commissionRows } = await commissionsQuery;
+
+    // Buscar barbeiros ativos (filtrados por unidade se selecionada)
     let barbersQuery = supabase
       .from("barbers")
       .select("id")
@@ -221,51 +177,45 @@ export default function ManagerReports() {
       goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
     }
 
-    const [rpcRes, commissionsRes, barbersRes, goalsRes] = await Promise.all([
-      supabase.rpc("get_manager_report_stats", rpcParams),
-      commissionsQuery,
-      barbersQuery,
-      goalsQuery,
-    ]);
+    const { data: goals } = await goalsQuery;
 
-    if (rpcRes.error) {
-      console.error("Erro RPC get_manager_report_stats:", rpcRes.error);
+    interface ConsolidatedStatRow {
+      barber_id: string;
+      total_revenue?: number | null;
+      totalRevenue?: number | null;
+      total_clients?: number | null;
+      totalClients?: number | null;
+      total_services?: number | null;
+      totalServices?: number | null;
     }
 
-    const safeCommissions = (commissionsRes.data || []) as DailyProduction[];
-    const commissionProductionIds = safeCommissions.map((p) => p.id).filter(Boolean);
-
-    let commissionClientMap = new Map<string, number>();
-    if (commissionProductionIds.length > 0) {
-      const { data: txData } = await supabase
-        .from("sale_transactions")
-        .select("daily_production_id, source, created_at, client_name, mobile_phone")
-        .in("daily_production_id", commissionProductionIds);
-
-      commissionClientMap = buildClientCountMap((txData || []) as ClientCountTransaction[]);
+    interface CommissionRow {
+      barber_id: string;
+      commission_earned: number | null;
     }
 
-    const rpcRow = rpcRes.data?.[0];
-    const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
-    const totalClients = safeCommissions.reduce((sum, production) => {
-      const txCount = commissionClientMap.get(production.id) || 0;
-      return sum + (txCount > 0 ? txCount : Number(production.clients_count) || 0);
+    const safeConsolidated = (consolidatedRows || []) as ConsolidatedStatRow[];
+    const safeCommissions = (commissionRows || []) as CommissionRow[];
+
+    const totalRevenue = safeConsolidated.reduce((sum, row) => {
+      const revenue = Number(row.total_revenue ?? row.totalRevenue ?? 0) || 0;
+      return sum + revenue;
     }, 0);
-
-    const totalCommission = safeCommissions.reduce(
-      (sum, production) => sum + getEffectiveCommission(production),
-      0,
-    );
+    const totalClients = safeConsolidated.reduce((sum, row) => {
+      const clients = Number(row.total_clients ?? row.totalClients ?? 0) || 0;
+      return sum + clients;
+    }, 0);
+    const totalCommission = safeCommissions.reduce((sum, row) => sum + (Number(row.commission_earned) || 0), 0);
 
     const barberCommissions = new Map<string, number>();
     safeCommissions.forEach((row) => {
       const current = barberCommissions.get(row.barber_id) || 0;
-      barberCommissions.set(row.barber_id, current + getEffectiveCommission(row));
+      barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
     });
 
     let goalsAchieved = 0;
-    if (goalsRes.data) {
-      goalsRes.data.forEach((goal) => {
+    if (goals) {
+      goals.forEach((goal) => {
         const earned = barberCommissions.get(goal.barber_id) || 0;
         if (earned >= goal.target_commission) {
           goalsAchieved++;
@@ -279,9 +229,9 @@ export default function ManagerReports() {
       totalClients,
       averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
       goalsAchieved,
-      totalBarbers: barbersRes.data?.length || 0,
+      totalBarbers: barbersData?.length || 0,
     });
-  }, [buildClientCountMap, dateRange, getEffectiveCommission, selectedBarber, selectedUnit]);
+  }, [dateRange, selectedBarber, selectedUnit]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
@@ -330,23 +280,9 @@ export default function ManagerReports() {
 
     const { data } = await query;
     if (data) {
-      const typedProductions = (data ?? []) as DailyProduction[];
-      setProductions(typedProductions);
-
-      const productionIds = typedProductions.map((p) => p.id);
-      if (productionIds.length === 0) {
-        setProductionClientCounts(new Map());
-        return;
-      }
-
-      const { data: txData } = await supabase
-        .from("sale_transactions")
-        .select("daily_production_id, source, created_at, client_name, mobile_phone")
-        .in("daily_production_id", productionIds);
-
-      setProductionClientCounts(buildClientCountMap((txData || []) as ClientCountTransaction[]));
+      setProductions((data ?? []) as DailyProduction[]);
     }
-  }, [buildClientCountMap, dateRange, selectedBarber, selectedUnit]);
+  }, [dateRange, selectedBarber, selectedUnit]);
 
   useEffect(() => {
     fetchUnits();
@@ -365,10 +301,27 @@ export default function ManagerReports() {
   }, [selectedUnit, allBarbers]);
 
   useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchStats();
-      fetchProductions();
-    }
+    let isMounted = true;
+
+    const loadDashboardData = async () => {
+      if (!dateRange?.from || !dateRange?.to) return;
+
+      if (isMounted) {
+        setIsLoadingView(true);
+      }
+
+      await Promise.all([fetchStats(), fetchProductions()]);
+
+      if (isMounted) {
+        setIsLoadingView(false);
+      }
+    };
+
+    loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [dateRange, selectedBarber, selectedUnit, fetchStats, fetchProductions]);
 
   const handleEdit = (production: DailyProduction) => {
@@ -433,12 +386,26 @@ export default function ManagerReports() {
       const stats = barberStats.get(barberId);
       if (!stats) return;
 
-      const totals = getProductionTotals(production);
-      stats.servicesBasicTotal += totals.basic;
-      stats.servicesExtraTotal += totals.extra;
-      stats.productsTotal += totals.products;
-      stats.commissionTotal += getEffectiveCommission(production);
-      stats.clientsTotal += getProductionClientsCount(production);
+      const txBasic = Number(production.tx_basic_total) || 0;
+      const txExtra = Number(production.tx_extra_total) || 0;
+      const txProducts = Number(production.tx_products_total) || 0;
+      const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+      if (hasTxSource) {
+        stats.servicesBasicTotal += txBasic;
+        stats.servicesExtraTotal += txExtra;
+        stats.productsTotal += txProducts;
+      } else if (production.services_basic_total !== null || production.services_extra_total !== null) {
+        stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
+        stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
+        stats.productsTotal += Number(production.products_total) || 0;
+      } else {
+        stats.servicesBasicTotal += Number(production.services_total) || 0;
+        stats.productsTotal += Number(production.products_total) || 0;
+      }
+
+      stats.commissionTotal += Number(production.commission_earned);
+      stats.clientsTotal += Number(production.clients_count);
     });
 
     return Array.from(barberStats.entries())
@@ -448,7 +415,11 @@ export default function ManagerReports() {
         totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [productions, getEffectiveCommission, getProductionClientsCount, getProductionTotals]);
+  }, [productions]);
+
+  if (isLoadingView) {
+    return <div className="min-h-[200px] flex items-center justify-center text-muted-foreground">Carregando dados do dashboard...</div>;
+  }
 
   return (
     <div className="space-y-6">

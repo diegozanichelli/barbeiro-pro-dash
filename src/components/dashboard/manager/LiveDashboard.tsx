@@ -152,7 +152,17 @@ export default function LiveDashboard() {
   const currentYear = selectedDateObj.getFullYear();
 
   const fetchData = useCallback(async () => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      setBarbers([]);
+      setProductions([]);
+      setMonthProductions([]);
+      setGoals([]);
+      setUnits([]);
+      setManagerTransactions([]);
+      setTotalRevenue(0);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Fetch barbers with units
@@ -614,8 +624,22 @@ export default function LiveDashboard() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="min-h-[260px] flex items-center justify-center px-4">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Carregando painel Ao Vivo...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!organizationId) {
+    return (
+      <div className="min-h-[260px] flex items-center justify-center px-4">
+        <div className="text-center space-y-2">
+          <p className="text-base font-medium text-foreground">Não foi possível identificar a organização.</p>
+          <p className="text-sm text-muted-foreground">Recarregue a página para tentar novamente.</p>
+        </div>
       </div>
     );
   }
@@ -859,13 +883,18 @@ export default function LiveDashboard() {
                     <Button
                       size="sm"
                       className="h-8 w-8 p-0"
-                      onClick={() =>
+                      disabled={!organizationId}
+                      onClick={() => {
+                        if (!organizationId) {
+                          toast.error("Organização não identificada. Recarregue a página e tente novamente.");
+                          return;
+                        }
                         setQuickSaleModal({
                           open: true,
                           barberId: barber.id,
                           barberName: barber.name,
-                        })
-                      }
+                        });
+                      }}
                     >
                       <Plus className="w-4 h-4" />
                     </Button>
