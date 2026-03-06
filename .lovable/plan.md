@@ -1,44 +1,95 @@
 
 
-# Plano de Correção: Build Errors + Tabela de Feriados
+# Plano: Corrigir Divergência Gestor/Barbeiro + Fuso Horário + Fechamento 23h
 
-## Problemas Identificados
+## 1. Corrigir Divergência de Itens (DayReviewModal.tsx)
 
-1. **Tabela `organization_holidays` não existe no banco** — a migration existe no código mas nunca foi aplicada. Isso causa o erro ao salvar feriados.
-2. **`BarberDashboard.tsx` (linha 359)** — `isCurrentMonth` usado no `useMemo` do `pacingCoachMessage` mas é uma variável local dentro de `calculateDailyTarget`. Precisa ser declarada como estado/variável do componente antes do `useMemo`.
-3. **`DailyGoalsTracking.tsx` (linha 83)** — `useEffect` referencia `fetchUnits` e `fetchDailyGoals` antes de suas declarações. Mover o `useEffect` para depois.
-4. **`ManagerReports.tsx` (linha 109)** — `rpcData` não existe. A chamada RPC ao `get_manager_report_stats` foi removida/perdida. Precisa restaurar a chamada RPC antes de usar `rpcData`. Também `goalsAchieved` (linha 180) é usado sem declaração prévia.
+**Problema**: A query na linha 148-150 filtra por `created_at` sem offset de fuso, e pode perder transações que não foram vinculadas ao `daily_production_id`.
 
----
+**Correção** (linhas 144-151):
+- Adicionar offset `-04:00` nas timestamps
+- Remover dependência implícita de `daily_production_id` — buscar por `barber_id` + janela de data (idêntico ao LiveDashboard)
+- Adicionar log de auditoria após carregar os dados
 
-## Correções
+```typescript
+// De:
+.gte("created_at", `${date}T00:00:00`)
+.lt("created_at", `${nextDay}T00:00:00`)
 
-### 1. Criar tabela `organization_holidays` no banco
-Aplicar migration SQL para criar a tabela com RLS, já que o arquivo existe mas não foi executado.
+// Para:
+.gte("created_at", `${date}T00:00:00-04:00`)
+.lt("created_at", `${nextDay}T00:00:00-04:00`)
+```
 
-### 2. `BarberDashboard.tsx` — Extrair `isCurrentMonth` para escopo do componente
-Adicionar uma variável `isCurrentMonth` no escopo do componente (antes do `useMemo` na linha 340), derivada de `selectedMonth`, `selectedYear` e `getCurrentMonthYear()`. Manter a variável local dentro de `calculateDailyTarget` como está (não causa conflito pois é escopo de função).
+Adicionar após carregar `liveTransactions` e `cart`:
+```typescript
+console.log('[AUDITORIA] Itens Gestor carregados:', {
+  total: live.length,
+  soma: live.reduce((s, t) => s + t.price_sold, 0),
+  date
+});
+```
 
-A segunda declaração na linha 660 deve ser removida e substituída pela variável do componente.
+## 2. Padronizar Fuso em PendingDayReviews.tsx
 
-### 3. `DailyGoalsTracking.tsx` — Reordenar useEffect
-Mover o `useEffect` (linhas 80-83) para depois das declarações de `fetchUnits` e `fetchDailyGoals`.
+**Correções** (linhas 46-47 e 58):
+- Queries: adicionar `-04:00` no offset
+- Agrupação por data: usar `formatInTimeZone` em vez de `split("T")[0]`
 
-### 4. `ManagerReports.tsx` — Restaurar chamada RPC e declarar `goalsAchieved`
-- Adicionar a chamada RPC `get_manager_report_stats` antes da linha 109 onde `rpcData` é usado
-- Declarar `let goalsAchieved = 0` antes do bloco `if (productions)` na linha 141
-- Incluir `goalsAchieved` no `setStats` ao final do callback
+```typescript
+// Queries:
+.gte("created_at", `${startDate}T00:00:00-04:00`)
+.lte("created_at", `${today}T23:59:59-04:00`)
 
----
+// Agrupação:
+import { formatInTimeZone } from "date-fns-tz";
+const txDate = formatInTimeZone(new Date(tx.created_at), "America/Manaus", "yyyy-MM-dd");
+```
 
-## Detalhes Técnicos
+## 3. Padronizar Fuso em ProductionHistory.tsx
 
-| Arquivo | Erro | Correção |
-|---------|------|----------|
-| Database | Tabela `organization_holidays` não existe | Aplicar migration SQL |
-| `BarberDashboard.tsx:359` | `isCurrentMonth` fora de escopo | Extrair para variável do componente |
-| `BarberDashboard.tsx:660` | Redeclaração de `isCurrentMonth` | Usar variável do componente |
-| `DailyGoalsTracking.tsx:80-83` | useEffect antes das funções | Mover para depois das declarações |
-| `ManagerReports.tsx:109` | `rpcData` não declarado | Restaurar chamada RPC `get_manager_report_stats` |
-| `ManagerReports.tsx:180` | `goalsAchieved` não declarado | Declarar `let goalsAchieved = 0` antes do bloco |
+**Correções** (linhas 79-80):
+```typescript
+// De:
+.gte("created_at", `${format(firstDay, "yyyy-MM-dd")}T00:00:00`)
+.lte("created_at", `${format(lastDay, "yyyy-MM-dd")}T23:59:59`)
+
+// Para:
+.gte("created_at", `${format(firstDay, "yyyy-MM-dd")}T00:00:00-04:00`)
+.lte("created_at", `${format(lastDay, "yyyy-MM-dd")}T23:59:59-04:00`)
+```
+
+## 4. Ajuste do "Barber Coach" para 23h (WarPlanCard + AIDailyCoachCard)
+
+**Em `BarberDashboard.tsx`**: Adicionar lógica que verifica se são 23h+ em Manaus. Se sim:
+- O WarPlanCard mostra o balanço do dia (meta batida ou não) em vez do plano tático
+- A mensagem do coach muda para um resumo de fechamento
+
+**Implementação**: Criar uma constante `CLOSING_HOUR = 23` e verificar com `getManausDate().getHours() >= CLOSING_HOUR`. Quando ativo:
+- Se `soldToday >= dailyTarget`: mensagem de parabéns
+- Se não: mensagem com sugestão para o dia seguinte
+- O wizard do Plano de Guerra só pergunta sobre o dia seguinte após as 23h
+
+## 5. Logs de Auditoria (DayReviewModal.tsx)
+
+Após carregar dados do gestor e montar o carrinho, adicionar comparação:
+```typescript
+// Após montar cartFromLive
+const totalGestor = live.reduce((s, t) => s + t.price_sold, 0);
+const totalBarbeiro = cartFromLive.reduce((s, i) => s + (i.customPrice || 0), 0);
+if (Math.abs(totalGestor - totalBarbeiro) > 0.01) {
+  console.warn('[AUDITORIA] DIVERGÊNCIA detectada:', { totalGestor, totalBarbeiro, diff: totalGestor - totalBarbeiro });
+}
+console.log('[AUDITORIA] Itens Gestor vs Barbeiro:', { itensGestor: live.length, itensBarbeiro: cartFromLive.length });
+```
+
+## Arquivos modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `DayReviewModal.tsx` | Offset `-04:00` + logs de auditoria |
+| `PendingDayReviews.tsx` | Offset `-04:00` + `formatInTimeZone` na agrupação |
+| `ProductionHistory.tsx` | Offset `-04:00` nas queries |
+| `BarberDashboard.tsx` | Lógica de fechamento 23h para coach/war plan |
+| `WarPlanCard.tsx` | Aceitar prop opcional de "balanço" para modo noturno |
 
