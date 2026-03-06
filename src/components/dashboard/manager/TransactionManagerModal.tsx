@@ -1,7 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
-import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
-import { registerClientOrThrow } from "@/lib/clientRegistry";
 import {
   Dialog,
   DialogContent,
@@ -27,8 +24,6 @@ import {
   PlusCircle,
   ArrowLeft,
   ReceiptText,
-  Smartphone,
-  User,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -89,7 +84,6 @@ interface CartItem extends CatalogItem {
 
 type ViewMode = "list" | "add";
 type CategoryTab = "services" | "products";
-type AddStep = 1 | 2;
 
 export default function TransactionManagerModal({
   open,
@@ -114,19 +108,9 @@ export default function TransactionManagerModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<CategoryTab>("services");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [clientName, setClientName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [addStep, setAddStep] = useState<AddStep>(1);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; transactionId: string | null }>({
     open: false,
     transactionId: null,
-  });
-
-  const { nameSuggestions, phoneSuggestions, loading: loadingClientSuggestions } = useClientAutocomplete({
-    organizationId,
-    nameQuery: clientName,
-    phoneQuery: clientPhone,
-    enabled: open && viewMode === "add" && addStep === 1,
   });
 
   // Fetch transactions when modal opens
@@ -147,10 +131,7 @@ export default function TransactionManagerModal({
   useEffect(() => {
     if (!open) {
       setViewMode("list");
-      setAddStep(1);
       setCart([]);
-      setClientName("");
-      setClientPhone("");
       setSearchQuery("");
       setActiveTab("services");
     }
@@ -292,7 +273,7 @@ export default function TransactionManagerModal({
         if (newValue === "") {
           cleanedValue = "";
         } else {
-          const cleaned = newValue.replace(/[^\d,.-]/g, "");
+          const cleaned = newValue.replace(/[^\d,.\-]/g, "");
           if (
             (item.customPriceInput === "0" || item.customPriceInput === "0,00") &&
             /^\d/.test(cleaned)
@@ -342,31 +323,6 @@ export default function TransactionManagerModal({
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
 
-  const resetAddFlow = () => {
-    setAddStep(1);
-    setCart([]);
-    setClientName("");
-    setClientPhone("");
-    setSearchQuery("");
-    setActiveTab("services");
-  };
-
-  const handleContinueToItems = () => {
-    if (clientName.trim().length < 3) {
-      toast.error("Informe o nome do cliente (mínimo 3 caracteres)");
-      return;
-    }
-
-    const phoneDigits = sanitizePhone(clientPhone);
-    if (phoneDigits.length > 0 && !isValidPhone(clientPhone)) {
-      toast.error("Celular inválido. Use DDD + 9 dígitos");
-      return;
-    }
-
-    setClientPhone(phoneDigits ? formatPhone(phoneDigits) : "");
-    setAddStep(2);
-  };
-
   const handleAddItems = async () => {
     if (isSubmittingRef.current) return;
     if (cart.length === 0) {
@@ -377,35 +333,8 @@ export default function TransactionManagerModal({
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
-      let normalizedClientName = clientName.trim();
-      const phoneDigits = sanitizePhone(clientPhone);
-
-      if (phoneDigits.length === 11 && normalizedClientName.length >= 3) {
-        const registered = await registerClientOrThrow({
-          organizationId,
-          clientName: normalizedClientName,
-          mobilePhone: phoneDigits,
-        });
-        normalizedClientName = registered.clientName;
-      }
-
       // Insert transactions
-      const transactionsToInsert: Array<{
-        organization_id: string;
-        barber_id: string;
-        daily_production_id: string | null;
-        item_type: "service" | "product";
-        catalog_service_id: string | null;
-        catalog_product_id: string | null;
-        item_name: string;
-        service_category: string | undefined | null;
-        client_name: string | null;
-        price_sold: number;
-        commission_rate_used: number;
-        commission_amount: number;
-        source: "barber" | "manager";
-        created_at: string;
-      }> = [];
+      const transactionsToInsert: any[] = [];
       const sourceValue = auditMode ? "barber" : "manager";
       cart.forEach((item) => {
         for (let i = 0; i < item.quantity; i++) {
@@ -418,7 +347,6 @@ export default function TransactionManagerModal({
             catalog_product_id: item.type === "product" ? item.id : null,
             item_name: item.name,
             service_category: item.type === "service" ? item.category : null,
-            client_name: normalizedClientName || null,
             price_sold: item.customPrice,
             commission_rate_used: 0,
             commission_amount: 0,
@@ -436,7 +364,9 @@ export default function TransactionManagerModal({
       );
 
       // Reset and go back to list
-      resetAddFlow();
+      setCart([]);
+      setSearchQuery("");
+      setActiveTab("services");
       setViewMode("list");
       fetchTransactions();
       onSuccess();
@@ -509,7 +439,8 @@ export default function TransactionManagerModal({
                   className="h-8 w-8"
                   onClick={() => {
                     setViewMode("list");
-                    resetAddFlow();
+                    setCart([]);
+                    setSearchQuery("");
                   }}
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -519,14 +450,12 @@ export default function TransactionManagerModal({
                 <DialogTitle className="text-lg font-semibold">
                   {viewMode === "list"
                     ? `${readOnly ? "Comandas Recepção" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
-                    : addStep === 1 ? "Adicionar Cliente" : "Adicionar Item Retroativo"}
+                    : "Adicionar Itens"}
                 </DialogTitle>
                 <DialogDescription>
                   {viewMode === "list"
                     ? `Data: ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}`
-                     : addStep === 1
-                      ? `Preencha os dados do cliente para ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}`
-                      : `Agora selecione o item vendido para ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}`}
+                    : `Itens serão vinculados à data ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}`}
                 </DialogDescription>
               </div>
             </div>
@@ -608,10 +537,7 @@ export default function TransactionManagerModal({
                 )}
                 {!readOnly && (
                   <Button
-                    onClick={() => {
-                      resetAddFlow();
-                      setViewMode("add");
-                    }}
+                    onClick={() => setViewMode("add")}
                     className="w-full h-12 text-base gap-2"
                   >
                     <PlusCircle className="h-5 w-5" />
@@ -622,313 +548,219 @@ export default function TransactionManagerModal({
             </div>
           ) : (
             // ADD VIEW - Catalog
-            <>
-              {addStep === 1 ? (
-                <div className="flex-1 flex flex-col overflow-hidden">
-                  <div className="px-6 py-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="retroactive-client-name" className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        Nome do cliente
-                      </Label>
-                      <Input
-                        id="retroactive-client-name"
-                        placeholder="Nome do cliente"
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        autoFocus
-                      />
-                      {nameSuggestions.length > 0 && (
-                        <div className="rounded-md border bg-background p-2 text-sm space-y-1 max-h-36 overflow-auto">
-                          {nameSuggestions.map((client) => (
-                            <button
-                              key={client.id}
-                              type="button"
-                              className="w-full text-left px-2 py-1.5 rounded hover:bg-muted"
-                              onClick={() => {
-                                setClientName(client.name);
-                                setClientPhone(formatPhone(client.mobile_phone));
-                              }}
-                            >
-                              {client.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="retroactive-client-phone" className="flex items-center gap-2">
-                        <Smartphone className="h-4 w-4" />
-                        Celular do cliente (opcional)
-                      </Label>
-                      <Input
-                        id="retroactive-client-phone"
-                        inputMode="numeric"
-                        placeholder="(92) 99999-9999"
-                        value={clientPhone}
-                        onChange={(e) => setClientPhone(formatPhone(e.target.value))}
-                      />
-                      {loadingClientSuggestions && (
-                        <p className="text-xs text-muted-foreground">Buscando clientes...</p>
-                      )}
-                      {phoneSuggestions.length > 0 && (
-                        <div className="rounded-md border bg-background p-2 text-sm space-y-1 max-h-36 overflow-auto">
-                          {phoneSuggestions.map((client) => (
-                            <button
-                              key={client.id}
-                              type="button"
-                              className="w-full text-left px-2 py-1.5 rounded hover:bg-muted"
-                              onClick={() => {
-                                setClientName(client.name);
-                                setClientPhone(formatPhone(client.mobile_phone));
-                              }}
-                            >
-                              <div className="font-medium">{client.name}</div>
-                              <div className="text-xs text-muted-foreground">{formatPhone(client.mobile_phone)}</div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {sanitizePhone(clientPhone).length > 0 && !isValidPhone(clientPhone) && (
-                        <p className="text-xs text-destructive">Celular inválido. Use DDD + 9 dígitos.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-t px-6 py-4 bg-muted/30 flex gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        setViewMode("list");
-                        resetAddFlow();
-                      }}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button type="button" className="flex-1" onClick={handleContinueToItems}>
-                      Continuar
-                    </Button>
-                  </div>
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as CategoryTab)}
+              className="flex-1 min-h-0 flex flex-col overflow-hidden"
+            >
+              {/* Search */}
+              <div className="px-6 pt-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar serviço ou produto..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 h-11"
+                    autoFocus
+                  />
                 </div>
-              ) : (
-                <Tabs
-                  value={activeTab}
-                  onValueChange={(v) => setActiveTab(v as CategoryTab)}
-                  className="flex-1 min-h-0 flex flex-col overflow-hidden"
-                >
-                  {/* Search */}
-                  <div className="px-6 pt-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar serviço ou produto..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10 h-11"
-                        autoFocus
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Cliente: <span className="font-medium text-foreground">{clientName}</span>
-                      {sanitizePhone(clientPhone).length > 0 ? ` · ${formatPhone(clientPhone)}` : ""}
+              </div>
+
+              {/* Tabs */}
+              <div className="px-6 pt-4">
+                <TabsList className="grid w-full grid-cols-2 h-12">
+                  <TabsTrigger value="services" className="gap-2 text-sm">
+                    <Scissors className="h-4 w-4" />
+                    Serviços
+                    {services.length > 0 && (
+                      <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
+                        {services.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="products" className="gap-2 text-sm">
+                    <Package className="h-4 w-4" />
+                    Produtos
+                    {products.length > 0 && (
+                      <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
+                        {products.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              {/* Services Grid */}
+              <TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden">
+                {loadingCatalog ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : filteredItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <Scissors className="h-12 w-12 mb-4 opacity-50" />
+                    <p className="font-medium">
+                      {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
                     </p>
                   </div>
+                ) : (
+                  <ScrollArea className="flex-1 px-6 py-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {filteredItems.map((item) => (
+                        <CatalogCard
+                          key={item.id}
+                          item={item}
+                          isSelected={isInCart(item.id)}
+                          onSelect={() => handleToggleCart(item)}
+                          formatCurrency={formatCurrency}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </TabsContent>
 
-                  {/* Tabs */}
-                  <div className="px-6 pt-4">
-                    <TabsList className="grid w-full grid-cols-2 h-12">
-                      <TabsTrigger value="services" className="gap-2 text-sm">
-                        <Scissors className="h-4 w-4" />
-                        Serviços
-                        {services.length > 0 && (
-                          <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
-                            {services.length}
-                          </span>
-                        )}
-                      </TabsTrigger>
-                      <TabsTrigger value="products" className="gap-2 text-sm">
-                        <Package className="h-4 w-4" />
-                        Produtos
-                        {products.length > 0 && (
-                          <span className="text-xs bg-muted-foreground/20 px-1.5 py-0.5 rounded">
-                            {products.length}
-                          </span>
-                        )}
-                      </TabsTrigger>
-                    </TabsList>
+              {/* Products Grid */}
+              <TabsContent value="products" className="flex-1 min-h-0 m-0 overflow-hidden">
+                {loadingCatalog ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
+                ) : filteredItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <Package className="h-12 w-12 mb-4 opacity-50" />
+                    <p className="font-medium">
+                      {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+                    </p>
+                  </div>
+                ) : (
+                  <ScrollArea className="flex-1 px-6 py-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {filteredItems.map((item) => (
+                        <CatalogCard
+                          key={item.id}
+                          item={item}
+                          isSelected={isInCart(item.id)}
+                          onSelect={() => handleToggleCart(item)}
+                          formatCurrency={formatCurrency}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </TabsContent>
 
-                  {/* Services Grid */}
-                  <TabsContent value="services" className="flex-1 min-h-0 m-0 overflow-hidden">
-                    {loadingCatalog ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                      </div>
-                    ) : filteredItems.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                        <Scissors className="h-12 w-12 mb-4 opacity-50" />
-                        <p className="font-medium">
-                          {searchQuery ? "Nenhum serviço encontrado" : "Nenhum serviço cadastrado"}
-                        </p>
-                      </div>
-                    ) : (
-                      <ScrollArea className="flex-1 px-6 py-4">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          {filteredItems.map((item) => (
-                            <CatalogCard
-                              key={item.id}
-                              item={item}
-                              isSelected={isInCart(item.id)}
-                              onSelect={() => handleToggleCart(item)}
-                              formatCurrency={formatCurrency}
-                            />
-                          ))}
+              {/* Footer with cart */}
+              <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
+                {/* Cart Summary */}
+                {cart.length > 0 && (
+                  <div className="space-y-3">
+                    {cart.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-background border text-sm"
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="truncate font-medium">{item.name}</span>
+                          {item.fixed_commission !== null && (
+                            <Badge variant="secondary" className="shrink-0 text-[10px]">
+                              <Zap className="h-2 w-2 mr-0.5" />
+                              {item.fixed_commission}%
+                            </Badge>
+                          )}
                         </div>
-                      </ScrollArea>
-                    )}
-                  </TabsContent>
-
-                  {/* Products Grid */}
-                  <TabsContent value="products" className="flex-1 min-h-0 m-0 overflow-hidden">
-                    {loadingCatalog ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                      </div>
-                    ) : filteredItems.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                        <Package className="h-12 w-12 mb-4 opacity-50" />
-                        <p className="font-medium">
-                          {searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
-                        </p>
-                      </div>
-                    ) : (
-                      <ScrollArea className="flex-1 px-6 py-4">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          {filteredItems.map((item) => (
-                            <CatalogCard
-                              key={item.id}
-                              item={item}
-                              isSelected={isInCart(item.id)}
-                              onSelect={() => handleToggleCart(item)}
-                              formatCurrency={formatCurrency}
-                            />
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    )}
-                  </TabsContent>
-
-                  {/* Footer with cart */}
-                  <div className="border-t px-6 py-4 space-y-4 bg-muted/30">
-                    {/* Cart Summary */}
-                    {cart.length > 0 && (
-                      <div className="space-y-3">
-                        {cart.map((item) => (
-                          <div
-                            key={item.id}
-                            className="flex items-center justify-between p-2 rounded-lg bg-background border text-sm"
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className="truncate font-medium">{item.name}</span>
-                              {item.fixed_commission !== null && (
-                                <Badge variant="secondary" className="shrink-0 text-[10px]">
-                                  <Zap className="h-2 w-2 mr-0.5" />
-                                  {item.fixed_commission}%
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {/* Quantity */}
-                              <div className="flex items-center gap-1 bg-muted rounded-md border p-0.5">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  onClick={() => updateCartItemQuantity(item.id, -1)}
-                                  disabled={item.quantity <= 1}
-                                >
-                                  <Minus className="w-3 h-3" />
-                                </Button>
-                                <span className="w-5 text-center font-bold text-xs">
-                                  {item.quantity}x
-                                </span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  onClick={() => updateCartItemQuantity(item.id, 1)}
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </Button>
-                              </div>
-                              {/* Price */}
-                              <Input
-                                type="text"
-                                inputMode="decimal"
-                                value={item.customPriceInput}
-                                onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
-                                onBlur={() => finalizeCartItemPrice(item.id)}
-                                className="w-20 text-right font-bold text-xs h-7"
-                              />
-                              {/* Remove */}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-destructive hover:text-destructive"
-                                onClick={() => setCart((prev) => prev.filter((i) => i.id !== item.id))}
-                              >
-                                ×
-                              </Button>
-                            </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Quantity */}
+                          <div className="flex items-center gap-1 bg-muted rounded-md border p-0.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => updateCartItemQuantity(item.id, -1)}
+                              disabled={item.quantity <= 1}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="w-5 text-center font-bold text-xs">
+                              {item.quantity}x
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => updateCartItemQuantity(item.id, 1)}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
                           </div>
-                        ))}
-
-                        {/* Total */}
-                        <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
-                          <span className="font-medium">Total ({cartItemsTotal} itens):</span>
-                          <span className="text-xl font-bold text-primary">
-                            {formatCurrency(cartTotal)}
-                          </span>
+                          {/* Price */}
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={item.customPriceInput}
+                            onChange={(e) => updateCartItemPriceInput(item.id, e.target.value)}
+                            onBlur={() => finalizeCartItemPrice(item.id)}
+                            className="w-20 text-right font-bold text-xs h-7"
+                          />
+                          {/* Remove */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            onClick={() => setCart((prev) => prev.filter((i) => i.id !== item.id))}
+                          >
+                            ×
+                          </Button>
                         </div>
                       </div>
-                    )}
+                    ))}
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setAddStep(1)}
-                        className="flex-1"
-                        disabled={isSubmitting}
-                      >
-                        Voltar ao cliente
-                      </Button>
-                      <Button
-                        onClick={handleAddItems}
-                        className="flex-1 gap-2"
-                        disabled={isSubmitting || cart.length === 0}
-                      >
-                        {isSubmitting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Check className="w-4 h-4" />
-                            Adicionar ({cartItemsTotal})
-                          </>
-                        )}
-                      </Button>
+                    {/* Total */}
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
+                      <span className="font-medium">Total ({cartItemsTotal} itens):</span>
+                      <span className="text-xl font-bold text-primary">
+                        {formatCurrency(cartTotal)}
+                      </span>
                     </div>
                   </div>
-                </Tabs>
-              )}
-            </>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setViewMode("list");
+                      setCart([]);
+                      setSearchQuery("");
+                    }}
+                    className="flex-1"
+                    disabled={isSubmitting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleAddItems}
+                    className="flex-1 gap-2"
+                    disabled={isSubmitting || cart.length === 0}
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Adicionar ({cartItemsTotal})
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>
