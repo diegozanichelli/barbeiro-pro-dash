@@ -335,7 +335,7 @@ export default function TransactionManagerModal({
     try {
       // Insert transactions
       const transactionsToInsert: any[] = [];
-      const sourceValue = "manager";
+      const sourceValue = auditMode ? "barber" : "manager";
       cart.forEach((item) => {
         for (let i = 0; i < item.quantity; i++) {
           transactionsToInsert.push({
