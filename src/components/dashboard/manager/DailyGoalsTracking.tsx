@@ -77,7 +77,7 @@ export default function DailyGoalsTracking() {
 
   const workingDaysPassed = getWorkingDaysPassed();
 
-  // useEffect moved after function declarations below
+  // useEffect moved after function declarations
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
