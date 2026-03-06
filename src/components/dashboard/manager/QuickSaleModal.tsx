@@ -515,7 +515,18 @@ export default function QuickSaleModal({
   }, [clientType, mobilePhone, organizationId]);
 
   useEffect(() => {
-    void resolveSubscriptionForClient();
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await resolveSubscriptionForClient();
+      } catch (error) {
+        if (!cancelled) {
+          console.error("[QuickSaleModal] Erro em resolveSubscriptionForClient:", error);
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
   }, [resolveSubscriptionForClient]);
 
   const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
