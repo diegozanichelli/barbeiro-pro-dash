@@ -95,7 +95,7 @@ export default function ManagerReports() {
     const endDate = format(dateRange.to, "yyyy-MM-dd");
 
     // Faturamento consolidado via view
-    let consolidatedQuery = supabase
+    let consolidatedQuery = (supabase as any)
       .from("v_consolidated_daily_production")
       .select("barber_id, total_revenue, total_clients, total_services")
       .gte("date", startDate)
@@ -194,7 +194,7 @@ export default function ManagerReports() {
       commission_earned: number | null;
     }
 
-    const safeConsolidated = (consolidatedRows || []) as ConsolidatedStatRow[];
+    const safeConsolidated = (consolidatedRows || []) as unknown as ConsolidatedStatRow[];
     const safeCommissions = (commissionRows || []) as CommissionRow[];
 
     const totalRevenue = safeConsolidated.reduce((sum, row) => {
@@ -229,7 +229,7 @@ export default function ManagerReports() {
       totalClients,
       averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
       goalsAchieved,
-      totalBarbers: barbersData?.length || 0,
+      totalBarbers: allBarbers?.length || 0,
     });
   }, [dateRange, selectedBarber, selectedUnit]);
 
@@ -363,6 +363,33 @@ export default function ManagerReports() {
 
   const getBarberName = (production: DailyProduction) => {
     return production.barbers?.name || "Barbeiro Desconhecido";
+  };
+
+  const getProductionTotals = (production: DailyProduction) => {
+    const txBasic = Number(production.tx_basic_total) || 0;
+    const txExtra = Number(production.tx_extra_total) || 0;
+    const txProducts = Number(production.tx_products_total) || 0;
+    const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+    if (hasTxSource) {
+      return { basic: txBasic, extra: txExtra, products: txProducts };
+    }
+    if (production.services_basic_total !== null || production.services_extra_total !== null) {
+      return {
+        basic: Number(production.services_basic_total) || 0,
+        extra: Number(production.services_extra_total) || 0,
+        products: Number(production.products_total) || 0,
+      };
+    }
+    return { basic: Number(production.services_total) || 0, extra: 0, products: Number(production.products_total) || 0 };
+  };
+
+  const getProductionClientsCount = (production: DailyProduction) => {
+    return Number(production.clients_count) || 0;
+  };
+
+  const getEffectiveCommission = (production: DailyProduction) => {
+    return Number(production.commission_earned) || 0;
   };
 
   const barberPerformanceRows = useMemo<BarberPerformanceRow[]>(() => {

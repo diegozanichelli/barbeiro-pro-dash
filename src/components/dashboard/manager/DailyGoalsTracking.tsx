@@ -77,10 +77,7 @@ export default function DailyGoalsTracking() {
 
   const workingDaysPassed = getWorkingDaysPassed();
 
-  useEffect(() => {
-    fetchUnits();
-    fetchDailyGoals();
-  }, [fetchUnits, fetchDailyGoals]);
+  // useEffect moved after function declarations
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
@@ -235,6 +232,11 @@ export default function DailyGoalsTracking() {
       setLoading(false);
     }
   }, [organizationId, currentMonth, currentYear, todayStr, holidayDates, workingDaysPassed]);
+
+  useEffect(() => {
+    fetchUnits();
+    fetchDailyGoals();
+  }, [fetchUnits, fetchDailyGoals]);
 
   const filteredGoals = useMemo(() => {
     if (filterUnit === "all") return barberGoals;

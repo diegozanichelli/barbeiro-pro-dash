@@ -121,6 +121,7 @@ const [todayProduction, setTodayProduction] = useState<{
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
+  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -185,6 +186,9 @@ const [todayProduction, setTodayProduction] = useState<{
     }
   }, [barber, selectedMonth, selectedYear]);
 
+  // Alias for backward compat
+  const fetchLivePanelData = fetchMonthlyGoal;
+
   const fetchMonthlyStats = useCallback(async () => {
     if (!barber) return;
 
@@ -200,7 +204,7 @@ const [todayProduction, setTodayProduction] = useState<{
         .eq("barber_id", barber.id)
         .gte("date", startDate)
         .lte("date", endDate),
-      supabase
+      (supabase as any)
         .from("v_consolidated_daily_production")
         .select("date, consolidated_basic_total, consolidated_extra_total, consolidated_products_total, total_revenue, total_clients, total_services")
         .eq("barber_id", barber.id)
@@ -251,7 +255,7 @@ const [todayProduction, setTodayProduction] = useState<{
     }
 
     const typedProductions = (productions || []) as DailyProductionRow[];
-    const typedConsolidated = (consolidatedData || []) as ConsolidatedRow[];
+    const typedConsolidated = (consolidatedData || []) as unknown as ConsolidatedRow[];
 
     const totalClients = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_clients ?? row.totalClients ?? 0) || 0), 0);
     const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + (Number(row.total_services ?? row.totalServices ?? 0) || 0), 0);
@@ -361,30 +365,14 @@ const [todayProduction, setTodayProduction] = useState<{
       daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     }
 
-    const liveSalesChannel = supabase
-      .channel(`barber-live-sales-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sale_transactions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
+    const dailyTarget = daysToUse > 0 ? Math.max(0, remaining / daysToUse) : 0;
+    setDailyTarget(dailyTarget);
 
-    return () => {
-      supabase.removeChannel(liveDailyChannel);
-      supabase.removeChannel(liveSalesChannel);
-    };
-  }, [barber, fetchLivePanelData]);
-
-      setDailyTargetServices(servicesTarget);
-    }
+    // Calcular meta diária de serviços (mesma lógica proporcional)
+    const servicesTarget = monthlyGoal.target_commission > 0 
+      ? dailyTarget * (stats.total_services / Math.max(1, stats.accumulated_commission))
+      : 0;
+    setDailyTargetServices(servicesTarget);
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
 
   const pacingCoachMessage = useMemo(() => {
