@@ -233,6 +233,11 @@ export default function DailyGoalsTracking() {
     }
   }, [organizationId, currentMonth, currentYear, todayStr, holidayDates, workingDaysPassed]);
 
+  useEffect(() => {
+    fetchUnits();
+    fetchDailyGoals();
+  }, [fetchUnits, fetchDailyGoals]);
+
   const filteredGoals = useMemo(() => {
     if (filterUnit === "all") return barberGoals;
     return barberGoals.filter((goal) => {

@@ -365,6 +365,33 @@ export default function ManagerReports() {
     return production.barbers?.name || "Barbeiro Desconhecido";
   };
 
+  const getProductionTotals = (production: DailyProduction) => {
+    const txBasic = Number(production.tx_basic_total) || 0;
+    const txExtra = Number(production.tx_extra_total) || 0;
+    const txProducts = Number(production.tx_products_total) || 0;
+    const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+    if (hasTxSource) {
+      return { basic: txBasic, extra: txExtra, products: txProducts };
+    }
+    if (production.services_basic_total !== null || production.services_extra_total !== null) {
+      return {
+        basic: Number(production.services_basic_total) || 0,
+        extra: Number(production.services_extra_total) || 0,
+        products: Number(production.products_total) || 0,
+      };
+    }
+    return { basic: Number(production.services_total) || 0, extra: 0, products: Number(production.products_total) || 0 };
+  };
+
+  const getProductionClientsCount = (production: DailyProduction) => {
+    return Number(production.clients_count) || 0;
+  };
+
+  const getEffectiveCommission = (production: DailyProduction) => {
+    return Number(production.commission_earned) || 0;
+  };
+
   const barberPerformanceRows = useMemo<BarberPerformanceRow[]>(() => {
     const barberStats = new Map<string, Omit<BarberPerformanceRow, "id" | "totalRevenue">>();
 
