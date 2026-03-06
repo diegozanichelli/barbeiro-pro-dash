@@ -1363,7 +1363,6 @@ export default function QuickSaleModal({
                       onFocus={handleCartItemPriceFocus}
                       onBlur={() => finalizeCartItemPrice(item.tempId)}
                       className="w-20 text-right font-bold text-xs h-8"
-                      disabled={cartItemIncludedBySubscription(item)}
                     />
                     <Button
                       type="button"
