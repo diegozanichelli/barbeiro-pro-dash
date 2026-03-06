@@ -1,25 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getManausDate } from "@/lib/dateUtils";
+import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
+import { toast } from "sonner";
 
 interface MissingProductionAlertProps {
   barberId: string;
+  organizationId: string;
+  onStatusRegistered?: () => void;
 }
 
 interface ProductionStatusRow {
   date: string;
   presence_type: string | null;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  products_total: number | null;
+  services_total: number | null;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
 }
 
-const RESOLVED_PRESENCE_TYPES = new Set(["day_off", "absence", "optional_sunday", "holiday"]);
+const RESOLVED_PRESENCE_TYPES = new Set(["day_off", "absence", "optional_sunday", "holiday", "present"]);
 
-export default function MissingProductionAlert({ barberId }: MissingProductionAlertProps) {
+export default function MissingProductionAlert({ barberId, organizationId, onStatusRegistered }: MissingProductionAlertProps) {
   const [productions, setProductions] = useState<ProductionStatusRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -33,9 +48,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
         return;
       }
 
-      if (isMounted) {
-        setIsLoading(true);
-      }
+      if (isMounted) setIsLoading(true);
 
       try {
         const today = getManausDate();
@@ -47,7 +60,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
 
         const { data, error } = await supabase
           .from("daily_productions")
-          .select("date, presence_type")
+          .select("date, presence_type, services_basic_total, services_extra_total, products_total, services_total, tx_basic_total, tx_extra_total, tx_products_total")
           .eq("barber_id", barberId)
           .gte("date", startOfMonth)
           .lte("date", yesterdayStr);
@@ -59,13 +72,9 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
         }
       } catch (error) {
         console.error("Erro ao verificar dias pendentes:", error);
-        if (isMounted) {
-          setProductions([]);
-        }
+        if (isMounted) setProductions([]);
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       }
     };
 
@@ -80,7 +89,6 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
 
   const missingDays = useMemo(() => {
     const safeProductions = productions || [];
-
     const currentDate = new Date(`${currentDateKey}T12:00:00`);
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
@@ -91,51 +99,146 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
       expectedDays.push(format(date, "yyyy-MM-dd"));
     }
 
+    // Days that have production with revenue OR resolved presence type
     const resolvedDays = new Set(
       safeProductions
-        .filter((production) => {
-          const hasAnyProductionRecord = Boolean(production?.date);
-          const isResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
-          return hasAnyProductionRecord || isResolvedPresenceType;
+        .filter((p) => {
+          const hasRevenue =
+            (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0) > 0 ||
+            (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0) > 0 ||
+            (Number(p.services_total) || 0) > 0;
+          const isResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(p.presence_type ?? "");
+          return hasRevenue || isResolvedPresenceType;
         })
-        .map((production) => production.date)
+        .map((p) => p.date)
     );
 
     return expectedDays.filter((day) => !resolvedDays.has(day));
   }, [productions, currentDateKey]);
 
-  console.log("Dias pendentes calculados:", missingDays);
+  const handleConfirmStatus = async (status: PresenceType) => {
+    if (!selectedDate) return;
+    setIsSaving(true);
 
-  if (isLoading) {
-    return null;
-  }
+    try {
+      // Check if production exists for this date
+      const { data: existing } = await supabase
+        .from("daily_productions")
+        .select("id")
+        .eq("barber_id", barberId)
+        .eq("date", selectedDate)
+        .maybeSingle();
 
-  if (missingDays.length === 0) {
-    return null;
-  }
+      let error = null;
+
+      if (existing?.id) {
+        const result = await supabase
+          .from("daily_productions")
+          .update({
+            confirmed_presence: true,
+            presence_type: status,
+            clients_count: 0,
+            manual_clients_count: 0,
+          })
+          .eq("id", existing.id);
+        error = result.error;
+      } else {
+        const result = await supabase
+          .from("daily_productions")
+          .insert({
+            barber_id: barberId,
+            organization_id: organizationId,
+            date: selectedDate,
+            services_basic_total: 0,
+            services_extra_total: 0,
+            products_total: 0,
+            services_total: 0,
+            clients_count: 0,
+            manual_clients_count: 0,
+            services_count: 0,
+            products_count: 0,
+            confirmed_presence: true,
+            presence_type: status,
+          });
+        error = result.error;
+      }
+
+      if (error) throw error;
+
+      const dateLabel = selectedDate.split("-").reverse().join("/");
+      const statusLabels: Record<string, string> = {
+        present: "Presença registrada",
+        day_off: "Folga registrada",
+        absence: "Falta registrada",
+      };
+      toast.success(`${statusLabels[status] || "Status registrado"} em ${dateLabel}`);
+
+      // Remove the date from the list locally
+      setProductions((prev) => [
+        ...prev,
+        { date: selectedDate, presence_type: status, services_basic_total: 0, services_extra_total: 0, products_total: 0, services_total: 0, tx_basic_total: 0, tx_extra_total: 0, tx_products_total: 0 },
+      ]);
+
+      onStatusRegistered?.();
+    } catch (error) {
+      console.error("Erro ao registrar status:", error);
+      toast.error("Erro ao registrar status do dia");
+    } finally {
+      setIsSaving(false);
+      setSelectedDate(null);
+    }
+  };
+
+  if (isLoading || missingDays.length === 0) return null;
 
   return (
-    <Card className="bg-red-500/10 border-red-500/50 shadow-lg">
-      <CardContent className="py-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-red-500/20 rounded-full shrink-0">
-            <AlertCircle className="w-5 h-5 text-red-500" />
-          </div>
-          <div className="space-y-2 flex-1">
-            <h3 className="font-bold text-red-500 flex items-center gap-2">⚠️ Produções Pendentes!</h3>
-            <p className="text-sm text-foreground">Você ainda não lançou a produção dos seguintes dias:</p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {missingDays.map((day) => (
-                <span key={day} className="inline-flex items-center gap-1 px-2 py-1 bg-red-500/20 text-red-500 rounded text-sm font-medium">
-                  <Calendar className="w-3 h-3" />
-                  {format(new Date(`${day}T12:00:00`), "dd/MM", { locale: ptBR })}
-                </span>
-              ))}
+    <>
+      <Card className="border-destructive/30 bg-destructive/5 shadow-card-custom">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <AlertCircle className="w-5 h-5 text-destructive" />
+            Dias sem Registro
+            <Badge variant="destructive" className="ml-auto">
+              {missingDays.length}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm text-muted-foreground mb-3">
+            Esses dias não têm vendas nem status registrado. Informe o que aconteceu.
+          </p>
+          {missingDays.map((day) => (
+            <div
+              key={day}
+              className="flex items-center justify-between rounded-lg border bg-background px-4 py-3"
+            >
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <p className="font-semibold">
+                  {format(new Date(`${day}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedDate(day)}
+                className="gap-1.5"
+              >
+                Registrar
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Lance sua produção diária para manter seu acompanhamento em dia.</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+          ))}
+        </CardContent>
+      </Card>
+
+      <StatusDoDiaDialog
+        open={!!selectedDate}
+        onOpenChange={(open) => { if (!open) setSelectedDate(null); }}
+        barberId={barberId}
+        date={selectedDate || ""}
+        isLoading={isSaving}
+        onConfirm={handleConfirmStatus}
+      />
+    </>
   );
 }
