@@ -624,8 +624,12 @@ export default function QuickSaleModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
-      if (!phoneSanitized || !clientName.trim()) {
-        toast.error("Preencha nome e celular do cliente");
+      if (!phoneSanitized || phoneSanitized.length !== 11) {
+        toast.error("Preencha um celular válido com DDD (11 dígitos)");
+        return;
+      }
+      if (!clientName.trim() || clientName.trim().length < 3) {
+        toast.error("Preencha o nome do cliente (mínimo 3 caracteres)");
         return;
       }
 
@@ -635,10 +639,12 @@ export default function QuickSaleModal({
         mobilePhone: phoneSanitized,
       });
 
+      const safeClientName = registeredClient.clientName || clientName.trim() || "Cliente";
+
       await ensureSubscriptionAssigned(registeredClient.mobilePhone);
 
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
-        toast.info(`Cliente identificado pelo celular: ${registeredClient.clientName}`);
+        toast.info(`Cliente identificado pelo celular: ${safeClientName}`);
       }
 
       // Build transaction payload for RPC
@@ -652,7 +658,7 @@ export default function QuickSaleModal({
           service_category: item.type === "service" ? (item.category || null) : null,
           price_sold: effectivePrice,
           is_new_client: clientType === "new",
-          client_name: registeredClient.clientName,
+          client_name: safeClientName,
           mobile_phone: registeredClient.mobilePhone,
         };
       });
