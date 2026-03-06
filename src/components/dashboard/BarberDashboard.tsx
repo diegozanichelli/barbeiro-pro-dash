@@ -917,83 +917,31 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
-            {/* Card de Faturamento de Hoje com Confirmação de Presença */}
-            {isCurrentMonth && todayProduction !== null && (
+            {/* Confirmação de Presença standalone */}
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && !todayProduction.confirmed_presence && (
               <Card className="bg-card border-border shadow-card-custom">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-primary" />
-                    HISTÓRICO DOS ÚLTIMOS 3 DIAS
-                  </CardTitle>
-                  <CardDescription>
-                    Acompanhe seus últimos lançamentos e a confirmação de presença
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    {last3DaysProduction.length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
-                    )}
-                    {last3DaysProduction.map((day) => {
-                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
-                      const services = hasSplitServices
-                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
-                        : (Number(day.services_total) || 0);
-                      const products = Number(day.products_total) || 0;
-                      const total = services + products;
-
-                      return (
-                        <div key={day.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium">{format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {day.confirmed_presence ? "Presença confirmada" : "Sem confirmação de presença"}
-                            </p>
-                          </div>
-                          <p className="text-lg font-bold">R$ {total.toFixed(2)}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
-                  {todayProduction.total === 0 && !todayProduction.confirmed_presence && (
-                    <div className="pt-4 border-t border-border">
-                      <Button
-                        variant="outline"
-                        className="w-full border-primary/50 hover:bg-primary/10"
-                        onClick={handleOpenPresenceModal}
-                        disabled={confirmingPresence}
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
-                      </Button>
-                      <p className="text-xs text-muted-foreground text-center mt-2">
-                        Clique para informar que você compareceu, mesmo sem vendas.
-                        Isso contabiliza o dia na sua meta.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Se já confirmou presença */}
-                  {todayProduction.total === 0 && todayProduction.confirmed_presence && (
-                    <div className="flex items-center justify-center gap-2 text-success pt-4 border-t border-border">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Presença confirmada para hoje</span>
-                    </div>
-                  )}
+                <CardContent className="pt-6 space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full border-primary/50 hover:bg-primary/10"
+                    onClick={handleOpenPresenceModal}
+                    disabled={confirmingPresence}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Clique para informar que você compareceu, mesmo sem vendas.
+                  </p>
                 </CardContent>
               </Card>
             )}
 
-
-            {/* Card de Ganhos de Assinatura */}
-            {hasSubscriptionModule && (
-              <SubscriptionEarningsCard 
-                barberId={barber.id} 
-                selectedMonth={selectedMonth} 
-                selectedYear={selectedYear} 
-              />
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && todayProduction.confirmed_presence && (
+              <div className="flex items-center justify-center gap-2 text-success rounded-lg border border-success/30 bg-success/5 p-3">
+                <CheckCircle className="w-5 h-5" />
+                <span className="font-medium text-sm">Presença confirmada para hoje</span>
+              </div>
             )}
 
             {/* Card de Progresso Mensal */}
