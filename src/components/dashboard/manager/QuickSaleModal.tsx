@@ -1005,6 +1005,7 @@ export default function QuickSaleModal({
               value="new"
               aria-label="Cliente Novo"
               className="flex-1 gap-2 data-[state=on]:bg-green-600 data-[state=on]:text-white"
+              onPointerDown={(e) => e.preventDefault()}
             >
               <UserPlus className="w-4 h-4" />
               Cliente Novo
@@ -1013,6 +1014,7 @@ export default function QuickSaleModal({
               value="without_subscription"
               aria-label="Cliente sem Assinatura"
               className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              onPointerDown={(e) => e.preventDefault()}
             >
               <Home className="w-4 h-4" />
               Sem Assinatura
@@ -1021,6 +1023,7 @@ export default function QuickSaleModal({
               value="with_subscription"
               aria-label="Cliente com Assinatura"
               className="flex-1 gap-2 data-[state=on]:bg-amber-500 data-[state=on]:text-black"
+              onPointerDown={(e) => e.preventDefault()}
             >
               <Crown className="w-4 h-4" />
               Com Assinatura
