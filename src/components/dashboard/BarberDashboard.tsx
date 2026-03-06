@@ -476,7 +476,27 @@ const [todayProduction, setTodayProduction] = useState<{
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
+  // Check localStorage for existing war plan
+  useEffect(() => {
+    if (!barber) return;
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    const saved = localStorage.getItem(todayKey);
+    if (saved) {
+      setWarPlanMessage(saved);
+      setShowWarPlanWizard(false);
+    } else {
+      setShowWarPlanWizard(true);
+    }
+  }, [barber]);
 
+  const handleWarPlanComplete = (planText: string) => {
+    if (!barber) return;
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    localStorage.setItem(todayKey, planText);
+    setWarPlanMessage(planText);
+    setShowWarPlanWizard(false);
+    setActiveTab("ai-tips");
+  };
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
