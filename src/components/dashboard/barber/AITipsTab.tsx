@@ -72,6 +72,7 @@ export default function AITipsTab({
   soldThisMonth,
   daysRemaining,
   dailyTarget,
+  warPlan,
 }: AITipsTabProps) {
   const [loading, setLoading] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
