@@ -1025,6 +1025,16 @@ export type Database = {
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
       cleanup_old_client_names: { Args: never; Returns: undefined }
+      create_sale_and_ensure_production: {
+        Args: {
+          p_barber_id?: string
+          p_date?: string
+          p_organization_id: string
+          p_source?: string
+          p_transactions?: Json
+        }
+        Returns: string
+      }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
