@@ -1170,6 +1170,7 @@ const [todayProduction, setTodayProduction] = useState<{
                 soldThisMonth={stats.accumulated_commission}
                 daysRemaining={daysLeft}
                 dailyTarget={dailyTarget}
+                warPlan={warPlanMessage}
               />
             ) : (
               <Card className="bg-card border-border">
