@@ -146,8 +146,8 @@ export default function DayReviewModal({
           .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold, client_name, mobile_phone, description")
           .eq("barber_id", barberId)
           .eq("source", "manager")
-          .gte("created_at", `${date}T00:00:00`)
-          .lt("created_at", `${nextDay}T00:00:00`)
+          .gte("created_at", `${date}T00:00:00-04:00`)
+          .lt("created_at", `${nextDay}T00:00:00-04:00`)
           .order("created_at", { ascending: true }),
         supabase
           .from("daily_productions")
@@ -193,6 +193,14 @@ export default function DayReviewModal({
         description: tx.description ?? null,
       }));
       setCart(cartFromLive);
+
+      // [AUDITORIA] Log de itens do gestor vs barbeiro
+      const totalGestor = live.reduce((s, t) => s + t.price_sold, 0);
+      const totalBarbeiro = cartFromLive.reduce((s, i) => s + (i.customPrice || 0), 0);
+      console.log('[AUDITORIA] Itens Gestor vs Barbeiro:', { itensGestor: live.length, itensBarbeiro: cartFromLive.length, date });
+      if (Math.abs(totalGestor - totalBarbeiro) > 0.01) {
+        console.warn('[AUDITORIA] DIVERGÊNCIA detectada:', { totalGestor, totalBarbeiro, diff: totalGestor - totalBarbeiro });
+      }
 
       // Prioritize saved clients count from daily production to keep consistency with AO VIVO launch
       const savedClientsCount =

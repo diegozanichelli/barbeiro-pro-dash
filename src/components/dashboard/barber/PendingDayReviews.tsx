@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, Eye, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getTodayString } from "@/lib/dateUtils";
+import { formatInTimeZone } from "date-fns-tz";
+import { getTodayString, TIMEZONE } from "@/lib/dateUtils";
 
 interface PendingReviewDay {
   date: string;
@@ -43,8 +44,8 @@ export default function PendingDayReviews({ barberId, onReview }: PendingDayRevi
         .select("created_at, price_sold")
         .eq("barber_id", barberId)
         .eq("source", "manager")
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${today}T23:59:59`);
+        .gte("created_at", `${startDate}T00:00:00-04:00`)
+        .lte("created_at", `${today}T23:59:59-04:00`);
 
       if (!transactions || transactions.length === 0) {
         setPendingDays([]);
@@ -55,7 +56,7 @@ export default function PendingDayReviews({ barberId, onReview }: PendingDayRevi
       // Group by date
       const byDate = new Map<string, { count: number; total: number }>();
       transactions.forEach((tx) => {
-        const txDate = tx.created_at.split("T")[0];
+        const txDate = formatInTimeZone(new Date(tx.created_at), TIMEZONE, "yyyy-MM-dd");
         const existing = byDate.get(txDate) || { count: 0, total: 0 };
         existing.count++;
         existing.total += tx.price_sold;
