@@ -140,22 +140,27 @@ export default function TransactionManagerModal({
   const fetchTransactions = async () => {
     setLoadingTransactions(true);
     try {
+      const { addDays, parseISO, format: fmtDate } = await import("date-fns");
+      const nextDay = fmtDate(addDays(parseISO(date), 1), "yyyy-MM-dd");
+
       let query = supabase
         .from("sale_transactions")
         .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name, source")
         .order("created_at", { ascending: true });
 
       if (dailyProductionId) {
-        // Use daily_production_id for accurate filtering (avoids cross-date issues)
-        query = query.eq("daily_production_id", dailyProductionId);
+        // Use daily_production_id, but keep date bounds to avoid cross-date leakage
+        // from retroactive edits with mismatched created_at values.
+        query = query
+          .eq("daily_production_id", dailyProductionId)
+          .gte("created_at", `${date}T00:00:00-04:00`)
+          .lt("created_at", `${nextDay}T00:00:00-04:00`);
       } else {
         // Fallback to date range when no production record exists
-        const { addDays, parseISO, format: fmtDate } = await import("date-fns");
-        const nextDay = fmtDate(addDays(parseISO(date), 1), "yyyy-MM-dd");
         query = query
           .eq("barber_id", barberId)
-          .gte("created_at", `${date}T00:00:00`)
-          .lt("created_at", `${nextDay}T00:00:00`);
+          .gte("created_at", `${date}T00:00:00-04:00`)
+          .lt("created_at", `${nextDay}T00:00:00-04:00`);
       }
 
       // Apply source filter if provided (e.g., only show manager transactions in Live view)
@@ -350,6 +355,7 @@ export default function TransactionManagerModal({
             commission_rate_used: 0,
             commission_amount: 0,
             source: sourceValue,
+            created_at: `${date}T12:00:00-04:00`,
           });
         }
       });
