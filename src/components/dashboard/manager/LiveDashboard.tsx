@@ -886,7 +886,7 @@ export default function LiveDashboard() {
                   return (
                     <motion.div
                       key={barber.id}
-                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
+                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
                         isGoalMet ? "bg-green-500/5" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
