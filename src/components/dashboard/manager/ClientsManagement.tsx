@@ -81,11 +81,16 @@ export default function ClientsManagement() {
 
   const planMap = new Map(plans.map((p) => [p.id, p]));
 
+  const normalize = (str: string) =>
+    str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
   const filtered = clients.filter((c) => {
-    const q = search.toLowerCase().trim();
+    const q = search.trim();
     if (!q) return true;
+    const qNorm = normalize(q);
     return (
-      c.name.toLowerCase().includes(q) ||
+      normalize(c.name).includes(qNorm) ||
+      c.name.toLowerCase().includes(q.toLowerCase()) ||
       c.mobile_phone.includes(q.replace(/\D/g, ""))
     );
   });
