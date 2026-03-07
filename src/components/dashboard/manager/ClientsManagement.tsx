@@ -88,12 +88,13 @@ export default function ClientsManagement() {
     const q = search.trim();
     if (!q) return true;
     const qNorm = normalize(q);
-    return (
-      normalize(c.name).includes(qNorm) ||
-      c.name.toLowerCase().includes(q.toLowerCase()) ||
-      c.mobile_phone.includes(q.replace(/\D/g, ""))
-    );
+    const nameMatch = normalize(c.name || "").includes(qNorm);
+    const phoneMatch = (c.mobile_phone || "").includes(q.replace(/\D/g, ""));
+    return nameMatch || phoneMatch;
   });
+
+  // Debug: log search state
+  console.log("[ClientsManagement] search:", JSON.stringify(search), "clients.length:", clients.length, "filtered.length:", filtered.length, "first 3 names:", clients.slice(0, 3).map(c => c.name));
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / CLIENTS_PER_PAGE));
   const pageStart = (currentPage - 1) * CLIENTS_PER_PAGE;
