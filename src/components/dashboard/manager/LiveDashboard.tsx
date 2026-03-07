@@ -831,49 +831,6 @@ export default function LiveDashboard() {
           </div>
         </div>
 
-        {/* Row 3: Compact KPIs */}
-        <div className="grid grid-cols-3 gap-2">
-          <div
-            className={`relative overflow-hidden rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-3 transition-all duration-500 ${
-              isGlowing && isViewingToday ? "animate-glow shadow-[0_0_20px_hsl(38_92%_50%/0.5)]" : ""
-            }`}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <DollarSign className="w-3.5 h-3.5 text-primary" />
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Faturamento</p>
-            </div>
-            <motion.p
-              className="text-lg sm:text-2xl font-extrabold text-primary tracking-tight leading-none"
-              key={totalRevenue}
-              initial={{ scale: 1.05, opacity: 0.7 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 300 }}
-            >
-              {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </motion.p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">{filteredBarbers.length} barbeiros</p>
-          </div>
-
-          <div className="relative overflow-hidden rounded-lg border border-border/40 bg-card/60 backdrop-blur-sm p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Users className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Clientes</p>
-            </div>
-            <p className="text-lg sm:text-2xl font-bold text-foreground leading-none">{totalClientsToday}</p>
-          </div>
-
-          <div className="relative overflow-hidden rounded-lg border border-border/40 bg-card/60 backdrop-blur-sm p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <TrendingUp className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Ticket Médio</p>
-            </div>
-            <p className="text-lg sm:text-2xl font-bold text-foreground leading-none">
-              {averageTicketToday > 0
-                ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-                : "—"}
-            </p>
-          </div>
-        </div>
       </motion.div>
 
       {/* Main content: Barber Cards + Ranking Sidebar */}
