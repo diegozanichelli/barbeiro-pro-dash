@@ -149,6 +149,7 @@ export default function LiveDashboard() {
   // Subscription wizard modal
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Date navigation state
   const todayManaus = getTodayString();
