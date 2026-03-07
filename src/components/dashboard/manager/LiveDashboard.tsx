@@ -1188,7 +1188,7 @@ export default function LiveDashboard() {
                       return (
                         <motion.div
                           key={unit.id}
-                          className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${
+                          className={`flex items-center justify-between px-2 py-2 rounded-lg ${
                             index === 0 ? "bg-amber-500/10 border border-amber-500/30" : index < 3 ? "bg-card/60 border border-border/20" : ""
                           }`}
                           initial={{ opacity: 0, x: 20 }}
