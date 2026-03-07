@@ -14,6 +14,13 @@ import {
 import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -668,175 +675,164 @@ export default function LiveDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header with glassmorphism */}
+      {/* Compact Header */}
       <motion.div
-        className="flex flex-col gap-4"
+        className="space-y-3"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
+        {/* Row 1: Title + Actions */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
             {isViewingToday ? (
               <div className="relative">
-                <Radio className="w-6 h-6 text-red-500 animate-pulse" />
+                <Radio className="w-5 h-5 text-red-500 animate-pulse" />
                 <div className="absolute inset-0 bg-red-500/20 rounded-full blur-md animate-pulse" />
               </div>
             ) : (
-              <Calendar className="w-6 h-6 text-muted-foreground" />
+              <Calendar className="w-5 h-5 text-muted-foreground" />
             )}
-            <h2 className="text-2xl font-bold text-foreground tracking-tight">
+            <h2 className="text-xl font-bold text-foreground tracking-tight">
               {isViewingToday ? "AO VIVO" : "HISTÓRICO"}
             </h2>
             {isViewingToday && (
-              <Badge className="bg-red-500/20 text-red-400 border-red-500/30 animate-pulse text-xs">
+              <Badge className="bg-red-500/20 text-red-400 border-red-500/30 animate-pulse text-[10px] px-1.5 py-0">
                 LIVE
               </Badge>
             )}
           </div>
 
-          <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-            <SelectTrigger className="w-full sm:w-[200px] bg-card/50 backdrop-blur-sm border-border/50">
-              <SelectValue placeholder="Filtrar por unidade" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as Unidades</SelectItem>
-              {units.map((unit) => (
-                <SelectItem key={unit.id} value={unit.id}>
-                  {unit.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Date Navigation */}
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={goToPreviousDay}
-            className="h-9 w-9 bg-card/50 backdrop-blur-sm border-border/50"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          
-          <div className="flex items-center gap-2 px-4 py-2 bg-card/60 backdrop-blur-sm rounded-lg min-w-[200px] justify-center border border-border/30">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-foreground capitalize">
-              {format(parseISO(selectedDate), "EEEE, dd/MM", { locale: ptBR })}
-            </span>
-          </div>
-          
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={goToNextDay}
-            disabled={isViewingToday}
-            className="h-9 w-9 bg-card/50 backdrop-blur-sm border-border/50"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          
-          {!isViewingToday && (
+          <div className="flex items-center gap-2">
             <Button
-              variant="secondary"
               size="sm"
-              onClick={goToToday}
-              className="ml-2"
+              className="gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-md shadow-amber-500/20 text-xs h-8"
+              onClick={() => setSubscriptionWizardOpen(true)}
             >
-              Hoje
+              <Crown className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Vender Assinatura</span>
+              <span className="sm:hidden">Assinatura</span>
             </Button>
-          )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 p-0 bg-card/50 backdrop-blur-sm"
+              onClick={() => setSubscriptionAuditOpen(true)}
+              title="Auditar Últimas Vendas"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </Button>
+          </div>
         </div>
-      </motion.div>
 
-      {/* KPI Cards Row */}
-      <motion.div
-        className="grid grid-cols-2 lg:grid-cols-4 gap-3"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-      >
-        {/* Total Revenue - Hero KPI */}
-        <div
-          className={`col-span-2 relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent backdrop-blur-sm p-5 transition-all duration-500 ${
-            isGlowing && isViewingToday ? "animate-glow shadow-[0_0_30px_hsl(38_92%_50%/0.6)]" : ""
-          }`}
-        >
-          <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="relative">
-            <div className="flex items-center gap-2 mb-2">
-              <DollarSign className="w-4 h-4 text-primary" />
-              <p className="text-sm text-muted-foreground font-medium">
-                {isViewingToday ? "Faturamento Hoje" : `Faturamento ${format(parseISO(selectedDate), "dd/MM")}`}
-              </p>
+        {/* Row 2: Date Picker + Unit Filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={goToPreviousDay} className="h-8 w-8">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-8 px-3 bg-card/60 backdrop-blur-sm border-border/40 text-sm font-medium capitalize gap-1.5"
+                >
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                  {format(parseISO(selectedDate), "EEE, dd/MM", { locale: ptBR })}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarComponent
+                  mode="single"
+                  selected={parseISO(selectedDate)}
+                  onSelect={(date) => {
+                    if (date) {
+                      const formatted = format(date, "yyyy-MM-dd");
+                      if (formatted <= todayManaus) {
+                        setSelectedDate(formatted);
+                      }
+                    }
+                  }}
+                  disabled={(date) => date > new Date()}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                  locale={ptBR}
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Button variant="ghost" size="icon" onClick={goToNextDay} disabled={isViewingToday} className="h-8 w-8">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            
+            {!isViewingToday && (
+              <Button variant="secondary" size="sm" onClick={goToToday} className="h-7 text-xs px-2">
+                Hoje
+              </Button>
+            )}
+          </div>
+
+          <div className="ml-auto">
+            <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+              <SelectTrigger className="h-8 w-[160px] text-xs bg-card/50 backdrop-blur-sm border-border/40">
+                <SelectValue placeholder="Unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as Unidades</SelectItem>
+                {units.map((unit) => (
+                  <SelectItem key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Row 3: Compact KPIs */}
+        <div className="grid grid-cols-3 gap-2">
+          <div
+            className={`relative overflow-hidden rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-3 transition-all duration-500 ${
+              isGlowing && isViewingToday ? "animate-glow shadow-[0_0_20px_hsl(38_92%_50%/0.5)]" : ""
+            }`}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <DollarSign className="w-3.5 h-3.5 text-primary" />
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Faturamento</p>
             </div>
             <motion.p
-              className="text-3xl sm:text-4xl font-extrabold text-primary tracking-tight"
+              className="text-lg sm:text-2xl font-extrabold text-primary tracking-tight leading-none"
               key={totalRevenue}
-              initial={{ scale: 1.1, opacity: 0.7 }}
+              initial={{ scale: 1.05, opacity: 0.7 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              {totalRevenue.toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              })}
+              {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
             </motion.p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {filteredBarbers.length} barbeiros ativos
+            <p className="text-[10px] text-muted-foreground mt-0.5">{filteredBarbers.length} barbeiros</p>
+          </div>
+
+          <div className="relative overflow-hidden rounded-lg border border-border/40 bg-card/60 backdrop-blur-sm p-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Users className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Clientes</p>
+            </div>
+            <p className="text-lg sm:text-2xl font-bold text-foreground leading-none">{totalClientsToday}</p>
+          </div>
+
+          <div className="relative overflow-hidden rounded-lg border border-border/40 bg-card/60 backdrop-blur-sm p-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <TrendingUp className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Ticket Médio</p>
+            </div>
+            <p className="text-lg sm:text-2xl font-bold text-foreground leading-none">
+              {averageTicketToday > 0
+                ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                : "—"}
             </p>
           </div>
         </div>
-
-        {/* Clients KPI */}
-        <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <Users className="w-4 h-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground font-medium">Clientes</p>
-          </div>
-          <p className="text-2xl font-bold text-foreground">{totalClientsToday}</p>
-        </div>
-
-        {/* Average Ticket KPI */}
-        <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <TrendingUp className="w-4 h-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground font-medium">Ticket Médio</p>
-          </div>
-          <p className="text-2xl font-bold text-foreground">
-            {averageTicketToday > 0
-              ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-              : "—"}
-          </p>
-        </div>
-      </motion.div>
-
-      {/* Subscription Button */}
-      <motion.div
-        className="flex items-center gap-2"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-      >
-        <Button
-          size="lg"
-          className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg shadow-amber-500/20"
-          onClick={() => setSubscriptionWizardOpen(true)}
-        >
-          <Crown className="w-5 h-5" />
-          Vender Assinatura
-        </Button>
-        <Button
-          size="lg"
-          variant="outline"
-          className="h-11 w-11 p-0 bg-card/50 backdrop-blur-sm"
-          onClick={() => setSubscriptionAuditOpen(true)}
-          title="Auditar Últimas Vendas"
-        >
-          <Eye className="w-5 h-5" />
-        </Button>
       </motion.div>
 
       {/* Top 3 Ranking */}
