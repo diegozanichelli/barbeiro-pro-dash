@@ -1195,17 +1195,17 @@ export default function LiveDashboard() {
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.05, duration: 0.3 }}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             {index < 3 ? (
-                              <span className="text-base shrink-0">{medals[index]}</span>
+                              <span className="text-sm shrink-0">{medals[index]}</span>
                             ) : (
-                              <span className="text-xs font-bold text-muted-foreground w-5 text-center shrink-0">{index + 1}º</span>
+                              <span className="text-[10px] font-bold text-muted-foreground w-4 text-center shrink-0">{index + 1}º</span>
                             )}
-                            <span className={`text-sm truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                            <span className={`text-xs truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                               {unit.name}
                             </span>
                           </div>
-                          <span className={`text-sm font-bold shrink-0 ml-2 ${index === 0 ? "text-primary" : "text-foreground"}`}>
+                          <span className={`text-xs font-bold shrink-0 ${index === 0 ? "text-primary" : "text-foreground"}`}>
                             {unit.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </span>
                         </motion.div>
