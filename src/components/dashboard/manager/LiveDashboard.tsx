@@ -835,31 +835,11 @@ export default function LiveDashboard() {
         </div>
       </motion.div>
 
-      {/* Top 3 Ranking */}
-      <AnimatePresence>
-        {rankingData.some((b) => b.revenue > 0) && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
-          >
-            <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  🏆 Top 3 do Dia
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <LiveTop3Ranking barbers={rankingData} />
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Barber Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sortedBarbers.map((barber, index) => {
+      {/* Main content: Barber Cards + Ranking Sidebar */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Barber Cards */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {sortedBarbers.map((barber, index) => {
           const revenue = getBarberRevenue(barber.id);
           const target = getBarberDailyTarget(barber);
           const percentage = target > 0 ? Math.min((revenue / target) * 100, 100) : 0;
@@ -1068,7 +1048,22 @@ export default function LiveDashboard() {
               </Card>
             </motion.div>
           );
-        })}
+          })}
+        </div>
+
+        {/* Ranking Sidebar */}
+        <div className="w-full lg:w-72 shrink-0">
+          <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm sticky top-4">
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                🏆 Ranking do Dia
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3">
+              <LiveTop3Ranking barbers={rankingData} />
+            </CardContent>
+          </Card>
+        </div>
       </div>
       <QuickSaleModal
         open={quickSaleModal.open}
