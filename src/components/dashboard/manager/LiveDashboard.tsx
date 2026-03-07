@@ -639,38 +639,6 @@ export default function LiveDashboard() {
     revenue: getBarberRevenue(b.id),
   }));
 
-  if (isLoading) {
-    return (
-      <div className="min-h-[260px] flex items-center justify-center px-4">
-        <div className="text-center space-y-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
-          <p className="text-sm text-muted-foreground">Carregando painel Ao Vivo...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!organizationId) {
-    return (
-      <div className="min-h-[260px] flex items-center justify-center px-4">
-        <div className="text-center space-y-2">
-          <p className="text-base font-medium text-foreground">Não foi possível identificar a organização.</p>
-          <p className="text-sm text-muted-foreground">Recarregue a página para tentar novamente.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // KPI calculations
-  const totalClientsToday = filteredBarbers.reduce((sum, b) => {
-    const txCount = managerTransactions
-      .filter(t => t.barber_id === b.id && t.item_type === "service" && t.service_category === "basic")
-      .length;
-    return sum + txCount;
-  }, 0);
-
-  const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
-
   // Monthly revenue from monthProductions
   const monthRevenueTotal = useMemo(() => {
     const prods = selectedUnit === "all"
@@ -710,6 +678,39 @@ export default function LiveDashboard() {
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.revenue - a.revenue);
   }, [units, barbers, managerTransactions, productions]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-[260px] flex items-center justify-center px-4">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Carregando painel Ao Vivo...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!organizationId) {
+    return (
+      <div className="min-h-[260px] flex items-center justify-center px-4">
+        <div className="text-center space-y-2">
+          <p className="text-base font-medium text-foreground">Não foi possível identificar a organização.</p>
+          <p className="text-sm text-muted-foreground">Recarregue a página para tentar novamente.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // KPI calculations
+  const totalClientsToday = filteredBarbers.reduce((sum, b) => {
+    const txCount = managerTransactions
+      .filter(t => t.barber_id === b.id && t.item_type === "service" && t.service_category === "basic")
+      .length;
+    return sum + txCount;
+  }, 0);
+
+  const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
+  const monthAvgTicket = monthClientsTotal > 0 ? monthRevenueTotal / monthClientsTotal : 0;
 
   const topBarberToday = rankingData.reduce((top, b) => b.revenue > (top?.revenue || 0) ? b : top, rankingData[0]);
 
