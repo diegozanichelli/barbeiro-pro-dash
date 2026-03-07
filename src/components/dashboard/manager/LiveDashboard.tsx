@@ -1049,18 +1049,126 @@ export default function LiveDashboard() {
           })}
         </div>
 
-        {/* Ranking Sidebar */}
-        <div className="w-full lg:w-72 shrink-0">
-          <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm sticky top-4">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                🏆 Ranking do Dia
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-3">
-              <LiveTop3Ranking barbers={rankingData} />
-            </CardContent>
-          </Card>
+        {/* Sidebar: Faturamento + Rankings */}
+        <div className="w-full lg:w-80 shrink-0 space-y-4">
+          <div className="lg:sticky lg:top-4 space-y-4">
+            {/* Faturamento Card */}
+            <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  💰 FATURAMENTO
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 space-y-3">
+                {/* Hoje + Este Mês */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-3 transition-all duration-500 ${
+                    isGlowing && isViewingToday ? "animate-glow shadow-[0_0_20px_hsl(38_92%_50%/0.5)]" : ""
+                  }`}>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-xs">📅</span>
+                      <p className="text-[10px] text-primary font-bold uppercase">HOJE</p>
+                    </div>
+                    <motion.p
+                      className="text-lg font-extrabold text-primary leading-none"
+                      key={totalRevenue}
+                      initial={{ scale: 1.05, opacity: 0.7 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: "spring", stiffness: 300 }}
+                    >
+                      {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </motion.p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{totalClientsToday} atendimentos</p>
+                  </div>
+                  <div className="rounded-lg border border-border/40 bg-card/60 p-3">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-xs">📊</span>
+                      <p className="text-[10px] text-foreground font-bold uppercase">ESTE MÊS</p>
+                    </div>
+                    <p className="text-lg font-extrabold text-foreground leading-none">
+                      {monthRevenueTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{monthClientsTotal} atendimentos</p>
+                  </div>
+                </div>
+
+                {/* Ticket Médio */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-muted/30 border border-border/30 p-2.5 text-center">
+                    <p className="text-[10px] text-muted-foreground font-medium uppercase">Ticket Médio</p>
+                    <p className="text-sm font-bold text-foreground">
+                      {averageTicketToday > 0
+                        ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                        : "R$ 0,00"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-muted/30 border border-border/30 p-2.5 text-center">
+                    <p className="text-[10px] text-muted-foreground font-medium uppercase">Ticket Mês</p>
+                    <p className="text-sm font-bold text-foreground">
+                      {monthAvgTicket > 0
+                        ? monthAvgTicket.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                        : "R$ 0,00"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Ranking Filiais */}
+            {units.length > 1 && (
+              <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    🏢 RANKING FILIAIS
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <div className="space-y-0.5">
+                    {unitRankingData.map((unit, index) => {
+                      const medals = ["🥇", "🥈", "🥉"];
+                      return (
+                        <motion.div
+                          key={unit.id}
+                          className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${
+                            index === 0 ? "bg-amber-500/10 border border-amber-500/30" : index < 3 ? "bg-card/60 border border-border/20" : ""
+                          }`}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05, duration: 0.3 }}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {index < 3 ? (
+                              <span className="text-base shrink-0">{medals[index]}</span>
+                            ) : (
+                              <span className="text-xs font-bold text-muted-foreground w-5 text-center shrink-0">{index + 1}º</span>
+                            )}
+                            <span className={`text-sm truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                              {unit.name}
+                            </span>
+                          </div>
+                          <span className={`text-sm font-bold shrink-0 ml-2 ${index === 0 ? "text-primary" : "text-foreground"}`}>
+                            {unit.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Ranking Barbeiros Top 3 */}
+            <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  🏆 BARBEIROS
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-3 pb-3">
+                <LiveTop3Ranking barbers={rankingData} />
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
       <QuickSaleModal
