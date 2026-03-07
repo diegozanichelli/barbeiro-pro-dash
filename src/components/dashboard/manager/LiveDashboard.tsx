@@ -1118,18 +1118,18 @@ export default function LiveDashboard() {
                   💰 FATURAMENTO
                 </CardTitle>
               </CardHeader>
-              <CardContent className="px-4 pb-4 space-y-3">
+              <CardContent className="px-3 pb-3 space-y-2">
                 {/* Hoje + Este Mês */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className={`rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-3 transition-all duration-500 ${
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className={`rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-2 transition-all duration-500 ${
                     isGlowing && isViewingToday ? "animate-glow shadow-[0_0_20px_hsl(38_92%_50%/0.5)]" : ""
                   }`}>
-                    <div className="flex items-center gap-1 mb-1">
-                      <span className="text-xs">📅</span>
-                      <p className="text-[10px] text-primary font-bold uppercase">HOJE</p>
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="text-[10px]">📅</span>
+                      <p className="text-[9px] text-primary font-bold uppercase">HOJE</p>
                     </div>
                     <motion.p
-                      className="text-lg font-extrabold text-primary leading-none"
+                      className="text-sm font-extrabold text-primary leading-tight truncate"
                       key={totalRevenue}
                       initial={{ scale: 1.05, opacity: 0.7 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -1137,17 +1137,17 @@ export default function LiveDashboard() {
                     >
                       {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </motion.p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{totalClientsToday} atendimentos</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">{totalClientsToday} atd</p>
                   </div>
-                  <div className="rounded-lg border border-border/40 bg-card/60 p-3">
-                    <div className="flex items-center gap-1 mb-1">
-                      <span className="text-xs">📊</span>
-                      <p className="text-[10px] text-foreground font-bold uppercase">ESTE MÊS</p>
+                  <div className="rounded-lg border border-border/40 bg-card/60 p-2">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="text-[10px]">📊</span>
+                      <p className="text-[9px] text-foreground font-bold uppercase">MÊS</p>
                     </div>
-                    <p className="text-lg font-extrabold text-foreground leading-none">
+                    <p className="text-sm font-extrabold text-foreground leading-tight truncate">
                       {monthRevenueTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{monthClientsTotal} atendimentos</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">{monthClientsTotal} atd</p>
                   </div>
                 </div>
 
