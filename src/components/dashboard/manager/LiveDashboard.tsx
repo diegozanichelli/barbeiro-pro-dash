@@ -833,225 +833,290 @@ export default function LiveDashboard() {
 
       </motion.div>
 
-      {/* Main content: Barber Cards + Ranking Sidebar */}
+      {/* Main content: Barber Table + Ranking Sidebar */}
       <div className="flex flex-col lg:flex-row gap-4">
-        {/* Barber Cards */}
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {sortedBarbers.map((barber, index) => {
-          const revenue = getBarberRevenue(barber.id);
-          const target = getBarberDailyTarget(barber);
-          const percentage = target > 0 ? Math.min((revenue / target) * 100, 100) : 0;
-          const cutsRemaining = getCutsRemaining(barber.id, barber);
-          const progressColor = getProgressColor(percentage);
+        {/* Barber Table */}
+        <div className="flex-1 min-w-0">
+          <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+            <div className="overflow-x-auto">
+              {/* Table Header */}
+              <div className="grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                <div>Barbeiro</div>
+                <div className="text-right">Meta</div>
+                <div className="text-right">Vendido</div>
+                <div className="text-right">Ticket</div>
+                <div className="text-right">Falta</div>
+                <div className="text-center">Progresso</div>
+                <div className="text-center">Status</div>
+                <div className="text-center">Ações</div>
+              </div>
 
-          return (
-            <motion.div
-              key={barber.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.05 * index }}
-            >
-              <Card className={`relative overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 ${
-                percentage >= 100 ? "border-green-500/40" : ""
-              }`}>
-                {/* Performance accent line */}
-                <div className={`absolute top-0 left-0 right-0 h-0.5 ${progressColor}`} />
-                
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`relative ${percentage >= 100 ? "ring-2 ring-green-500/50 rounded-full" : ""}`}>
-                        <Avatar className="h-12 w-12 border-2 border-border/50">
-                          <AvatarFallback className="bg-muted text-muted-foreground font-bold">
+              {/* Table Rows */}
+              <div className="divide-y divide-border/20">
+                {paginatedBarbers.map((barber, index) => {
+                  const revenue = getBarberRevenue(barber.id);
+                  const target = getBarberDailyTarget(barber);
+                  const percentage = target > 0 ? Math.min((revenue / target) * 100, 100) : 0;
+                  const cutsRemaining = getCutsRemaining(barber.id, barber);
+                  const progressColor = getProgressColor(percentage);
+
+                  // Calculate today's ticket for this barber
+                  const barberTxToday = managerTransactions.filter(t => t.barber_id === barber.id);
+                  const barberClientsToday = barberTxToday.filter(t => t.item_type === "service" && t.service_category === "basic").length;
+                  const barberTicketToday = barberClientsToday > 0 ? revenue / barberClientsToday : 0;
+
+                  const remaining = Math.max(0, target - revenue);
+
+                  // Status badge
+                  const prod = getBarberProduction(barber.id);
+                  const isGoalMet = percentage >= 100 && revenue > 0;
+                  const isDayOff = prod?.confirmed_presence && prod?.presence_type === 'day_off' && revenue === 0;
+                  const isAbsent = prod?.confirmed_presence && prod?.presence_type === 'absence' && revenue === 0;
+                  const isPresent = prod?.confirmed_presence && !isDayOff && !isAbsent && revenue === 0;
+
+                  return (
+                    <motion.div
+                      key={barber.id}
+                      className={`grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
+                        isGoalMet ? "bg-green-500/5" : ""
+                      }`}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: 0.03 * index }}
+                    >
+                      {/* Barbeiro */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className={`h-9 w-9 shrink-0 border ${isGoalMet ? "border-green-500/50 ring-1 ring-green-500/30" : "border-border/50"}`}>
+                          <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
                             {getInitials(barber.name)}
                           </AvatarFallback>
                         </Avatar>
-                        {percentage >= 100 && revenue > 0 && (
-                          <div className="absolute -top-1 -right-1 text-sm">🎯</div>
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-foreground">{barber.name}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">{barber.name}</p>
                           {hasPendingManualEntry(barber.id) && (
-                            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
-                              <FileText className="w-3 h-3 mr-1" />
+                            <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30 mt-0.5">
+                              <FileText className="w-2.5 h-2.5 mr-0.5" />
                               Aguardando
                             </Badge>
                           )}
-                          {(() => {
-                            const prod = getBarberProduction(barber.id);
-                            if (!prod || !prod.confirmed_presence) return null;
-                            const rev = getBarberRevenue(barber.id);
-                            if (rev > 0) return null;
-                            const pt = prod.presence_type;
-                            if (pt === 'day_off') return (
-                              <Badge className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">
-                                <CalendarOff className="w-3 h-3 mr-1" />Folga
-                              </Badge>
-                            );
-                            if (pt === 'absence') return (
-                              <Badge className="text-xs bg-red-500/20 text-red-500 border-red-500/30">
-                                <XCircle className="w-3 h-3 mr-1" />Falta
-                              </Badge>
-                            );
-                            return (
-                              <Badge className="text-xs bg-orange-500/20 text-orange-500 border-orange-500/30">
-                                <UserCheck className="w-3 h-3 mr-1" />Presente s/ vendas
-                              </Badge>
-                            );
-                          })()}
                         </div>
-                        <p className="text-xs text-muted-foreground">{barber.unit_name}</p>
                       </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        onClick={() => handleViewTransactions(barber)}
-                        title="Ver comandas do gestor"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      {(revenue > 0 || managerTransactions.some(t => t.barber_id === barber.id)) && (
+
+                      {/* Meta */}
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground font-medium">
+                          {target > 0 ? target.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                        </span>
+                      </div>
+
+                      {/* Vendido */}
+                      <div className="text-right">
+                        <span className={`text-sm font-bold ${revenue > 0 ? "text-primary" : "text-muted-foreground"}`}>
+                          {revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                        {barberClientsToday > 0 && (
+                          <p className="text-[10px] text-muted-foreground">({barberClientsToday} atd)</p>
+                        )}
+                      </div>
+
+                      {/* Ticket */}
+                      <div className="text-right">
+                        <span className="text-sm text-foreground font-medium">
+                          {barberTicketToday > 0
+                            ? barberTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "—"}
+                        </span>
+                      </div>
+
+                      {/* Falta */}
+                      <div className="text-right">
+                        <span className={`text-sm font-medium ${remaining > 0 ? "text-foreground" : "text-green-500"}`}>
+                          {remaining > 0
+                            ? remaining.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "✓"}
+                        </span>
+                      </div>
+
+                      {/* Progresso */}
+                      <div className="px-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-muted/50 rounded-full overflow-hidden">
+                            <motion.div
+                              className={`h-full rounded-full ${progressColor}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${percentage}%` }}
+                              transition={{ duration: 0.8, ease: "easeOut", delay: 0.03 * index }}
+                            />
+                          </div>
+                          <span className={`text-xs font-bold shrink-0 w-10 text-right ${percentage >= 100 ? "text-green-500" : "text-muted-foreground"}`}>
+                            {percentage.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Status */}
+                      <div className="flex justify-center">
+                        {isGoalMet && (
+                          <Badge className="text-[10px] bg-green-500/20 text-green-500 border-green-500/30 whitespace-nowrap">
+                            META BATIDA!
+                          </Badge>
+                        )}
+                        {isDayOff && (
+                          <Badge className="text-[10px] bg-blue-500/20 text-blue-500 border-blue-500/30 whitespace-nowrap">
+                            <CalendarOff className="w-3 h-3 mr-0.5" />Folga
+                          </Badge>
+                        )}
+                        {isAbsent && (
+                          <Badge className="text-[10px] bg-red-500/20 text-red-500 border-red-500/30 whitespace-nowrap">
+                            <XCircle className="w-3 h-3 mr-0.5" />Falta
+                          </Badge>
+                        )}
+                        {isPresent && (
+                          <Badge className="text-[10px] bg-orange-500/20 text-orange-500 border-orange-500/30 whitespace-nowrap">
+                            <UserCheck className="w-3 h-3 mr-0.5" />S/ vendas
+                          </Badge>
+                        )}
+                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue > 0 && (
+                          <Badge className="text-[10px] bg-amber-500/20 text-amber-500 border-amber-500/30 whitespace-nowrap">
+                            EM ANDAMENTO
+                          </Badge>
+                        )}
+                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </div>
+
+                      {/* Ações */}
+                      <div className="flex items-center justify-center gap-0.5">
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="h-8 w-8 p-0"
-                          onClick={() => handleEditClick(barber)}
-                          title="Editar lançamento"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => handleViewTransactions(barber)}
+                          title="Ver comandas"
                         >
-                          <Pencil className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
                         </Button>
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 p-0"
-                            title="Registrar status do dia"
-                          >
-                            <EllipsisVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "present")}>
-                            Registrar Presença sem venda
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "day_off")}>
-                            Registrar Folga
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "absence")}>
-                            Registrar Falta
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "optional_sunday")}>
-                            Registrar Domingo opcional
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <Button
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        disabled={!organizationId}
-                        onClick={() => {
-                          if (!organizationId) {
-                            toast.error("Organização não identificada. Recarregue a página e tente novamente.");
-                            return;
-                          }
-                          setQuickSaleModal({
-                            open: true,
-                            barberId: barber.id,
-                            barberName: barber.name,
-                          });
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar with glow */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Progresso</span>
-                      <span className={`font-bold ${percentage >= 100 ? "text-green-500" : "text-foreground"}`}>
-                        {percentage.toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="relative h-3 bg-muted/50 rounded-full overflow-hidden">
-                      <motion.div
-                        className={`absolute left-0 top-0 h-full rounded-full ${progressColor}`}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${percentage}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut", delay: 0.1 * index }}
-                      />
-                      {percentage >= 100 && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
-                      )}
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-primary font-bold">
-                        {revenue.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })}
-                      </span>
-                      <span className="text-muted-foreground">
-                        / {target.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Cuts Remaining */}
-                  {target > 0 && cutsRemaining.cuts !== null && cutsRemaining.cuts > 0 && (
-                    <div className="text-center py-2 px-3 bg-muted/30 rounded-lg border border-border/30">
-                      <p className="text-sm text-muted-foreground">
-                        Faltam{" "}
-                        <span className="font-bold text-primary">{cutsRemaining.cuts}</span>{" "}
-                        cortes para bater a meta
-                      </p>
-                    </div>
-                  )}
-                  {target > 0 && cutsRemaining.cuts === null && cutsRemaining.monetaryRemaining > 0 && (
-                    <div className="text-center py-2 px-3 bg-muted/30 rounded-lg border border-border/30">
-                      <p className="text-sm text-muted-foreground">
-                        Faltam{" "}
-                        <span className="font-bold text-primary">
-                          R$ {cutsRemaining.monetaryRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>{" "}
-                        para bater a meta
-                      </p>
-                    </div>
-                  )}
-                  {target > 0 && cutsRemaining.cuts === 0 && revenue > 0 && (
-                    <motion.div
-                      className="text-center py-2 px-3 bg-green-500/10 rounded-lg border border-green-500/30"
-                      initial={{ scale: 0.9 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 300 }}
-                    >
-                      <p className="text-sm text-green-500 font-bold">
-                        🎉 Meta batida!
-                      </p>
+                        <Button
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          disabled={!organizationId}
+                          onClick={() => {
+                            if (!organizationId) {
+                              toast.error("Organização não identificada.");
+                              return;
+                            }
+                            setQuickSaleModal({
+                              open: true,
+                              barberId: barber.id,
+                              barberName: barber.name,
+                            });
+                          }}
+                          title="Adicionar venda"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Mais opções">
+                              <EllipsisVertical className="w-3.5 h-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {(revenue > 0 || managerTransactions.some(t => t.barber_id === barber.id)) && (
+                              <DropdownMenuItem onClick={() => handleEditClick(barber)}>
+                                <Pencil className="w-3.5 h-3.5 mr-2" />Editar lançamento
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "present")}>
+                              Presença sem venda
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "day_off")}>
+                              Folga
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "absence")}>
+                              Falta
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "optional_sunday")}>
+                              Domingo opcional
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </motion.div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          );
-          })}
+                  );
+                })}
+              </div>
+
+              {/* Total Row */}
+              {sortedBarbers.length > 0 && (
+                <div className="grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 border-t border-border/50 bg-muted/30">
+                  <div className="text-sm font-bold text-foreground">TOTAL</div>
+                  <div className="text-right text-sm font-bold text-muted-foreground">
+                    {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </div>
+                  <div className="text-right text-sm font-bold text-primary">
+                    {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </div>
+                  <div className="text-right text-sm font-bold text-foreground">
+                    {averageTicketToday > 0 ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                  </div>
+                  <div className="text-right text-sm font-bold text-foreground">
+                    {Math.max(0, sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0) - totalRevenue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </div>
+                  <div className="px-2">
+                    {(() => {
+                      const totalTarget = sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0);
+                      const totalPct = totalTarget > 0 ? Math.min((totalRevenue / totalTarget) * 100, 100) : 0;
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-muted/50 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${getProgressColor(totalPct)}`} style={{ width: `${totalPct}%` }} />
+                          </div>
+                          <span className="text-xs font-bold shrink-0 w-10 text-right text-muted-foreground">{totalPct.toFixed(0)}%</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div />
+                  <div />
+                </div>
+              )}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border/30">
+                <p className="text-xs text-muted-foreground">
+                  {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, sortedBarbers.length)} de {sortedBarbers.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <Button
+                      key={page}
+                      variant={page === currentPage ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 w-7 p-0 text-xs"
+                      onClick={() => setCurrentPage(page)}
+                    >
+                      {page}
+                    </Button>
+                  ))}
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
         </div>
 
-        {/* Sidebar: Faturamento + Rankings */}
-        <div className="w-full lg:w-80 shrink-0 space-y-4">
-          <div className="lg:sticky lg:top-4 space-y-4">
+        {/* Sidebar: Faturamento + Rankings (Independent Scroll) */}
+        <div className="w-full lg:w-80 shrink-0">
+          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:scrollbar-thin space-y-4 pr-1">
             {/* Faturamento Card */}
             <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
               <CardHeader className="pb-2 pt-4 px-4">
