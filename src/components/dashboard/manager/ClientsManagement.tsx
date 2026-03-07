@@ -44,21 +44,34 @@ export default function ClientsManagement() {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [clientsRes, plansRes] = await Promise.all([
-        supabase
+      // Fetch all clients (handle > 1000 rows via pagination)
+      let allClients: Client[] = [];
+      let from = 0;
+      const PAGE_SIZE = 1000;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data, error } = await supabase
           .from("clients")
           .select("id, name, mobile_phone, subscription_plan_id, created_at, updated_at")
           .eq("organization_id", organizationId)
-          .order("name"),
-        supabase
-          .from("subscription_plans")
-          .select("id, name, price")
-          .eq("organization_id", organizationId)
-          .eq("active", true),
-      ]);
+          .order("name")
+          .range(from, from + PAGE_SIZE - 1);
+        
+        if (error) throw error;
+        allClients = [...allClients, ...(data || [])];
+        hasMore = (data?.length || 0) === PAGE_SIZE;
+        from += PAGE_SIZE;
+      }
 
-      setClients((clientsRes.data || []) as Client[]);
-      setPlans(plansRes.data || []);
+      const { data: plansData } = await supabase
+        .from("subscription_plans")
+        .select("id, name, price")
+        .eq("organization_id", organizationId)
+        .eq("active", true);
+
+      setClients(allClients as Client[]);
+      setPlans(plansData || []);
     } catch (err) {
       console.error("Erro ao carregar clientes:", err);
     } finally {
