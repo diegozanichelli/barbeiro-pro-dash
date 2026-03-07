@@ -843,13 +843,13 @@ export default function LiveDashboard() {
       </motion.div>
 
       {/* Main content: Barber Table + Ranking Sidebar */}
-      <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex flex-col lg:flex-row gap-3">
         {/* Barber Table */}
         <div className="flex-1 min-w-0">
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-            <div className="overflow-x-auto">
+            <div>
               {/* Table Header */}
-              <div className="grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+              <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 <div>Barbeiro</div>
                 <div className="text-right">Meta</div>
                 <div className="text-right">Vendido</div>
@@ -886,7 +886,7 @@ export default function LiveDashboard() {
                   return (
                     <motion.div
                       key={barber.id}
-                      className={`grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
+                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
                         isGoalMet ? "bg-green-500/5" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
@@ -1059,7 +1059,7 @@ export default function LiveDashboard() {
 
               {/* Total Row */}
               {sortedBarbers.length > 0 && (
-                <div className="grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 border-t border-border/50 bg-muted/30">
+                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
                   <div className="text-sm font-bold text-foreground">TOTAL</div>
                   <div className="text-right text-sm font-bold text-muted-foreground">
                     {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
@@ -1124,8 +1124,8 @@ export default function LiveDashboard() {
         </div>
 
         {/* Sidebar: Faturamento + Rankings (Independent Scroll) */}
-        <div className="w-full lg:w-80 shrink-0">
-          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:scrollbar-thin space-y-4 pr-1">
+        <div className="w-full lg:w-64 shrink-0">
+          <div className="lg:sticky lg:top-4 space-y-3">
             {/* Faturamento Card */}
             <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
               <CardHeader className="pb-2 pt-4 px-4">
