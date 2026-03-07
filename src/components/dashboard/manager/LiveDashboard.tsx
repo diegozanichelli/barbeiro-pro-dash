@@ -633,7 +633,15 @@ export default function LiveDashboard() {
     return percentA - percentB;
   });
 
-  const rankingData = filteredBarbers.map((b) => ({
+  // Pagination
+  const ITEMS_PER_PAGE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.ceil(sortedBarbers.length / ITEMS_PER_PAGE);
+  const paginatedBarbers = sortedBarbers.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  // Reset page when filter changes
+  useEffect(() => { setCurrentPage(1); }, [selectedUnit]);
+
     id: b.id,
     name: b.name,
     revenue: getBarberRevenue(b.id),
