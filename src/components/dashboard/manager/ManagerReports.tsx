@@ -553,9 +553,10 @@ export default function ManagerReports() {
                   <TableHead className="text-right">Produtos (R$)</TableHead>
                   <TableHead className="text-right">Comissão (R$)</TableHead>
                   <TableHead className="text-right">Clientes</TableHead>
-                  <TableHead className="text-right">Clientes Atendidos</TableHead>
+                  <TableHead className="text-right">Ticket Médio (R$)</TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {barberPerformanceRows.length === 0 ? (
                   <TableRow>
