@@ -874,64 +874,98 @@ export default function QuickSaleModal({
   };
 
   // ─── STEP 1: Client Data ───
+  const isToday = format(selectedDate, "yyyy-MM-dd") === getTodayString();
+  const isYesterday = (() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return format(selectedDate, "yyyy-MM-dd") === format(yesterday, "yyyy-MM-dd");
+  })();
+
+  const setToday = () => setSelectedDate(new Date());
+  const setYesterday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    setSelectedDate(d);
+  };
+
   const renderStep1 = () => (
     <>
-      <DialogHeader className="px-6 pt-6 pb-4 border-b">
+      <DialogHeader className="px-6 pt-5 pb-3">
         <DialogTitle className="text-lg font-semibold">
           Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
         </DialogTitle>
-        <DialogDescription>
+        <DialogDescription className="text-xs">
           Preencha os dados do atendimento
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4">
         {!organizationId && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             Organização não identificada. Feche o modal e recarregue a página.
           </div>
         )}
-        {/* DatePicker */}
-        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
-          <Label className="text-sm font-medium">Data da Venda</Label>
-          <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  "w-full justify-start text-left font-normal h-10",
-                  format(selectedDate, "yyyy-MM-dd") !== getTodayString() && "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30"
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {format(selectedDate, "yyyy-MM-dd") === getTodayString()
-                  ? "Hoje"
-                  : format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={(date) => {
-                  if (date) {
-                    setSelectedDate(date);
-                    setDatePickerOpen(false);
-                  }
-                }}
-                disabled={(date) => date > new Date()}
-                initialFocus
-                className="p-3 pointer-events-auto"
-              />
-            </PopoverContent>
-          </Popover>
+
+        {/* Date Chips */}
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground font-medium">Data da Venda</Label>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={isToday ? "default" : "outline"}
+              size="sm"
+              className="h-9 text-xs"
+              onClick={setToday}
+            >
+              Hoje
+              <span className="ml-1 opacity-70">{format(new Date(), "dd/MM")}</span>
+            </Button>
+            <Button
+              type="button"
+              variant={isYesterday ? "default" : "outline"}
+              size="sm"
+              className="h-9 text-xs"
+              onClick={setYesterday}
+            >
+              Ontem
+            </Button>
+            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant={!isToday && !isYesterday ? "default" : "outline"}
+                  size="sm"
+                  className={cn("h-9 text-xs")}
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 mr-1" />
+                  {!isToday && !isYesterday
+                    ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR })
+                    : "Outra"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => {
+                    if (date) {
+                      setSelectedDate(date);
+                      setDatePickerOpen(false);
+                    }
+                  }}
+                  disabled={(date) => date > new Date()}
+                  initialFocus
+                  className="p-3 pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
         {/* Client Name */}
-        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
-          <Label htmlFor="client-name" className="text-sm font-medium">
-            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto-preenchido)" : "*"}
+        <div className="space-y-1.5">
+          <Label htmlFor="client-name" className="text-xs text-muted-foreground font-medium">
+            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto)" : "*"}
           </Label>
           <Input
             id="client-name"
@@ -962,9 +996,9 @@ export default function QuickSaleModal({
           ))}
         </datalist>
 
-        {/* Mobile Phone (required) */}
-        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
-          <Label htmlFor="mobile-phone" className="text-sm font-medium">
+        {/* Mobile Phone */}
+        <div className="space-y-1.5">
+          <Label htmlFor="mobile-phone" className="text-xs text-muted-foreground font-medium">
             Celular do Cliente
           </Label>
           <div className="relative">
@@ -995,141 +1029,133 @@ export default function QuickSaleModal({
         </div>
 
         {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
-          <p className="px-1 text-xs text-muted-foreground">Buscando sugestões de clientes...</p>
+          <p className="text-xs text-muted-foreground">Buscando sugestões...</p>
         )}
 
         {/* Client Status Badge */}
         {renderClientBadge() && (
-          <div className="px-1">
-            {renderClientBadge()}
-          </div>
+          <div>{renderClientBadge()}</div>
         )}
 
-        {/* Toggle Reception Sale */}
-        <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-muted-foreground" />
-            <Label htmlFor="reception-mode" className="text-sm font-medium cursor-pointer">
-              Venda Recepção / Loja
-            </Label>
-          </div>
-          <Switch
-            id="reception-mode"
-            checked={isReceptionSale}
-            onCheckedChange={setIsReceptionSale}
-          />
-        </div>
-
-        {/* Client Type Selector */}
-        <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
-          <Label className="text-sm font-medium">Tipo de Cliente</Label>
-          <ToggleGroup
-            type="single"
-            value={clientType}
-            onValueChange={(v) => {
-              if (v) handleClientTypeChange(v as ClientType);
-            }}
-            className="justify-start"
-          >
-            <ToggleGroupItem
-              value="new"
-              aria-label="Cliente Novo"
-              className="flex-1 gap-2 data-[state=on]:bg-green-600 data-[state=on]:text-white"
-              onPointerDown={(e) => e.preventDefault()}
-            >
-              <UserPlus className="w-4 h-4" />
-              Cliente Novo
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="without_subscription"
-              aria-label="Cliente sem Assinatura"
-              className="flex-1 gap-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-              onPointerDown={(e) => e.preventDefault()}
-            >
-              <Home className="w-4 h-4" />
-              Sem Assinatura
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="with_subscription"
-              aria-label="Cliente com Assinatura"
-              className="flex-1 gap-2 data-[state=on]:bg-amber-500 data-[state=on]:text-black"
-              onPointerDown={(e) => e.preventDefault()}
-            >
-              <Crown className="w-4 h-4" />
-              Com Assinatura
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          {clientType === "with_subscription" && (
-            <div className="space-y-2 rounded-lg border bg-background p-3">
-              <Label className="text-xs font-medium">Plano de assinatura</Label>
-              <Select
-                value={selectedSubscriptionPlanId}
-                onValueChange={(value) => {
-                  setSelectedSubscriptionPlanId(value);
-                  setSubscriptionPlanAutoDetected(false);
-                }}
-                disabled={isResolvingSubscription}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      isResolvingSubscription
-                        ? "Lendo assinatura do cliente..."
-                        : "Selecione a assinatura do cliente"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {subscriptionPlans.length > 0 ? (
-                    subscriptionPlans.map((plan) => (
-                      <SelectItem key={plan.id} value={plan.id}>
-                        {plan.name}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      Nenhum plano cadastrado
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-
-              {selectedSubscriptionPlan && (
-                <Badge variant="secondary" className="text-[11px]">
-                  {subscriptionPlanAutoDetected
-                    ? `Assinatura identificada automaticamente: ${selectedSubscriptionPlan.name}`
-                    : `Assinatura selecionada: ${selectedSubscriptionPlan.name}`}
-                </Badge>
-              )}
-
-              {!selectedSubscriptionPlanId && !isResolvingSubscription && (
-                <p className="text-xs text-muted-foreground">
-                  Cliente sem assinatura atribuída: selecione o plano para atribuir e continuar.
-                </p>
-              )}
-
-              {selectedSubscriptionPlan && (
-                <p className="text-xs text-muted-foreground">
-                  {(() => {
-                    const labels = services
-                      .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
-                      .map((service) => service.name);
-
-                    return `Serviços incluídos e zerados automaticamente: ${labels.join(", ") || "—"}.`;
-                  })()}
-                </p>
-              )}
+        {/* Reception toggle + Client type — grouped visually */}
+        <div className="rounded-lg border bg-muted/20 divide-y divide-border">
+          {/* Toggle Reception Sale */}
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-muted-foreground" />
+              <Label htmlFor="reception-mode" className="text-sm cursor-pointer">
+                Venda Recepção / Loja
+              </Label>
             </div>
-          )}
+            <Switch
+              id="reception-mode"
+              checked={isReceptionSale}
+              onCheckedChange={setIsReceptionSale}
+            />
+          </div>
+
+          {/* Client Type Selector */}
+          <div className="px-3 py-2.5 space-y-2">
+            <Label className="text-xs text-muted-foreground font-medium">Tipo de Cliente</Label>
+            <ToggleGroup
+              type="single"
+              value={clientType}
+              onValueChange={(v) => {
+                if (v) handleClientTypeChange(v as ClientType);
+              }}
+              className="justify-start"
+            >
+              <ToggleGroupItem
+                value="new"
+                aria-label="Cliente Novo"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-green-600 data-[state=on]:text-white"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Novo
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="without_subscription"
+                aria-label="Cliente sem Assinatura"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Home className="w-3.5 h-3.5" />
+                Da Casa
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="with_subscription"
+                aria-label="Cliente com Assinatura"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Crown className="w-3.5 h-3.5" />
+                Assinante
+              </ToggleGroupItem>
+            </ToggleGroup>
+
+            {clientType === "with_subscription" && (
+              <div className="space-y-2 pt-1">
+                <Select
+                  value={selectedSubscriptionPlanId}
+                  onValueChange={(value) => {
+                    setSelectedSubscriptionPlanId(value);
+                    setSubscriptionPlanAutoDetected(false);
+                  }}
+                  disabled={isResolvingSubscription}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue
+                      placeholder={
+                        isResolvingSubscription
+                          ? "Lendo assinatura..."
+                          : "Selecione o plano"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subscriptionPlans.length > 0 ? (
+                      subscriptionPlans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        Nenhum plano cadastrado
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+
+                {selectedSubscriptionPlan && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {subscriptionPlanAutoDetected ? "✓ Identificado automaticamente" : "✓ Selecionado"}: {selectedSubscriptionPlan.name}
+                    {(() => {
+                      const labels = services
+                        .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
+                        .map((service) => service.name);
+                      return labels.length > 0 ? ` — Serviços inclusos: ${labels.join(", ")}` : "";
+                    })()}
+                  </p>
+                )}
+
+                {!selectedSubscriptionPlanId && !isResolvingSubscription && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Selecione o plano para continuar.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Step 1 Footer */}
-      <div className="border-t px-6 py-4 flex gap-3">
+      <div className="border-t px-6 py-3 flex gap-3">
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           onClick={() => handleClose(false)}
           className="flex-1"
         >
