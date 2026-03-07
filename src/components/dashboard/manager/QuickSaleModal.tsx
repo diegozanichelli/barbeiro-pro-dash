@@ -906,42 +906,50 @@ export default function QuickSaleModal({
           </div>
         )}
 
-        {/* Date Chips */}
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground font-medium">Data da Venda</Label>
-          <div className="flex items-center gap-2">
-            <Button
+        {/* Date Selection */}
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground font-medium shrink-0">Data:</Label>
+          <div className="flex items-center gap-1.5 flex-1">
+            <button
               type="button"
-              variant={isToday ? "default" : "outline"}
-              size="sm"
-              className="h-9 text-xs"
               onClick={setToday}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                isToday
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted hover:bg-muted/80 text-muted-foreground"
+              )}
             >
-              Hoje
-              <span className="ml-1 opacity-70">{format(new Date(), "dd/MM")}</span>
-            </Button>
-            <Button
+              Hoje ({format(new Date(), "dd/MM")})
+            </button>
+            <button
               type="button"
-              variant={isYesterday ? "default" : "outline"}
-              size="sm"
-              className="h-9 text-xs"
               onClick={setYesterday}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                isYesterday
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted hover:bg-muted/80 text-muted-foreground"
+              )}
             >
               Ontem
-            </Button>
+            </button>
             <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
               <PopoverTrigger asChild>
-                <Button
+                <button
                   type="button"
-                  variant={!isToday && !isYesterday ? "default" : "outline"}
-                  size="sm"
-                  className={cn("h-9 text-xs")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1",
+                    !isToday && !isYesterday
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                  )}
                 >
-                  <CalendarIcon className="h-3.5 w-3.5 mr-1" />
+                  <CalendarIcon className="h-3 w-3" />
                   {!isToday && !isYesterday
-                    ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR })
+                    ? format(selectedDate, "dd/MM", { locale: ptBR })
                     : "Outra"}
-                </Button>
+                </button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
