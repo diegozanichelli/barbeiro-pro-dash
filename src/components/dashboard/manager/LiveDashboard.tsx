@@ -849,7 +849,7 @@ export default function LiveDashboard() {
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
             <div>
               {/* Table Header */}
-              <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+              <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 <div>Barbeiro</div>
                 <div className="text-right">Meta</div>
                 <div className="text-right">Vendido</div>
@@ -886,7 +886,7 @@ export default function LiveDashboard() {
                   return (
                     <motion.div
                       key={barber.id}
-                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
+                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
                         isGoalMet ? "bg-green-500/5" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
@@ -1059,7 +1059,7 @@ export default function LiveDashboard() {
 
               {/* Total Row */}
               {sortedBarbers.length > 0 && (
-                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
+                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
                   <div className="text-sm font-bold text-foreground">TOTAL</div>
                   <div className="text-right text-sm font-bold text-muted-foreground">
                     {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
@@ -1188,24 +1188,24 @@ export default function LiveDashboard() {
                       return (
                         <motion.div
                           key={unit.id}
-                          className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${
+                          className={`flex items-center justify-between px-2 py-2 rounded-lg ${
                             index === 0 ? "bg-amber-500/10 border border-amber-500/30" : index < 3 ? "bg-card/60 border border-border/20" : ""
                           }`}
                           initial={{ opacity: 0, x: 20 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.05, duration: 0.3 }}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             {index < 3 ? (
-                              <span className="text-base shrink-0">{medals[index]}</span>
+                              <span className="text-sm shrink-0">{medals[index]}</span>
                             ) : (
-                              <span className="text-xs font-bold text-muted-foreground w-5 text-center shrink-0">{index + 1}º</span>
+                              <span className="text-[10px] font-bold text-muted-foreground w-4 text-center shrink-0">{index + 1}º</span>
                             )}
-                            <span className={`text-sm truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                            <span className={`text-xs truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                               {unit.name}
                             </span>
                           </div>
-                          <span className={`text-sm font-bold shrink-0 ml-2 ${index === 0 ? "text-primary" : "text-foreground"}`}>
+                          <span className={`text-xs font-bold shrink-0 ${index === 0 ? "text-primary" : "text-foreground"}`}>
                             {unit.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </span>
                         </motion.div>
