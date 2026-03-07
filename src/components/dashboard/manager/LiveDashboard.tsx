@@ -1124,8 +1124,8 @@ export default function LiveDashboard() {
         </div>
 
         {/* Sidebar: Faturamento + Rankings (Independent Scroll) */}
-        <div className="w-full lg:w-80 shrink-0">
-          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:scrollbar-thin space-y-4 pr-1">
+        <div className="w-full lg:w-64 shrink-0">
+          <div className="lg:sticky lg:top-4 space-y-3">
             {/* Faturamento Card */}
             <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
               <CardHeader className="pb-2 pt-4 px-4">
