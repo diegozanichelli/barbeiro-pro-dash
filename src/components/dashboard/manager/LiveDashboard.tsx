@@ -1152,18 +1152,18 @@ export default function LiveDashboard() {
                 </div>
 
                 {/* Ticket Médio */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg bg-muted/30 border border-border/30 p-2.5 text-center">
-                    <p className="text-[10px] text-muted-foreground font-medium uppercase">Ticket Médio</p>
-                    <p className="text-sm font-bold text-foreground">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="rounded-lg bg-muted/30 border border-border/30 p-2 text-center">
+                    <p className="text-[9px] text-muted-foreground font-medium uppercase">Ticket Médio</p>
+                    <p className="text-xs font-bold text-foreground">
                       {averageTicketToday > 0
                         ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
                         : "R$ 0,00"}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 border border-border/30 p-2.5 text-center">
-                    <p className="text-[10px] text-muted-foreground font-medium uppercase">Ticket Mês</p>
-                    <p className="text-sm font-bold text-foreground">
+                  <div className="rounded-lg bg-muted/30 border border-border/30 p-2 text-center">
+                    <p className="text-[9px] text-muted-foreground font-medium uppercase">Ticket Mês</p>
+                    <p className="text-xs font-bold text-foreground">
                       {monthAvgTicket > 0
                         ? monthAvgTicket.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
                         : "R$ 0,00"}
