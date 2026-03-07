@@ -636,7 +636,6 @@ export default function LiveDashboard() {
 
   // Pagination
   const ITEMS_PER_PAGE = 10;
-  const [currentPage, setCurrentPage] = useState(1);
   const totalPages = Math.ceil(sortedBarbers.length / ITEMS_PER_PAGE);
   const paginatedBarbers = sortedBarbers.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
