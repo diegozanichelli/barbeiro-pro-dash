@@ -1070,23 +1070,8 @@ export default function LiveDashboard() {
                   <div className="text-right text-sm font-bold text-foreground">
                     {averageTicketToday > 0 ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
                   </div>
-                  <div className="text-right text-sm font-bold text-foreground">
-                    {Math.max(0, sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0) - totalRevenue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </div>
-                  <div className="px-2">
-                    {(() => {
-                      const totalTarget = sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0);
-                      const totalPct = totalTarget > 0 ? Math.min((totalRevenue / totalTarget) * 100, 100) : 0;
-                      return (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-muted/50 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${getProgressColor(totalPct)}`} style={{ width: `${totalPct}%` }} />
-                          </div>
-                          <span className="text-xs font-bold shrink-0 w-10 text-right text-muted-foreground">{totalPct.toFixed(0)}%</span>
-                        </div>
-                      );
-                    })()}
-                  </div>
+                  <div />
+                  <div />
                   <div />
                   <div />
                 </div>
