@@ -12,7 +12,8 @@ interface LiveTop3RankingProps {
 
 export default function LiveTop3Ranking({ barbers }: LiveTop3RankingProps) {
   const sorted = [...barbers]
-    .sort((a, b) => b.revenue - a.revenue);
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 3);
 
   if (sorted.length === 0) {
     return null;
