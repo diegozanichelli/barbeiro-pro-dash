@@ -1048,7 +1048,22 @@ export default function LiveDashboard() {
               </Card>
             </motion.div>
           );
-        })}
+          })}
+        </div>
+
+        {/* Ranking Sidebar */}
+        <div className="w-full lg:w-72 shrink-0">
+          <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm sticky top-4">
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                🏆 Ranking do Dia
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3">
+              <LiveTop3Ranking barbers={rankingData} />
+            </CardContent>
+          </Card>
+        </div>
       </div>
       <QuickSaleModal
         open={quickSaleModal.open}
