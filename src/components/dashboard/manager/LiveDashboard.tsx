@@ -843,13 +843,13 @@ export default function LiveDashboard() {
       </motion.div>
 
       {/* Main content: Barber Table + Ranking Sidebar */}
-      <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex flex-col lg:flex-row gap-3">
         {/* Barber Table */}
         <div className="flex-1 min-w-0">
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-            <div className="overflow-x-auto">
+            <div>
               {/* Table Header */}
-              <div className="grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+              <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 <div>Barbeiro</div>
                 <div className="text-right">Meta</div>
                 <div className="text-right">Vendido</div>
