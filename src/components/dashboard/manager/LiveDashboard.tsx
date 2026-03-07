@@ -671,6 +671,46 @@ export default function LiveDashboard() {
 
   const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
 
+  // Monthly revenue from monthProductions
+  const monthRevenueTotal = useMemo(() => {
+    const prods = selectedUnit === "all"
+      ? monthProductions
+      : monthProductions.filter(p => {
+          const b = barbers.find(bb => bb.id === p.barber_id);
+          return b?.unit_id === selectedUnit;
+        });
+    return prods.reduce((sum, p) => {
+      const svc = (p.services_basic_total !== null || p.services_extra_total !== null)
+        ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
+        : (p.services_total || 0);
+      return sum + svc + (p.products_total || 0);
+    }, 0);
+  }, [monthProductions, selectedUnit, barbers]);
+
+  const monthClientsTotal = useMemo(() => {
+    const prods = selectedUnit === "all"
+      ? monthProductions
+      : monthProductions.filter(p => {
+          const b = barbers.find(bb => bb.id === p.barber_id);
+          return b?.unit_id === selectedUnit;
+        });
+    return prods.reduce((sum, p) => sum + (p.clients_count || 0), 0);
+  }, [monthProductions, selectedUnit, barbers]);
+
+  // Unit rankings (today's revenue per unit)
+  const unitRankingData = useMemo(() => {
+    const unitMap = new Map<string, { name: string; revenue: number }>();
+    units.forEach(u => unitMap.set(u.id, { name: u.name, revenue: 0 }));
+    barbers.forEach(b => {
+      const rev = getBarberRevenue(b.id);
+      const existing = unitMap.get(b.unit_id);
+      if (existing) existing.revenue += rev;
+    });
+    return Array.from(unitMap.entries())
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [units, barbers, managerTransactions, productions]);
+
   const topBarberToday = rankingData.reduce((top, b) => b.revenue > (top?.revenue || 0) ? b : top, rankingData[0]);
 
   return (
