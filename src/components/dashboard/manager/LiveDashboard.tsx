@@ -642,6 +642,7 @@ export default function LiveDashboard() {
   // Reset page when filter changes
   useEffect(() => { setCurrentPage(1); }, [selectedUnit]);
 
+  const rankingData = filteredBarbers.map((b) => ({
     id: b.id,
     name: b.name,
     revenue: getBarberRevenue(b.id),
