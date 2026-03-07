@@ -1059,7 +1059,7 @@ export default function LiveDashboard() {
 
               {/* Total Row */}
               {sortedBarbers.length > 0 && (
-                <div className="grid grid-cols-[minmax(140px,1.5fr)_repeat(4,minmax(80px,1fr))_minmax(100px,1.2fr)_minmax(100px,1fr)_minmax(90px,auto)] gap-0 px-4 py-3 border-t border-border/50 bg-muted/30">
+                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_auto] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
                   <div className="text-sm font-bold text-foreground">TOTAL</div>
                   <div className="text-right text-sm font-bold text-muted-foreground">
                     {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
