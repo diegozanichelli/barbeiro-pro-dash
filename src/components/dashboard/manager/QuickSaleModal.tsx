@@ -653,20 +653,17 @@ export default function QuickSaleModal({
       }
 
       // Build transaction payload for RPC
-      const transactions = cart.map(item => {
-        const effectivePrice = getEffectiveItemPrice(item, item.customPrice);
-        return {
-          item_type: item.type,
-          catalog_service_id: item.type === "service" ? item.id : null,
-          catalog_product_id: item.type === "product" ? item.id : null,
-          item_name: item.name,
-          service_category: item.type === "service" ? (item.category || null) : null,
-          price_sold: effectivePrice,
-          is_new_client: clientType === "new",
-          client_name: safeClientName,
-          mobile_phone: registeredClient.mobilePhone,
-        };
-      });
+      const transactions = cart.map(item => ({
+        item_type: item.type,
+        catalog_service_id: item.type === "service" ? item.id : null,
+        catalog_product_id: item.type === "product" ? item.id : null,
+        item_name: item.name,
+        service_category: item.type === "service" ? (item.category || null) : null,
+        price_sold: item.customPrice,
+        is_new_client: clientType === "new",
+        client_name: safeClientName,
+        mobile_phone: registeredClient.mobilePhone,
+      }));
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
@@ -684,7 +681,7 @@ export default function QuickSaleModal({
         purchases: cart.map((item) => ({
           itemName: item.name,
           itemType: item.type,
-          amount: getEffectiveItemPrice(item, item.customPrice),
+          amount: item.customPrice,
           quantity: 1,
           purchasedAt: `${dateStr}T12:00:00`,
         })),
@@ -931,38 +928,6 @@ export default function QuickSaleModal({
           </Popover>
         </div>
 
-        {/* Mobile Phone (required) */}
-        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
-          <Label htmlFor="mobile-phone" className="text-sm font-medium">
-            Celular do Cliente
-          </Label>
-          <div className="relative">
-            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              id="mobile-phone"
-              type="tel"
-              inputMode="numeric"
-              placeholder="(11) 99999-9999"
-              value={mobilePhone}
-              onChange={handlePhoneChange}
-              onBlur={handlePhoneBlur}
-              className={cn("h-10 pl-10", phoneError && "border-destructive")}
-              maxLength={15}
-              list="quick-sale-phone-suggestions"
-            />
-          </div>
-          {phoneError && (
-            <p className="text-xs text-destructive font-medium">{phoneError}</p>
-          )}
-          <datalist id="quick-sale-phone-suggestions">
-            {phoneSuggestions.map((client) => (
-              <option key={client.id} value={formatPhone(client.mobile_phone)}>
-                {client.name}
-              </option>
-            ))}
-          </datalist>
-        </div>
-
         {/* Client Name */}
         <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
           <Label htmlFor="client-name" className="text-sm font-medium">
@@ -996,6 +961,38 @@ export default function QuickSaleModal({
             </option>
           ))}
         </datalist>
+
+        {/* Mobile Phone (required) */}
+        <div className="p-3 rounded-lg border bg-muted/30 space-y-1">
+          <Label htmlFor="mobile-phone" className="text-sm font-medium">
+            Celular do Cliente
+          </Label>
+          <div className="relative">
+            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="mobile-phone"
+              type="tel"
+              inputMode="numeric"
+              placeholder="(11) 99999-9999"
+              value={mobilePhone}
+              onChange={handlePhoneChange}
+              onBlur={handlePhoneBlur}
+              className={cn("h-10 pl-10", phoneError && "border-destructive")}
+              maxLength={15}
+              list="quick-sale-phone-suggestions"
+            />
+          </div>
+          {phoneError && (
+            <p className="text-xs text-destructive font-medium">{phoneError}</p>
+          )}
+          <datalist id="quick-sale-phone-suggestions">
+            {phoneSuggestions.map((client) => (
+              <option key={client.id} value={formatPhone(client.mobile_phone)}>
+                {client.name}
+              </option>
+            ))}
+          </datalist>
+        </div>
 
         {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
           <p className="px-1 text-xs text-muted-foreground">Buscando sugestões de clientes...</p>
@@ -1363,7 +1360,6 @@ export default function QuickSaleModal({
                       onFocus={handleCartItemPriceFocus}
                       onBlur={() => finalizeCartItemPrice(item.tempId)}
                       className="w-20 text-right font-bold text-xs h-8"
-                      disabled={cartItemIncludedBySubscription(item)}
                     />
                     <Button
                       type="button"

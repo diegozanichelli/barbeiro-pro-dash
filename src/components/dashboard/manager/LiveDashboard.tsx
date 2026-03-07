@@ -511,9 +511,22 @@ export default function LiveDashboard() {
     return "bg-red-500";
   };
 
-  const getAverageTicket = () => {
-    // Primeiro: tentar calcular do mês inteiro (histórico mais robusto)
-    // Usamos os campos legados para o ticket médio pois precisamos do histórico consolidado
+  const getBarberAverageTicket = (barberId: string): number | null => {
+    // 1. Tentar ticket individual do barbeiro (se 5+ atendimentos no mês)
+    const barberMonthProds = monthProductions.filter(p => p.barber_id === barberId);
+    const barberClients = barberMonthProds.reduce((sum, p) => sum + (p.clients_count || 0), 0);
+    if (barberClients >= 5) {
+      const barberRevenue = barberMonthProds.reduce((sum, p) => {
+        const servicesTotal =
+          p.services_basic_total !== null || p.services_extra_total !== null
+            ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
+            : p.services_total || 0;
+        return sum + servicesTotal + (p.products_total || 0);
+      }, 0);
+      if (barberRevenue > 0) return barberRevenue / barberClients;
+    }
+
+    // 2. Fallback: ticket médio global da unidade/organização
     const filteredMonthProductions = selectedUnit === "all"
       ? monthProductions
       : monthProductions.filter((p) => {
@@ -522,10 +535,8 @@ export default function LiveDashboard() {
         });
 
     const totalClientsMonth = filteredMonthProductions.reduce(
-      (sum, p) => sum + (p.clients_count || 0), 
-      0
+      (sum, p) => sum + (p.clients_count || 0), 0
     );
-    
     const totalRevenueMonth = filteredMonthProductions.reduce((sum, p) => {
       const servicesTotal =
         p.services_basic_total !== null || p.services_extra_total !== null
@@ -534,12 +545,11 @@ export default function LiveDashboard() {
       return sum + servicesTotal + (p.products_total || 0);
     }, 0);
 
-    // Se há histórico no mês, usar ticket médio mensal
-    if (totalClientsMonth > 0) {
+    if (totalClientsMonth > 0 && totalRevenueMonth > 0) {
       return totalRevenueMonth / totalClientsMonth;
     }
 
-    // Fallback: count unique basic services from managerTransactions as client proxy
+    // 3. Fallback: transações do dia
     const filteredTx = selectedUnit === "all"
       ? managerTransactions
       : managerTransactions.filter((t) => {
@@ -550,42 +560,41 @@ export default function LiveDashboard() {
     const totalClients = filteredTx.filter(
       t => t.item_type === "service" && t.service_category === "basic"
     ).length;
-    
-    if (totalClients > 0) {
+
+    if (totalClients > 0 && totalRevenue > 0) {
       return totalRevenue / totalClients;
     }
 
-    // Fallback final: valor padrão mais realista (R$ 70)
-    return 70;
+    // Sem dados suficientes
+    return null;
+  };
+
+  const getCutsRemaining = (barberId: string, barber: Barber): { cuts: number | null; monetaryRemaining: number } => {
+    const revenue = getBarberRevenue(barberId);
+    const target = getBarberDailyTarget(barber);
+    const remaining = target - revenue;
+    if (remaining <= 0) return { cuts: 0, monetaryRemaining: 0 };
+
+    const avgTicket = getBarberAverageTicket(barberId);
+    if (avgTicket === null || avgTicket <= 0) {
+      return { cuts: null, monetaryRemaining: remaining };
+    }
+    return { cuts: Math.ceil(remaining / avgTicket), monetaryRemaining: remaining };
   };
 
   // Helper para verificar se há lançamento manual pendente de conferência
   const hasPendingManualEntry = (barberId: string) => {
     const production = productions.find((p) => p.barber_id === barberId);
     if (!production) return false;
-
     const txTotal = 
       (production.tx_basic_total || 0) +
       (production.tx_extra_total || 0) +
       (production.tx_products_total || 0);
-
     const manualTotal =
       (production.manual_basic_total || 0) +
       (production.manual_extra_total || 0) +
       (production.manual_products_total || 0);
-
-    // Se tx é zero mas manual tem valor, há pendência de conferência
     return txTotal === 0 && manualTotal > 0;
-  };
-
-  const getCutsRemaining = (barberId: string, barber: Barber) => {
-    const revenue = getBarberRevenue(barberId);
-    const target = getBarberDailyTarget(barber);
-    const remaining = target - revenue;
-    if (remaining <= 0) return 0;
-
-    const avgTicket = getAverageTicket();
-    return Math.ceil(remaining / avgTicket);
   };
 
   const getInitials = (name: string) => {
@@ -932,16 +941,27 @@ export default function LiveDashboard() {
                 </div>
 
                 {/* Cuts Remaining */}
-                {target > 0 && cutsRemaining > 0 && (
+                {target > 0 && cutsRemaining.cuts !== null && cutsRemaining.cuts > 0 && (
                   <div className="text-center py-2 px-3 bg-muted/50 rounded-lg">
                     <p className="text-sm text-muted-foreground">
                       Faltam{" "}
-                      <span className="font-bold text-primary">{cutsRemaining}</span>{" "}
+                      <span className="font-bold text-primary">{cutsRemaining.cuts}</span>{" "}
                       cortes para bater a meta
                     </p>
                   </div>
                 )}
-                {target > 0 && cutsRemaining === 0 && revenue > 0 && (
+                {target > 0 && cutsRemaining.cuts === null && cutsRemaining.monetaryRemaining > 0 && (
+                  <div className="text-center py-2 px-3 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      Faltam{" "}
+                      <span className="font-bold text-primary">
+                        R$ {cutsRemaining.monetaryRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>{" "}
+                      para bater a meta
+                    </p>
+                  </div>
+                )}
+                {target > 0 && cutsRemaining.cuts === 0 && revenue > 0 && (
                   <div className="text-center py-2 px-3 bg-green-500/20 rounded-lg">
                     <p className="text-sm text-green-500 font-bold">
                       🎉 Meta batida!
