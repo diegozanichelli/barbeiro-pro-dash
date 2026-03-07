@@ -11,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { motion, AnimatePresence } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -653,24 +654,49 @@ export default function LiveDashboard() {
     );
   }
 
+  // KPI calculations
+  const totalClientsToday = filteredBarbers.reduce((sum, b) => {
+    const txCount = managerTransactions
+      .filter(t => t.barber_id === b.id && t.item_type === "service" && t.service_category === "basic")
+      .length;
+    return sum + txCount;
+  }, 0);
+
+  const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
+
+  const topBarberToday = rankingData.reduce((top, b) => b.revenue > (top?.revenue || 0) ? b : top, rankingData[0]);
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4">
+      {/* Header with glassmorphism */}
+      <motion.div
+        className="flex flex-col gap-4"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
             {isViewingToday ? (
-              <Radio className="w-6 h-6 text-red-500 animate-pulse" />
+              <div className="relative">
+                <Radio className="w-6 h-6 text-red-500 animate-pulse" />
+                <div className="absolute inset-0 bg-red-500/20 rounded-full blur-md animate-pulse" />
+              </div>
             ) : (
               <Calendar className="w-6 h-6 text-muted-foreground" />
             )}
-            <h2 className="text-2xl font-bold text-foreground">
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">
               {isViewingToday ? "AO VIVO" : "HISTÓRICO"}
             </h2>
+            {isViewingToday && (
+              <Badge className="bg-red-500/20 text-red-400 border-red-500/30 animate-pulse text-xs">
+                LIVE
+              </Badge>
+            )}
           </div>
 
           <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-            <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectTrigger className="w-full sm:w-[200px] bg-card/50 backdrop-blur-sm border-border/50">
               <SelectValue placeholder="Filtrar por unidade" />
             </SelectTrigger>
             <SelectContent>
@@ -690,12 +716,12 @@ export default function LiveDashboard() {
             variant="outline"
             size="icon"
             onClick={goToPreviousDay}
-            className="h-9 w-9"
+            className="h-9 w-9 bg-card/50 backdrop-blur-sm border-border/50"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           
-          <div className="flex items-center gap-2 px-4 py-2 bg-muted rounded-lg min-w-[200px] justify-center">
+          <div className="flex items-center gap-2 px-4 py-2 bg-card/60 backdrop-blur-sm rounded-lg min-w-[200px] justify-center border border-border/30">
             <Calendar className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium text-foreground capitalize">
               {format(parseISO(selectedDate), "EEEE, dd/MM", { locale: ptBR })}
@@ -707,7 +733,7 @@ export default function LiveDashboard() {
             size="icon"
             onClick={goToNextDay}
             disabled={isViewingToday}
-            className="h-9 w-9"
+            className="h-9 w-9 bg-card/50 backdrop-blur-sm border-border/50"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -723,73 +749,121 @@ export default function LiveDashboard() {
             </Button>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      {/* Subscription Button + Total Revenue */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        {/* Destacar botão de Assinatura */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="lg"
-            className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg"
-            onClick={() => setSubscriptionWizardOpen(true)}
-          >
-            <Crown className="w-5 h-5" />
-            Vender Assinatura
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-11 w-11 p-0"
-            onClick={() => setSubscriptionAuditOpen(true)}
-            title="Auditar Últimas Vendas"
-          >
-            <Eye className="w-5 h-5" />
-          </Button>
-        </div>
-
-        {/* Total Revenue Card */}
-        <Card
-          className={`flex-1 bg-gradient-to-br from-primary/20 to-primary/5 border-primary/30 transition-all duration-500 ${
+      {/* KPI Cards Row */}
+      <motion.div
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        {/* Total Revenue - Hero KPI */}
+        <div
+          className={`col-span-2 relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent backdrop-blur-sm p-5 transition-all duration-500 ${
             isGlowing && isViewingToday ? "animate-glow shadow-[0_0_30px_hsl(38_92%_50%/0.6)]" : ""
           }`}
         >
-          <CardContent className="py-4">
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-1">
-                {isViewingToday ? "Faturamento Total Hoje" : `Faturamento em ${format(parseISO(selectedDate), "dd/MM/yyyy")}`}
-              </p>
-              <p className="text-3xl sm:text-4xl font-bold text-primary">
-                {totalRevenue.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {filteredBarbers.length} barbeiros ativos
+          <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="relative">
+            <div className="flex items-center gap-2 mb-2">
+              <DollarSign className="w-4 h-4 text-primary" />
+              <p className="text-sm text-muted-foreground font-medium">
+                {isViewingToday ? "Faturamento Hoje" : `Faturamento ${format(parseISO(selectedDate), "dd/MM")}`}
               </p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <motion.p
+              className="text-3xl sm:text-4xl font-extrabold text-primary tracking-tight"
+              key={totalRevenue}
+              initial={{ scale: 1.1, opacity: 0.7 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 300 }}
+            >
+              {totalRevenue.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}
+            </motion.p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {filteredBarbers.length} barbeiros ativos
+            </p>
+          </div>
+        </div>
+
+        {/* Clients KPI */}
+        <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Users className="w-4 h-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground font-medium">Clientes</p>
+          </div>
+          <p className="text-2xl font-bold text-foreground">{totalClientsToday}</p>
+        </div>
+
+        {/* Average Ticket KPI */}
+        <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground font-medium">Ticket Médio</p>
+          </div>
+          <p className="text-2xl font-bold text-foreground">
+            {averageTicketToday > 0
+              ? averageTicketToday.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+              : "—"}
+          </p>
+        </div>
+      </motion.div>
+
+      {/* Subscription Button */}
+      <motion.div
+        className="flex items-center gap-2"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
+        <Button
+          size="lg"
+          className="gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg shadow-amber-500/20"
+          onClick={() => setSubscriptionWizardOpen(true)}
+        >
+          <Crown className="w-5 h-5" />
+          Vender Assinatura
+        </Button>
+        <Button
+          size="lg"
+          variant="outline"
+          className="h-11 w-11 p-0 bg-card/50 backdrop-blur-sm"
+          onClick={() => setSubscriptionAuditOpen(true)}
+          title="Auditar Últimas Vendas"
+        >
+          <Eye className="w-5 h-5" />
+        </Button>
+      </motion.div>
 
       {/* Top 3 Ranking */}
-      {rankingData.some((b) => b.revenue > 0) && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              🏆 Top 3 do Dia
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <LiveTop3Ranking barbers={rankingData} />
-          </CardContent>
-        </Card>
-      )}
+      <AnimatePresence>
+        {rankingData.some((b) => b.revenue > 0) && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+          >
+            <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  🏆 Top 3 do Dia
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LiveTop3Ranking barbers={rankingData} />
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Barber Cards - Ordenados por quem mais precisa de atenção */}
+      {/* Barber Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sortedBarbers.map((barber) => {
+        {sortedBarbers.map((barber, index) => {
           const revenue = getBarberRevenue(barber.id);
           const target = getBarberDailyTarget(barber);
           const percentage = target > 0 ? Math.min((revenue / target) * 100, 100) : 0;
@@ -797,184 +871,209 @@ export default function LiveDashboard() {
           const progressColor = getProgressColor(percentage);
 
           return (
-            <Card key={barber.id} className="hover:border-primary/50 transition-colors">
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-12 w-12 border-2 border-border">
-                      <AvatarFallback className="bg-muted text-muted-foreground font-bold">
-                        {getInitials(barber.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-foreground">{barber.name}</p>
-                        {hasPendingManualEntry(barber.id) && (
-                          <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
-                            <FileText className="w-3 h-3 mr-1" />
-                            Aguardando
-                          </Badge>
+            <motion.div
+              key={barber.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * index }}
+            >
+              <Card className={`relative overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 ${
+                percentage >= 100 ? "border-green-500/40" : ""
+              }`}>
+                {/* Performance accent line */}
+                <div className={`absolute top-0 left-0 right-0 h-0.5 ${progressColor}`} />
+                
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`relative ${percentage >= 100 ? "ring-2 ring-green-500/50 rounded-full" : ""}`}>
+                        <Avatar className="h-12 w-12 border-2 border-border/50">
+                          <AvatarFallback className="bg-muted text-muted-foreground font-bold">
+                            {getInitials(barber.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {percentage >= 100 && revenue > 0 && (
+                          <div className="absolute -top-1 -right-1 text-sm">🎯</div>
                         )}
-                        {(() => {
-                          const prod = getBarberProduction(barber.id);
-                          if (!prod || !prod.confirmed_presence) return null;
-                          const rev = getBarberRevenue(barber.id);
-                          if (rev > 0) return null;
-                          const pt = prod.presence_type;
-                          if (pt === 'day_off') return (
-                            <Badge className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">
-                              <CalendarOff className="w-3 h-3 mr-1" />Folga
-                            </Badge>
-                          );
-                          if (pt === 'absence') return (
-                            <Badge className="text-xs bg-red-500/20 text-red-500 border-red-500/30">
-                              <XCircle className="w-3 h-3 mr-1" />Falta
-                            </Badge>
-                          );
-                          return (
-                            <Badge className="text-xs bg-orange-500/20 text-orange-500 border-orange-500/30">
-                              <UserCheck className="w-3 h-3 mr-1" />Presente s/ vendas
-                            </Badge>
-                          );
-                        })()}
                       </div>
-                      <p className="text-xs text-muted-foreground">{barber.unit_name}</p>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-foreground">{barber.name}</p>
+                          {hasPendingManualEntry(barber.id) && (
+                            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
+                              <FileText className="w-3 h-3 mr-1" />
+                              Aguardando
+                            </Badge>
+                          )}
+                          {(() => {
+                            const prod = getBarberProduction(barber.id);
+                            if (!prod || !prod.confirmed_presence) return null;
+                            const rev = getBarberRevenue(barber.id);
+                            if (rev > 0) return null;
+                            const pt = prod.presence_type;
+                            if (pt === 'day_off') return (
+                              <Badge className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">
+                                <CalendarOff className="w-3 h-3 mr-1" />Folga
+                              </Badge>
+                            );
+                            if (pt === 'absence') return (
+                              <Badge className="text-xs bg-red-500/20 text-red-500 border-red-500/30">
+                                <XCircle className="w-3 h-3 mr-1" />Falta
+                              </Badge>
+                            );
+                            return (
+                              <Badge className="text-xs bg-orange-500/20 text-orange-500 border-orange-500/30">
+                                <UserCheck className="w-3 h-3 mr-1" />Presente s/ vendas
+                              </Badge>
+                            );
+                          })()}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{barber.unit_name}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0"
-                      onClick={() => handleViewTransactions(barber)}
-                      title="Ver comandas do gestor"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                    {(revenue > 0 || managerTransactions.some(t => t.barber_id === barber.id)) && (
+                    <div className="flex gap-1">
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="ghost"
                         className="h-8 w-8 p-0"
-                        onClick={() => handleEditClick(barber)}
-                        title="Editar lançamento"
+                        onClick={() => handleViewTransactions(barber)}
+                        title="Ver comandas do gestor"
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Eye className="w-4 h-4" />
                       </Button>
-                    )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                      {(revenue > 0 || managerTransactions.some(t => t.barber_id === barber.id)) && (
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="outline"
                           className="h-8 w-8 p-0"
-                          title="Registrar status do dia"
+                          onClick={() => handleEditClick(barber)}
+                          title="Editar lançamento"
                         >
-                          <EllipsisVertical className="w-4 h-4" />
+                          <Pencil className="w-4 h-4" />
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "present")}>
-                          Registrar Presença sem venda
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "day_off")}>
-                          Registrar Folga
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "absence")}>
-                          Registrar Falta
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "optional_sunday")}>
-                          Registrar Domingo opcional
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0"
+                            title="Registrar status do dia"
+                          >
+                            <EllipsisVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "present")}>
+                            Registrar Presença sem venda
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "day_off")}>
+                            Registrar Folga
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "absence")}>
+                            Registrar Falta
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleRegisterDayStatus(barber, "optional_sunday")}>
+                            Registrar Domingo opcional
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
 
-                    <Button
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      disabled={!organizationId}
-                      onClick={() => {
-                        if (!organizationId) {
-                          toast.error("Organização não identificada. Recarregue a página e tente novamente.");
-                          return;
-                        }
-                        setQuickSaleModal({
-                          open: true,
-                          barberId: barber.id,
-                          barberName: barber.name,
-                        });
-                      }}
+                      <Button
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        disabled={!organizationId}
+                        onClick={() => {
+                          if (!organizationId) {
+                            toast.error("Organização não identificada. Recarregue a página e tente novamente.");
+                            return;
+                          }
+                          setQuickSaleModal({
+                            open: true,
+                            barberId: barber.id,
+                            barberName: barber.name,
+                          });
+                        }}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar with glow */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Progresso</span>
+                      <span className={`font-bold ${percentage >= 100 ? "text-green-500" : "text-foreground"}`}>
+                        {percentage.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="relative h-3 bg-muted/50 rounded-full overflow-hidden">
+                      <motion.div
+                        className={`absolute left-0 top-0 h-full rounded-full ${progressColor}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ duration: 0.8, ease: "easeOut", delay: 0.1 * index }}
+                      />
+                      {percentage >= 100 && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+                      )}
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-primary font-bold">
+                        {revenue.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </span>
+                      <span className="text-muted-foreground">
+                        / {target.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cuts Remaining */}
+                  {target > 0 && cutsRemaining.cuts !== null && cutsRemaining.cuts > 0 && (
+                    <div className="text-center py-2 px-3 bg-muted/30 rounded-lg border border-border/30">
+                      <p className="text-sm text-muted-foreground">
+                        Faltam{" "}
+                        <span className="font-bold text-primary">{cutsRemaining.cuts}</span>{" "}
+                        cortes para bater a meta
+                      </p>
+                    </div>
+                  )}
+                  {target > 0 && cutsRemaining.cuts === null && cutsRemaining.monetaryRemaining > 0 && (
+                    <div className="text-center py-2 px-3 bg-muted/30 rounded-lg border border-border/30">
+                      <p className="text-sm text-muted-foreground">
+                        Faltam{" "}
+                        <span className="font-bold text-primary">
+                          R$ {cutsRemaining.monetaryRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>{" "}
+                        para bater a meta
+                      </p>
+                    </div>
+                  )}
+                  {target > 0 && cutsRemaining.cuts === 0 && revenue > 0 && (
+                    <motion.div
+                      className="text-center py-2 px-3 bg-green-500/10 rounded-lg border border-green-500/30"
+                      initial={{ scale: 0.9 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 300 }}
                     >
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Progresso</span>
-                    <span className="font-bold text-foreground">
-                      {percentage.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="relative h-3 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`absolute left-0 top-0 h-full transition-all duration-500 rounded-full ${progressColor}`}
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-primary font-bold">
-                      {revenue.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
-                    </span>
-                    <span className="text-muted-foreground">
-                      / {target.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Cuts Remaining */}
-                {target > 0 && cutsRemaining.cuts !== null && cutsRemaining.cuts > 0 && (
-                  <div className="text-center py-2 px-3 bg-muted/50 rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      Faltam{" "}
-                      <span className="font-bold text-primary">{cutsRemaining.cuts}</span>{" "}
-                      cortes para bater a meta
-                    </p>
-                  </div>
-                )}
-                {target > 0 && cutsRemaining.cuts === null && cutsRemaining.monetaryRemaining > 0 && (
-                  <div className="text-center py-2 px-3 bg-muted/50 rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      Faltam{" "}
-                      <span className="font-bold text-primary">
-                        R$ {cutsRemaining.monetaryRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>{" "}
-                      para bater a meta
-                    </p>
-                  </div>
-                )}
-                {target > 0 && cutsRemaining.cuts === 0 && revenue > 0 && (
-                  <div className="text-center py-2 px-3 bg-green-500/20 rounded-lg">
-                    <p className="text-sm text-green-500 font-bold">
-                      🎉 Meta batida!
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      <p className="text-sm text-green-500 font-bold">
+                        🎉 Meta batida!
+                      </p>
+                    </motion.div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
           );
         })}
       </div>
-
-      {/* Quick Sale Modal */}
       <QuickSaleModal
         open={quickSaleModal.open}
         onOpenChange={(open) =>
