@@ -169,9 +169,15 @@ export default function TransactionManagerModal({
 
       let finalData = data || [];
 
-      // In audit mode (ManagerReports), show ALL transactions from both sources
-      // so the user can see both manager and barber items for proper auditing.
-      // No filtering needed - the user needs full visibility.
+      // In audit mode without explicit sourceFilter, deduplicate:
+      // If manager items exist, show only manager items (official record).
+      // Show barber items only when there are NO manager items at all.
+      if (auditMode && !sourceFilter && finalData.length > 0) {
+        const hasManagerItems = finalData.some((t) => t.source === "manager");
+        if (hasManagerItems) {
+          finalData = finalData.filter((t) => t.source === "manager");
+        }
+      }
 
       setTransactions(finalData);
     } catch (error) {
