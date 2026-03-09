@@ -623,8 +623,10 @@ export default function QuickSaleModal({
   const hasClientName = clientName.trim().length >= 3;
   const hasSubscriptionResolved =
     clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
+  // Require client verification to have completed (not idle) when phone is complete
+  const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
   const canProceedStep1 =
-    isPhoneComplete && hasClientName && !clientHistory.checking && !phoneError && hasSubscriptionResolved;
+    isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
