@@ -322,11 +322,24 @@ export default function QuickSaleModal({
         setPhoneError("Telefone inválido");
       } else {
         setPhoneError(null);
+        // Auto-trigger client history check when phone is complete
+        clientHistory.checkHistory(formatted, clientName).then((res) => {
+          if (!res) return;
+          if (res.status === "phone_found" && res.suggestedName) {
+            setClientName(res.suggestedName);
+            if (!manualOverride) setClientType("without_subscription");
+          } else if (res.status === "name_found") {
+            if (!manualOverride) setClientType("without_subscription");
+          }
+        });
       }
     } else if (digits.length > 0 && digits.length < 11) {
       setPhoneError(null); // Still typing
+      // Reset history when phone changes
+      clientHistory.reset();
     } else {
       setPhoneError(null);
+      clientHistory.reset();
     }
   };
 
