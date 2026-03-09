@@ -169,17 +169,9 @@ export default function TransactionManagerModal({
 
       let finalData = data || [];
 
-      // In audit mode (ManagerReports), avoid showing duplicates when both sources exist.
-      // Priority: manager (tx) source is the official record; show barber only if no manager data.
-      if (auditMode && !sourceFilter && finalData.length > 0) {
-        const hasManager = finalData.some(t => t.source === 'manager');
-        const hasBarber = finalData.some(t => t.source === 'barber');
-        if (hasManager && hasBarber) {
-          // Show only manager (official) transactions to avoid duplication
-          finalData = finalData.filter(t => t.source === 'manager');
-          console.log('[AUDITORIA] Dual-source detectado — exibindo apenas transações do gestor para evitar duplicidade');
-        }
-      }
+      // In audit mode (ManagerReports), show ALL transactions from both sources
+      // so the user can see both manager and barber items for proper auditing.
+      // No filtering needed - the user needs full visibility.
 
       setTransactions(finalData);
     } catch (error) {
