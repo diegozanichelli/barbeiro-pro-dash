@@ -509,6 +509,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       active: "default",
       trial: "secondary",
       delinquent: "destructive",
+      past_due: "destructive",
       canceled: "outline",
     };
 
@@ -516,6 +517,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       active: "Ativa",
       trial: "Trial",
       delinquent: "Inadimplente",
+      past_due: "Inadimplente",
       canceled: "Cancelada",
       gratuita: "Gratuita",
     };
