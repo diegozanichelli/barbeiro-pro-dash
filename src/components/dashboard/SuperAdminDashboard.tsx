@@ -329,6 +329,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
       await supabase.auth.signOut();
