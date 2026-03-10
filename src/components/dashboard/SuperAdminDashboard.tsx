@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2 } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { managerAuthSchema, type ManagerAuthFormData } from "@/lib/validations/manager";
@@ -90,6 +101,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [showEditOrgDialog, setShowEditOrgDialog] = useState(false);
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [editingOrg, setEditingOrg] = useState(false);
+  const [cancelingOrg, setCancelingOrg] = useState(false);
 
   const form = useForm<ManagerAuthFormData>({
     resolver: zodResolver(managerAuthSchema),
@@ -289,6 +301,34 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleCancelSubscription = async (orgId: string) => {
+    setCancelingOrg(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("cancel-organization-subscription", {
+        body: { organizationId: orgId },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Assinatura cancelada",
+        description: "A assinatura foi cancelada no Stripe e o status alterado para Trial",
+      });
+
+      fetchOrganizations();
+    } catch (error) {
+      console.error("Error canceling subscription:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao cancelar assinatura",
+        variant: "destructive",
+      });
+    } finally {
+      setCancelingOrg(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
@@ -469,6 +509,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       active: "default",
       trial: "secondary",
       delinquent: "destructive",
+      past_due: "destructive",
       canceled: "outline",
     };
 
@@ -476,6 +517,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       active: "Ativa",
       trial: "Trial",
       delinquent: "Inadimplente",
+      past_due: "Inadimplente",
       canceled: "Cancelada",
       gratuita: "Gratuita",
     };
@@ -735,13 +777,42 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             Revogar
                           </Button>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant={org.subscription_status === "active" ? "destructive" : "default"}
-                            onClick={() => handleToggleAccess(org.id, org.subscription_status)}
-                          >
-                            {org.subscription_status === "active" ? "Desativar" : "Ativar"}
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant={org.subscription_status === "active" ? "destructive" : "default"}
+                              onClick={() => handleToggleAccess(org.id, org.subscription_status)}
+                            >
+                              {org.subscription_status === "active" ? "Desativar" : "Ativar"}
+                            </Button>
+                            {org.subscription_status === "active" && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button size="sm" variant="outline" disabled={cancelingOrg}>
+                                    <Ban className="w-4 h-4 mr-1" />
+                                    Cancelar Conta
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Cancelar assinatura de {org.name}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Isso cancelará todas as assinaturas ativas no Stripe e colocará a conta em modo Trial. Essa ação não pode ser desfeita automaticamente.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Voltar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleCancelSubscription(org.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Confirmar Cancelamento
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </>
                         )}
                       </div>
                     </TableCell>
