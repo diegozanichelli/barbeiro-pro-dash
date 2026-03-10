@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2 } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";

@@ -44,3 +44,6 @@ verify_jwt = true
 
 [functions.barber-ai-assistant]
 verify_jwt = false
+
+[functions.cancel-organization-subscription]
+verify_jwt = false
