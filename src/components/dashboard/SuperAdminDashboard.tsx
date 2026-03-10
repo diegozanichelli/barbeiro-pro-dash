@@ -301,7 +301,34 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
-  const handleSignOut = async () => {
+  const handleCancelSubscription = async (orgId: string) => {
+    setCancelingOrg(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("cancel-organization-subscription", {
+        body: { organizationId: orgId },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Assinatura cancelada",
+        description: "A assinatura foi cancelada no Stripe e o status alterado para Trial",
+      });
+
+      fetchOrganizations();
+    } catch (error) {
+      console.error("Error canceling subscription:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao cancelar assinatura",
+        variant: "destructive",
+      });
+    } finally {
+      setCancelingOrg(false);
+    }
+  };
+
     setIsSigningOut(true);
     try {
       await supabase.auth.signOut();
