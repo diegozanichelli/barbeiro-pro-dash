@@ -775,13 +775,42 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             Revogar
                           </Button>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant={org.subscription_status === "active" ? "destructive" : "default"}
-                            onClick={() => handleToggleAccess(org.id, org.subscription_status)}
-                          >
-                            {org.subscription_status === "active" ? "Desativar" : "Ativar"}
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant={org.subscription_status === "active" ? "destructive" : "default"}
+                              onClick={() => handleToggleAccess(org.id, org.subscription_status)}
+                            >
+                              {org.subscription_status === "active" ? "Desativar" : "Ativar"}
+                            </Button>
+                            {org.subscription_status === "active" && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button size="sm" variant="outline" disabled={cancelingOrg}>
+                                    <Ban className="w-4 h-4 mr-1" />
+                                    Cancelar Conta
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Cancelar assinatura de {org.name}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Isso cancelará todas as assinaturas ativas no Stripe e colocará a conta em modo Trial. Essa ação não pode ser desfeita automaticamente.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Voltar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleCancelSubscription(org.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Confirmar Cancelamento
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </>
                         )}
                       </div>
                     </TableCell>
