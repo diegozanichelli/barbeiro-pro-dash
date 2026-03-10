@@ -101,6 +101,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [showEditOrgDialog, setShowEditOrgDialog] = useState(false);
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [editingOrg, setEditingOrg] = useState(false);
+  const [cancelingOrg, setCancelingOrg] = useState(false);
 
   const form = useForm<ManagerAuthFormData>({
     resolver: zodResolver(managerAuthSchema),
