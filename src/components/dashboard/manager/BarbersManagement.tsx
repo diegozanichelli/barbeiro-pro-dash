@@ -280,14 +280,17 @@ export default function BarbersManagement() {
                     required={!editingBarber}
                     minLength={8}
                   />
-                  {(!editingBarber || formData.password.length > 0) && (
-                    <div className="space-y-1 mt-2">
-                      <PasswordCheck label="Mínimo 8 caracteres" met={formData.password.length >= 8} />
-                      <PasswordCheck label="Letra maiúscula (A-Z)" met={/[A-Z]/.test(formData.password)} />
-                      <PasswordCheck label="Letra minúscula (a-z)" met={/[a-z]/.test(formData.password)} />
-                      <PasswordCheck label="Número (0-9)" met={/[0-9]/.test(formData.password)} />
-                    </div>
-                  )}
+                  <div className="space-y-1 mt-2">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {editingBarber 
+                        ? "Preencha apenas se desejar redefinir a senha. A nova senha deve ter:" 
+                        : "A senha deve ter:"}
+                    </p>
+                    <PasswordCheck label="Mínimo 8 caracteres" met={formData.password.length >= 8} />
+                    <PasswordCheck label="Letra maiúscula (A-Z)" met={/[A-Z]/.test(formData.password)} />
+                    <PasswordCheck label="Letra minúscula (a-z)" met={/[a-z]/.test(formData.password)} />
+                    <PasswordCheck label="Número (0-9)" met={/[0-9]/.test(formData.password)} />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
