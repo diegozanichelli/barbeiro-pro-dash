@@ -48,6 +48,10 @@ export default function BarbersManagement() {
     password: "",
   });
 
+  const passwordRequired = !editingBarber || formData.password.length > 0;
+  const isPasswordValid = formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[a-z]/.test(formData.password) && /[0-9]/.test(formData.password);
+  const isPasswordInvalid = passwordRequired && !isPasswordValid;
+
   useEffect(() => {
     fetchBarbers();
     fetchUnits();
