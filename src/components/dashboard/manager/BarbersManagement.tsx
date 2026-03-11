@@ -261,12 +261,12 @@ export default function BarbersManagement() {
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required={!editingBarber}
-                    minLength={6}
+                    minLength={8}
                   />
                   <p className="text-xs text-muted-foreground">
                     {editingBarber 
-                      ? "Preencha apenas se desejar redefinir a senha do barbeiro"
-                      : "O barbeiro usará este email e senha para fazer login"
+                      ? "Preencha apenas se desejar redefinir a senha do barbeiro. Mínimo 8 caracteres com letras maiúsculas, minúsculas e números (ex: Barber123)"
+                      : "Mínimo 8 caracteres com letras maiúsculas, minúsculas e números (ex: Barber123)"
                     }
                   </p>
                 </div>
