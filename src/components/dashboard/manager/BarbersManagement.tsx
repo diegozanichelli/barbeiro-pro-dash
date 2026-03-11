@@ -257,18 +257,20 @@ export default function BarbersManagement() {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required={!editingBarber}
                     minLength={8}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {editingBarber 
-                      ? "Preencha apenas se desejar redefinir a senha do barbeiro. Mínimo 8 caracteres com letras maiúsculas, minúsculas e números (ex: Barber123)"
-                      : "Mínimo 8 caracteres com letras maiúsculas, minúsculas e números (ex: Barber123)"
-                    }
-                  </p>
+                  {(!editingBarber || formData.password.length > 0) && (
+                    <div className="space-y-1 mt-2">
+                      <PasswordCheck label="Mínimo 8 caracteres" met={formData.password.length >= 8} />
+                      <PasswordCheck label="Letra maiúscula (A-Z)" met={/[A-Z]/.test(formData.password)} />
+                      <PasswordCheck label="Letra minúscula (a-z)" met={/[a-z]/.test(formData.password)} />
+                      <PasswordCheck label="Número (0-9)" met={/[0-9]/.test(formData.password)} />
+                    </div>
+                  )
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
