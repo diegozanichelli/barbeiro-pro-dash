@@ -18,6 +18,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Users, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 
+function PasswordCheck({ label, met }: { label: string; met: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      {met ? (
+        <Check className="w-3.5 h-3.5 text-green-500" />
+      ) : (
+        <X className="w-3.5 h-3.5 text-destructive" />
+      )}
+      <span className={met ? "text-green-500" : "text-destructive"}>{label}</span>
+    </div>
+  );
+}
+
 export default function BarbersManagement() {
   const [barbers, setBarbers] = useState<any[]>([]);
   const [units, setUnits] = useState<any[]>([]);
