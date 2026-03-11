@@ -283,7 +283,7 @@ export default function BarbersManagement() {
                       <PasswordCheck label="Letra minúscula (a-z)" met={/[a-z]/.test(formData.password)} />
                       <PasswordCheck label="Número (0-9)" met={/[0-9]/.test(formData.password)} />
                     </div>
-                  )
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
