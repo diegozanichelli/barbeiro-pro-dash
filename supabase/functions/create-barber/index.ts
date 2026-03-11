@@ -186,7 +186,10 @@ serve(async (req: Request) => {
     });
     if (createErr) {
       console.error("[CREATE-BARBER] Auth user creation failed:", createErr);
-      return new Response(JSON.stringify({ error: "Falha ao criar usuário. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const errorMessage = (createErr as any)?.code === "email_exists"
+        ? "Este email já está cadastrado no sistema. Use outro email."
+        : "Falha ao criar usuário. Tente novamente.";
+      return new Response(JSON.stringify({ error: errorMessage }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const newUser = created.user;
     if (!newUser) {
