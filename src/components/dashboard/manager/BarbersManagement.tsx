@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,20 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Users, Plus, Pencil, Trash2 } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+
+function PasswordCheck({ label, met }: { label: string; met: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      {met ? (
+        <Check className="w-3.5 h-3.5 text-green-500" />
+      ) : (
+        <X className="w-3.5 h-3.5 text-destructive" />
+      )}
+      <span className={met ? "text-green-500" : "text-destructive"}>{label}</span>
+    </div>
+  );
+}
 
 export default function BarbersManagement() {
   const [barbers, setBarbers] = useState<any[]>([]);
@@ -34,6 +47,10 @@ export default function BarbersManagement() {
     email: "",
     password: "",
   });
+
+  const passwordRequired = !editingBarber || formData.password.length > 0;
+  const isPasswordValid = formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[a-z]/.test(formData.password) && /[0-9]/.test(formData.password);
+  const isPasswordInvalid = passwordRequired && !isPasswordValid;
 
   useEffect(() => {
     fetchBarbers();
@@ -257,18 +274,20 @@ export default function BarbersManagement() {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required={!editingBarber}
                     minLength={8}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {editingBarber 
-                      ? "Preencha apenas se desejar redefinir a senha do barbeiro. Mínimo 8 caracteres com letras maiúsculas, minúsculas e números (ex: Barber123)"
-                      : "Mínimo 8 caracteres com letras maiúsculas, minúsculas e números (ex: Barber123)"
-                    }
-                  </p>
+                  {(!editingBarber || formData.password.length > 0) && (
+                    <div className="space-y-1 mt-2">
+                      <PasswordCheck label="Mínimo 8 caracteres" met={formData.password.length >= 8} />
+                      <PasswordCheck label="Letra maiúscula (A-Z)" met={/[A-Z]/.test(formData.password)} />
+                      <PasswordCheck label="Letra minúscula (a-z)" met={/[a-z]/.test(formData.password)} />
+                      <PasswordCheck label="Número (0-9)" met={/[0-9]/.test(formData.password)} />
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -324,7 +343,7 @@ export default function BarbersManagement() {
                 </div>
                 </div>
                 <div className="pt-4 border-t mt-4">
-                  <Button type="submit" className="w-full" disabled={loading}>
+                  <Button type="submit" className="w-full" disabled={loading || isPasswordInvalid}>
                     {loading ? "Salvando..." : "Salvar"}
                   </Button>
                 </div>
