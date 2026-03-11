@@ -339,7 +339,7 @@ export default function BarbersManagement() {
                 </div>
                 </div>
                 <div className="pt-4 border-t mt-4">
-                  <Button type="submit" className="w-full" disabled={loading}>
+                  <Button type="submit" className="w-full" disabled={loading || isPasswordInvalid}>
                     {loading ? "Salvando..." : "Salvar"}
                   </Button>
                 </div>
