@@ -163,15 +163,18 @@ export default function BarbersManagement() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este barbeiro?")) return;
+    if (!confirm("Tem certeza que deseja excluir este barbeiro? Todos os dados de login serão removidos permanentemente.")) return;
 
     try {
-      const { error } = await supabase.from("barbers").delete().eq("id", id);
+      const { data, error } = await supabase.functions.invoke("delete-barber", {
+        body: { barberId: id },
+      });
       if (error) throw error;
-      toast.success("Barbeiro excluído!");
+      if (data?.error) throw new Error(data.error);
+      toast.success("Barbeiro e dados de login excluídos!");
       fetchBarbers();
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || "Erro ao excluir barbeiro");
     }
   };
 

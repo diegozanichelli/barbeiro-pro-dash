@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.cancel-organization-subscription]
 verify_jwt = false
+
+[functions.delete-barber]
+verify_jwt = true
