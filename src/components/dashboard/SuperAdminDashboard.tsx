@@ -593,8 +593,27 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             onChange={(e) =>
                               setNewAccountData({ ...newAccountData, managerPassword: e.target.value })
                             }
-                            placeholder="Mínimo 6 caracteres"
+                            placeholder="Ex: Gerente123"
+                            minLength={8}
                           />
+                          <div className="space-y-1 mt-1">
+                            <p className="text-xs text-muted-foreground mb-1">A senha deve ter:</p>
+                            {[
+                              { label: "Mínimo 8 caracteres", met: newAccountData.managerPassword.length >= 8 },
+                              { label: "Letra maiúscula (A-Z)", met: /[A-Z]/.test(newAccountData.managerPassword) },
+                              { label: "Letra minúscula (a-z)", met: /[a-z]/.test(newAccountData.managerPassword) },
+                              { label: "Número (0-9)", met: /[0-9]/.test(newAccountData.managerPassword) },
+                            ].map((req) => (
+                              <div key={req.label} className="flex items-center gap-1.5">
+                                {req.met ? (
+                                  <svg className="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                ) : (
+                                  <svg className="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                )}
+                                <span className={`text-xs ${req.met ? "text-green-600" : "text-red-500"}`}>{req.label}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                       <DialogFooter>
@@ -605,7 +624,10 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                         >
                           Cancelar
                         </Button>
-                        <Button onClick={handleCreateFreeAccount} disabled={creating}>
+                        <Button
+                          onClick={handleCreateFreeAccount}
+                          disabled={creating || !newAccountData.managerPassword || newAccountData.managerPassword.length < 8 || !/[A-Z]/.test(newAccountData.managerPassword) || !/[a-z]/.test(newAccountData.managerPassword) || !/[0-9]/.test(newAccountData.managerPassword)}
+                        >
                           {creating ? "Criando..." : "Criar Conta"}
                         </Button>
                       </DialogFooter>
