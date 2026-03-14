@@ -624,7 +624,10 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                         >
                           Cancelar
                         </Button>
-                        <Button onClick={handleCreateFreeAccount} disabled={creating}>
+                        <Button
+                          onClick={handleCreateFreeAccount}
+                          disabled={creating || !newAccountData.managerPassword || newAccountData.managerPassword.length < 8 || !/[A-Z]/.test(newAccountData.managerPassword) || !/[a-z]/.test(newAccountData.managerPassword) || !/[0-9]/.test(newAccountData.managerPassword)}
+                        >
                           {creating ? "Criando..." : "Criar Conta"}
                         </Button>
                       </DialogFooter>
