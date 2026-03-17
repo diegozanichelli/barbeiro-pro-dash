@@ -311,6 +311,49 @@ export default function QuickSaleModal({
     onOpenChange(isOpen);
   };
 
+  // Select a client from suggestion dropdown (fills both name + phone + auto-detects subscription)
+  const selectClientSuggestion = useCallback(async (client: { name: string; mobile_phone: string }) => {
+    setClientName(client.name);
+    setMobilePhone(formatPhone(client.mobile_phone));
+    setShowNameSuggestions(false);
+    setShowPhoneSuggestions(false);
+    setPhoneError(null);
+
+    // Trigger history check
+    clientHistory.checkHistory(formatPhone(client.mobile_phone), client.name).then((res) => {
+      if (!res) return;
+      if (res.status === "phone_found" && res.suggestedName) {
+        setClientName(res.suggestedName);
+      }
+    });
+
+    // Auto-detect subscription for this client
+    autoDetectSubscription(client.mobile_phone);
+  }, [clientHistory]);
+
+  // Auto-detect if client has a subscription plan
+  const autoDetectSubscription = useCallback(async (phoneDigits: string) => {
+    if (manualOverride) return;
+    try {
+      const { data, error } = await (supabase
+        .from("clients") as any)
+        .select("subscription_plan_id")
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", phoneDigits)
+        .maybeSingle();
+
+      if (error) return;
+
+      if (data?.subscription_plan_id) {
+        setClientType("with_subscription");
+        setSelectedSubscriptionPlanId(data.subscription_plan_id);
+        setSubscriptionPlanAutoDetected(true);
+      }
+    } catch {
+      // silent
+    }
+  }, [organizationId, manualOverride]);
+
   // Phone input handler with mask
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
