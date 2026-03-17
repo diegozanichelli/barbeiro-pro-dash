@@ -110,7 +110,10 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
     const expectedDays: string[] = [];
     for (let day = 1; day < currentDate.getDate(); day++) {
       const date = new Date(currentYear, currentMonth, day);
-      expectedDays.push(format(date, "yyyy-MM-dd"));
+      const dateStr = format(date, "yyyy-MM-dd");
+      // Skip days before the barber was created
+      if (barberStartDate && dateStr < barberStartDate) continue;
+      expectedDays.push(dateStr);
     }
 
     // Days that have production with revenue OR resolved presence type
