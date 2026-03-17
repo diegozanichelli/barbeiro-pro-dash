@@ -14,6 +14,7 @@ import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 interface BarberRow {
   id: string;
   name: string;
+  created_at: string;
   units: { name: string } | null;
 }
 
@@ -70,6 +71,7 @@ export default function MissingProductionsAlert() {
         .select(`
           id,
           name,
+          created_at,
           units (name)
         `)
         .eq("organization_id", organizationId)
@@ -104,6 +106,10 @@ export default function MissingProductionsAlert() {
       const missingByBarber: BarberMissingDays[] = [];
 
       ((barbers || []) as BarberRow[]).forEach((barber) => {
+        // Only count days from when the barber was created
+        const barberCreatedDate = format(new Date(barber.created_at), "yyyy-MM-dd");
+        const barberDays = days.filter((day) => day >= barberCreatedDate);
+
         const confirmedDates = (productions || [])
           .filter((p) => {
             if (p.barber_id !== barber.id) return false;
@@ -114,7 +120,7 @@ export default function MissingProductionsAlert() {
           })
           .map((p) => p.date);
 
-        const missingDays = days.filter((day) => !confirmedDates.includes(day));
+        const missingDays = barberDays.filter((day) => !confirmedDates.includes(day));
 
         if (missingDays.length > 0) {
           missingByBarber.push({

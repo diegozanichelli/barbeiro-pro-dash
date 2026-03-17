@@ -35,6 +35,7 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [barberStartDate, setBarberStartDate] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -57,6 +58,19 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
         const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
         const yesterdayDate = new Date(today.getTime() - 86400000);
         const yesterdayStr = format(yesterdayDate, "yyyy-MM-dd");
+
+        // Fetch barber created_at to know when they joined
+        const { data: barberData } = await supabase
+          .from("barbers")
+          .select("created_at")
+          .eq("id", barberId)
+          .maybeSingle();
+
+        if (barberData?.created_at && isMounted) {
+          const barberCreatedDate = format(new Date(barberData.created_at), "yyyy-MM-dd");
+          // Store for use in missingDays calculation
+          setBarberStartDate(barberCreatedDate);
+        }
 
         const { data, error } = await supabase
           .from("daily_productions")
@@ -96,7 +110,10 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
     const expectedDays: string[] = [];
     for (let day = 1; day < currentDate.getDate(); day++) {
       const date = new Date(currentYear, currentMonth, day);
-      expectedDays.push(format(date, "yyyy-MM-dd"));
+      const dateStr = format(date, "yyyy-MM-dd");
+      // Skip days before the barber was created
+      if (barberStartDate && dateStr < barberStartDate) continue;
+      expectedDays.push(dateStr);
     }
 
     // Days that have production with revenue OR resolved presence type
@@ -114,7 +131,7 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
     );
 
     return expectedDays.filter((day) => !resolvedDays.has(day));
-  }, [productions, currentDateKey]);
+  }, [productions, currentDateKey, barberStartDate]);
 
   const handleConfirmStatus = async (status: PresenceType) => {
     if (!selectedDate) return;
