@@ -58,6 +58,19 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
         const yesterdayDate = new Date(today.getTime() - 86400000);
         const yesterdayStr = format(yesterdayDate, "yyyy-MM-dd");
 
+        // Fetch barber created_at to know when they joined
+        const { data: barberData } = await supabase
+          .from("barbers")
+          .select("created_at")
+          .eq("id", barberId)
+          .maybeSingle();
+
+        if (barberData?.created_at && isMounted) {
+          const barberCreatedDate = format(new Date(barberData.created_at), "yyyy-MM-dd");
+          // Store for use in missingDays calculation
+          setBarberStartDate(barberCreatedDate);
+        }
+
         const { data, error } = await supabase
           .from("daily_productions")
           .select("date, presence_type, services_basic_total, services_extra_total, products_total, services_total, tx_basic_total, tx_extra_total, tx_products_total")
