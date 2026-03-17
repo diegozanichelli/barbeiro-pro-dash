@@ -131,7 +131,7 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
     );
 
     return expectedDays.filter((day) => !resolvedDays.has(day));
-  }, [productions, currentDateKey]);
+  }, [productions, currentDateKey, barberStartDate]);
 
   const handleConfirmStatus = async (status: PresenceType) => {
     if (!selectedDate) return;
