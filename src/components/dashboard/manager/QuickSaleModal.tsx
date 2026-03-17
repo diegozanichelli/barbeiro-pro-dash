@@ -316,14 +316,11 @@ export default function QuickSaleModal({
     const raw = e.target.value;
     const formatted = formatPhone(raw);
     setMobilePhone(formatted);
+    setShowPhoneSuggestions(true);
 
     const digits = sanitizePhone(raw);
-    const matchedClient = phoneSuggestions.find((client) => client.mobile_phone === digits);
-    if (matchedClient) {
-      setClientName(matchedClient.name);
-      if (!manualOverride) setClientType("without_subscription");
-    }
     if (digits.length === 11) {
+      setShowPhoneSuggestions(false);
       if (!isValidPhone(raw)) {
         setPhoneError("Telefone inválido");
       } else {
@@ -338,10 +335,11 @@ export default function QuickSaleModal({
             if (!manualOverride) setClientType("without_subscription");
           }
         });
+        // Auto-detect subscription
+        autoDetectSubscription(digits);
       }
     } else if (digits.length > 0 && digits.length < 11) {
-      setPhoneError(null); // Still typing
-      // Reset history when phone changes
+      setPhoneError(null);
       clientHistory.reset();
     } else {
       setPhoneError(null);
