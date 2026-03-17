@@ -294,6 +294,8 @@ export default function QuickSaleModal({
     setIsResolvingSubscription(false);
     setSelectedPlanIncludedServiceIds([]);
     setManualOverride(false);
+    setShowNameSuggestions(false);
+    setShowPhoneSuggestions(false);
     clientHistory.reset();
     if (initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
