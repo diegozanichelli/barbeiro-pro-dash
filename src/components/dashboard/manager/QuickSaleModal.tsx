@@ -155,6 +155,12 @@ export default function QuickSaleModal({
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
   const [clientName, setClientName] = useState("");
   const [manualOverride, setManualOverride] = useState(false);
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const nameSuggestionsRef = useRef<HTMLDivElement>(null);
+  const phoneSuggestionsRef = useRef<HTMLDivElement>(null);
 
   // Phone state
   const [mobilePhone, setMobilePhone] = useState("");
