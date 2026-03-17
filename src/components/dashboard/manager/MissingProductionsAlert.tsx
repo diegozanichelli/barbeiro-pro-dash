@@ -14,6 +14,7 @@ import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 interface BarberRow {
   id: string;
   name: string;
+  created_at: string;
   units: { name: string } | null;
 }
 
