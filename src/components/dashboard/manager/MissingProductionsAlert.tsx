@@ -71,6 +71,7 @@ export default function MissingProductionsAlert() {
         .select(`
           id,
           name,
+          created_at,
           units (name)
         `)
         .eq("organization_id", organizationId)
