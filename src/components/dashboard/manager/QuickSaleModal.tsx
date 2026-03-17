@@ -1041,69 +1041,97 @@ export default function QuickSaleModal({
         </div>
 
         {/* Client Name */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 relative">
           <Label htmlFor="client-name" className="text-xs text-muted-foreground font-medium">
             Nome do Cliente {clientHistory.status === "phone_found" ? "(auto)" : "*"}
           </Label>
           <Input
+            ref={nameInputRef}
             id="client-name"
             type="text"
+            autoComplete="off"
             placeholder="Ex: João"
             value={clientName}
             onChange={(e) => {
-              const nextName = e.target.value;
-              setClientName(nextName);
-              const matchedClient = nameSuggestions.find(
-                (client) => client.name.toLowerCase() === nextName.trim().toLowerCase()
-              );
-              if (matchedClient) {
-                setMobilePhone(formatPhone(matchedClient.mobile_phone));
-                if (!manualOverride) setClientType("without_subscription");
-              }
+              setClientName(e.target.value);
+              setShowNameSuggestions(true);
             }}
-            onBlur={handleNameBlur}
+            onFocus={() => setShowNameSuggestions(true)}
+            onBlur={(e) => {
+              // Delay to allow click on suggestion
+              setTimeout(() => setShowNameSuggestions(false), 200);
+              handleNameBlur();
+            }}
             className="h-10"
-            list="quick-sale-name-suggestions"
           />
+          {showNameSuggestions && nameSuggestions.length > 0 && (
+            <div
+              ref={nameSuggestionsRef}
+              className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-48 overflow-y-auto"
+            >
+              {nameSuggestions.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => selectClientSuggestion(client)}
+                >
+                  <span className="font-medium">{client.name}</span>
+                  <span className="text-xs text-muted-foreground">{formatPhone(client.mobile_phone)}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <datalist id="quick-sale-name-suggestions">
-          {nameSuggestions.map((client) => (
-            <option key={client.id} value={client.name}>
-              {formatPhone(client.mobile_phone)}
-            </option>
-          ))}
-        </datalist>
 
         {/* Mobile Phone */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 relative">
           <Label htmlFor="mobile-phone" className="text-xs text-muted-foreground font-medium">
             Celular do Cliente
           </Label>
           <div className="relative">
             <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
+              ref={phoneInputRef}
               id="mobile-phone"
               type="tel"
               inputMode="numeric"
+              autoComplete="off"
               placeholder="(11) 99999-9999"
               value={mobilePhone}
               onChange={handlePhoneChange}
-              onBlur={handlePhoneBlur}
+              onFocus={() => setShowPhoneSuggestions(true)}
+              onBlur={(e) => {
+                setTimeout(() => setShowPhoneSuggestions(false), 200);
+                handlePhoneBlur();
+              }}
               className={cn("h-10 pl-10", phoneError && "border-destructive")}
               maxLength={15}
-              list="quick-sale-phone-suggestions"
             />
           </div>
           {phoneError && (
             <p className="text-xs text-destructive font-medium">{phoneError}</p>
           )}
-          <datalist id="quick-sale-phone-suggestions">
-            {phoneSuggestions.map((client) => (
-              <option key={client.id} value={formatPhone(client.mobile_phone)}>
-                {client.name}
-              </option>
-            ))}
-          </datalist>
+          {showPhoneSuggestions && phoneSuggestions.length > 0 && (
+            <div
+              ref={phoneSuggestionsRef}
+              className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-48 overflow-y-auto"
+            >
+              {phoneSuggestions.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => selectClientSuggestion(client)}
+                >
+                  <span className="text-xs font-mono">{formatPhone(client.mobile_phone)}</span>
+                  <span className="text-xs text-muted-foreground">{client.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
