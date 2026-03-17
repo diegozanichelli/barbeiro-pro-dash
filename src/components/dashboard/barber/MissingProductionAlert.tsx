@@ -35,6 +35,7 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [barberStartDate, setBarberStartDate] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
