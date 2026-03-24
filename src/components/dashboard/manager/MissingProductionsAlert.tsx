@@ -96,7 +96,7 @@ export default function MissingProductionsAlert() {
 
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
-        .select("barber_id, date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total")
+        .select("barber_id, date, confirmed_presence, presence_type, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total")
         .eq("organization_id", organizationId)
         .gte("date", startOfMonth)
         .lte("date", endOfMonth);
