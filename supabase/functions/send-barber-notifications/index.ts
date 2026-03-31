@@ -5,124 +5,168 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// --- VAPID / Web Push helpers ---
+const VAPID_PUBLIC_KEY = 'BPu3Z9f90Zf3aY_gUxj0SE4War9qt7Yjd8dMRwZnK9KZ15ISm1XWqLeORSZnS4YIlMRZPrst-xtMPfXL9xAkcSk';
 
-function base64urlToUint8Array(b64url: string): Uint8Array {
-  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
-  const bin = atob(b64);
+// ---- Base64url helpers ----
+function b64urlDecode(s: string): Uint8Array {
+  const b = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b);
   const arr = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
   return arr;
 }
 
-function uint8ArrayToBase64url(arr: Uint8Array): string {
+function b64urlEncode(arr: Uint8Array): string {
   let bin = '';
   for (const b of arr) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-async function importVapidPrivateKey(raw32: Uint8Array): Promise<CryptoKey> {
-  // Wrap raw 32-byte scalar in PKCS8 DER for P-256
-  const pkcs8Prefix = new Uint8Array([
-    0x30, 0x81, 0x87, 0x02, 0x01, 0x00, 0x30, 0x13,
-    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
-    0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d,
-    0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02,
-    0x01, 0x01, 0x04, 0x20,
-  ]);
-  // After the 32-byte key we need the ECPoint wrapper but the SubtleCrypto
-  // import for ECDSA signing only needs the scalar when using JWK, so let's use JWK instead.
-  // Actually PKCS8 needs the full structure. Let's use JWK:
-  const jwk = {
-    kty: 'EC',
-    crv: 'P-256',
-    d: uint8ArrayToBase64url(raw32),
-    // We can derive x/y from the private key but SubtleCrypto doesn't do that.
-    // Instead we'll pass x and y from the public key.
-  };
-  // We need x,y from the VAPID public key to build a complete JWK.
-  // Let's import from the public key constant.
-  return null as any; // placeholder - will use alternate approach
+function concat(...arrays: Uint8Array[]): Uint8Array {
+  const len = arrays.reduce((a, b) => a + b.length, 0);
+  const result = new Uint8Array(len);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
 }
 
-// Simpler approach: use JWK import with known public key coordinates
-const VAPID_PUBLIC_KEY = 'BPu3Z9f90Zf3aY_gUxj0SE4War9qt7Yjd8dMRwZnK9KZ15ISm1XWqLeORSZnS4YIlMRZPrst-xtMPfXL9xAkcSk';
-
-function extractPublicKeyXY(vapidPublicB64url: string): { x: string; y: string } {
-  const raw = base64urlToUint8Array(vapidPublicB64url);
-  // Uncompressed point: 0x04 || x (32 bytes) || y (32 bytes)
-  const x = raw.slice(1, 33);
-  const y = raw.slice(33, 65);
-  return {
-    x: uint8ArrayToBase64url(x),
-    y: uint8ArrayToBase64url(y),
-  };
+// ---- VAPID JWT ----
+function extractXY(publicKeyB64url: string) {
+  const raw = b64urlDecode(publicKeyB64url);
+  return { x: b64urlEncode(raw.slice(1, 33)), y: b64urlEncode(raw.slice(33, 65)) };
 }
 
-async function createVapidJwt(
-  audience: string,
-  subject: string,
-  privateKeyB64url: string,
-): Promise<{ token: string; publicKeyB64url: string }> {
-  const { x, y } = extractPublicKeyXY(VAPID_PUBLIC_KEY);
-  const dBytes = base64urlToUint8Array(privateKeyB64url);
+async function createVapidJwt(audience: string, subject: string, privateKeyB64url: string) {
+  const { x, y } = extractXY(VAPID_PUBLIC_KEY);
+  const d = b64urlEncode(b64urlDecode(privateKeyB64url));
 
   const key = await crypto.subtle.importKey(
     'jwk',
-    { kty: 'EC', crv: 'P-256', x, y, d: uint8ArrayToBase64url(dBytes), ext: true },
+    { kty: 'EC', crv: 'P-256', x, y, d, ext: true },
     { name: 'ECDSA', namedCurve: 'P-256' },
     false,
     ['sign'],
   );
 
-  const header = { typ: 'JWT', alg: 'ES256' };
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    aud: audience,
-    exp: now + 12 * 3600,
-    sub: subject,
-  };
-
   const enc = new TextEncoder();
-  const headerB64 = uint8ArrayToBase64url(enc.encode(JSON.stringify(header)));
-  const payloadB64 = uint8ArrayToBase64url(enc.encode(JSON.stringify(payload)));
-  const unsigned = `${headerB64}.${payloadB64}`;
+  const header = b64urlEncode(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const now = Math.floor(Date.now() / 1000);
+  const payload = b64urlEncode(enc.encode(JSON.stringify({ aud: audience, exp: now + 43200, sub: subject })));
+  const unsigned = `${header}.${payload}`;
 
-  const sig = new Uint8Array(
-    await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(unsigned)),
-  );
-
-  // ECDSA signature from WebCrypto is DER-encoded; JWT needs raw r||s (64 bytes).
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(unsigned)));
   const rawSig = derToRaw(sig);
-  const sigB64 = uint8ArrayToBase64url(rawSig);
-
-  return { token: `${unsigned}.${sigB64}`, publicKeyB64url: VAPID_PUBLIC_KEY };
+  return `${unsigned}.${b64urlEncode(rawSig)}`;
 }
 
 function derToRaw(der: Uint8Array): Uint8Array {
-  // If already 64 bytes, it's raw
   if (der.length === 64) return der;
-
-  // DER: 0x30 <len> 0x02 <rLen> <r> 0x02 <sLen> <s>
   const raw = new Uint8Array(64);
-  let offset = 2; // skip 0x30 <len>
-  // r
-  offset++; // 0x02
-  const rLen = der[offset++];
-  const rStart = offset + Math.max(0, rLen - 32);
-  const rCopyLen = Math.min(32, rLen);
-  raw.set(der.slice(rStart, rStart + rCopyLen), 32 - rCopyLen);
-  offset += rLen;
-  // s
-  offset++; // 0x02
-  const sLen = der[offset++];
-  const sStart = offset + Math.max(0, sLen - 32);
-  const sCopyLen = Math.min(32, sLen);
-  raw.set(der.slice(sStart, sStart + sCopyLen), 64 - sCopyLen);
+  let off = 2;
+  off++; const rLen = der[off++];
+  const rS = off + Math.max(0, rLen - 32);
+  raw.set(der.slice(rS, rS + Math.min(32, rLen)), 32 - Math.min(32, rLen));
+  off += rLen;
+  off++; const sLen = der[off++];
+  const sS = off + Math.max(0, sLen - 32);
+  raw.set(der.slice(sS, sS + Math.min(32, sLen)), 64 - Math.min(32, sLen));
   return raw;
 }
 
-// --- Main handler ---
+// ---- RFC 8291 Payload Encryption (aes128gcm) ----
+async function encryptPayload(
+  p256dhB64: string,
+  authB64: string,
+  payload: string,
+): Promise<Uint8Array> {
+  const clientPublicBytes = b64urlDecode(p256dhB64);
+  const authSecret = b64urlDecode(authB64);
+  const payloadBytes = new TextEncoder().encode(payload);
+
+  // Import client public key
+  const clientPublicKey = await crypto.subtle.importKey(
+    'raw', clientPublicBytes,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true, [],
+  );
+
+  // Generate ephemeral ECDH key pair
+  const localKeyPair = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true, ['deriveBits'],
+  );
+
+  // ECDH shared secret
+  const sharedSecret = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      { name: 'ECDH', public: clientPublicKey },
+      localKeyPair.privateKey,
+      256,
+    ),
+  );
+
+  // Export local public key (uncompressed)
+  const localPublicBytes = new Uint8Array(await crypto.subtle.exportKey('raw', localKeyPair.publicKey));
+
+  // Salt (16 random bytes)
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+
+  // HKDF helper
+  async function hkdf(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
+    const key = await crypto.subtle.importKey('raw', ikm, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const prk = new Uint8Array(await crypto.subtle.sign('HMAC', key, salt.length > 0 ? salt : new Uint8Array(32)));
+    // Actually HKDF: extract then expand
+    const prkKey = await crypto.subtle.importKey('raw', salt, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const prkBytes = new Uint8Array(await crypto.subtle.sign('HMAC', prkKey, ikm));
+    
+    const expandKey = await crypto.subtle.importKey('raw', prkBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const infoWithCounter = concat(info, new Uint8Array([1]));
+    const okm = new Uint8Array(await crypto.subtle.sign('HMAC', expandKey, infoWithCounter));
+    return okm.slice(0, length);
+  }
+
+  const enc = new TextEncoder();
+
+  // IKM for auth: HKDF(authSecret, sharedSecret, "WebPush: info\0" || clientPublic || localPublic)
+  const keyInfoHeader = enc.encode('WebPush: info\0');
+  const keyInfo = concat(keyInfoHeader, clientPublicBytes, localPublicBytes);
+  const ikm = await hkdf(sharedSecret, authSecret, keyInfo, 32);
+
+  // Content encryption key
+  const cekInfo = enc.encode('Content-Encoding: aes128gcm\0');
+  const cek = await hkdf(ikm, salt, cekInfo, 16);
+
+  // Nonce
+  const nonceInfo = enc.encode('Content-Encoding: nonce\0');
+  const nonce = await hkdf(ikm, salt, nonceInfo, 12);
+
+  // Pad payload (add delimiter 0x02 + optional padding)
+  const paddedPayload = concat(payloadBytes, new Uint8Array([2]));
+
+  // AES-128-GCM encrypt
+  const aesKey = await crypto.subtle.importKey('raw', cek, { name: 'AES-GCM' }, false, ['encrypt']);
+  const encrypted = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, paddedPayload),
+  );
+
+  // Build aes128gcm header: salt (16) || rs (4, uint32be) || idlen (1) || keyid (65 = localPublic)
+  const rs = 4096;
+  const rsBytes = new Uint8Array(4);
+  new DataView(rsBytes.buffer).setUint32(0, rs, false);
+  const header = concat(
+    salt,
+    rsBytes,
+    new Uint8Array([localPublicBytes.length]),
+    localPublicBytes,
+  );
+
+  return concat(header, encrypted);
+}
+
+// ---- Main ----
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -135,46 +179,37 @@ Deno.serve(async (req) => {
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    if (!vapidPrivateKey) {
-      throw new Error("VAPID_PRIVATE_KEY not configured");
-    }
+    if (!vapidPrivateKey) throw new Error("VAPID_PRIVATE_KEY not configured");
 
     const body = await req.json().catch(() => ({}));
     const { schedule_type, organization_id, barber_id } = body;
 
-    // Build query for active push subscriptions
     let subsQuery = supabase
       .from('push_subscriptions')
-      .select('*, barbers!inner(id, name, services_commission, organization_id, unit_id)')
+      .select('*, barbers!inner(id, name)')
       .eq('is_active', true);
 
-    if (organization_id) {
-      subsQuery = subsQuery.eq('organization_id', organization_id);
-    }
-    if (barber_id) {
-      subsQuery = subsQuery.eq('barber_id', barber_id);
-    }
+    if (organization_id) subsQuery = subsQuery.eq('organization_id', organization_id);
+    if (barber_id) subsQuery = subsQuery.eq('barber_id', barber_id);
 
     const { data: subscriptions, error: subsError } = await subsQuery;
     if (subsError) throw subsError;
 
     if (!subscriptions || subscriptions.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, found: 0, message: "Nenhuma subscription ativa encontrada" }), {
+      return new Response(JSON.stringify({ sent: 0, found: 0, message: "Nenhuma subscription ativa" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Get current month/year in Manaus timezone
+    // Manaus time
     const now = new Date();
     const manausOffset = -4 * 60;
     const manausTime = new Date(now.getTime() + (now.getTimezoneOffset() + manausOffset) * 60000);
     const currentMonth = manausTime.getMonth() + 1;
     const currentYear = manausTime.getFullYear();
     const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(manausTime.getDate()).padStart(2, '0')}`;
-
     const barberIds = [...new Set(subscriptions.map(s => s.barber_id))];
 
-    // Fetch monthly goals
     const { data: goals } = await supabase
       .from('monthly_goals')
       .select('barber_id, target_commission, work_days')
@@ -182,16 +217,14 @@ Deno.serve(async (req) => {
       .eq('month', currentMonth)
       .eq('year', currentYear);
 
-    // Fetch month productions
     const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
     const { data: productions } = await supabase
       .from('daily_productions')
-      .select('barber_id, date, commission_earned')
+      .select('barber_id, commission_earned')
       .in('barber_id', barberIds)
       .gte('date', startOfMonth)
       .lte('date', todayStr);
 
-    // Fetch today's productions
     const { data: todayProductions } = await supabase
       .from('daily_productions')
       .select('barber_id, commission_earned')
@@ -203,8 +236,7 @@ Deno.serve(async (req) => {
 
     const monthEarningsMap = new Map<string, number>();
     (productions || []).forEach(p => {
-      const current = monthEarningsMap.get(p.barber_id) || 0;
-      monthEarningsMap.set(p.barber_id, current + Number(p.commission_earned));
+      monthEarningsMap.set(p.barber_id, (monthEarningsMap.get(p.barber_id) || 0) + Number(p.commission_earned));
     });
 
     const todayEarningsMap = new Map<string, number>();
@@ -220,8 +252,10 @@ Deno.serve(async (req) => {
 
     for (const sub of subscriptions) {
       const goal = goalsMap.get(sub.barber_id);
+      const barberName = (sub as any).barbers?.name || 'Barbeiro';
+
       if (!goal) {
-        errors.push(`${(sub as any).barbers?.name || sub.barber_id}: sem meta configurada`);
+        errors.push(`${barberName}: sem meta configurada`);
         continue;
       }
 
@@ -230,83 +264,64 @@ Deno.serve(async (req) => {
       const progressPercent = Math.min(100, (monthEarnings / goal.target_commission) * 100);
       const remaining = Math.max(0, goal.target_commission - monthEarnings);
       const dailyTarget = remaining / remainingDays;
-      const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
-      let title = '';
-      let messageBody = '';
+      const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
       const type = schedule_type || 'manual';
-
-      const formatCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+      let title = '', messageBody = '';
 
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Seu foco de vendas hoje é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
+          messageBody = `Seu foco de vendas hoje é ${fmt(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
-          if (todayEarnings > 0) {
-            messageBody = `Manhã produtiva! Vendas até agora: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para bater a meta de hoje.`;
-          } else {
-            messageBody = `Ainda sem vendas registradas hoje. Meta de vendas do dia: ${formatCurrency(dailyTarget)}.`;
-          }
+          messageBody = todayEarnings > 0
+            ? `Manhã produtiva! Vendas: ${fmt(todayEarnings)}. Faltam ${fmt(Math.max(0, dailyTarget - todayEarnings))} para a meta de hoje.`
+            : `Ainda sem vendas hoje. Meta do dia: ${fmt(dailyTarget)}.`;
           break;
         case 'afternoon':
-          title = `⚡ Reta final da tarde, ${barberName}`;
-          messageBody = `Vendas hoje: ${formatCurrency(todayEarnings)} | Meta de hoje: ${formatCurrency(dailyTarget)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
+          title = `⚡ Reta final, ${barberName}`;
+          messageBody = `Vendas hoje: ${fmt(todayEarnings)} | Meta: ${fmt(dailyTarget)} | Faltam ${fmt(Math.max(0, dailyTarget - todayEarnings))}`;
           break;
         case 'evening':
-          title = `🌙 Fim do expediente, ${barberName}`;
-          if (todayEarnings >= dailyTarget) {
-            messageBody = `Dia incrível! 🏆 Você bateu sua meta de vendas diária com ${formatCurrency(todayEarnings)}. Continue assim!`;
-          } else {
-            messageBody = `Você fechou o dia com ${formatCurrency(todayEarnings)} em vendas. Faltaram ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para a meta diária. Amanhã é um novo dia! 💪`;
-          }
+          title = `🌙 Fim do dia, ${barberName}`;
+          messageBody = todayEarnings >= dailyTarget
+            ? `Dia incrível! 🏆 Você bateu a meta com ${fmt(todayEarnings)}!`
+            : `Vendas: ${fmt(todayEarnings)}. Faltaram ${fmt(Math.max(0, dailyTarget - todayEarnings))}. Amanhã é novo dia! 💪`;
           break;
         default:
-          title = `📊 Atualização de Meta - ${barberName}`;
-          messageBody = `Meta de hoje: ${formatCurrency(dailyTarget)} | Vendas hoje: ${formatCurrency(todayEarnings)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
+          title = `📊 Meta - ${barberName}`;
+          messageBody = `Meta de hoje: ${fmt(dailyTarget)} | Vendas: ${fmt(todayEarnings)} | Faltam ${fmt(Math.max(0, dailyTarget - todayEarnings))}`;
       }
 
-      const payload = JSON.stringify({
-        title,
-        body: messageBody,
-        tag: `goal-${type}-${todayStr}`,
-        url: '/',
-      });
+      const payload = JSON.stringify({ title, body: messageBody, tag: `goal-${type}-${todayStr}`, url: '/' });
 
       try {
-        // Build VAPID authorization for this endpoint
         const endpointUrl = new URL(sub.endpoint);
         const audience = `${endpointUrl.protocol}//${endpointUrl.host}`;
-
-        const { token, publicKeyB64url } = await createVapidJwt(
-          audience,
-          'mailto:notifications@performancebarber.com',
-          vapidPrivateKey,
-        );
+        const jwt = await createVapidJwt(audience, 'mailto:notifications@performancebarber.com', vapidPrivateKey);
+        const encryptedPayload = await encryptPayload(sub.p256dh, sub.auth, payload);
 
         const response = await fetch(sub.endpoint, {
           method: 'POST',
           headers: {
+            'Content-Encoding': 'aes128gcm',
             'Content-Type': 'application/octet-stream',
             'TTL': '86400',
-            'Authorization': `vapid t=${token}, k=${publicKeyB64url}`,
+            'Authorization': `vapid t=${jwt}, k=${VAPID_PUBLIC_KEY}`,
           },
-          body: payload,
+          body: encryptedPayload,
         });
 
         if (response.status === 410 || response.status === 404) {
-          await supabase
-            .from('push_subscriptions')
-            .update({ is_active: false })
-            .eq('id', sub.id);
-          errors.push(`${barberName}: subscription expirada (${response.status})`);
+          await supabase.from('push_subscriptions').update({ is_active: false }).eq('id', sub.id);
+          errors.push(`${barberName}: subscription expirada`);
         } else if (response.ok || response.status === 201) {
           sentCount++;
         } else {
-          const respText = await response.text().catch(() => '');
-          errors.push(`${barberName}: HTTP ${response.status} - ${respText.slice(0, 100)}`);
+          const txt = await response.text().catch(() => '');
+          errors.push(`${barberName}: HTTP ${response.status} ${txt.slice(0, 80)}`);
         }
       } catch (err) {
         errors.push(`${barberName}: ${(err as Error).message}`);
@@ -314,18 +329,14 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({
-        sent: sentCount,
-        found: subscriptions.length,
-        errors: errors.length > 0 ? errors : undefined,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ sent: sentCount, found: subscriptions.length, errors: errors.length > 0 ? errors : undefined }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("Error:", error);
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
