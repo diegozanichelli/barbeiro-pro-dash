@@ -5,7 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VAPID_PUBLIC_KEY = 'BPu3Z9f90Zf3aY_gUxj0SE4War9qt7Yjd8dMRwZnK9KZ15ISm1XWqLeORSZnS4YIlMRZPrst-xtMPfXL9xAkcSk';
+const VAPID_PUBLIC_KEY = 'BJCRvZvqleUZqYIDG0sjWCSAyuW0KyktMx_KFuTwj5ZTMc_s5rgHPEsV6bEqtOGte7D_W3i1nRWcAPXwyiMT4h0';
 
 function b64urlDecode(s: string): Uint8Array {
   const b = s.replace(/-/g, '+').replace(/_/g, '/');
