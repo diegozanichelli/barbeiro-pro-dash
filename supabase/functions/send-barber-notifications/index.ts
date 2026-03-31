@@ -16,6 +16,14 @@ function isValidBase64Url(value: string): boolean {
   return /^[A-Za-z0-9\-_]+=*$/.test(value);
 }
 
+function assertDecodableBase64Url(value: string, fieldName: string) {
+  try {
+    atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+  } catch {
+    throw new Error(`Invalid ${fieldName}: Failed to decode base64`);
+  }
+}
+
 function configureWebPush() {
   const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
   const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
@@ -31,6 +39,9 @@ function configureWebPush() {
   if (!isValidBase64Url(normalizedPublic) || !isValidBase64Url(normalizedPrivate)) {
     throw new Error("Chaves VAPID inválidas: verifique o formato base64url das secrets.");
   }
+
+  assertDecodableBase64Url(normalizedPublic, "VAPID public key");
+  assertDecodableBase64Url(normalizedPrivate, "VAPID private key");
 
   webpush.setVapidDetails(vapidSubject, normalizedPublic, normalizedPrivate);
 }
@@ -100,7 +111,7 @@ Deno.serve(async (req) => {
 
     const remDays = Math.max(1, new Date(cy, cm, 0).getDate() - mt.getDate());
     let sentCount = 0;
-    const errors: string[] = [];
+    const errors = new Set<string>();
 
     for (const sub of subscriptions) {
       const goal = goalsMap.get(sub.barber_id);
@@ -160,6 +171,12 @@ Deno.serve(async (req) => {
           },
         };
 
+        if (!isValidBase64Url(pushSubscription.keys.p256dh) || !isValidBase64Url(pushSubscription.keys.auth)) {
+          throw new Error("Invalid subscription key format");
+        }
+        assertDecodableBase64Url(pushSubscription.keys.p256dh, "p256dh");
+        assertDecodableBase64Url(pushSubscription.keys.auth, "auth");
+
         const response = await webpush.sendNotification(pushSubscription, payload, {
           TTL: 86400,
         });
@@ -173,13 +190,13 @@ Deno.serve(async (req) => {
         } else if (response.statusCode >= 200 && response.statusCode < 300) {
           sentCount++;
         } else {
-          errors.push(`${barberName}: status ${response.statusCode}`);
+          errors.add(`${barberName}: status ${response.statusCode}`);
         }
       } catch (err) {
         const message = (err as Error).message || "erro desconhecido";
 
         if (message.toLowerCase().includes("decode base64")) {
-          errors.push(`${barberName}: assinatura push inválida. Reative as notificações nesse dispositivo.`);
+          errors.add(`${barberName}: assinatura push inválida. Reative as notificações nesse dispositivo.`);
           await supabase
             .from("push_subscriptions")
             .update({ is_active: false })
@@ -187,13 +204,26 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        errors.push(`${barberName}: ${message}`);
+        if (message.toLowerCase().includes("invalid subscription key")) {
+          errors.add(`${barberName}: assinatura push inválida. Reative as notificações nesse dispositivo.`);
+          await supabase
+            .from("push_subscriptions")
+            .update({ is_active: false })
+            .eq("id", sub.id);
+          continue;
+        }
+
+        errors.add(`${barberName}: ${message}`);
       }
     }
 
     return new Response(
-      JSON.stringify({ sent: sentCount, found: subscriptions.length, errors: errors.length ? errors : undefined }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ 
+        sent: sentCount, 
+        total: subscriptions.length,
+        errors: errors.size > 0 ? [...errors] : undefined 
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Error:", error);
