@@ -24,6 +24,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+import PushNotificationToggle from "./barber/PushNotificationToggle";
 
 interface BarberDashboardProps {
   user: User;
