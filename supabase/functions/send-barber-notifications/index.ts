@@ -46,17 +46,18 @@ function configureWebPush() {
   webpush.setVapidDetails(vapidSubject, normalizedPublic, normalizedPrivate);
 }
 
+// ---- Main ----
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     configureWebPush();
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+    if (!vapidPrivateKey) throw new Error("VAPID_PRIVATE_KEY not configured");
 
     const body = await req.json().catch(() => ({}));
     const { schedule_type, organization_id, barber_id } = body;
@@ -80,67 +81,35 @@ Deno.serve(async (req) => {
     const { data: subscriptions, error: subsError } = await subsQuery;
     if (subsError) throw subsError;
 
-    if (!subscriptions || subscriptions.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, message: "Nenhuma subscription ativa encontrada" }), {
+    if (!subscriptions?.length) {
+      return new Response(JSON.stringify({ sent: 0, found: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Get current month/year in Manaus timezone
+    // Manaus time
     const now = new Date();
-    const manausOffset = -4 * 60;
-    const manausTime = new Date(now.getTime() + (now.getTimezoneOffset() + manausOffset) * 60000);
-    const currentMonth = manausTime.getMonth() + 1;
-    const currentYear = manausTime.getFullYear();
-    const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(manausTime.getDate()).padStart(2, '0')}`;
-
-    // Get all barber IDs from subscriptions
+    const mt = new Date(now.getTime() + (now.getTimezoneOffset() - 240) * 60000);
+    const cm = mt.getMonth() + 1, cy = mt.getFullYear();
+    const todayStr = `${cy}-${String(cm).padStart(2, '0')}-${String(mt.getDate()).padStart(2, '0')}`;
     const barberIds = [...new Set(subscriptions.map(s => s.barber_id))];
 
-    // Fetch monthly goals for these barbers
-    const { data: goals } = await supabase
-      .from('monthly_goals')
-      .select('barber_id, target_commission, work_days')
-      .in('barber_id', barberIds)
-      .eq('month', currentMonth)
-      .eq('year', currentYear);
+    const [{ data: goals }, { data: productions }, { data: todayProd }] = await Promise.all([
+      supabase.from('monthly_goals').select('barber_id, target_commission, work_days').in('barber_id', barberIds).eq('month', cm).eq('year', cy),
+      supabase.from('daily_productions').select('barber_id, commission_earned').in('barber_id', barberIds).gte('date', `${cy}-${String(cm).padStart(2, '0')}-01`).lte('date', todayStr),
+      supabase.from('daily_productions').select('barber_id, commission_earned').in('barber_id', barberIds).eq('date', todayStr),
+    ]);
 
-    // Fetch month productions
-    const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
-    const { data: productions } = await supabase
-      .from('daily_productions')
-      .select('barber_id, date, commission_earned')
-      .in('barber_id', barberIds)
-      .gte('date', startOfMonth)
-      .lte('date', todayStr);
-
-    // Fetch today's productions
-    const { data: todayProductions } = await supabase
-      .from('daily_productions')
-      .select('barber_id, commission_earned')
-      .in('barber_id', barberIds)
-      .eq('date', todayStr);
-
-    // Build goals map
     const goalsMap = new Map<string, { target_commission: number; work_days: number }>();
     (goals || []).forEach(g => goalsMap.set(g.barber_id, g));
 
-    // Build productions map
-    const monthEarningsMap = new Map<string, number>();
-    (productions || []).forEach(p => {
-      const current = monthEarningsMap.get(p.barber_id) || 0;
-      monthEarningsMap.set(p.barber_id, current + Number(p.commission_earned));
-    });
+    const monthMap = new Map<string, number>();
+    (productions || []).forEach(p => monthMap.set(p.barber_id, (monthMap.get(p.barber_id) || 0) + Number(p.commission_earned)));
 
-    const todayEarningsMap = new Map<string, number>();
-    (todayProductions || []).forEach(p => {
-      todayEarningsMap.set(p.barber_id, Number(p.commission_earned));
-    });
+    const todayMap = new Map<string, number>();
+    (todayProd || []).forEach(p => todayMap.set(p.barber_id, Number(p.commission_earned)));
 
-    // Calculate remaining days
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    const remainingDays = Math.max(1, daysInMonth - manausTime.getDate());
-
+    const remDays = Math.max(1, new Date(cy, cm, 0).getDate() - mt.getDate());
     let sentCount = 0;
     const errors = new Set<string>();
 
@@ -160,8 +129,7 @@ Deno.serve(async (req) => {
       let messageBody = '';
       const type = schedule_type || 'manual';
 
-      const formatCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-
+      let title = '', msg = '';
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
@@ -192,12 +160,7 @@ Deno.serve(async (req) => {
           messageBody = `Meta de hoje: ${formatCurrency(dailyTarget)} | Vendas hoje: ${formatCurrency(todayEarnings)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
       }
 
-      const payload = JSON.stringify({
-        title,
-        body: messageBody,
-        tag: `goal-${type}-${todayStr}`,
-        url: '/',
-      });
+      const payload = JSON.stringify({ title, body: msg, tag: `goal-${type}-${todayStr}`, url: '/' });
 
       try {
         const pushSubscription = {
@@ -264,9 +227,8 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("Error:", error);
-    return new Response(
-      JSON.stringify({ error: (error as Error).message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
