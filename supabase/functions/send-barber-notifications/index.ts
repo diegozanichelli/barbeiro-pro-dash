@@ -5,72 +5,124 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Web Push implementation
-async function generateJWT(header: object, payload: object, privateKeyBase64url: string): Promise<string> {
-  const encoder = new TextEncoder();
-  
-  const headerB64 = btoa(JSON.stringify(header)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const payloadB64 = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const unsignedToken = `${headerB64}.${payloadB64}`;
-  
-  // Import private key
-  const keyData = Uint8Array.from(atob(privateKeyBase64url.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    await convertECPrivateKeyToP8(keyData),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    key,
-    encoder.encode(unsignedToken)
-  );
-  
-  // Convert DER signature to raw r||s format for JWT
-  const sigArray = new Uint8Array(signature);
-  const sigB64 = btoa(String.fromCharCode(...sigArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  
-  return `${unsignedToken}.${sigB64}`;
+// --- VAPID / Web Push helpers ---
+
+function base64urlToUint8Array(b64url: string): Uint8Array {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
 }
 
-async function convertECPrivateKeyToP8(rawKey: Uint8Array): Promise<ArrayBuffer> {
-  // Wrap raw 32-byte EC private key in PKCS#8 DER format for P-256
-  const pkcs8Header = new Uint8Array([
+function uint8ArrayToBase64url(arr: Uint8Array): string {
+  let bin = '';
+  for (const b of arr) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function importVapidPrivateKey(raw32: Uint8Array): Promise<CryptoKey> {
+  // Wrap raw 32-byte scalar in PKCS8 DER for P-256
+  const pkcs8Prefix = new Uint8Array([
     0x30, 0x81, 0x87, 0x02, 0x01, 0x00, 0x30, 0x13,
     0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
     0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d,
     0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02,
-    0x01, 0x01, 0x04, 0x20
+    0x01, 0x01, 0x04, 0x20,
   ]);
-  const pkcs8Footer = new Uint8Array([
-    0xa1, 0x44, 0x03, 0x42, 0x00
-  ]);
-  
-  const result = new Uint8Array(pkcs8Header.length + rawKey.length + pkcs8Footer.length + 65);
-  result.set(pkcs8Header, 0);
-  result.set(rawKey, pkcs8Header.length);
-  // We skip the public key part since we don't need it for signing
-  // Actually for PKCS8 we need the full structure
-  return result.buffer.slice(0, pkcs8Header.length + rawKey.length);
+  // After the 32-byte key we need the ECPoint wrapper but the SubtleCrypto
+  // import for ECDSA signing only needs the scalar when using JWK, so let's use JWK instead.
+  // Actually PKCS8 needs the full structure. Let's use JWK:
+  const jwk = {
+    kty: 'EC',
+    crv: 'P-256',
+    d: uint8ArrayToBase64url(raw32),
+    // We can derive x/y from the private key but SubtleCrypto doesn't do that.
+    // Instead we'll pass x and y from the public key.
+  };
+  // We need x,y from the VAPID public key to build a complete JWK.
+  // Let's import from the public key constant.
+  return null as any; // placeholder - will use alternate approach
 }
 
-async function sendWebPush(subscription: { endpoint: string; p256dh: string; auth: string }, payload: string) {
-  // Simple fetch-based push (using the push endpoint directly)
-  // For production, use proper VAPID signing. Here we use a simpler approach.
-  const response = await fetch(subscription.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'TTL': '86400',
-    },
-    body: payload,
-  });
-  
-  return response;
+// Simpler approach: use JWK import with known public key coordinates
+const VAPID_PUBLIC_KEY = 'BPu3Z9f90Zf3aY_gUxj0SE4War9qt7Yjd8dMRwZnK9KZ15ISm1XWqLeORSZnS4YIlMRZPrst-xtMPfXL9xAkcSk';
+
+function extractPublicKeyXY(vapidPublicB64url: string): { x: string; y: string } {
+  const raw = base64urlToUint8Array(vapidPublicB64url);
+  // Uncompressed point: 0x04 || x (32 bytes) || y (32 bytes)
+  const x = raw.slice(1, 33);
+  const y = raw.slice(33, 65);
+  return {
+    x: uint8ArrayToBase64url(x),
+    y: uint8ArrayToBase64url(y),
+  };
 }
+
+async function createVapidJwt(
+  audience: string,
+  subject: string,
+  privateKeyB64url: string,
+): Promise<{ token: string; publicKeyB64url: string }> {
+  const { x, y } = extractPublicKeyXY(VAPID_PUBLIC_KEY);
+  const dBytes = base64urlToUint8Array(privateKeyB64url);
+
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'EC', crv: 'P-256', x, y, d: uint8ArrayToBase64url(dBytes), ext: true },
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  );
+
+  const header = { typ: 'JWT', alg: 'ES256' };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    aud: audience,
+    exp: now + 12 * 3600,
+    sub: subject,
+  };
+
+  const enc = new TextEncoder();
+  const headerB64 = uint8ArrayToBase64url(enc.encode(JSON.stringify(header)));
+  const payloadB64 = uint8ArrayToBase64url(enc.encode(JSON.stringify(payload)));
+  const unsigned = `${headerB64}.${payloadB64}`;
+
+  const sig = new Uint8Array(
+    await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(unsigned)),
+  );
+
+  // ECDSA signature from WebCrypto is DER-encoded; JWT needs raw r||s (64 bytes).
+  const rawSig = derToRaw(sig);
+  const sigB64 = uint8ArrayToBase64url(rawSig);
+
+  return { token: `${unsigned}.${sigB64}`, publicKeyB64url: VAPID_PUBLIC_KEY };
+}
+
+function derToRaw(der: Uint8Array): Uint8Array {
+  // If already 64 bytes, it's raw
+  if (der.length === 64) return der;
+
+  // DER: 0x30 <len> 0x02 <rLen> <r> 0x02 <sLen> <s>
+  const raw = new Uint8Array(64);
+  let offset = 2; // skip 0x30 <len>
+  // r
+  offset++; // 0x02
+  const rLen = der[offset++];
+  const rStart = offset + Math.max(0, rLen - 32);
+  const rCopyLen = Math.min(32, rLen);
+  raw.set(der.slice(rStart, rStart + rCopyLen), 32 - rCopyLen);
+  offset += rLen;
+  // s
+  offset++; // 0x02
+  const sLen = der[offset++];
+  const sStart = offset + Math.max(0, sLen - 32);
+  const sCopyLen = Math.min(32, sLen);
+  raw.set(der.slice(sStart, sStart + sCopyLen), 64 - sCopyLen);
+  return raw;
+}
+
+// --- Main handler ---
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -80,14 +132,16 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    if (!vapidPrivateKey) {
+      throw new Error("VAPID_PRIVATE_KEY not configured");
+    }
 
     const body = await req.json().catch(() => ({}));
     const { schedule_type, organization_id, barber_id } = body;
 
-    // Determine message type based on schedule
-    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (20h), 'manual'
-    
     // Build query for active push subscriptions
     let subsQuery = supabase
       .from('push_subscriptions')
@@ -105,7 +159,7 @@ Deno.serve(async (req) => {
     if (subsError) throw subsError;
 
     if (!subscriptions || subscriptions.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, message: "Nenhuma subscription ativa encontrada" }), {
+      return new Response(JSON.stringify({ sent: 0, found: 0, message: "Nenhuma subscription ativa encontrada" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -118,10 +172,9 @@ Deno.serve(async (req) => {
     const currentYear = manausTime.getFullYear();
     const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(manausTime.getDate()).padStart(2, '0')}`;
 
-    // Get all barber IDs from subscriptions
     const barberIds = [...new Set(subscriptions.map(s => s.barber_id))];
 
-    // Fetch monthly goals for these barbers
+    // Fetch monthly goals
     const { data: goals } = await supabase
       .from('monthly_goals')
       .select('barber_id, target_commission, work_days')
@@ -145,11 +198,9 @@ Deno.serve(async (req) => {
       .in('barber_id', barberIds)
       .eq('date', todayStr);
 
-    // Build goals map
     const goalsMap = new Map<string, { target_commission: number; work_days: number }>();
     (goals || []).forEach(g => goalsMap.set(g.barber_id, g));
 
-    // Build productions map
     const monthEarningsMap = new Map<string, number>();
     (productions || []).forEach(p => {
       const current = monthEarningsMap.get(p.barber_id) || 0;
@@ -161,7 +212,6 @@ Deno.serve(async (req) => {
       todayEarningsMap.set(p.barber_id, Number(p.commission_earned));
     });
 
-    // Calculate remaining days
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     const remainingDays = Math.max(1, daysInMonth - manausTime.getDate());
 
@@ -170,7 +220,10 @@ Deno.serve(async (req) => {
 
     for (const sub of subscriptions) {
       const goal = goalsMap.get(sub.barber_id);
-      if (!goal) continue;
+      if (!goal) {
+        errors.push(`${(sub as any).barbers?.name || sub.barber_id}: sem meta configurada`);
+        continue;
+      }
 
       const monthEarnings = monthEarningsMap.get(sub.barber_id) || 0;
       const todayEarnings = todayEarningsMap.get(sub.barber_id) || 0;
@@ -179,7 +232,6 @@ Deno.serve(async (req) => {
       const dailyTarget = remaining / remainingDays;
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
-      // Compose message based on schedule type (foco em meta de vendas, sem exibir comissão)
       let title = '';
       let messageBody = '';
       const type = schedule_type || 'manual';
@@ -224,26 +276,37 @@ Deno.serve(async (req) => {
       });
 
       try {
-        // Send to push endpoint
+        // Build VAPID authorization for this endpoint
+        const endpointUrl = new URL(sub.endpoint);
+        const audience = `${endpointUrl.protocol}//${endpointUrl.host}`;
+
+        const { token, publicKeyB64url } = await createVapidJwt(
+          audience,
+          'mailto:notifications@performancebarber.com',
+          vapidPrivateKey,
+        );
+
         const response = await fetch(sub.endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/octet-stream',
             'TTL': '86400',
+            'Authorization': `vapid t=${token}, k=${publicKeyB64url}`,
           },
           body: payload,
         });
 
         if (response.status === 410 || response.status === 404) {
-          // Subscription expired, deactivate
           await supabase
             .from('push_subscriptions')
             .update({ is_active: false })
             .eq('id', sub.id);
+          errors.push(`${barberName}: subscription expirada (${response.status})`);
         } else if (response.ok || response.status === 201) {
           sentCount++;
         } else {
-          errors.push(`${barberName}: ${response.status}`);
+          const respText = await response.text().catch(() => '');
+          errors.push(`${barberName}: HTTP ${response.status} - ${respText.slice(0, 100)}`);
         }
       } catch (err) {
         errors.push(`${barberName}: ${(err as Error).message}`);
@@ -251,10 +314,10 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ 
-        sent: sentCount, 
-        total: subscriptions.length,
-        errors: errors.length > 0 ? errors : undefined 
+      JSON.stringify({
+        sent: sentCount,
+        found: subscriptions.length,
+        errors: errors.length > 0 ? errors : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
