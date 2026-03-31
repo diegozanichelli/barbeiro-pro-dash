@@ -26,6 +26,7 @@ import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
+import SendNotificationsButton from "./manager/SendNotificationsButton";
 
 interface ManagerDashboardProps {
   user: User;
@@ -99,20 +100,23 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               />
             </div>
 
-            {/* Far Right: Sign Out */}
-            <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>
-              {isSigningOut ? (
-                <>
-                  <Loader2 className="w-4 h-4 md:mr-2 animate-spin" />
-                  <span className="hidden md:inline">Saindo...</span>
-                </>
-              ) : (
-                <>
-                  <LogOut className="w-4 h-4 md:mr-2" />
-                  <span className="hidden md:inline">Sair</span>
-                </>
-              )}
-            </Button>
+            {/* Far Right: Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <SendNotificationsButton />
+              <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 md:mr-2 animate-spin" />
+                    <span className="hidden md:inline">Saindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 md:mr-2" />
+                    <span className="hidden md:inline">Sair</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </header>

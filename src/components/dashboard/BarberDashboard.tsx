@@ -24,6 +24,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+import PushNotificationToggle from "./barber/PushNotificationToggle";
 
 interface BarberDashboardProps {
   user: User;
@@ -755,19 +756,26 @@ const [todayProduction, setTodayProduction] = useState<{
                 )}
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
-              {isSigningOut ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saindo...
-                </>
-              ) : (
-                <>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sair
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <PushNotificationToggle 
+                barberId={barber.id} 
+                organizationId={barber.organization_id} 
+                userId={user.id} 
+              />
+              <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saindo...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sair
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
