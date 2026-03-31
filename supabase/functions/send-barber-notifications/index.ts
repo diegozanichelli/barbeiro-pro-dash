@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
     const { schedule_type, organization_id, barber_id } = body;
 
     // Determine message type based on schedule
-    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (19h), 'manual'
+    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (20h), 'manual'
     
     // Build query for active push subscriptions
     let subsQuery = supabase
@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
       const dailyTarget = remaining / remainingDays;
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
-      // Compose message based on schedule type
+      // Compose message based on schedule type (foco em meta de vendas, sem exibir comissão)
       let title = '';
       let messageBody = '';
       const type = schedule_type || 'manual';
@@ -189,31 +189,31 @@ Deno.serve(async (req) => {
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta diária é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
+          messageBody = `Seu foco de vendas hoje é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
           if (todayEarnings > 0) {
-            messageBody = `Manhã produtiva! Comissão hoje: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(remaining)} para bater a meta mensal (${progressPercent.toFixed(1)}%).`;
+            messageBody = `Manhã produtiva! Vendas até agora: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para bater a meta de hoje.`;
           } else {
-            messageBody = `Ainda sem lançamentos hoje. Meta diária: ${formatCurrency(dailyTarget)}. Faltam ${formatCurrency(remaining)} para a meta mensal.`;
+            messageBody = `Ainda sem vendas registradas hoje. Meta de vendas do dia: ${formatCurrency(dailyTarget)}.`;
           }
           break;
         case 'afternoon':
           title = `⚡ Reta final da tarde, ${barberName}`;
-          messageBody = `Comissão hoje: ${formatCurrency(todayEarnings)} | Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} para a meta!`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayEarnings)} | Meta de hoje: ${formatCurrency(dailyTarget)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
           break;
         case 'evening':
           title = `🌙 Fim do expediente, ${barberName}`;
           if (todayEarnings >= dailyTarget) {
-            messageBody = `Dia incrível! 🏆 Comissão hoje: ${formatCurrency(todayEarnings)}. Meta mensal em ${progressPercent.toFixed(1)}%. Continue assim!`;
+            messageBody = `Dia incrível! 🏆 Você bateu sua meta de vendas diária com ${formatCurrency(todayEarnings)}. Continue assim!`;
           } else {
-            messageBody = `Comissão hoje: ${formatCurrency(todayEarnings)}. Meta mensal: ${progressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
+            messageBody = `Você fechou o dia com ${formatCurrency(todayEarnings)} em vendas. Faltaram ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para a meta diária. Amanhã é um novo dia! 💪`;
           }
           break;
         default:
           title = `📊 Atualização de Meta - ${barberName}`;
-          messageBody = `Meta mensal: ${progressPercent.toFixed(1)}% | Hoje: ${formatCurrency(todayEarnings)} | Faltam: ${formatCurrency(remaining)}`;
+          messageBody = `Meta de hoje: ${formatCurrency(dailyTarget)} | Vendas hoje: ${formatCurrency(todayEarnings)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
       }
 
       const payload = JSON.stringify({
