@@ -1,75 +1,38 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Web Push implementation
-async function generateJWT(header: object, payload: object, privateKeyBase64url: string): Promise<string> {
-  const encoder = new TextEncoder();
-  
-  const headerB64 = btoa(JSON.stringify(header)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const payloadB64 = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const unsignedToken = `${headerB64}.${payloadB64}`;
-  
-  // Import private key
-  const keyData = Uint8Array.from(atob(privateKeyBase64url.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    await convertECPrivateKeyToP8(keyData),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    key,
-    encoder.encode(unsignedToken)
-  );
-  
-  // Convert DER signature to raw r||s format for JWT
-  const sigArray = new Uint8Array(signature);
-  const sigB64 = btoa(String.fromCharCode(...sigArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  
-  return `${unsignedToken}.${sigB64}`;
+function normalizeBase64Url(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
+  return normalized.replace(/=+$/g, "") + padding;
 }
 
-async function convertECPrivateKeyToP8(rawKey: Uint8Array): Promise<ArrayBuffer> {
-  // Wrap raw 32-byte EC private key in PKCS#8 DER format for P-256
-  const pkcs8Header = new Uint8Array([
-    0x30, 0x81, 0x87, 0x02, 0x01, 0x00, 0x30, 0x13,
-    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
-    0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d,
-    0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02,
-    0x01, 0x01, 0x04, 0x20
-  ]);
-  const pkcs8Footer = new Uint8Array([
-    0xa1, 0x44, 0x03, 0x42, 0x00
-  ]);
-  
-  const result = new Uint8Array(pkcs8Header.length + rawKey.length + pkcs8Footer.length + 65);
-  result.set(pkcs8Header, 0);
-  result.set(rawKey, pkcs8Header.length);
-  // We skip the public key part since we don't need it for signing
-  // Actually for PKCS8 we need the full structure
-  return result.buffer.slice(0, pkcs8Header.length + rawKey.length);
+function isValidBase64Url(value: string): boolean {
+  return /^[A-Za-z0-9\-_]+=*$/.test(value);
 }
 
-async function sendWebPush(subscription: { endpoint: string; p256dh: string; auth: string }, payload: string) {
-  // Simple fetch-based push (using the push endpoint directly)
-  // For production, use proper VAPID signing. Here we use a simpler approach.
-  const response = await fetch(subscription.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'TTL': '86400',
-    },
-    body: payload,
-  });
-  
-  return response;
+function configureWebPush() {
+  const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
+  const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+  const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "mailto:suporte@performancebarber.com";
+
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    throw new Error("Secrets de push ausentes: defina VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY.");
+  }
+
+  const normalizedPublic = normalizeBase64Url(vapidPublicKey);
+  const normalizedPrivate = normalizeBase64Url(vapidPrivateKey);
+
+  if (!isValidBase64Url(normalizedPublic) || !isValidBase64Url(normalizedPrivate)) {
+    throw new Error("Chaves VAPID inválidas: verifique o formato base64url das secrets.");
+  }
+
+  webpush.setVapidDetails(vapidSubject, normalizedPublic, normalizedPrivate);
 }
 
 Deno.serve(async (req) => {
@@ -78,6 +41,8 @@ Deno.serve(async (req) => {
   }
 
   try {
+    configureWebPush();
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -86,7 +51,7 @@ Deno.serve(async (req) => {
     const { schedule_type, organization_id, barber_id } = body;
 
     // Determine message type based on schedule
-    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (19h), 'manual'
+    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (20h), 'manual'
     
     // Build query for active push subscriptions
     let subsQuery = supabase
@@ -179,7 +144,7 @@ Deno.serve(async (req) => {
       const dailyTarget = remaining / remainingDays;
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
-      // Compose message based on schedule type
+      // Compose message based on schedule type (foco em meta de vendas, sem exibir comissão)
       let title = '';
       let messageBody = '';
       const type = schedule_type || 'manual';
@@ -189,31 +154,31 @@ Deno.serve(async (req) => {
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta diária é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
+          messageBody = `Seu foco de vendas hoje é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
           if (todayEarnings > 0) {
-            messageBody = `Manhã produtiva! Comissão hoje: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(remaining)} para bater a meta mensal (${progressPercent.toFixed(1)}%).`;
+            messageBody = `Manhã produtiva! Vendas até agora: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para bater a meta de hoje.`;
           } else {
-            messageBody = `Ainda sem lançamentos hoje. Meta diária: ${formatCurrency(dailyTarget)}. Faltam ${formatCurrency(remaining)} para a meta mensal.`;
+            messageBody = `Ainda sem vendas registradas hoje. Meta de vendas do dia: ${formatCurrency(dailyTarget)}.`;
           }
           break;
         case 'afternoon':
           title = `⚡ Reta final da tarde, ${barberName}`;
-          messageBody = `Comissão hoje: ${formatCurrency(todayEarnings)} | Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} para a meta!`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayEarnings)} | Meta de hoje: ${formatCurrency(dailyTarget)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
           break;
         case 'evening':
           title = `🌙 Fim do expediente, ${barberName}`;
           if (todayEarnings >= dailyTarget) {
-            messageBody = `Dia incrível! 🏆 Comissão hoje: ${formatCurrency(todayEarnings)}. Meta mensal em ${progressPercent.toFixed(1)}%. Continue assim!`;
+            messageBody = `Dia incrível! 🏆 Você bateu sua meta de vendas diária com ${formatCurrency(todayEarnings)}. Continue assim!`;
           } else {
-            messageBody = `Comissão hoje: ${formatCurrency(todayEarnings)}. Meta mensal: ${progressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
+            messageBody = `Você fechou o dia com ${formatCurrency(todayEarnings)} em vendas. Faltaram ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para a meta diária. Amanhã é um novo dia! 💪`;
           }
           break;
         default:
           title = `📊 Atualização de Meta - ${barberName}`;
-          messageBody = `Meta mensal: ${progressPercent.toFixed(1)}% | Hoje: ${formatCurrency(todayEarnings)} | Faltam: ${formatCurrency(remaining)}`;
+          messageBody = `Meta de hoje: ${formatCurrency(dailyTarget)} | Vendas hoje: ${formatCurrency(todayEarnings)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
       }
 
       const payload = JSON.stringify({
@@ -224,29 +189,42 @@ Deno.serve(async (req) => {
       });
 
       try {
-        // Send to push endpoint
-        const response = await fetch(sub.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'TTL': '86400',
+        const pushSubscription = {
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: normalizeBase64Url(sub.p256dh),
+            auth: normalizeBase64Url(sub.auth),
           },
-          body: payload,
+        };
+
+        const response = await webpush.sendNotification(pushSubscription, payload, {
+          TTL: 86400,
         });
 
-        if (response.status === 410 || response.status === 404) {
+        if (response.statusCode === 410 || response.statusCode === 404) {
           // Subscription expired, deactivate
           await supabase
             .from('push_subscriptions')
             .update({ is_active: false })
             .eq('id', sub.id);
-        } else if (response.ok || response.status === 201) {
+        } else if (response.statusCode >= 200 && response.statusCode < 300) {
           sentCount++;
         } else {
-          errors.push(`${barberName}: ${response.status}`);
+          errors.push(`${barberName}: status ${response.statusCode}`);
         }
       } catch (err) {
-        errors.push(`${barberName}: ${(err as Error).message}`);
+        const message = (err as Error).message || "erro desconhecido";
+
+        if (message.toLowerCase().includes("decode base64")) {
+          errors.push(`${barberName}: assinatura push inválida. Reative as notificações nesse dispositivo.`);
+          await supabase
+            .from("push_subscriptions")
+            .update({ is_active: false })
+            .eq("id", sub.id);
+          continue;
+        }
+
+        errors.push(`${barberName}: ${message}`);
       }
     }
 
