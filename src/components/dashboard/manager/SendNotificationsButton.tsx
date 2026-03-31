@@ -23,10 +23,13 @@ export default function SendNotificationsButton() {
       if (error) throw error;
 
       if (data?.sent > 0) {
-        toast.success(`Notificação enviada para ${data.sent} de ${data.found} barbeiro(s)`);
-      } else if (data?.found > 0) {
-        const errorMsg = data.errors?.join('; ') || 'Erro ao enviar';
-        toast.error(`${data.found} barbeiro(s) encontrado(s), mas falha no envio: ${errorMsg}`);
+        if (data?.errors?.length) {
+          toast.warning(`Enviado para ${data.sent} barbeiro(s), com falhas: ${data.errors.join("; ")}`);
+        } else {
+          toast.success(`Notificação enviada para ${data.sent} barbeiro(s)`);
+        }
+      } else if (data?.errors?.length) {
+        toast.error(`${data.total || 0} barbeiro(s) encontrado(s), mas falha no envio: ${data.errors.join("; ")}`);
       } else {
         toast.info("Nenhum barbeiro com notificações ativas encontrado");
       }

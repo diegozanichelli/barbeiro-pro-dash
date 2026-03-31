@@ -1,120 +1,38 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VAPID_PUBLIC_KEY = 'BJCRvZvqleUZqYIDG0sjWCSAyuW0KyktMx_KFuTwj5ZTMc_s5rgHPEsV6bEqtOGte7D_W3i1nRWcAPXwyiMT4h0';
-
-function b64urlDecode(s: string): Uint8Array {
-  const b = s.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = (4 - (b.length % 4)) % 4;
-  const bin = atob(b + '='.repeat(pad));
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return arr;
+function normalizeBase64Url(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
+  return normalized.replace(/=+$/g, "") + padding;
 }
 
-function b64urlEncode(arr: Uint8Array): string {
-  let bin = '';
-  for (const b of arr) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+function isValidBase64Url(value: string): boolean {
+  return /^[A-Za-z0-9\-_]+=*$/.test(value);
 }
 
-function concat(...arrays: Uint8Array[]): Uint8Array {
-  const len = arrays.reduce((a, b) => a + b.length, 0);
-  const result = new Uint8Array(len);
-  let offset = 0;
-  for (const arr of arrays) { result.set(arr, offset); offset += arr.length; }
-  return result;
-}
+function configureWebPush() {
+  const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
+  const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+  const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "mailto:suporte@performancebarber.com";
 
-// ---- VAPID JWT (ES256) ----
-async function createVapidJwt(audience: string, subject: string, privateKeyB64url: string): Promise<string> {
-  const pubRaw = b64urlDecode(VAPID_PUBLIC_KEY);
-  const x = b64urlEncode(pubRaw.slice(1, 33));
-  const y = b64urlEncode(pubRaw.slice(33, 65));
-  const d = b64urlEncode(b64urlDecode(privateKeyB64url));
-
-  const key = await crypto.subtle.importKey(
-    'jwk',
-    { kty: 'EC', crv: 'P-256', x, y, d, ext: true },
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false, ['sign'],
-  );
-
-  const enc = new TextEncoder();
-  const hdr = b64urlEncode(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
-  const now = Math.floor(Date.now() / 1000);
-  const pay = b64urlEncode(enc.encode(JSON.stringify({ aud: audience, exp: now + 43200, sub: subject })));
-  const unsigned = `${hdr}.${pay}`;
-
-  const sigDer = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(unsigned)));
-
-  // DER → raw r||s
-  let raw: Uint8Array;
-  if (sigDer.length === 64) {
-    raw = sigDer;
-  } else {
-    raw = new Uint8Array(64);
-    let off = 2;
-    off++; const rLen = sigDer[off++];
-    const rOff = rLen > 32 ? off + (rLen - 32) : off;
-    const rCopy = Math.min(32, rLen);
-    raw.set(sigDer.slice(rOff, rOff + rCopy), 32 - rCopy);
-    off += rLen;
-    off++; const sLen = sigDer[off++];
-    const sOff = sLen > 32 ? off + (sLen - 32) : off;
-    const sCopy = Math.min(32, sLen);
-    raw.set(sigDer.slice(sOff, sOff + sCopy), 64 - sCopy);
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    throw new Error("Secrets de push ausentes: defina VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY.");
   }
 
-  return `${unsigned}.${b64urlEncode(raw)}`;
-}
+  const normalizedPublic = normalizeBase64Url(vapidPublicKey);
+  const normalizedPrivate = normalizeBase64Url(vapidPrivateKey);
 
-// ---- RFC 8291 payload encryption (aes128gcm) ----
-async function hkdfSha256(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
-  // Extract
-  const prkKey = await crypto.subtle.importKey('raw', salt.length ? salt : new Uint8Array(32), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const prk = new Uint8Array(await crypto.subtle.sign('HMAC', prkKey, ikm));
-  // Expand
-  const expandKey = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const t1 = new Uint8Array(await crypto.subtle.sign('HMAC', expandKey, concat(info, new Uint8Array([1]))));
-  return t1.slice(0, length);
-}
+  if (!isValidBase64Url(normalizedPublic) || !isValidBase64Url(normalizedPrivate)) {
+    throw new Error("Chaves VAPID inválidas: verifique o formato base64url das secrets.");
+  }
 
-async function encryptPayload(p256dhB64: string, authB64: string, payload: string): Promise<Uint8Array> {
-  const clientPubBytes = b64urlDecode(p256dhB64);
-  const authSecret = b64urlDecode(authB64);
-  const payloadBytes = new TextEncoder().encode(payload);
-
-  const clientPubKey = await crypto.subtle.importKey('raw', clientPubBytes, { name: 'ECDH', namedCurve: 'P-256' }, true, []);
-  const localKP = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
-  const sharedSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: clientPubKey }, localKP.privateKey, 256));
-  const localPubBytes = new Uint8Array(await crypto.subtle.exportKey('raw', localKP.publicKey));
-
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const enc = new TextEncoder();
-
-  // IKM from auth secret
-  const keyInfoBuf = concat(enc.encode('WebPush: info\0'), clientPubBytes, localPubBytes);
-  const ikm = await hkdfSha256(sharedSecret, authSecret, keyInfoBuf, 32);
-
-  // CEK & nonce
-  const cek = await hkdfSha256(ikm, salt, enc.encode('Content-Encoding: aes128gcm\0'), 16);
-  const nonce = await hkdfSha256(ikm, salt, enc.encode('Content-Encoding: nonce\0'), 12);
-
-  // Pad: payload || 0x02
-  const padded = concat(payloadBytes, new Uint8Array([2]));
-
-  const aesKey = await crypto.subtle.importKey('raw', cek, { name: 'AES-GCM' }, false, ['encrypt']);
-  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, padded));
-
-  // aes128gcm header: salt(16) | rs(4) | idlen(1) | keyid(65)
-  const rs = new Uint8Array(4);
-  new DataView(rs.buffer).setUint32(0, 4096, false);
-  return concat(salt, rs, new Uint8Array([localPubBytes.length]), localPubBytes, ciphertext);
+  webpush.setVapidDetails(vapidSubject, normalizedPublic, normalizedPrivate);
 }
 
 // ---- Main ----
@@ -122,6 +40,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    configureWebPush();
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
@@ -131,9 +51,21 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { schedule_type, organization_id, barber_id } = body;
 
-    let subsQuery = supabase.from('push_subscriptions').select('*, barbers!inner(id, name)').eq('is_active', true);
-    if (organization_id) subsQuery = subsQuery.eq('organization_id', organization_id);
-    if (barber_id) subsQuery = subsQuery.eq('barber_id', barber_id);
+    // Determine message type based on schedule
+    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (20h), 'manual'
+    
+    // Build query for active push subscriptions
+    let subsQuery = supabase
+      .from('push_subscriptions')
+      .select('*, barbers!inner(id, name, services_commission, organization_id, unit_id)')
+      .eq('is_active', true);
+
+    if (organization_id) {
+      subsQuery = subsQuery.eq('organization_id', organization_id);
+    }
+    if (barber_id) {
+      subsQuery = subsQuery.eq('barber_id', barber_id);
+    }
 
     const { data: subscriptions, error: subsError } = await subsQuery;
     if (subsError) throw subsError;
@@ -172,61 +104,90 @@ Deno.serve(async (req) => {
 
     for (const sub of subscriptions) {
       const goal = goalsMap.get(sub.barber_id);
-      const name = (sub as any).barbers?.name || 'Barbeiro';
-      if (!goal) { errors.push(`${name}: sem meta`); continue; }
+      if (!goal) continue;
 
-      const mEarn = monthMap.get(sub.barber_id) || 0;
-      const tEarn = todayMap.get(sub.barber_id) || 0;
-      const pct = Math.min(100, (mEarn / goal.target_commission) * 100);
-      const rem = Math.max(0, goal.target_commission - mEarn);
-      const daily = rem / remDays;
-      const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+      const monthEarnings = monthEarningsMap.get(sub.barber_id) || 0;
+      const todayEarnings = todayEarningsMap.get(sub.barber_id) || 0;
+      const progressPercent = Math.min(100, (monthEarnings / goal.target_commission) * 100);
+      const remaining = Math.max(0, goal.target_commission - monthEarnings);
+      const dailyTarget = remaining / remainingDays;
+      const barberName = (sub as any).barbers?.name || 'Barbeiro';
+
+      // Compose message based on schedule type (foco em meta de vendas, sem exibir comissão)
+      let title = '';
+      let messageBody = '';
       const type = schedule_type || 'manual';
 
       let title = '', msg = '';
       switch (type) {
-        case 'morning': title = `☀️ Bom dia, ${name}!`; msg = `Foco de vendas: ${fmt(daily)}. Meta mensal: ${pct.toFixed(1)}%. Bora! 💪`; break;
-        case 'lunch': title = `🍽️ Almoço, ${name}`; msg = tEarn > 0 ? `Vendas: ${fmt(tEarn)}. Faltam ${fmt(Math.max(0, daily - tEarn))} para meta de hoje.` : `Sem vendas ainda. Meta: ${fmt(daily)}.`; break;
-        case 'afternoon': title = `⚡ Reta final, ${name}`; msg = `Vendas: ${fmt(tEarn)} | Meta: ${fmt(daily)} | Faltam ${fmt(Math.max(0, daily - tEarn))}`; break;
-        case 'evening': title = `🌙 Fim do dia, ${name}`; msg = tEarn >= daily ? `🏆 Meta batida! ${fmt(tEarn)}` : `Vendas: ${fmt(tEarn)}. Faltaram ${fmt(Math.max(0, daily - tEarn))}. Amanhã é novo dia! 💪`; break;
-        default: title = `📊 Meta - ${name}`; msg = `Meta: ${fmt(daily)} | Vendas: ${fmt(tEarn)} | Faltam ${fmt(Math.max(0, daily - tEarn))}`;
+        case 'morning':
+          title = `☀️ Bom dia, ${barberName}!`;
+          messageBody = `Seu foco de vendas hoje é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
+          break;
+        case 'lunch':
+          title = `🍽️ Hora do almoço, ${barberName}`;
+          if (todayEarnings > 0) {
+            messageBody = `Manhã produtiva! Vendas até agora: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para bater a meta de hoje.`;
+          } else {
+            messageBody = `Ainda sem vendas registradas hoje. Meta de vendas do dia: ${formatCurrency(dailyTarget)}.`;
+          }
+          break;
+        case 'afternoon':
+          title = `⚡ Reta final da tarde, ${barberName}`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayEarnings)} | Meta de hoje: ${formatCurrency(dailyTarget)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
+          break;
+        case 'evening':
+          title = `🌙 Fim do expediente, ${barberName}`;
+          if (todayEarnings >= dailyTarget) {
+            messageBody = `Dia incrível! 🏆 Você bateu sua meta de vendas diária com ${formatCurrency(todayEarnings)}. Continue assim!`;
+          } else {
+            messageBody = `Você fechou o dia com ${formatCurrency(todayEarnings)} em vendas. Faltaram ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para a meta diária. Amanhã é um novo dia! 💪`;
+          }
+          break;
+        default:
+          title = `📊 Atualização de Meta - ${barberName}`;
+          messageBody = `Meta de hoje: ${formatCurrency(dailyTarget)} | Vendas hoje: ${formatCurrency(todayEarnings)} | Faltam ${formatCurrency(Math.max(0, dailyTarget - todayEarnings))} para fechar o dia.`;
       }
 
       const payload = JSON.stringify({ title, body: msg, tag: `goal-${type}-${todayStr}`, url: '/' });
 
       try {
-        const ep = new URL(sub.endpoint);
-        const aud = `${ep.protocol}//${ep.host}`;
-        const jwt = await createVapidJwt(aud, 'mailto:notifications@performancebarber.com', vapidPrivateKey);
-        const encrypted = await encryptPayload(sub.p256dh, sub.auth, payload);
-
-        console.log(`Sending to ${name}, endpoint host: ${ep.host}, payload size: ${encrypted.length}`);
-
-        const resp = await fetch(sub.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Encoding': 'aes128gcm',
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(encrypted.length),
-            'TTL': '86400',
-            'Authorization': `vapid t=${jwt}, k=${VAPID_PUBLIC_KEY}`,
+        const pushSubscription = {
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: normalizeBase64Url(sub.p256dh),
+            auth: normalizeBase64Url(sub.auth),
           },
-          body: encrypted,
+        };
+
+        const response = await webpush.sendNotification(pushSubscription, payload, {
+          TTL: 86400,
         });
 
-        if (resp.status === 410 || resp.status === 404) {
-          await supabase.from('push_subscriptions').update({ is_active: false }).eq('id', sub.id);
-          errors.push(`${name}: expirada`);
-        } else if (resp.ok || resp.status === 201) {
+        if (response.statusCode === 410 || response.statusCode === 404) {
+          // Subscription expired, deactivate
+          await supabase
+            .from('push_subscriptions')
+            .update({ is_active: false })
+            .eq('id', sub.id);
+        } else if (response.statusCode >= 200 && response.statusCode < 300) {
           sentCount++;
         } else {
-          const txt = await resp.text().catch(() => '');
-          console.log(`Push failed for ${name}: ${resp.status} ${txt}`);
-          errors.push(`${name}: HTTP ${resp.status} - ${txt}`);
+          errors.push(`${barberName}: status ${response.statusCode}`);
         }
       } catch (err) {
-        console.error(`Push error for ${name}:`, err);
-        errors.push(`${name}: ${(err as Error).message}`);
+        const message = (err as Error).message || "erro desconhecido";
+
+        if (message.toLowerCase().includes("decode base64")) {
+          errors.push(`${barberName}: assinatura push inválida. Reative as notificações nesse dispositivo.`);
+          await supabase
+            .from("push_subscriptions")
+            .update({ is_active: false })
+            .eq("id", sub.id);
+          continue;
+        }
+
+        errors.push(`${barberName}: ${message}`);
       }
     }
 
