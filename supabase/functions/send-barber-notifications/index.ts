@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
         } else {
           const txt = await resp.text().catch(() => '');
           console.log(`Push failed for ${name}: ${resp.status} ${txt}`);
-          errors.push(`${name}: HTTP ${resp.status}`);
+          errors.push(`${name}: HTTP ${resp.status} - ${txt}`);
         }
       } catch (err) {
         console.error(`Push error for ${name}:`, err);
