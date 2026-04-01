@@ -1,76 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Web Push implementation
-async function generateJWT(header: object, payload: object, privateKeyBase64url: string): Promise<string> {
-  const encoder = new TextEncoder();
-  
-  const headerB64 = btoa(JSON.stringify(header)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const payloadB64 = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const unsignedToken = `${headerB64}.${payloadB64}`;
-  
-  // Import private key
-  const keyData = Uint8Array.from(atob(privateKeyBase64url.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    await convertECPrivateKeyToP8(keyData),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    key,
-    encoder.encode(unsignedToken)
-  );
-  
-  // Convert DER signature to raw r||s format for JWT
-  const sigArray = new Uint8Array(signature);
-  const sigB64 = btoa(String.fromCharCode(...sigArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  
-  return `${unsignedToken}.${sigB64}`;
-}
-
-async function convertECPrivateKeyToP8(rawKey: Uint8Array): Promise<ArrayBuffer> {
-  // Wrap raw 32-byte EC private key in PKCS#8 DER format for P-256
-  const pkcs8Header = new Uint8Array([
-    0x30, 0x81, 0x87, 0x02, 0x01, 0x00, 0x30, 0x13,
-    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
-    0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d,
-    0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02,
-    0x01, 0x01, 0x04, 0x20
-  ]);
-  const pkcs8Footer = new Uint8Array([
-    0xa1, 0x44, 0x03, 0x42, 0x00
-  ]);
-  
-  const result = new Uint8Array(pkcs8Header.length + rawKey.length + pkcs8Footer.length + 65);
-  result.set(pkcs8Header, 0);
-  result.set(rawKey, pkcs8Header.length);
-  // We skip the public key part since we don't need it for signing
-  // Actually for PKCS8 we need the full structure
-  return result.buffer.slice(0, pkcs8Header.length + rawKey.length);
-}
-
-async function sendWebPush(subscription: { endpoint: string; p256dh: string; auth: string }, payload: string) {
-  // Simple fetch-based push (using the push endpoint directly)
-  // For production, use proper VAPID signing. Here we use a simpler approach.
-  const response = await fetch(subscription.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'TTL': '86400',
-    },
-    body: payload,
-  });
-  
-  return response;
-}
+const VAPID_PUBLIC_KEY = 'BPu3Z9f90Zf3aY_gUxj0SE4War9qt7Yjd8dMRwZnK9KZ15ISm1XWqLeORSZnS4YIlMRZPrst-xtMPfXL9xAkcSk';
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -80,15 +16,18 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    webpush.setVapidDetails(
+      'mailto:noreply@performancebarber.com',
+      VAPID_PUBLIC_KEY,
+      vapidPrivateKey
+    );
 
     const body = await req.json().catch(() => ({}));
     const { schedule_type, organization_id, barber_id } = body;
 
-    // Determine message type based on schedule
-    // schedule_type: 'morning' (9h), 'lunch' (13h), 'afternoon' (16h), 'evening' (19h), 'manual'
-    
-    // Build query for active push subscriptions
     let subsQuery = supabase
       .from('push_subscriptions')
       .select('*, barbers!inner(id, name, services_commission, organization_id, unit_id)')
@@ -118,10 +57,8 @@ Deno.serve(async (req) => {
     const currentYear = manausTime.getFullYear();
     const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(manausTime.getDate()).padStart(2, '0')}`;
 
-    // Get all barber IDs from subscriptions
     const barberIds = [...new Set(subscriptions.map(s => s.barber_id))];
 
-    // Fetch monthly goals for these barbers
     const { data: goals } = await supabase
       .from('monthly_goals')
       .select('barber_id, target_commission, work_days')
@@ -129,7 +66,6 @@ Deno.serve(async (req) => {
       .eq('month', currentMonth)
       .eq('year', currentYear);
 
-    // Fetch month productions
     const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
     const { data: productions } = await supabase
       .from('daily_productions')
@@ -138,18 +74,15 @@ Deno.serve(async (req) => {
       .gte('date', startOfMonth)
       .lte('date', todayStr);
 
-    // Fetch today's productions
     const { data: todayProductions } = await supabase
       .from('daily_productions')
       .select('barber_id, commission_earned')
       .in('barber_id', barberIds)
       .eq('date', todayStr);
 
-    // Build goals map
     const goalsMap = new Map<string, { target_commission: number; work_days: number }>();
     (goals || []).forEach(g => goalsMap.set(g.barber_id, g));
 
-    // Build productions map
     const monthEarningsMap = new Map<string, number>();
     (productions || []).forEach(p => {
       const current = monthEarningsMap.get(p.barber_id) || 0;
@@ -161,7 +94,6 @@ Deno.serve(async (req) => {
       todayEarningsMap.set(p.barber_id, Number(p.commission_earned));
     });
 
-    // Calculate remaining days
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     const remainingDays = Math.max(1, daysInMonth - manausTime.getDate());
 
@@ -179,11 +111,9 @@ Deno.serve(async (req) => {
       const dailyTarget = remaining / remainingDays;
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
-      // Compose message based on schedule type
       let title = '';
       let messageBody = '';
       const type = schedule_type || 'manual';
-
       const formatCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
       switch (type) {
@@ -223,38 +153,34 @@ Deno.serve(async (req) => {
         url: '/',
       });
 
-      try {
-        // Send to push endpoint
-        const response = await fetch(sub.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'TTL': '86400',
-          },
-          body: payload,
-        });
+      const pushSubscription = {
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.p256dh,
+          auth: sub.auth,
+        },
+      };
 
-        if (response.status === 410 || response.status === 404) {
-          // Subscription expired, deactivate
+      try {
+        await webpush.sendNotification(pushSubscription, payload);
+        sentCount++;
+      } catch (err: any) {
+        console.error(`Push error for ${barberName}:`, err.message || err);
+        if (err.statusCode === 410 || err.statusCode === 404) {
           await supabase
             .from('push_subscriptions')
             .update({ is_active: false })
             .eq('id', sub.id);
-        } else if (response.ok || response.status === 201) {
-          sentCount++;
-        } else {
-          errors.push(`${barberName}: ${response.status}`);
         }
-      } catch (err) {
-        errors.push(`${barberName}: ${(err as Error).message}`);
+        errors.push(`${barberName}: ${err.message || err.statusCode}`);
       }
     }
 
     return new Response(
-      JSON.stringify({ 
-        sent: sentCount, 
+      JSON.stringify({
+        sent: sentCount,
         total: subscriptions.length,
-        errors: errors.length > 0 ? errors : undefined 
+        errors: errors.length > 0 ? errors : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
