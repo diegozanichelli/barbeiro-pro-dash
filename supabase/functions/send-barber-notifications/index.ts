@@ -19,10 +19,13 @@ Deno.serve(async (req) => {
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    // Ensure VAPID key is URL-safe base64 without padding
+    const cleanPrivateKey = vapidPrivateKey.replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+    
     webpush.setVapidDetails(
       'mailto:noreply@performancebarber.com',
       VAPID_PUBLIC_KEY,
-      vapidPrivateKey
+      cleanPrivateKey
     );
 
     const body = await req.json().catch(() => ({}));
