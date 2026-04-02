@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VAPID_PUBLIC_KEY = 'BPu3Z9f90Zf3aY_gUxj0SE4War9qt7Yjd8dMRwZnK9KZ15ISm1XWqLeORSZnS4YIlMRZPrst-xtMPfXL9xAkcSk';
+const VAPID_PUBLIC_KEY = 'BJWqyxYQwkLjpMGvpuDJ9aYFWkvZ7Hg3DHqfTJXATE6SeYTr7sj0SNxRC9aj29PPmYPiRB3fzyuudNPzZlHpimA';
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -19,9 +19,8 @@ Deno.serve(async (req) => {
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Clean VAPID private key - remove any whitespace, quotes, padding
     const cleanPrivateKey = vapidPrivateKey.trim().replace(/^["']|["']$/g, '').replace(/=+$/, '');
-    console.log(`VAPID key length: ${cleanPrivateKey.length}, first chars: ${cleanPrivateKey.substring(0, 4)}`);
+    console.log(`DEBUG: key len=${cleanPrivateKey.length}, starts=${cleanPrivateKey.substring(0,3)}`);
     
     webpush.setVapidDetails(
       'mailto:noreply@performancebarber.com',
