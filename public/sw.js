@@ -1,6 +1,6 @@
 // Service Worker for Push Notifications
 self.addEventListener('push', function(event) {
-  let data = { title: 'Performance Barber', body: 'Nova atualização disponível', icon: '/placeholder.svg' };
+  let data = { title: 'Performance Barber', body: 'Nova atualização disponível', icon: '/favicon.png' };
   
   if (event.data) {
     try {
@@ -12,8 +12,8 @@ self.addEventListener('push', function(event) {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/placeholder.svg',
-    badge: '/placeholder.svg',
+    icon: data.icon || '/favicon.png',
+    badge: '/favicon.png',
     vibrate: [200, 100, 200],
     data: data.url || '/',
     actions: data.actions || [],
