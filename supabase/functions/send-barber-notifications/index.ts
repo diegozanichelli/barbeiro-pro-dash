@@ -112,10 +112,11 @@ Deno.serve(async (req) => {
       const goal = goalsMap.get(sub.barber_id);
       if (!goal) continue;
 
-      const monthEarnings = monthEarningsMap.get(sub.barber_id) || 0;
-      const todayEarnings = todayEarningsMap.get(sub.barber_id) || 0;
-      const progressPercent = Math.min(100, (monthEarnings / goal.target_commission) * 100);
-      const remaining = Math.max(0, goal.target_commission - monthEarnings);
+      const monthRevenue = monthRevenueMap.get(sub.barber_id) || 0;
+      const todayRevenue = todayRevenueMap.get(sub.barber_id) || 0;
+      const monthCommission = monthCommissionMap.get(sub.barber_id) || 0;
+      const progressPercent = Math.min(100, (monthCommission / goal.target_commission) * 100);
+      const remaining = Math.max(0, goal.target_commission - monthCommission);
       const dailyTarget = remaining / remainingDays;
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
@@ -127,31 +128,31 @@ Deno.serve(async (req) => {
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta diária é ${formatCurrency(dailyTarget)}. Você está em ${progressPercent.toFixed(1)}% da meta mensal. Bora fazer acontecer! 💪`;
+          messageBody = `Sua meta diária é ${formatCurrency(dailyTarget)} em comissão. Vendas no mês: ${formatCurrency(monthRevenue)}. Meta mensal em ${progressPercent.toFixed(1)}%. Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
-          if (todayEarnings > 0) {
-            messageBody = `Manhã produtiva! Comissão hoje: ${formatCurrency(todayEarnings)}. Faltam ${formatCurrency(remaining)} para bater a meta mensal (${progressPercent.toFixed(1)}%).`;
+          if (todayRevenue > 0) {
+            messageBody = `Manhã produtiva! Vendas hoje: ${formatCurrency(todayRevenue)}. Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} em comissão.`;
           } else {
-            messageBody = `Ainda sem lançamentos hoje. Meta diária: ${formatCurrency(dailyTarget)}. Faltam ${formatCurrency(remaining)} para a meta mensal.`;
+            messageBody = `Ainda sem vendas hoje. Meta diária: ${formatCurrency(dailyTarget)} em comissão. Faltam ${formatCurrency(remaining)} para a meta mensal.`;
           }
           break;
         case 'afternoon':
           title = `⚡ Reta final da tarde, ${barberName}`;
-          messageBody = `Comissão hoje: ${formatCurrency(todayEarnings)} | Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} para a meta!`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} em comissão!`;
           break;
         case 'evening':
           title = `🌙 Fim do expediente, ${barberName}`;
-          if (todayEarnings >= dailyTarget) {
-            messageBody = `Dia incrível! 🏆 Comissão hoje: ${formatCurrency(todayEarnings)}. Meta mensal em ${progressPercent.toFixed(1)}%. Continue assim!`;
+          if (monthCommission >= goal.target_commission * (manausTime.getDate() / daysInMonth)) {
+            messageBody = `Dia incrível! 🏆 Vendas hoje: ${formatCurrency(todayRevenue)}. Meta mensal: ${progressPercent.toFixed(1)}%. Continue assim!`;
           } else {
-            messageBody = `Comissão hoje: ${formatCurrency(todayEarnings)}. Meta mensal: ${progressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
+            messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)}. Meta mensal: ${progressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
           }
           break;
         default:
           title = `📊 Atualização de Meta - ${barberName}`;
-          messageBody = `Meta mensal: ${progressPercent.toFixed(1)}% | Hoje: ${formatCurrency(todayEarnings)} | Faltam: ${formatCurrency(remaining)}`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta mensal: ${progressPercent.toFixed(1)}% | Faltam: ${formatCurrency(remaining)} em comissão`;
       }
 
       const payload = JSON.stringify({
