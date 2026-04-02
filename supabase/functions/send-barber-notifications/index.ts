@@ -20,7 +20,6 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const cleanPrivateKey = vapidPrivateKey.trim().replace(/^["']|["']$/g, '').replace(/=+$/, '');
-    console.log(`DEBUG: key len=${cleanPrivateKey.length}, starts=${cleanPrivateKey.substring(0,3)}`);
     
     webpush.setVapidDetails(
       'mailto:noreply@performancebarber.com',
