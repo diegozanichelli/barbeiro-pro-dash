@@ -43,7 +43,7 @@ export default function PushNotificationToggle({ barberId, organizationId, userI
       } else {
         await registerPushSubscription(barberId, organizationId);
         setIsEnabled(true);
-        toast.success("Notificações ativadas! Você receberá atualizações de meta às 9h, 13h, 16h e 19h.");
+        toast.success("Notificações ativadas! Você receberá atualizações de meta às 9h, 13h, 16h e 20h.");
       }
     } catch (err: any) {
       toast.error(err.message || "Erro ao alterar notificações");
