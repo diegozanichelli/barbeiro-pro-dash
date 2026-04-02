@@ -71,29 +71,35 @@ Deno.serve(async (req) => {
     const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
     const { data: productions } = await supabase
       .from('daily_productions')
-      .select('barber_id, date, commission_earned')
+      .select('barber_id, date, commission_earned, services_total, products_total, services_basic_total, services_extra_total, tx_basic_total, tx_extra_total, tx_products_total')
       .in('barber_id', barberIds)
       .gte('date', startOfMonth)
       .lte('date', todayStr);
 
-    const { data: todayProductions } = await supabase
-      .from('daily_productions')
-      .select('barber_id, commission_earned')
-      .in('barber_id', barberIds)
-      .eq('date', todayStr);
-
     const goalsMap = new Map<string, { target_commission: number; work_days: number }>();
     (goals || []).forEach(g => goalsMap.set(g.barber_id, g));
 
-    const monthEarningsMap = new Map<string, number>();
-    (productions || []).forEach(p => {
-      const current = monthEarningsMap.get(p.barber_id) || 0;
-      monthEarningsMap.set(p.barber_id, current + Number(p.commission_earned));
-    });
+    // Helper to calculate revenue from a production row
+    const getRevenue = (p: any): number => {
+      if ((Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0) > 0) {
+        return (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
+      }
+      if (p.services_basic_total != null || p.services_extra_total != null) {
+        return (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0);
+      }
+      return (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
+    };
 
-    const todayEarningsMap = new Map<string, number>();
-    (todayProductions || []).forEach(p => {
-      todayEarningsMap.set(p.barber_id, Number(p.commission_earned));
+    const monthRevenueMap = new Map<string, number>();
+    const todayRevenueMap = new Map<string, number>();
+    const monthCommissionMap = new Map<string, number>();
+    (productions || []).forEach(p => {
+      const rev = getRevenue(p);
+      monthRevenueMap.set(p.barber_id, (monthRevenueMap.get(p.barber_id) || 0) + rev);
+      monthCommissionMap.set(p.barber_id, (monthCommissionMap.get(p.barber_id) || 0) + Number(p.commission_earned));
+      if (p.date === todayStr) {
+        todayRevenueMap.set(p.barber_id, (todayRevenueMap.get(p.barber_id) || 0) + rev);
+      }
     });
 
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
