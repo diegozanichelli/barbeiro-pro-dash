@@ -92,11 +92,9 @@ Deno.serve(async (req) => {
 
     const monthRevenueMap = new Map<string, number>();
     const todayRevenueMap = new Map<string, number>();
-    const monthCommissionMap = new Map<string, number>();
     (productions || []).forEach(p => {
       const rev = getRevenue(p);
       monthRevenueMap.set(p.barber_id, (monthRevenueMap.get(p.barber_id) || 0) + rev);
-      monthCommissionMap.set(p.barber_id, (monthCommissionMap.get(p.barber_id) || 0) + Number(p.commission_earned));
       if (p.date === todayStr) {
         todayRevenueMap.set(p.barber_id, (todayRevenueMap.get(p.barber_id) || 0) + rev);
       }
@@ -114,10 +112,9 @@ Deno.serve(async (req) => {
 
       const monthRevenue = monthRevenueMap.get(sub.barber_id) || 0;
       const todayRevenue = todayRevenueMap.get(sub.barber_id) || 0;
-      const monthCommission = monthCommissionMap.get(sub.barber_id) || 0;
-      const progressPercent = Math.min(100, (monthCommission / goal.target_commission) * 100);
-      const remaining = Math.max(0, goal.target_commission - monthCommission);
+      const remaining = Math.max(0, goal.target_commission - monthRevenue);
       const dailyTarget = remaining / remainingDays;
+      const dayProgressPercent = dailyTarget > 0 ? Math.min(999, (todayRevenue / dailyTarget) * 100) : 100;
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
 
       let title = '';
@@ -128,31 +125,31 @@ Deno.serve(async (req) => {
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta diária é ${formatCurrency(dailyTarget)} em comissão. Vendas no mês: ${formatCurrency(monthRevenue)}. Meta mensal em ${progressPercent.toFixed(1)}%. Bora fazer acontecer! 💪`;
+          messageBody = `Sua meta de vendas para hoje é ${formatCurrency(dailyTarget)}. Vendas no mês: ${formatCurrency(monthRevenue)}. Progresso do dia: ${dayProgressPercent.toFixed(1)}%. Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
           if (todayRevenue > 0) {
-            messageBody = `Manhã produtiva! Vendas hoje: ${formatCurrency(todayRevenue)}. Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} em comissão.`;
+            messageBody = `Manhã produtiva! Vendas hoje: ${formatCurrency(todayRevenue)}. Progresso do dia: ${dayProgressPercent.toFixed(1)}%. Meta do dia: ${formatCurrency(dailyTarget)}.`;
           } else {
-            messageBody = `Ainda sem vendas hoje. Meta diária: ${formatCurrency(dailyTarget)} em comissão. Faltam ${formatCurrency(remaining)} para a meta mensal.`;
+            messageBody = `Ainda sem vendas hoje. Meta de vendas do dia: ${formatCurrency(dailyTarget)}. Vamos pra cima!`;
           }
           break;
         case 'afternoon':
           title = `⚡ Reta final da tarde, ${barberName}`;
-          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta mensal: ${progressPercent.toFixed(1)}%. Faltam ${formatCurrency(remaining)} em comissão!`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta do dia: ${formatCurrency(dailyTarget)} | Progresso do dia: ${dayProgressPercent.toFixed(1)}%`;
           break;
         case 'evening':
           title = `🌙 Fim do expediente, ${barberName}`;
-          if (monthCommission >= goal.target_commission * (manausTime.getDate() / daysInMonth)) {
-            messageBody = `Dia incrível! 🏆 Vendas hoje: ${formatCurrency(todayRevenue)}. Meta mensal: ${progressPercent.toFixed(1)}%. Continue assim!`;
+          if (todayRevenue >= dailyTarget) {
+            messageBody = `Dia incrível! 🏆 Vendas hoje: ${formatCurrency(todayRevenue)}. Você bateu ${dayProgressPercent.toFixed(1)}% da meta do dia. Continue assim!`;
           } else {
-            messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)}. Meta mensal: ${progressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
+            messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)}. Progresso do dia: ${dayProgressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
           }
           break;
         default:
           title = `📊 Atualização de Meta - ${barberName}`;
-          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta mensal: ${progressPercent.toFixed(1)}% | Faltam: ${formatCurrency(remaining)} em comissão`;
+          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta do dia: ${formatCurrency(dailyTarget)} | Progresso do dia: ${dayProgressPercent.toFixed(1)}%`;
       }
 
       const payload = JSON.stringify({
