@@ -466,8 +466,38 @@ const [todayProduction, setTodayProduction] = useState<{
         )
         .subscribe();
 
+      // Realtime listener para notificar quando uma nova venda for registrada
+      const salesChannel = supabase
+        .channel(`sale-notifications-${barber.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'sale_transactions',
+            filter: `barber_id=eq.${barber.id}`,
+          },
+          (payload) => {
+            const sale = payload.new as any;
+            const valor = Number(sale.price_sold || 0);
+            const itemName = sale.item_name || 'Item';
+            const clientName = sale.client_name?.trim() || '';
+            
+            toast.success(`💰 Nova venda registrada!`, {
+              description: `${itemName}${clientName ? ` — ${clientName}` : ''}: R$ ${valor.toFixed(2)}`,
+              duration: 6000,
+            });
+
+            // Atualizar lista de vendas ao vivo e stats
+            fetchMonthlyGoal();
+            fetchMonthlyStats();
+          }
+        )
+        .subscribe();
+
       return () => {
         supabase.removeChannel(productionsChannel);
+        supabase.removeChannel(salesChannel);
       };
     }
   }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
