@@ -466,8 +466,38 @@ const [todayProduction, setTodayProduction] = useState<{
         )
         .subscribe();
 
+      // Realtime listener para notificar quando uma nova venda for registrada
+      const salesChannel = supabase
+        .channel(`sale-notifications-${barber.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'sale_transactions',
+            filter: `barber_id=eq.${barber.id}`,
+          },
+          (payload) => {
+            const sale = payload.new as any;
+            const valor = Number(sale.price_sold || 0);
+            const itemName = sale.item_name || 'Item';
+            const clientName = sale.client_name?.trim() || '';
+            
+            toast.success(`💰 Nova venda registrada!`, {
+              description: `${itemName}${clientName ? ` — ${clientName}` : ''}: R$ ${valor.toFixed(2)}`,
+              duration: 6000,
+            });
+
+            // Atualizar lista de vendas ao vivo e stats
+            fetchMonthlyGoal();
+            fetchMonthlyStats();
+          }
+        )
+        .subscribe();
+
       return () => {
         supabase.removeChannel(productionsChannel);
+        supabase.removeChannel(salesChannel);
       };
     }
   }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
@@ -1125,6 +1155,38 @@ const [todayProduction, setTodayProduction] = useState<{
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Barra de progresso do dia */}
+                {(() => {
+                  const todayTotal = todayProduction?.total ?? 0;
+                  const target = dailyTargetServices > 0 ? dailyTargetServices : dailyTarget;
+                  const dayProgress = target > 0 ? Math.min(100, (todayTotal / target) * 100) : 0;
+                  const faltaHoje = Math.max(0, target - todayTotal);
+                  const metaBatida = target > 0 && todayTotal >= target;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Progresso do dia</span>
+                        <span className={`font-bold ${metaBatida ? 'text-success' : 'text-foreground'}`}>
+                          {dayProgress.toFixed(1)}%
+                        </span>
+                      </div>
+                      <Progress value={dayProgress} className={`h-4 ${metaBatida ? '[&>div]:bg-success' : ''}`} />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>R$ {todayTotal.toFixed(2)} vendido</span>
+                        {target > 0 ? (
+                          metaBatida ? (
+                            <span className="text-success font-semibold">🏆 Meta batida!</span>
+                          ) : (
+                            <span>Falta R$ {faltaHoje.toFixed(2)}</span>
+                          )
+                        ) : (
+                          <span>Sem meta definida</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Produção de hoje</p>
