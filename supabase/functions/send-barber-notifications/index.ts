@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
     let subsQuery = supabase
       .from('push_subscriptions')
-      .select('*, barbers!inner(id, name, services_commission, organization_id, unit_id)')
+      .select('*, barbers!inner(id, name, organization_id, unit_id)')
       .eq('is_active', true);
 
     if (organization_id) {
@@ -67,14 +67,16 @@ Deno.serve(async (req) => {
     const [goalsRes, productionsRes, holidaysRes] = await Promise.all([
       supabase
         .from('monthly_goals')
-        .select('barber_id, target_commission, work_days')
+        .select('barber_id, organization_id, target_commission, work_days')
         .in('barber_id', barberIds)
+        .in('organization_id', orgIds)
         .eq('month', currentMonth)
         .eq('year', currentYear),
       supabase
         .from('daily_productions')
-        .select('barber_id, date, commission_earned, services_total, products_total, services_basic_total, services_extra_total, tx_basic_total, tx_extra_total, tx_products_total, confirmed_presence, presence_type')
+        .select('barber_id, organization_id, date, commission_earned, services_total, products_total, services_basic_total, services_extra_total, tx_basic_total, tx_extra_total, tx_products_total, confirmed_presence, presence_type')
         .in('barber_id', barberIds)
+        .in('organization_id', orgIds)
         .gte('date', `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`)
         .lte('date', todayStr),
       supabase
@@ -90,7 +92,7 @@ Deno.serve(async (req) => {
     const holidays = holidaysRes.data || [];
 
     const goalsMap = new Map<string, { target_commission: number; work_days: number }>();
-    goals.forEach(g => goalsMap.set(g.barber_id, g));
+    goals.forEach(g => goalsMap.set(`${g.organization_id}:${g.barber_id}`, g));
 
     // Build holidays set per org
     const orgHolidaysMap = new Map<string, Set<string>>();
@@ -101,20 +103,25 @@ Deno.serve(async (req) => {
       orgHolidaysMap.get(h.organization_id)!.add(h.date);
     });
 
-    // Build accumulated commission and today's revenue per barber (using commission_earned like dashboard)
+    // Build accumulated values per barber
     const monthCommissionMap = new Map<string, number>();
+    const monthServicesRevenueMap = new Map<string, number>();
     const todayRevenueMap = new Map<string, number>();
     const scheduledOffMap = new Map<string, string[]>();
 
     productions.forEach(p => {
-      // Accumulated commission (same as dashboard)
+      const key = `${p.organization_id}:${p.barber_id}`;
       const commission = Number(p.commission_earned) || 0;
-      monthCommissionMap.set(p.barber_id, (monthCommissionMap.get(p.barber_id) || 0) + commission);
+      monthCommissionMap.set(key, (monthCommissionMap.get(key) || 0) + commission);
+
+      const servicesRevenue = getServicesRevenue(p);
+      monthServicesRevenueMap.set(key, (monthServicesRevenueMap.get(key) || 0) + servicesRevenue);
+
+      const rev = getRevenue(p);
 
       // Today's revenue for progress display
       if (p.date === todayStr) {
-        const rev = getRevenue(p);
-        todayRevenueMap.set(p.barber_id, (todayRevenueMap.get(p.barber_id) || 0) + rev);
+        todayRevenueMap.set(key, (todayRevenueMap.get(key) || 0) + rev);
       }
 
       // Track scheduled off days
@@ -143,27 +150,33 @@ Deno.serve(async (req) => {
       return Math.max(1, count);
     }
 
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-
     let sentCount = 0;
     const errors: string[] = [];
 
     for (const sub of subscriptions) {
-      const goal = goalsMap.get(sub.barber_id);
+      const key = `${sub.organization_id}:${sub.barber_id}`;
+      const goal = goalsMap.get(key);
       if (!goal) continue;
 
       const orgId = sub.organization_id;
-      const monthCommission = monthCommissionMap.get(sub.barber_id) || 0;
-      const todayRevenue = todayRevenueMap.get(sub.barber_id) || 0;
+      const monthCommission = monthCommissionMap.get(key) || 0;
+      const monthServicesRevenue = monthServicesRevenueMap.get(key) || 0;
+      const todayRevenue = todayRevenueMap.get(key) || 0;
       const remainingDays = calcRemainingWorkDays(orgId, sub.barber_id);
 
-      // Daily target based on COMMISSION remaining (same as dashboard)
       const remainingCommission = Math.max(0, goal.target_commission - monthCommission);
-      const dailyTarget = remainingCommission / remainingDays;
+      const dailyTargetCommission = remainingCommission / remainingDays;
 
-      // Progress percentages
-      const monthPct = goal.target_commission > 0 ? Math.min(999, (monthCommission / goal.target_commission) * 100) : 100;
-      // For today's progress, use today's revenue vs daily target
+      // Same conversion used on initial barber dashboard card
+      const servicesTargetFactor = monthServicesRevenue / Math.max(1, monthCommission);
+      const dailyTarget = goal.target_commission > 0 ? dailyTargetCommission * servicesTargetFactor : 0;
+
+      const monthlySalesGoal = goal.target_commission > 0
+        ? goal.target_commission * servicesTargetFactor
+        : 0;
+
+      // Progress percentages based on SALES (what barber needs to sell)
+      const monthPct = monthlySalesGoal > 0 ? Math.min(999, (monthServicesRevenue / monthlySalesGoal) * 100) : 100;
       const dayPct = dailyTarget > 0 ? Math.min(999, (todayRevenue / dailyTarget) * 100) : 100;
 
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
@@ -185,7 +198,7 @@ Deno.serve(async (req) => {
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta de vendas para hoje é ${formatCurrency(dailyTarget)}. Meta do mês: ${formatCurrency(goal.target_commission)} (${monthPct.toFixed(0)}% alcançado). Bora fazer acontecer! 💪`;
+          messageBody = `Sua meta de vendas para hoje é ${formatCurrency(dailyTarget)}. Meta de vendas do mês: ${formatCurrency(monthlySalesGoal)} (${monthPct.toFixed(0)}% alcançado). Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
@@ -264,4 +277,16 @@ function getRevenue(p: any): number {
     return (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0);
   }
   return (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
+}
+
+
+// Helper to calculate SERVICES revenue from a production row
+function getServicesRevenue(p: any): number {
+  if ((Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) > 0) {
+    return (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0);
+  }
+  if (p.services_basic_total != null || p.services_extra_total != null) {
+    return (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0);
+  }
+  return Number(p.services_total) || 0;
 }
