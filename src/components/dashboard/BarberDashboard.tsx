@@ -477,13 +477,24 @@ const [todayProduction, setTodayProduction] = useState<{
             table: 'sale_transactions',
             filter: `barber_id=eq.${barber.id}`,
           },
-          (payload) => {
+          async (payload) => {
             const sale = payload.new as any;
             const valor = Number(sale.price_sold || 0);
             const itemName = sale.item_name || 'Item';
             const clientName = sale.client_name?.trim() || '';
+
+            // Contar vendas do dia para esse barbeiro
+            const today = getTodayString();
+            const { count } = await supabase
+              .from('sale_transactions')
+              .select('id', { count: 'exact', head: true })
+              .eq('barber_id', barber.id)
+              .gte('created_at', `${today}T00:00:00-04:00`)
+              .lte('created_at', `${today}T23:59:59-04:00`);
+
+            const salesCount = count || 1;
             
-            toast.success(`💰 Nova venda registrada!`, {
+            toast.success(`💰 Venda #${salesCount} do dia!`, {
               description: `${itemName}${clientName ? ` — ${clientName}` : ''}: R$ ${valor.toFixed(2)}`,
               duration: 6000,
             });
