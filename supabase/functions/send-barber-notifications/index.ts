@@ -122,34 +122,43 @@ Deno.serve(async (req) => {
       const type = schedule_type || 'manual';
       const formatCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
+      const pct = dayProgressPercent;
+      const monthPct = goal.target_commission > 0 ? Math.min(999, (monthRevenue / goal.target_commission) * 100) : 100;
+
+      // Helper to build progress-aware message
+      const progressMsg = (): string => {
+        if (pct >= 100) return `🏆 Meta do dia batida! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)}. Mês: ${monthPct.toFixed(0)}% da meta.`;
+        if (pct >= 75) return `🔥 Quase lá! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${pct.toFixed(0)}%). Falta pouco!`;
+        if (pct >= 50) return `💪 Metade da meta! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${pct.toFixed(0)}%). Bora manter o ritmo!`;
+        if (pct >= 25) return `📈 Bom progresso! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${pct.toFixed(0)}%). Vamos acelerar!`;
+        if (todayRevenue > 0) return `Vendas hoje: ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${pct.toFixed(0)}%). Vamos pra cima! 💪`;
+        return `Ainda sem vendas hoje. Meta do dia: ${formatCurrency(dailyTarget)}. Bora começar! 🚀`;
+      };
+
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta de vendas para hoje é ${formatCurrency(dailyTarget)}. Vendas no mês: ${formatCurrency(monthRevenue)}. Progresso do dia: ${dayProgressPercent.toFixed(1)}%. Bora fazer acontecer! 💪`;
+          messageBody = `Sua meta de vendas para hoje é ${formatCurrency(dailyTarget)}. Meta do mês: ${formatCurrency(goal.target_commission)} (${monthPct.toFixed(0)}% alcançado). Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
-          if (todayRevenue > 0) {
-            messageBody = `Manhã produtiva! Vendas hoje: ${formatCurrency(todayRevenue)}. Progresso do dia: ${dayProgressPercent.toFixed(1)}%. Meta do dia: ${formatCurrency(dailyTarget)}.`;
-          } else {
-            messageBody = `Ainda sem vendas hoje. Meta de vendas do dia: ${formatCurrency(dailyTarget)}. Vamos pra cima!`;
-          }
+          messageBody = progressMsg();
           break;
         case 'afternoon':
-          title = `⚡ Reta final da tarde, ${barberName}`;
-          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta do dia: ${formatCurrency(dailyTarget)} | Progresso do dia: ${dayProgressPercent.toFixed(1)}%`;
+          title = `⚡ Reta final, ${barberName}`;
+          messageBody = progressMsg();
           break;
         case 'evening':
           title = `🌙 Fim do expediente, ${barberName}`;
-          if (todayRevenue >= dailyTarget) {
-            messageBody = `Dia incrível! 🏆 Vendas hoje: ${formatCurrency(todayRevenue)}. Você bateu ${dayProgressPercent.toFixed(1)}% da meta do dia. Continue assim!`;
+          if (pct >= 100) {
+            messageBody = `Dia incrível! 🏆 Vendas: ${formatCurrency(todayRevenue)}. Você bateu ${pct.toFixed(0)}% da meta! Mês: ${monthPct.toFixed(0)}%.`;
           } else {
-            messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)}. Progresso do dia: ${dayProgressPercent.toFixed(1)}%. Amanhã é um novo dia! 💪`;
+            messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} (${pct.toFixed(0)}% da meta). Mês: ${monthPct.toFixed(0)}%. Amanhã é um novo dia! 💪`;
           }
           break;
         default:
-          title = `📊 Atualização de Meta - ${barberName}`;
-          messageBody = `Vendas hoje: ${formatCurrency(todayRevenue)} | Meta do dia: ${formatCurrency(dailyTarget)} | Progresso do dia: ${dayProgressPercent.toFixed(1)}%`;
+          title = `📊 Atualização - ${barberName}`;
+          messageBody = progressMsg();
       }
 
       const payload = JSON.stringify({
