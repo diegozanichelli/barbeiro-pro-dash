@@ -167,16 +167,32 @@ Deno.serve(async (req) => {
       const remainingCommission = Math.max(0, goal.target_commission - monthCommission);
       const dailyTargetCommission = remainingCommission / remainingDays;
 
-      // Same conversion used on initial barber dashboard card
-      const servicesTargetFactor = monthServicesRevenue / Math.max(1, monthCommission);
-      const dailyTarget = goal.target_commission > 0 ? dailyTargetCommission * servicesTargetFactor : 0;
+      // Convert commission target to SALES target (same formula as BarberDashboard)
+      // servicesTargetFactor = total_services_revenue / accumulated_commission
+      const servicesTargetFactor = monthCommission > 0 
+        ? monthServicesRevenue / monthCommission 
+        : 0;
+      const dailyTargetServices = goal.target_commission > 0 && servicesTargetFactor > 0
+        ? dailyTargetCommission * servicesTargetFactor 
+        : 0;
 
-      const monthlySalesGoal = goal.target_commission > 0
+      // Use sales target when available, fall back to commission target (same as dashboard)
+      const dailyTarget = dailyTargetServices > 0 ? dailyTargetServices : dailyTargetCommission;
+      const isShowingSales = dailyTargetServices > 0;
+
+      // Monthly sales goal for progress
+      const monthlySalesGoal = servicesTargetFactor > 0
         ? goal.target_commission * servicesTargetFactor
         : 0;
 
-      // Progress percentages based on SALES (what barber needs to sell)
-      const monthPct = monthlySalesGoal > 0 ? Math.min(999, (monthServicesRevenue / monthlySalesGoal) * 100) : 100;
+      // Monthly progress: use sales if available, otherwise commission
+      const monthPct = monthlySalesGoal > 0 
+        ? Math.min(999, (monthServicesRevenue / monthlySalesGoal) * 100) 
+        : goal.target_commission > 0 
+          ? Math.min(999, (monthCommission / goal.target_commission) * 100)
+          : 100;
+
+      // Daily progress: today's total revenue vs daily target
       const dayPct = dailyTarget > 0 ? Math.min(999, (todayRevenue / dailyTarget) * 100) : 100;
 
       const barberName = (sub as any).barbers?.name || 'Barbeiro';
