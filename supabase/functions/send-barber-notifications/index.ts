@@ -202,19 +202,24 @@ Deno.serve(async (req) => {
       let title = '';
       let messageBody = '';
 
+      const metaLabel = isShowingSales ? 'vendas' : 'comissão';
+
       const progressMsg = (): string => {
         if (dayPct >= 100) return `🏆 Meta do dia batida! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)}. Mês: ${monthPct.toFixed(0)}% da meta.`;
         if (dayPct >= 75) return `🔥 Quase lá! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${dayPct.toFixed(0)}%). Falta pouco!`;
         if (dayPct >= 50) return `💪 Metade da meta! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${dayPct.toFixed(0)}%). Bora manter o ritmo!`;
         if (dayPct >= 25) return `📈 Bom progresso! ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${dayPct.toFixed(0)}%). Vamos acelerar!`;
         if (todayRevenue > 0) return `Vendas hoje: ${formatCurrency(todayRevenue)} de ${formatCurrency(dailyTarget)} (${dayPct.toFixed(0)}%). Vamos pra cima! 💪`;
-        return `Ainda sem vendas hoje. Meta do dia: ${formatCurrency(dailyTarget)}. Bora começar! 🚀`;
+        return `Ainda sem vendas hoje. Meta de ${metaLabel} do dia: ${formatCurrency(dailyTarget)}. Bora começar! 🚀`;
       };
+
+      // Monthly display value
+      const monthlyDisplayGoal = monthlySalesGoal > 0 ? monthlySalesGoal : goal.target_commission;
 
       switch (type) {
         case 'morning':
           title = `☀️ Bom dia, ${barberName}!`;
-          messageBody = `Sua meta de vendas para hoje é ${formatCurrency(dailyTarget)}. Meta de vendas do mês: ${formatCurrency(monthlySalesGoal)} (${monthPct.toFixed(0)}% alcançado). Bora fazer acontecer! 💪`;
+          messageBody = `Seu foco hoje é vender: ${formatCurrency(dailyTarget)}. Meta de ${metaLabel} do mês: ${formatCurrency(monthlyDisplayGoal)} (${monthPct.toFixed(0)}% alcançado). Bora fazer acontecer! 💪`;
           break;
         case 'lunch':
           title = `🍽️ Hora do almoço, ${barberName}`;
