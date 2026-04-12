@@ -1066,7 +1066,12 @@ export default function LiveDashboard() {
                             EM ANDAMENTO
                           </Badge>
                         )}
-                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && (
+                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && isIdle && (
+                          <Badge className="text-[10px] bg-red-500/20 text-red-500 border-red-500/30 whitespace-nowrap animate-pulse">
+                            ⚠️ PARADO
+                          </Badge>
+                        )}
+                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && !isIdle && (
                           <span className="text-[10px] text-muted-foreground">—</span>
                         )}
                       </div>
