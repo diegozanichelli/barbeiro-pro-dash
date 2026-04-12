@@ -150,6 +150,7 @@ export default function LiveDashboard() {
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
 
   // Date navigation state
   const todayManaus = getTodayString();
@@ -267,6 +268,22 @@ export default function LiveDashboard() {
       if (unitsData) {
         setUnits(unitsData);
       }
+
+      // Fetch yesterday's revenue for comparison
+      const yesterday = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
+      const dayAfterYesterday = selectedDate;
+      const { data: yesterdayTxData } = await supabase
+        .from("sale_transactions")
+        .select("barber_id, price_sold, item_type")
+        .eq("organization_id", organizationId)
+        .eq("source", "manager")
+        .gte("created_at", yesterday + "T00:00:00-04:00")
+        .lt("created_at", dayAfterYesterday + "T00:00:00-04:00");
+
+      const yRevenue = (yesterdayTxData || [])
+        .filter(t => t.item_type !== 'subscription')
+        .reduce((sum, t) => sum + (t.price_sold || 0), 0);
+      setYesterdayRevenue(yRevenue);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -688,6 +705,31 @@ export default function LiveDashboard() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [units, barbers, managerTransactions, productions]);
 
+  // Monthly team goal progress
+  const teamMonthlyGoal = useMemo(() => {
+    const relevantBarbers = selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit);
+    const relevantGoals = goals.filter(g => relevantBarbers.some(b => b.id === g.barber_id));
+    const totalTarget = relevantGoals.reduce((sum, g) => sum + g.target_commission, 0);
+    const totalEarned = relevantBarbers.reduce((sum, b) => {
+      const barberProds = monthProductions.filter(p => p.barber_id === b.id);
+      return sum + barberProds.reduce((s, p) => s + Number(p.commission_earned), 0);
+    }, 0);
+    const pct = totalTarget > 0 ? Math.min((totalEarned / totalTarget) * 100, 100) : 0;
+    return { totalTarget, totalEarned, pct };
+  }, [barbers, goals, monthProductions, selectedUnit]);
+
+  // Yesterday comparison
+  const revenueComparison = useMemo(() => {
+    if (yesterdayRevenue === null || yesterdayRevenue === 0) return null;
+    const diff = totalRevenue - yesterdayRevenue;
+    const pct = (diff / yesterdayRevenue) * 100;
+    return { diff, pct, isUp: diff >= 0 };
+  }, [totalRevenue, yesterdayRevenue]);
+
+  // Check if barber is idle (no sales, it's today, after 11h Manaus)
+  const manausHour = todayManausDate.getHours();
+  const isAfter11 = isViewingToday && manausHour >= 11;
+
   if (isLoading) {
     return (
       <div className="min-h-[260px] flex items-center justify-center px-4">
@@ -842,6 +884,39 @@ export default function LiveDashboard() {
 
       </motion.div>
 
+      {/* Monthly Team Goal Progress */}
+      {teamMonthlyGoal.totalTarget > 0 && (
+        <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+          <CardContent className="px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                <span className="text-sm font-bold text-foreground">Meta Mensal da Equipe</span>
+              </div>
+              <span className={`text-sm font-bold ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}>
+                {teamMonthlyGoal.pct.toFixed(0)}%
+              </span>
+            </div>
+            <div className="h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
+              <motion.div
+                className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                initial={{ width: 0 }}
+                animate={{ width: `${teamMonthlyGoal.pct}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                Comissões: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+              <span>
+                Meta: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Main content: Barber Table + Ranking Sidebar */}
       <div className="flex flex-col lg:flex-row gap-3">
         {/* Barber Table */}
@@ -882,12 +957,13 @@ export default function LiveDashboard() {
                   const isDayOff = prod?.confirmed_presence && prod?.presence_type === 'day_off' && revenue === 0;
                   const isAbsent = prod?.confirmed_presence && prod?.presence_type === 'absence' && revenue === 0;
                   const isPresent = prod?.confirmed_presence && !isDayOff && !isAbsent && revenue === 0;
+                  const isIdle = isAfter11 && revenue === 0 && !isDayOff && !isAbsent && !isPresent;
 
                   return (
                     <motion.div
                       key={barber.id}
                       className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
-                        isGoalMet ? "bg-green-500/5" : ""
+                        isGoalMet ? "bg-green-500/5" : isIdle ? "bg-red-500/5 border-l-2 border-l-red-500/50" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
@@ -990,7 +1066,12 @@ export default function LiveDashboard() {
                             EM ANDAMENTO
                           </Badge>
                         )}
-                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && (
+                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && isIdle && (
+                          <Badge className="text-[10px] bg-red-500/20 text-red-500 border-red-500/30 whitespace-nowrap animate-pulse">
+                            ⚠️ PARADO
+                          </Badge>
+                        )}
+                        {!isGoalMet && !isDayOff && !isAbsent && !isPresent && revenue === 0 && !isIdle && (
                           <span className="text-[10px] text-muted-foreground">—</span>
                         )}
                       </div>
@@ -1137,7 +1218,14 @@ export default function LiveDashboard() {
                     >
                       {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </motion.p>
-                    <p className="text-[9px] text-muted-foreground mt-0.5">{totalClientsToday} atd</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <p className="text-[9px] text-muted-foreground">{totalClientsToday} atd</p>
+                      {revenueComparison && (
+                        <span className={`text-[9px] font-bold ${revenueComparison.isUp ? "text-green-500" : "text-red-500"}`}>
+                          {revenueComparison.isUp ? "▲" : "▼"} {Math.abs(revenueComparison.pct).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="rounded-lg border border-border/40 bg-card/60 p-2">
                     <div className="flex items-center gap-1 mb-0.5">
