@@ -150,6 +150,7 @@ export default function LiveDashboard() {
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
 
   // Date navigation state
   const todayManaus = getTodayString();
@@ -267,6 +268,22 @@ export default function LiveDashboard() {
       if (unitsData) {
         setUnits(unitsData);
       }
+
+      // Fetch yesterday's revenue for comparison
+      const yesterday = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
+      const dayAfterYesterday = selectedDate;
+      const { data: yesterdayTxData } = await supabase
+        .from("sale_transactions")
+        .select("barber_id, price_sold, item_type")
+        .eq("organization_id", organizationId)
+        .eq("source", "manager")
+        .gte("created_at", yesterday + "T00:00:00-04:00")
+        .lt("created_at", dayAfterYesterday + "T00:00:00-04:00");
+
+      const yRevenue = (yesterdayTxData || [])
+        .filter(t => t.item_type !== 'subscription')
+        .reduce((sum, t) => sum + (t.price_sold || 0), 0);
+      setYesterdayRevenue(yRevenue);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
