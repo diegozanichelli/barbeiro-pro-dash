@@ -957,12 +957,13 @@ export default function LiveDashboard() {
                   const isDayOff = prod?.confirmed_presence && prod?.presence_type === 'day_off' && revenue === 0;
                   const isAbsent = prod?.confirmed_presence && prod?.presence_type === 'absence' && revenue === 0;
                   const isPresent = prod?.confirmed_presence && !isDayOff && !isAbsent && revenue === 0;
+                  const isIdle = isAfter11 && revenue === 0 && !isDayOff && !isAbsent && !isPresent;
 
                   return (
                     <motion.div
                       key={barber.id}
                       className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
-                        isGoalMet ? "bg-green-500/5" : ""
+                        isGoalMet ? "bg-green-500/5" : isIdle ? "bg-red-500/5 border-l-2 border-l-red-500/50" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
@@ -1212,7 +1213,14 @@ export default function LiveDashboard() {
                     >
                       {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </motion.p>
-                    <p className="text-[9px] text-muted-foreground mt-0.5">{totalClientsToday} atd</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <p className="text-[9px] text-muted-foreground">{totalClientsToday} atd</p>
+                      {revenueComparison && (
+                        <span className={`text-[9px] font-bold ${revenueComparison.isUp ? "text-green-500" : "text-red-500"}`}>
+                          {revenueComparison.isUp ? "▲" : "▼"} {Math.abs(revenueComparison.pct).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="rounded-lg border border-border/40 bg-card/60 p-2">
                     <div className="flex items-center gap-1 mb-0.5">
