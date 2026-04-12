@@ -884,6 +884,39 @@ export default function LiveDashboard() {
 
       </motion.div>
 
+      {/* Monthly Team Goal Progress */}
+      {teamMonthlyGoal.totalTarget > 0 && (
+        <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+          <CardContent className="px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                <span className="text-sm font-bold text-foreground">Meta Mensal da Equipe</span>
+              </div>
+              <span className={`text-sm font-bold ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}>
+                {teamMonthlyGoal.pct.toFixed(0)}%
+              </span>
+            </div>
+            <div className="h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
+              <motion.div
+                className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                initial={{ width: 0 }}
+                animate={{ width: `${teamMonthlyGoal.pct}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                Comissões: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+              <span>
+                Meta: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Main content: Barber Table + Ranking Sidebar */}
       <div className="flex flex-col lg:flex-row gap-3">
         {/* Barber Table */}
