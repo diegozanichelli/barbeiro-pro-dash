@@ -740,6 +740,31 @@ export default function LiveDashboard() {
 
   const topBarberToday = rankingData.reduce((top, b) => b.revenue > (top?.revenue || 0) ? b : top, rankingData[0]);
 
+  // Monthly team goal progress
+  const teamMonthlyGoal = useMemo(() => {
+    const relevantBarbers = selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit);
+    const relevantGoals = goals.filter(g => relevantBarbers.some(b => b.id === g.barber_id));
+    const totalTarget = relevantGoals.reduce((sum, g) => sum + g.target_commission, 0);
+    const totalEarned = relevantBarbers.reduce((sum, b) => {
+      const barberProds = monthProductions.filter(p => p.barber_id === b.id);
+      return sum + barberProds.reduce((s, p) => s + Number(p.commission_earned), 0);
+    }, 0);
+    const pct = totalTarget > 0 ? Math.min((totalEarned / totalTarget) * 100, 100) : 0;
+    return { totalTarget, totalEarned, pct };
+  }, [barbers, goals, monthProductions, selectedUnit]);
+
+  // Yesterday comparison
+  const revenueComparison = useMemo(() => {
+    if (yesterdayRevenue === null || yesterdayRevenue === 0) return null;
+    const diff = totalRevenue - yesterdayRevenue;
+    const pct = (diff / yesterdayRevenue) * 100;
+    return { diff, pct, isUp: diff >= 0 };
+  }, [totalRevenue, yesterdayRevenue]);
+
+  // Check if barber is idle (no sales, it's today, after 11h Manaus)
+  const manausHour = todayManausDate.getHours();
+  const isAfter11 = isViewingToday && manausHour >= 11;
+
   return (
     <div className="space-y-6">
       {/* Compact Header */}
