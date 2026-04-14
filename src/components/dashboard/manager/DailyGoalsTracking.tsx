@@ -29,19 +29,25 @@ interface ProductionRow {
   commission_earned: number;
   confirmed_presence: boolean;
   presence_type: string | null;
+  services_total: number;
+  products_total: number;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
 }
 
 interface BarberDailyGoal {
   barberId: string;
   barberName: string;
   unitName: string;
-  targetCommission: number;
+  targetRevenue: number;
   workDays: number;
-  dailyCommissionTarget: number;
   dailyRevenueTarget: number;
   servicesCommission: number;
-  totalEarnedMonth: number;
-  totalEarnedToday: number;
+  totalRevenueMonth: number;
+  totalRevenueToday: number;
   daysWorked: number;
   progressPercent: number;
   expectedProgress: number;
