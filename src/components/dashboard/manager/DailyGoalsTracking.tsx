@@ -29,13 +29,6 @@ interface ProductionRow {
   commission_earned: number;
   confirmed_presence: boolean;
   presence_type: string | null;
-  services_total: number;
-  products_total: number;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  tx_basic_total: number | null;
-  tx_extra_total: number | null;
-  tx_products_total: number | null;
 }
 
 interface BarberDailyGoal {
@@ -128,7 +121,7 @@ export default function DailyGoalsTracking() {
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
-        .select("barber_id, date, commission_earned, confirmed_presence, presence_type, services_total, products_total, services_basic_total, services_extra_total, tx_basic_total, tx_extra_total, tx_products_total")
+        .select("barber_id, date, commission_earned, confirmed_presence, presence_type")
         .gte("date", startOfMonth)
         .lte("date", todayStr);
 
@@ -140,29 +133,20 @@ export default function DailyGoalsTracking() {
           (p) => p.barber_id === goal.barber_id
         );
 
-        // Helper to get revenue from a production row
-        const getRevenue = (p: ProductionRow) => {
-          if ((Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0) > 0) {
-            return (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
-          }
-          if (p.services_basic_total != null || p.services_extra_total != null) {
-            return (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0);
-          }
-          return (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
-        };
-
-        const totalRevenueMonth = barberProductions.reduce(
-          (sum, p) => sum + getRevenue(p),
+        const totalEarnedMonth = barberProductions.reduce(
+          (sum, p) => sum + Number(p.commission_earned),
           0
         );
 
         const todayProduction = barberProductions.find(
           (p) => p.date === todayStr
         );
-        const totalRevenueToday = todayProduction ? getRevenue(todayProduction) : 0;
+        const totalEarnedToday = todayProduction
+          ? Number(todayProduction.commission_earned)
+          : 0;
         
         // Verifica se confirmou presença hoje sem vendas e qual tipo
-        const confirmedPresenceToday = todayProduction?.confirmed_presence === true && totalRevenueToday === 0;
+        const confirmedPresenceToday = todayProduction?.confirmed_presence === true && totalEarnedToday === 0;
         const todayPresenceType = todayProduction?.presence_type ?? null;
 
         // Contar dias trabalhados em calendário dinâmico
@@ -170,17 +154,11 @@ export default function DailyGoalsTracking() {
           const dateKey = p.date;
           if (holidayDates.includes(dateKey)) return false;
           if (["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")) return false;
-          return getRevenue(p) > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
+          return Number(p.commission_earned) > 0 || (p.confirmed_presence === true && (p.presence_type === 'present' || p.presence_type === null));
         }).length;
         
-        // Convert monthly commission target to revenue target
-        const servicesCommission = goal.barbers?.services_commission || 50;
-        const targetRevenue = servicesCommission > 0
-          ? goal.target_commission / (servicesCommission / 100)
-          : goal.target_commission;
-        
-        // Calculate remaining revenue to achieve
-        const remainingRevenue = Math.max(0, targetRevenue - totalRevenueMonth);
+        // Calculate remaining commission to achieve
+        const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
         
         // Divisor dinâmico: dias restantes no mês - dias futuros marcados como ausência
         const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
@@ -189,10 +167,16 @@ export default function DailyGoalsTracking() {
         ).length;
         const daysToUse = Math.max(1, remainingCalendarDays - futureOffDays);
         
-        // Daily revenue target based on remaining amount / remaining days
-        const dailyRevenueTarget = remainingRevenue / daysToUse;
+        // Daily commission target based on remaining amount / remaining days
+        const dailyCommissionTarget = remainingCommission / daysToUse;
         
-        const progressPercent = (totalRevenueMonth / targetRevenue) * 100;
+        // Calculate daily revenue target based on services commission rate
+        const servicesCommission = goal.barbers?.services_commission || 50;
+        const dailyRevenueTarget = servicesCommission > 0 
+          ? dailyCommissionTarget / (servicesCommission / 100)
+          : 0;
+        
+        const progressPercent = (totalEarnedMonth / goal.target_commission) * 100;
         
         // Expected progress based on working days passed
         const monthDays = new Date(currentYear, currentMonth, 0).getDate();
@@ -216,12 +200,13 @@ export default function DailyGoalsTracking() {
           barberId: goal.barber_id,
           barberName: goal.barbers?.name || "Barbeiro",
           unitName: goal.barbers?.units?.name || "Unidade",
-          targetRevenue,
+          targetCommission: goal.target_commission,
           workDays: goal.work_days,
+          dailyCommissionTarget,
           dailyRevenueTarget,
           servicesCommission,
-          totalRevenueMonth,
-          totalRevenueToday,
+          totalEarnedMonth,
+          totalEarnedToday,
           daysWorked,
           progressPercent: Math.min(progressPercent, 100),
           expectedProgress: Math.min(expectedProgress, 100),
