@@ -709,11 +709,25 @@ export default function LiveDashboard() {
   const teamMonthlyGoal = useMemo(() => {
     const relevantBarbers = selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit);
     const relevantGoals = goals.filter(g => relevantBarbers.some(b => b.id === g.barber_id));
-    const totalTarget = relevantGoals.reduce((sum, g) => sum + g.target_commission, 0);
+
+    // Convert commission targets to revenue targets using each barber's commission rate
+    const totalTarget = relevantGoals.reduce((sum, g) => {
+      const barber = relevantBarbers.find(b => b.id === g.barber_id);
+      const rate = barber?.services_commission || 50;
+      return sum + (rate > 0 ? g.target_commission / (rate / 100) : g.target_commission);
+    }, 0);
+
+    // Sum actual revenue (not commission) from month productions
     const totalEarned = relevantBarbers.reduce((sum, b) => {
       const barberProds = monthProductions.filter(p => p.barber_id === b.id);
-      return sum + barberProds.reduce((s, p) => s + Number(p.commission_earned), 0);
+      return sum + barberProds.reduce((s, p) => {
+        if ((Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) > 0) {
+          return s + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0);
+        }
+        return s + (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
+      }, 0);
     }, 0);
+
     const pct = totalTarget > 0 ? Math.min((totalEarned / totalTarget) * 100, 100) : 0;
     return { totalTarget, totalEarned, pct };
   }, [barbers, goals, monthProductions, selectedUnit]);
@@ -907,10 +921,10 @@ export default function LiveDashboard() {
             </div>
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                Comissões: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                Vendas: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
               <span>
-                Meta: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                Meta Vendas: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
             </div>
           </CardContent>
