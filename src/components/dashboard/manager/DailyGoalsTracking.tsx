@@ -42,12 +42,13 @@ interface BarberDailyGoal {
   barberId: string;
   barberName: string;
   unitName: string;
-  targetRevenue: number;
+  targetCommission: number;
   workDays: number;
+  dailyCommissionTarget: number;
   dailyRevenueTarget: number;
   servicesCommission: number;
-  totalRevenueMonth: number;
-  totalRevenueToday: number;
+  totalEarnedMonth: number;
+  totalEarnedToday: number;
   daysWorked: number;
   progressPercent: number;
   expectedProgress: number;
