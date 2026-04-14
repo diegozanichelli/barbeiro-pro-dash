@@ -427,27 +427,27 @@ export default function DailyGoalsTracking() {
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Comissão Hoje</p>
+                          <p className="text-xs text-muted-foreground">Vendas Hoje</p>
                           <p className={`font-semibold ${
-                            goal.totalEarnedToday >= goal.dailyCommissionTarget 
+                            goal.totalRevenueToday >= goal.dailyRevenueTarget 
                               ? "text-green-500" 
-                              : goal.totalEarnedToday > 0 
+                              : goal.totalRevenueToday > 0 
                               ? "text-yellow-500" 
                               : "text-muted-foreground"
                           }`}>
-                            R$ {goal.totalEarnedToday.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            R$ {goal.totalRevenueToday.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Acumulado Mês</p>
+                          <p className="text-xs text-muted-foreground">Vendas no Mês</p>
                           <p className="font-semibold text-foreground">
-                            R$ {goal.totalEarnedMonth.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            R$ {goal.totalRevenueMonth.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Meta Mensal</p>
+                          <p className="text-xs text-muted-foreground">Meta Mensal (Vendas)</p>
                           <p className="font-semibold text-foreground">
-                            R$ {goal.targetCommission.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            R$ {goal.targetRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                       </div>
