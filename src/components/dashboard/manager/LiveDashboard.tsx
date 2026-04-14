@@ -924,7 +924,7 @@ export default function LiveDashboard() {
                 Vendas: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
               <span>
-                Meta: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                Meta Vendas: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
             </div>
           </CardContent>
