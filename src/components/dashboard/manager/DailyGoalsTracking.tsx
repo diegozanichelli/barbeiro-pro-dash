@@ -127,7 +127,7 @@ export default function DailyGoalsTracking() {
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
       const { data: productions, error: prodError } = await supabase
         .from("daily_productions")
-        .select("barber_id, date, commission_earned, confirmed_presence, presence_type")
+        .select("barber_id, date, commission_earned, confirmed_presence, presence_type, services_total, products_total, services_basic_total, services_extra_total, tx_basic_total, tx_extra_total, tx_products_total")
         .gte("date", startOfMonth)
         .lte("date", todayStr);
 
