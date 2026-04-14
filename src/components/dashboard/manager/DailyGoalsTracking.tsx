@@ -421,7 +421,7 @@ export default function DailyGoalsTracking() {
                       {/* Stats */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-6">
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Meta Diária (Faturamento)</p>
+                          <p className="text-xs text-muted-foreground">Meta Diária (Vendas)</p>
                           <p className="font-semibold text-foreground">
                             R$ {goal.dailyRevenueTarget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </p>
