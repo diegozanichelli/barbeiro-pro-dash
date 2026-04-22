@@ -95,6 +95,9 @@ interface MonthProduction {
   services_extra_total: number | null;
   products_total: number;
   clients_count: number;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
 }
 
 interface MonthlyGoal {
@@ -238,7 +241,10 @@ export default function LiveDashboard() {
           services_basic_total,
           services_extra_total,
           products_total,
-          clients_count
+          clients_count,
+          tx_basic_total,
+          tx_extra_total,
+          tx_products_total
         `)
         .eq("organization_id", organizationId)
         .gte("date", startOfMonth)
@@ -720,12 +726,20 @@ export default function LiveDashboard() {
     }, 0);
 
     // Sum actual revenue (not commission) from month productions
+    // Priority: tx_* (manager truth) > services_* split (manual/itemized) > services_total (legacy)
     const totalEarned = relevantBarbers.reduce((sum, b) => {
       const barberProds = monthProductions.filter(p => p.barber_id === b.id);
       return sum + barberProds.reduce((s, p) => {
-        if ((Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) > 0) {
-          return s + (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0);
-        }
+        const txTotal = (Number(p.tx_basic_total) || 0)
+          + (Number(p.tx_extra_total) || 0)
+          + (Number(p.tx_products_total) || 0);
+        if (txTotal > 0) return s + txTotal;
+
+        const splitTotal = (Number(p.services_basic_total) || 0)
+          + (Number(p.services_extra_total) || 0)
+          + (Number(p.products_total) || 0);
+        if (splitTotal > 0) return s + splitTotal;
+
         return s + (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
       }, 0);
     }, 0);
