@@ -650,9 +650,13 @@ export default function QuickSaleModal({
     [subscriptionPlans, selectedSubscriptionPlanId]
   );
 
+  // The plan that drives the discount logic.
+  // Priority: plan added to cart (live conversion) > plan already linked to the client.
+  const effectivePlanIdForDiscount = subscriptionInCart?.planId || selectedSubscriptionPlanId;
+
   useEffect(() => {
     const fetchIncludedServices = async () => {
-      if (!selectedSubscriptionPlanId) {
+      if (!effectivePlanIdForDiscount) {
         setSelectedPlanIncludedServiceIds([]);
         return;
       }
@@ -660,7 +664,7 @@ export default function QuickSaleModal({
       const { data, error } = await supabase
         .from("subscription_plan_services")
         .select("catalog_service_id")
-        .eq("subscription_plan_id", selectedSubscriptionPlanId)
+        .eq("subscription_plan_id", effectivePlanIdForDiscount)
         .eq("organization_id", organizationId);
 
       if (error) {
@@ -673,7 +677,8 @@ export default function QuickSaleModal({
     };
 
     void fetchIncludedServices();
-  }, [organizationId, selectedSubscriptionPlanId]);
+  }, [organizationId, effectivePlanIdForDiscount]);
+
 
   const resolveSubscriptionForClient = useCallback(async () => {
     if (clientType !== "with_subscription") {
