@@ -1604,8 +1604,9 @@ export default function QuickSaleModal({
         {/* Client Status Badge */}
         {renderClientBadge() && (
           <div>{renderClientBadge()}</div>
-
+        )}
       </div>
+
 
       {/* Step 1 Footer */}
       <div className="border-t px-6 py-3 flex gap-3">
