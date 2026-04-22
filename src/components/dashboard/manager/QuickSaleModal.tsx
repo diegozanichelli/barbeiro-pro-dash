@@ -84,9 +84,44 @@ interface SubscriptionPlan {
   price: number;
 }
 
-type CategoryTab = "services" | "products" | "manual";
+type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
+
+interface SubscriptionCartItem {
+  tempId: string;
+  type: "subscription";
+  planId: string;
+  name: string;
+  customPrice: number;
+  action: SubscriptionAction;
+  downgradeReason?: string;
+}
+
+type AnyCartItem = CartItem | SubscriptionCartItem;
+
+const isSubscriptionCartItem = (i: AnyCartItem): i is SubscriptionCartItem =>
+  (i as SubscriptionCartItem).type === "subscription";
+
+const SUBSCRIPTION_ACTION_LABELS: Record<SubscriptionAction, string> = {
+  new: "Nova adesão",
+  renew: "Renovação",
+  upgrade: "Upgrade",
+  downgrade: "Downgrade",
+};
+
+type CategoryTab = "services" | "products" | "subscription" | "manual";
 
 type ClientType = "new" | "without_subscription" | "with_subscription";
+
+function inferSubscriptionAction(
+  clientType: ClientType,
+  currentPlan: SubscriptionPlan | null,
+  newPlan: SubscriptionPlan
+): SubscriptionAction {
+  if (clientType === "new" || clientType === "without_subscription") return "new";
+  if (!currentPlan) return "new";
+  if (currentPlan.id === newPlan.id) return "renew";
+  return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
+}
 
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
@@ -141,8 +176,8 @@ export default function QuickSaleModal({
   // Wizard step
   const [step, setStep] = useState<1 | 2>(1);
   
-  // Cart state (individualized with tempId)
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Cart state (individualized with tempId) — supports services, products and subscription plans
+  const [cart, setCart] = useState<AnyCartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
   
   // Manual sale state
@@ -496,7 +531,8 @@ export default function QuickSaleModal({
     }
   };
 
-  const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
+  const countInCart = (itemId: string) =>
+    cart.filter((i) => !isSubscriptionCartItem(i) && i.id === itemId).length;
 
   const removeFromCart = (tempId: string) => {
     setCart(prev => prev.filter(i => i.tempId !== tempId));
@@ -505,7 +541,8 @@ export default function QuickSaleModal({
   const updateCartItemPriceInput = (tempId: string, newValue: string) => {
     setCart(prev => prev.map(item => {
       if (item.tempId !== tempId) return item;
-      
+      if (isSubscriptionCartItem(item)) return item; // subscription price is fixed by plan
+
       if (newValue === "") {
         return { ...item, customPriceInput: "", customPrice: 0 };
       }
@@ -528,7 +565,8 @@ export default function QuickSaleModal({
   const finalizeCartItemPrice = (tempId: string) => {
     setCart(prev => prev.map(item => {
       if (item.tempId !== tempId) return item;
-      
+      if (isSubscriptionCartItem(item)) return item;
+
       const formattedInput = item.customPrice > 0 
         ? item.customPrice.toFixed(2).replace(".", ",")
         : "0,00";
@@ -536,6 +574,57 @@ export default function QuickSaleModal({
       return { ...item, customPriceInput: formattedInput };
     }));
   };
+
+  // ─── Subscription cart helpers ───
+  const updateSubscriptionAction = (tempId: string, action: SubscriptionAction) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== tempId || !isSubscriptionCartItem(item)) return item;
+        return {
+          ...item,
+          action,
+          downgradeReason: action === "downgrade" ? item.downgradeReason ?? "" : undefined,
+        };
+      })
+    );
+  };
+
+  const updateSubscriptionReason = (tempId: string, reason: string) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== tempId || !isSubscriptionCartItem(item)) return item;
+        return { ...item, downgradeReason: reason };
+      })
+    );
+  };
+
+  const subscriptionInCart = useMemo(
+    () => cart.find(isSubscriptionCartItem) ?? null,
+    [cart]
+  );
+
+  const handleAddSubscriptionToCart = (plan: SubscriptionPlan) => {
+    if (subscriptionInCart) {
+      toast.warning("Apenas 1 plano de assinatura por venda. Remova o plano atual para trocar.");
+      return;
+    }
+    const currentPlan = selectedSubscriptionPlan;
+    const action = inferSubscriptionAction(clientType, currentPlan, plan);
+    setCart((prev) => [
+      ...prev,
+      {
+        tempId: crypto.randomUUID(),
+        type: "subscription",
+        planId: plan.id,
+        name: plan.name,
+        customPrice: plan.price,
+        action,
+        downgradeReason: action === "downgrade" ? "" : undefined,
+      },
+    ]);
+    toast.success(`Plano ${plan.name} adicionado — ${SUBSCRIPTION_ACTION_LABELS[action]}`);
+  };
+
 
   // Cart totals
   const cartTotal = useMemo(() => {
@@ -561,9 +650,13 @@ export default function QuickSaleModal({
     [subscriptionPlans, selectedSubscriptionPlanId]
   );
 
+  // The plan that drives the discount logic.
+  // Priority: plan added to cart (live conversion) > plan already linked to the client.
+  const effectivePlanIdForDiscount = subscriptionInCart?.planId || selectedSubscriptionPlanId;
+
   useEffect(() => {
     const fetchIncludedServices = async () => {
-      if (!selectedSubscriptionPlanId) {
+      if (!effectivePlanIdForDiscount) {
         setSelectedPlanIncludedServiceIds([]);
         return;
       }
@@ -571,7 +664,7 @@ export default function QuickSaleModal({
       const { data, error } = await supabase
         .from("subscription_plan_services")
         .select("catalog_service_id")
-        .eq("subscription_plan_id", selectedSubscriptionPlanId)
+        .eq("subscription_plan_id", effectivePlanIdForDiscount)
         .eq("organization_id", organizationId);
 
       if (error) {
@@ -584,7 +677,8 @@ export default function QuickSaleModal({
     };
 
     void fetchIncludedServices();
-  }, [organizationId, selectedSubscriptionPlanId]);
+  }, [organizationId, effectivePlanIdForDiscount]);
+
 
   const resolveSubscriptionForClient = useCallback(async () => {
     if (clientType !== "with_subscription") {
@@ -641,9 +735,15 @@ export default function QuickSaleModal({
     return () => { cancelled = true; };
   }, [resolveSubscriptionForClient]);
 
+  // Discount applies if either:
+  //  • client is already subscriber (clientType=with_subscription) OR
+  //  • a subscription plan is being added in this same sale (live conversion)
+  const subscriptionDiscountActive =
+    clientType === "with_subscription" || !!subscriptionInCart;
+
   const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
     if (
-      clientType === "with_subscription" &&
+      subscriptionDiscountActive &&
       item.type === "service" &&
       selectedPlanIncludedServiceIds.includes(item.id)
     ) {
@@ -655,10 +755,11 @@ export default function QuickSaleModal({
 
   useEffect(() => {
     setCart((prev) => {
-      if (clientType !== "with_subscription" || selectedPlanIncludedServiceIds.length === 0) return prev;
+      if (!subscriptionDiscountActive || selectedPlanIncludedServiceIds.length === 0) return prev;
 
       let changed = false;
       const next = prev.map((item) => {
+        if (isSubscriptionCartItem(item)) return item;
         if (
           item.type === "service" &&
           item.customPrice !== 0 &&
@@ -672,11 +773,11 @@ export default function QuickSaleModal({
 
       return changed ? next : prev;
     });
-  }, [clientType, selectedPlanIncludedServiceIds]);
+  }, [subscriptionDiscountActive, selectedPlanIncludedServiceIds]);
 
   const cartItemIncludedBySubscription = (item: CartItem) => {
     return (
-      clientType === "with_subscription" &&
+      subscriptionDiscountActive &&
       item.type === "service" &&
       selectedPlanIncludedServiceIds.includes(item.id)
     );
@@ -770,6 +871,14 @@ export default function QuickSaleModal({
 
       const safeClientName = registeredClient.clientName || clientName.trim() || "Cliente";
 
+      // Validate subscription cart item before any side-effect (downgrade reason)
+      if (subscriptionInCart && subscriptionInCart.action === "downgrade") {
+        if (!subscriptionInCart.downgradeReason || subscriptionInCart.downgradeReason.trim().length < 3) {
+          toast.error("Informe o motivo do downgrade da assinatura.");
+          return;
+        }
+      }
+
       await ensureSubscriptionAssigned(registeredClient.mobilePhone);
 
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
@@ -777,17 +886,37 @@ export default function QuickSaleModal({
       }
 
       // Build transaction payload for RPC
-      const transactions = cart.map(item => ({
-        item_type: item.type,
-        catalog_service_id: item.type === "service" ? item.id : null,
-        catalog_product_id: item.type === "product" ? item.id : null,
-        item_name: item.name,
-        service_category: item.type === "service" ? (item.category || null) : null,
-        price_sold: item.customPrice,
-        is_new_client: clientType === "new",
-        client_name: safeClientName,
-        mobile_phone: registeredClient.mobilePhone,
-      }));
+      const transactions = cart.map((item) => {
+        if (isSubscriptionCartItem(item)) {
+          return {
+            item_type: "subscription" as const,
+            catalog_service_id: null,
+            catalog_product_id: null,
+            item_name: `Assinatura ${item.name}`,
+            service_category: null,
+            price_sold: item.customPrice,
+            is_new_client: clientType === "new",
+            client_name: safeClientName,
+            mobile_phone: registeredClient.mobilePhone,
+            subscription_plan_id: item.planId,
+            subscription_action: item.action,
+            downgrade_reason: item.action === "downgrade" ? (item.downgradeReason ?? null) : null,
+            commission_rate_used: 0,
+            commission_amount: 0,
+          };
+        }
+        return {
+          item_type: item.type,
+          catalog_service_id: item.type === "service" ? item.id : null,
+          catalog_product_id: item.type === "product" ? item.id : null,
+          item_name: item.name,
+          service_category: item.type === "service" ? (item.category || null) : null,
+          price_sold: item.customPrice,
+          is_new_client: clientType === "new",
+          client_name: safeClientName,
+          mobile_phone: registeredClient.mobilePhone,
+        };
+      });
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
@@ -798,13 +927,29 @@ export default function QuickSaleModal({
       });
       if (error) throw error;
 
+      // If a subscription plan was sold in this transaction, link it to the client
+      if (subscriptionInCart) {
+        try {
+          const { error: linkError } = await (supabase
+            .from("clients") as any)
+            .update({ subscription_plan_id: subscriptionInCart.planId })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", registeredClient.mobilePhone);
+          if (linkError && !isSubscriptionPlanFieldMissing(linkError)) {
+            console.error("Erro ao vincular assinatura ao cliente:", linkError);
+          }
+        } catch (linkErr) {
+          console.error("Erro inesperado ao vincular assinatura:", linkErr);
+        }
+      }
+
       await recordClientPurchasesBestEffort({
         organizationId,
         clientName: registeredClient.clientName,
         mobilePhone: registeredClient.mobilePhone,
         purchases: cart.map((item) => ({
-          itemName: item.name,
-          itemType: item.type,
+          itemName: isSubscriptionCartItem(item) ? `Assinatura ${item.name}` : item.name,
+          itemType: isSubscriptionCartItem(item) ? "subscription" : item.type,
           amount: item.customPrice,
           quantity: 1,
           purchasedAt: `${dateStr}T12:00:00`,
@@ -812,8 +957,11 @@ export default function QuickSaleModal({
       });
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : effectiveBarberName;
+      const subDescription = subscriptionInCart
+        ? ` • ${SUBSCRIPTION_ACTION_LABELS[subscriptionInCart.action]}: ${subscriptionInCart.name}`
+        : "";
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
-        description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
+        description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}${subDescription}`,
       });
 
       resetForm();
@@ -1323,6 +1471,12 @@ export default function QuickSaleModal({
               </ToggleGroupItem>
             </ToggleGroup>
 
+            {(clientType === "new" || clientType === "without_subscription") && (
+              <p className="text-[11px] text-muted-foreground">
+                💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
+              </p>
+            )}
+
             {clientType === "with_subscription" && (
               <div className="space-y-2 pt-1">
                 <Select
@@ -1454,7 +1608,7 @@ export default function QuickSaleModal({
         className="flex-1 flex flex-col overflow-hidden"
       >
         <div className="px-3 pt-2">
-          <TabsList className="grid w-full grid-cols-3 h-10">
+          <TabsList className="grid w-full grid-cols-4 h-10">
             <TabsTrigger value="services" className="gap-1.5 text-xs">
               <Scissors className="h-3.5 w-3.5" />
               Serviços
@@ -1470,6 +1624,18 @@ export default function QuickSaleModal({
               {products.length > 0 && (
                 <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
                   {products.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="subscription"
+              className="gap-1.5 text-xs data-[state=active]:bg-amber-500 data-[state=active]:text-black"
+            >
+              <Crown className="h-3.5 w-3.5" />
+              Assinatura
+              {subscriptionPlans.length > 0 && (
+                <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
+                  {subscriptionPlans.length}
                 </span>
               )}
             </TabsTrigger>
@@ -1541,7 +1707,61 @@ export default function QuickSaleModal({
             )}
           </TabsContent>
 
-          {/* Manual Entry */}
+          {/* Subscription Plans Grid */}
+          <TabsContent value="subscription" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
+            {subscriptionPlans.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground px-6 text-center">
+                <Crown className="h-12 w-12 mb-4 opacity-50" />
+                <p className="font-medium">Nenhum plano de assinatura cadastrado</p>
+                <p className="text-xs mt-1">Cadastre planos em "Gestão → Assinaturas" para vendê-los aqui.</p>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 px-3 py-3 overflow-y-auto overscroll-contain touch-pan-y space-y-3">
+                <div className="rounded-lg border border-amber-300/50 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
+                  <strong>Adesão / Renovação / Upgrade:</strong> escolha o plano. A ação é detectada automaticamente conforme o status atual do cliente — você pode ajustar no carrinho.
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {subscriptionPlans.map((plan) => {
+                    const alreadyInCart = subscriptionInCart?.planId === plan.id;
+                    const disabled = !!subscriptionInCart && !alreadyInCart;
+                    return (
+                      <Card
+                        key={plan.id}
+                        onClick={() => !disabled && handleAddSubscriptionToCart(plan)}
+                        className={cn(
+                          "relative cursor-pointer p-3 transition-all duration-200",
+                          alreadyInCart
+                            ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500"
+                            : disabled
+                              ? "opacity-50 cursor-not-allowed"
+                              : "hover:shadow-lg active:scale-[0.98] hover:bg-accent/50 hover:border-amber-400/50"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Crown className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="font-bold text-xs leading-tight line-clamp-2 text-foreground">
+                              {plan.name}
+                            </p>
+                            <p className="text-base font-black text-amber-600 dark:text-amber-400">
+                              {formatCurrency(plan.price)}
+                            </p>
+                            {alreadyInCart && (
+                              <Badge className="text-[10px] px-1.5 py-0 bg-amber-500 text-black border-0">
+                                No carrinho
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+
           <TabsContent value="manual" className="flex-1 m-0 px-3 py-4">
             <div className="space-y-6">
               <div className="space-y-2">
@@ -1593,40 +1813,98 @@ export default function QuickSaleModal({
             {/* Cart Items */}
             {cart.length > 0 && activeTab !== "manual" && (
               <div className="space-y-2 max-h-[25vh] overflow-y-auto overscroll-contain">
-                {cart.map((item) => (
-                  <div key={item.tempId} className="flex items-center gap-2 p-1.5 rounded-lg bg-background border min-h-[44px]">
-                    <span className="truncate text-xs font-medium flex-1 min-w-0 pl-1">{item.name}</span>
-                    {cartItemIncludedBySubscription(item) && (
-                      <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
-                        Assinatura
-                      </Badge>
-                    )}
-                    {item.fixed_commission !== null && (
-                      <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
-                        <Zap className="h-2 w-2 mr-0.5" />
-                        {item.fixed_commission}%
-                      </Badge>
-                    )}
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.customPriceInput}
-                      onChange={(e) => updateCartItemPriceInput(item.tempId, e.target.value)}
-                      onFocus={handleCartItemPriceFocus}
-                      onBlur={() => finalizeCartItemPrice(item.tempId)}
-                      className="w-20 text-right font-bold text-xs h-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => removeFromCart(item.tempId)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
+                {cart.map((item) => {
+                  if (isSubscriptionCartItem(item)) {
+                    return (
+                      <div
+                        key={item.tempId}
+                        className="flex flex-col gap-1.5 p-2 rounded-lg border bg-amber-50/60 dark:bg-amber-950/20 border-amber-300/60 min-h-[44px]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                          <span className="truncate text-xs font-semibold flex-1 min-w-0">
+                            Assinatura — {item.name}
+                          </span>
+                          <Badge className="shrink-0 text-[10px] px-1.5 py-0 bg-amber-500 text-black border-0">
+                            {SUBSCRIPTION_ACTION_LABELS[item.action]}
+                          </Badge>
+                          <span className="text-xs font-bold tabular-nums w-20 text-right">
+                            {formatCurrency(item.customPrice)}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                            onClick={() => removeFromCart(item.tempId)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-[10px] text-muted-foreground shrink-0">Ação:</Label>
+                          <Select
+                            value={item.action}
+                            onValueChange={(v) => updateSubscriptionAction(item.tempId, v as SubscriptionAction)}
+                          >
+                            <SelectTrigger className="h-7 text-xs flex-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new" className="text-xs">Nova adesão</SelectItem>
+                              <SelectItem value="renew" className="text-xs">Renovação</SelectItem>
+                              <SelectItem value="upgrade" className="text-xs">Upgrade</SelectItem>
+                              <SelectItem value="downgrade" className="text-xs">Downgrade</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {item.action === "downgrade" && (
+                          <Input
+                            type="text"
+                            placeholder="Motivo do downgrade..."
+                            value={item.downgradeReason ?? ""}
+                            onChange={(e) => updateSubscriptionReason(item.tempId, e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={item.tempId} className="flex items-center gap-2 p-1.5 rounded-lg bg-background border min-h-[44px]">
+                      <span className="truncate text-xs font-medium flex-1 min-w-0 pl-1">{item.name}</span>
+                      {cartItemIncludedBySubscription(item) && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
+                          Assinatura
+                        </Badge>
+                      )}
+                      {item.fixed_commission !== null && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
+                          <Zap className="h-2 w-2 mr-0.5" />
+                          {item.fixed_commission}%
+                        </Badge>
+                      )}
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        value={item.customPriceInput}
+                        onChange={(e) => updateCartItemPriceInput(item.tempId, e.target.value)}
+                        onFocus={handleCartItemPriceFocus}
+                        onBlur={() => finalizeCartItemPrice(item.tempId)}
+                        className="w-20 text-right font-bold text-xs h-8"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => removeFromCart(item.tempId)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
 
                 {/* Clients Counter */}
                 <div className="flex items-center justify-between p-2 rounded-lg bg-background border">
