@@ -822,6 +822,28 @@ export default function LiveDashboard() {
             </Button>
             <Button
               size="sm"
+              variant="secondary"
+              className="gap-1.5 text-xs h-8 border border-amber-500/40 hover:bg-amber-500/10"
+              onClick={() => {
+                if (!organizationId) {
+                  toast.error("Organização não identificada.");
+                  return;
+                }
+                setQuickSaleModal({
+                  open: true,
+                  barberId: "",
+                  barberName: "Recepção / Loja",
+                  mode: "reception",
+                });
+              }}
+              title="Registrar venda direta da Recepção (sem atribuir a barbeiro)"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Venda Recepção</span>
+              <span className="sm:hidden">Recepção</span>
+            </Button>
+            <Button
+              size="sm"
               variant="outline"
               className="h-8 w-8 p-0 bg-card/50 backdrop-blur-sm"
               onClick={() => setSubscriptionAuditOpen(true)}
@@ -1115,6 +1137,7 @@ export default function LiveDashboard() {
                               open: true,
                               barberId: barber.id,
                               barberName: barber.name,
+                              mode: "barber",
                             });
                           }}
                           title="Adicionar venda"
@@ -1344,6 +1367,7 @@ export default function LiveDashboard() {
         onSuccess={fetchData}
         initialIsNewClient={quickSaleModal.fromBridge ? false : undefined}
         initialDate={selectedDate}
+        initialMode={quickSaleModal.mode}
       />
 
       {/* Edit Production Modal - Transaction Manager */}
