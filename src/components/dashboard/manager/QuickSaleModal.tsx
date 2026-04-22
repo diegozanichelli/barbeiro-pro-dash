@@ -882,8 +882,7 @@ export default function QuickSaleModal({
       return;
     }
     if (needsUnitSelection && !selectedUnitId) {
-      setUnitError(true);
-      toast.error("Selecione em qual recepção a venda aconteceu.");
+      flagUnitError();
       return;
     }
     if (cart.length === 0) {
@@ -1046,8 +1045,7 @@ export default function QuickSaleModal({
       return;
     }
     if (needsUnitSelection && !selectedUnitId) {
-      setUnitError(true);
-      toast.error("Selecione em qual recepção a venda aconteceu.");
+      flagUnitError();
       return;
     }
 
@@ -1668,8 +1666,7 @@ export default function QuickSaleModal({
             // Allow click-through when only the reception unit is missing,
             // so we can flag the picker visually instead of silently disabling Continuar.
             if (needsUnitSelection && !selectedUnitId) {
-              setUnitError(true);
-              toast.error("Selecione em qual recepção a venda aconteceu.");
+              flagUnitError();
               return;
             }
             setStep(2);
