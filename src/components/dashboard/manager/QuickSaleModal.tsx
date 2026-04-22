@@ -32,6 +32,7 @@ import {
   Phone,
   Smartphone,
   Crown,
+  AlertCircle,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -206,6 +207,8 @@ export default function QuickSaleModal({
 
   // Reception unit selector — required when attribution=reception and there are 2+ units
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  // Visual error flag for the unit picker (triggered when user tries to advance/submit without choosing)
+  const [unitError, setUnitError] = useState(false);
 
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
@@ -263,6 +266,7 @@ export default function QuickSaleModal({
       } else {
         setSelectedUnitId(null);
       }
+      setUnitError(false);
     }
   }, [open, initialDate, initialMode, barberId, prefillUnitId, units]);
 
@@ -404,6 +408,7 @@ export default function QuickSaleModal({
     } else {
       setSelectedUnitId(null);
     }
+    setUnitError(false);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -863,6 +868,7 @@ export default function QuickSaleModal({
       return;
     }
     if (needsUnitSelection && !selectedUnitId) {
+      setUnitError(true);
       toast.error("Selecione em qual recepção a venda aconteceu.");
       return;
     }
@@ -1026,6 +1032,7 @@ export default function QuickSaleModal({
       return;
     }
     if (needsUnitSelection && !selectedUnitId) {
+      setUnitError(true);
       toast.error("Selecione em qual recepção a venda aconteceu.");
       return;
     }
@@ -1307,7 +1314,10 @@ export default function QuickSaleModal({
               type="single"
               value={attribution ?? ""}
               onValueChange={(v) => {
-                if (v === "barber" || v === "reception") setAttribution(v);
+                if (v === "barber" || v === "reception") {
+                  setAttribution(v);
+                  setUnitError(false);
+                }
               }}
               className="justify-start w-full"
             >
@@ -1379,9 +1389,20 @@ export default function QuickSaleModal({
                 </Label>
                 <Select
                   value={selectedUnitId ?? ""}
-                  onValueChange={(v) => setSelectedUnitId(v || null)}
+                  onValueChange={(v) => {
+                    setSelectedUnitId(v || null);
+                    if (v) setUnitError(false);
+                  }}
                 >
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger
+                    aria-invalid={unitError}
+                    aria-describedby={unitError ? "unit-error" : undefined}
+                    className={cn(
+                      "h-9 text-xs",
+                      unitError &&
+                        "border-destructive ring-2 ring-destructive/30 focus:ring-destructive",
+                    )}
+                  >
                     <SelectValue placeholder="Selecione a unidade da recepção..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -1392,11 +1413,19 @@ export default function QuickSaleModal({
                     ))}
                   </SelectContent>
                 </Select>
-                {!selectedUnitId && (
+                {unitError ? (
+                  <p
+                    id="unit-error"
+                    className="text-[11px] text-destructive mt-1 flex items-center gap-1"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    Selecione em qual recepção a venda aconteceu.
+                  </p>
+                ) : !selectedUnitId ? (
                   <p className="text-[11px] text-destructive">
                     Obrigatório: identifique em qual unidade a venda da recepção aconteceu.
                   </p>
-                )}
+                ) : null}
               </div>
             )}
           </div>
@@ -1621,8 +1650,17 @@ export default function QuickSaleModal({
         <Button
           type="button"
           className="flex-1"
-          onClick={() => setStep(2)}
-          disabled={!canProceedStep1}
+          onClick={() => {
+            // Allow click-through when only the reception unit is missing,
+            // so we can flag the picker visually instead of silently disabling Continuar.
+            if (needsUnitSelection && !selectedUnitId) {
+              setUnitError(true);
+              toast.error("Selecione em qual recepção a venda aconteceu.");
+              return;
+            }
+            setStep(2);
+          }}
+          disabled={!canProceedStep1 && !(needsUnitSelection && !selectedUnitId)}
         >
           {clientHistory.checking ? (
             <Loader2 className="h-4 w-4 animate-spin" />
