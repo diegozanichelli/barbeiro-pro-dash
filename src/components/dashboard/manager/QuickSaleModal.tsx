@@ -195,13 +195,16 @@ export default function QuickSaleModal({
   });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Sync selectedDate with initialDate when modal opens or initialDate changes
+  // Sync selectedDate + attribution with initial props when modal opens
   useEffect(() => {
     if (open && initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
       setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
     }
-  }, [open, initialDate]);
+    if (open) {
+      setAttribution(initialMode ?? (barberId ? "barber" : null));
+    }
+  }, [open, initialDate, initialMode, barberId]);
 
   const fetchCatalog = useCallback(async () => {
     setLoadingCatalog(true);
@@ -1149,21 +1152,46 @@ export default function QuickSaleModal({
           <div>{renderClientBadge()}</div>
         )}
 
-        {/* Reception toggle + Client type — grouped visually */}
+        {/* Attribution + Client type — grouped visually */}
         <div className="rounded-lg border bg-muted/20 divide-y divide-border">
-          {/* Toggle Reception Sale */}
-          <div className="flex items-center justify-between px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-muted-foreground" />
-              <Label htmlFor="reception-mode" className="text-sm cursor-pointer">
-                Venda Recepção / Loja
-              </Label>
-            </div>
-            <Switch
-              id="reception-mode"
-              checked={isReceptionSale}
-              onCheckedChange={setIsReceptionSale}
-            />
+          {/* Mandatory Attribution Selector */}
+          <div className="px-3 py-2.5 space-y-2">
+            <Label className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+              Atribuição da Venda <span className="text-destructive">*</span>
+            </Label>
+            <ToggleGroup
+              type="single"
+              value={attribution ?? ""}
+              onValueChange={(v) => {
+                if (v === "barber" || v === "reception") setAttribution(v);
+              }}
+              className="justify-start w-full"
+            >
+              <ToggleGroupItem
+                value="barber"
+                aria-label="Atribuir ao barbeiro"
+                disabled={!barberId}
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span className="truncate">{barberName || "Barbeiro"}</span>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="reception"
+                aria-label="Venda da Recepção"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black ring-1 ring-amber-500/40"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                Venda Recepção
+              </ToggleGroupItem>
+            </ToggleGroup>
+            {!attribution && (
+              <p className="text-[11px] text-destructive">
+                Selecione um Barbeiro ou "Venda Recepção" para prosseguir.
+              </p>
+            )}
           </div>
 
           {/* Client Type Selector */}
