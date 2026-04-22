@@ -396,6 +396,14 @@ export default function QuickSaleModal({
       setSelectedDate(new Date());
     }
     setDatePickerOpen(false);
+    // Reset unit selection following the same precedence used on open
+    if (prefillUnitId) {
+      setSelectedUnitId(prefillUnitId);
+    } else if (units.length === 1) {
+      setSelectedUnitId(units[0].id);
+    } else {
+      setSelectedUnitId(null);
+    }
   };
 
   const handleClose = (isOpen: boolean) => {
