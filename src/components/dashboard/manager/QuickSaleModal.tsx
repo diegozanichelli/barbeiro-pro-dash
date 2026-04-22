@@ -1312,7 +1312,10 @@ export default function QuickSaleModal({
               type="single"
               value={attribution ?? ""}
               onValueChange={(v) => {
-                if (v === "barber" || v === "reception") setAttribution(v);
+                if (v === "barber" || v === "reception") {
+                  setAttribution(v);
+                  setUnitError(false);
+                }
               }}
               className="justify-start w-full"
             >
@@ -1384,9 +1387,20 @@ export default function QuickSaleModal({
                 </Label>
                 <Select
                   value={selectedUnitId ?? ""}
-                  onValueChange={(v) => setSelectedUnitId(v || null)}
+                  onValueChange={(v) => {
+                    setSelectedUnitId(v || null);
+                    if (v) setUnitError(false);
+                  }}
                 >
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger
+                    aria-invalid={unitError}
+                    aria-describedby={unitError ? "unit-error" : undefined}
+                    className={cn(
+                      "h-9 text-xs",
+                      unitError &&
+                        "border-destructive ring-2 ring-destructive/30 focus:ring-destructive",
+                    )}
+                  >
                     <SelectValue placeholder="Selecione a unidade da recepção..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -1397,11 +1411,19 @@ export default function QuickSaleModal({
                     ))}
                   </SelectContent>
                 </Select>
-                {!selectedUnitId && (
+                {unitError ? (
+                  <p
+                    id="unit-error"
+                    className="text-[11px] text-destructive mt-1 flex items-center gap-1"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    Selecione em qual recepção a venda aconteceu.
+                  </p>
+                ) : !selectedUnitId ? (
                   <p className="text-[11px] text-destructive">
                     Obrigatório: identifique em qual unidade a venda da recepção aconteceu.
                   </p>
-                )}
+                ) : null}
               </div>
             )}
           </div>
