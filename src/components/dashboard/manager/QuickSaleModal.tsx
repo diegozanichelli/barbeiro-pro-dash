@@ -247,7 +247,7 @@ export default function QuickSaleModal({
   });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Sync selectedDate + attribution with initial props when modal opens
+  // Sync selectedDate + attribution + selectedUnitId with initial props when modal opens
   useEffect(() => {
     if (open && initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
@@ -255,8 +255,16 @@ export default function QuickSaleModal({
     }
     if (open) {
       setAttribution(initialMode ?? (barberId ? "barber" : null));
+      // Initialize unit: prefill > sole-unit auto-select > null
+      if (prefillUnitId) {
+        setSelectedUnitId(prefillUnitId);
+      } else if (units.length === 1) {
+        setSelectedUnitId(units[0].id);
+      } else {
+        setSelectedUnitId(null);
+      }
     }
-  }, [open, initialDate, initialMode, barberId]);
+  }, [open, initialDate, initialMode, barberId, prefillUnitId, units]);
 
   const fetchCatalog = useCallback(async () => {
     setLoadingCatalog(true);
