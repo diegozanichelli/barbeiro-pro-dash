@@ -32,6 +32,7 @@ import {
   Phone,
   Smartphone,
   Crown,
+  AlertCircle,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -206,6 +207,8 @@ export default function QuickSaleModal({
 
   // Reception unit selector — required when attribution=reception and there are 2+ units
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  // Visual error flag for the unit picker (triggered when user tries to advance/submit without choosing)
+  const [unitError, setUnitError] = useState(false);
 
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
