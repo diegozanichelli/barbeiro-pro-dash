@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Crown, TrendingUp, Users, Target, Loader2, Star, AlertTriangle, Trophy } from "lucide-react";
 
 interface BarberPerformance {
@@ -19,6 +20,7 @@ interface BarberPerformance {
 
 export default function SubscriptionPerformanceReport() {
   const manausNow = useMemo(() => getManausDate(), []);
+  const { organizationId } = useOrganization();
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [loading, setLoading] = useState(true);
@@ -42,10 +44,11 @@ export default function SubscriptionPerformanceReport() {
   const years = Array.from({ length: 3 }, (_, i) => getManausDate().getFullYear() - 1 + i);
 
   useEffect(() => {
-    fetchPerformanceData();
-  }, [selectedMonth, selectedYear]);
+    if (organizationId) fetchPerformanceData();
+  }, [selectedMonth, selectedYear, organizationId]);
 
   const fetchPerformanceData = async () => {
+    if (!organizationId) return;
     setLoading(true);
 
     // Calculate date range for the selected month
@@ -54,15 +57,17 @@ export default function SubscriptionPerformanceReport() {
 
     try {
       // Fetch ONLY manager transactions for the period (source='manager')
-      // This ensures we use the official reception/PDV data for conversion metrics
+      // Explicit organization_id filter to avoid super_admin cross-tenant leakage
       const { data: transactions, error: txError } = await supabase
         .from("sale_transactions")
         .select(`
           barber_id,
           is_new_client,
           item_type,
+          subscription_action,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
+        .eq("organization_id", organizationId)
         .eq("source", "manager") // CRITICAL: Only manager data for accurate metrics
         .gte("created_at", `${startDate}T00:00:00`)
         .lte("created_at", `${endDate}T23:59:59`)
@@ -93,8 +98,13 @@ export default function SubscriptionPerformanceReport() {
           existing.newClients++;
         }
 
-        // Count subscriptions (item_type = 'subscription')
-        if (tx.item_type === "subscription") {
+        // Count ONLY new subscriptions (exclude renew/upgrade/downgrade)
+        // A "conversion" is a brand-new subscription tied to a new client opportunity
+        if (
+          tx.item_type === "subscription" &&
+          (tx as any).subscription_action === "new" &&
+          tx.is_new_client === true
+        ) {
           existing.subscriptions++;
         }
 
