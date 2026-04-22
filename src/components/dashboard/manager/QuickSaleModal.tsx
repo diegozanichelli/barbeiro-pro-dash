@@ -1226,12 +1226,17 @@ export default function QuickSaleModal({
               <ToggleGroupItem
                 value="barber"
                 aria-label="Atribuir ao barbeiro"
-                disabled={!barberId}
                 className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
                 onPointerDown={(e) => e.preventDefault()}
               >
                 <Scissors className="w-3.5 h-3.5" />
-                <span className="truncate">{barberName || "Barbeiro"}</span>
+                <span className="truncate">
+                  {barberId
+                    ? (barberName || "Barbeiro")
+                    : pickedBarberId
+                      ? effectiveBarberName
+                      : "Barbeiro"}
+                </span>
               </ToggleGroupItem>
               <ToggleGroupItem
                 value="reception"
@@ -1243,9 +1248,37 @@ export default function QuickSaleModal({
                 Venda Recepção
               </ToggleGroupItem>
             </ToggleGroup>
+
+            {/* In-modal barber picker — visible when "Barbeiro" is chosen but no barber was pre-selected */}
+            {attribution === "barber" && !barberId && (
+              <Select value={pickedBarberId} onValueChange={setPickedBarberId}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione qual barbeiro fará a venda..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBarbers.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-muted-foreground">
+                      Nenhum barbeiro ativo encontrado.
+                    </div>
+                  ) : (
+                    availableBarbers.map((b) => (
+                      <SelectItem key={b.id} value={b.id} className="text-xs">
+                        {b.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+
             {!attribution && (
               <p className="text-[11px] text-destructive">
                 Selecione um Barbeiro ou "Venda Recepção" para prosseguir.
+              </p>
+            )}
+            {attribution === "barber" && !effectiveBarberIdResolved && (
+              <p className="text-[11px] text-destructive">
+                Escolha qual barbeiro fará a venda.
               </p>
             )}
           </div>
