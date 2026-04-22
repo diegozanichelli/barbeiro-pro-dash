@@ -155,6 +155,16 @@ export default function QuickSaleModal({
   );
   const isReceptionSale = attribution === "reception";
 
+  // In-modal barber picker (used when modal is opened without a pre-selected barber)
+  const [availableBarbers, setAvailableBarbers] = useState<{ id: string; name: string }[]>([]);
+  const [pickedBarberId, setPickedBarberId] = useState<string>("");
+  // Effective IDs/names — prefer prop barberId, fallback to in-modal pick
+  const effectiveBarberIdResolved = barberId || pickedBarberId;
+  const effectiveBarberName =
+    barberName ||
+    availableBarbers.find((b) => b.id === pickedBarberId)?.name ||
+    "Barbeiro";
+
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
   const [clientName, setClientName] = useState("");
