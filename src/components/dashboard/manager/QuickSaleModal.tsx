@@ -1098,12 +1098,17 @@ export default function QuickSaleModal({
           catalog_product_id: null,
       };
 
+      const resolvedUnitIdManual = isReceptionSale
+        ? selectedUnitId
+        : (availableBarbers.find((b) => b.id === effectiveBarberIdResolved)?.unit_id ?? null);
+
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
         p_barber_id: isReceptionSale ? null : effectiveBarberIdResolved,
         p_date: dateStr,
         p_transactions: [transaction],
         p_source: "manager",
+        p_unit_id: resolvedUnitIdManual,
       });
 
       if (error) throw error;
