@@ -266,6 +266,7 @@ export default function QuickSaleModal({
       } else {
         setSelectedUnitId(null);
       }
+      setUnitError(false);
     }
   }, [open, initialDate, initialMode, barberId, prefillUnitId, units]);
 
@@ -407,6 +408,7 @@ export default function QuickSaleModal({
     } else {
       setSelectedUnitId(null);
     }
+    setUnitError(false);
   };
 
   const handleClose = (isOpen: boolean) => {
