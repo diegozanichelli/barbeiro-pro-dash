@@ -12,6 +12,7 @@ import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil } from "lu
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
+import { useOrganization } from "@/hooks/useOrganization";
 
 const ACTION_COLORS: Record<string, string> = {
   new: "#22c55e",
@@ -52,6 +53,7 @@ interface SubscriptionTransaction {
 }
 
 export default function SubscriptionAnalytics() {
+  const { organizationId } = useOrganization();
   const manausNow = useMemo(() => getManausDate(), []);
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth());
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
@@ -64,10 +66,12 @@ export default function SubscriptionAnalytics() {
   const years = Array.from({ length: 3 }, (_, i) => manausNow.getFullYear() - 1 + i);
 
   useEffect(() => {
+    if (!organizationId) return;
     fetchData();
-  }, [selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear, organizationId]);
 
   const fetchData = async () => {
+    if (!organizationId) return;
     setLoading(true);
     const refDate = new Date(selectedYear, selectedMonth, 1);
     const start = startOfMonth(refDate).toISOString();
@@ -77,14 +81,20 @@ export default function SubscriptionAnalytics() {
       supabase
         .from("sale_transactions")
         .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, subscription_plan_id, barbers(name), subscription_plans(name), units(name)")
+        .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .eq("source", "manager") // Single source of truth: only manager-recorded subscriptions
         .gte("created_at", start)
         .lte("created_at", end)
         .order("created_at", { ascending: false }),
+      // Count UNIQUE new clients by phone (not by transaction count).
+      // A single new client buying haircut + product + subscription would inflate
+      // the denominator if we counted rows. Transactions without mobile_phone are
+      // dropped from this count since we cannot distinguish unique customers.
       supabase
         .from("sale_transactions")
-        .select("id", { count: "exact", head: true })
+        .select("mobile_phone")
+        .eq("organization_id", organizationId)
         .eq("is_new_client", true)
         .eq("source", "manager")
         .gte("created_at", start)
@@ -92,7 +102,12 @@ export default function SubscriptionAnalytics() {
     ]);
 
     if (!subRes.error) setTransactions((subRes.data as unknown as SubscriptionTransaction[]) || []);
-    setTotalNewClients(newClientsRes.count || 0);
+    const uniquePhones = new Set(
+      (newClientsRes.data || [])
+        .map((r: any) => r.mobile_phone)
+        .filter(Boolean)
+    );
+    setTotalNewClients(uniquePhones.size);
     setLoading(false);
   };
 
