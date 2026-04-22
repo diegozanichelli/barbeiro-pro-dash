@@ -862,6 +862,10 @@ export default function QuickSaleModal({
       toast.error("Selecione qual barbeiro fará a venda.");
       return;
     }
+    if (needsUnitSelection && !selectedUnitId) {
+      toast.error("Selecione em qual recepção a venda aconteceu.");
+      return;
+    }
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
       return;
