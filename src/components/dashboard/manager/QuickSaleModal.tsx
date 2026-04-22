@@ -1472,6 +1472,36 @@ export default function QuickSaleModal({
                 Escolha qual barbeiro fará a venda.
               </p>
             )}
+
+            {/* Reception unit picker — only when reception sale & multiple units */}
+            {isReceptionSale && units.length > 1 && (
+              <div className="space-y-1.5 pt-1">
+                <Label className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                  <Building2 className="w-3 h-3" />
+                  Em qual recepção? <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={selectedUnitId ?? ""}
+                  onValueChange={(v) => setSelectedUnitId(v || null)}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Selecione a unidade da recepção..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.map((u) => (
+                      <SelectItem key={u.id} value={u.id} className="text-xs">
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!selectedUnitId && (
+                  <p className="text-[11px] text-destructive">
+                    Obrigatório: identifique em qual unidade a venda da recepção aconteceu.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Client Type Selector */}
