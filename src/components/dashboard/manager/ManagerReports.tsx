@@ -94,52 +94,33 @@ export default function ManagerReports() {
     const startDate = format(dateRange.from, "yyyy-MM-dd");
     const endDate = format(dateRange.to, "yyyy-MM-dd");
 
-    // Faturamento consolidado via view
-    let consolidatedQuery = (supabase as any)
-      .from("v_consolidated_daily_production")
-      .select("barber_id, total_revenue, total_clients, total_services")
-      .gte("date", startDate)
-      .lte("date", endDate);
-
-    if (selectedBarber !== "all") {
-      consolidatedQuery = consolidatedQuery.eq("barber_id", selectedBarber);
-    }
-
-    if (selectedUnit !== "all") {
-      const { data: unitBarbers } = await supabase
-        .from("barbers")
-        .select("id")
-        .eq("unit_id", selectedUnit)
-        .eq("status", "active");
-
-      const unitBarberIds = (unitBarbers || []).map((b) => b.id);
-      if (unitBarberIds.length === 0) {
-        setStats({
-          totalRevenue: 0,
-          totalCommission: 0,
-          totalClients: 0,
-          averageTicket: 0,
-          goalsAchieved: 0,
-          totalBarbers: 0,
-        });
-        return;
+    // Stats consolidados via RPC (substitui view inexistente v_consolidated_daily_production)
+    const { data: statsData, error: statsError } = await supabase.rpc(
+      "get_manager_report_stats",
+      {
+        p_date_from: startDate,
+        p_date_to: endDate,
+        p_unit_id: selectedUnit !== "all" ? selectedUnit : null,
+        p_barber_id: selectedBarber !== "all" ? selectedBarber : null,
       }
+    );
 
-      consolidatedQuery = consolidatedQuery.in("barber_id", unitBarberIds);
+    if (statsError) {
+      console.error("Erro ao buscar stats via RPC:", statsError, { startDate, endDate, selectedBarber, selectedUnit });
     }
 
-    const { data: consolidatedRows, error: consolidatedError } = await consolidatedQuery;
+    const statsRow = statsData?.[0] ?? {
+      total_revenue: 0,
+      total_commission: 0,
+      total_clients: 0,
+      average_ticket: 0,
+    };
+    const totalRevenue = Number(statsRow.total_revenue) || 0;
+    const totalClients = Number(statsRow.total_clients) || 0;
+    const totalCommission = Number(statsRow.total_commission) || 0;
+    const averageTicket = Number(statsRow.average_ticket) || 0;
 
-    if (consolidatedError) {
-      console.error("ERRO DA VIEW:", consolidatedError, { startDate, endDate, selectedBarber, selectedUnit });
-    } else {
-      console.log("DADOS DA VIEW:", consolidatedRows, { startDate, endDate, selectedBarber, selectedUnit });
-      if ((consolidatedRows || []).length === 0) {
-        console.log("DADOS DA VIEW: retorno vazio - conferir filtros de data", { startDate, endDate, selectedBarber, selectedUnit });
-      }
-    }
-
-    // Buscar comissões no período para cálculo de metas batidas
+    // Buscar comissões por barbeiro no período (necessário para metas batidas)
     let commissionsQuery = supabase
       .from("daily_productions")
       .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
@@ -156,16 +137,6 @@ export default function ManagerReports() {
 
     const { data: commissionRows } = await commissionsQuery;
 
-    // Buscar barbeiros ativos (filtrados por unidade se selecionada)
-    let barbersQuery = supabase
-      .from("barbers")
-      .select("id")
-      .eq("status", "active");
-
-    if (selectedUnit !== "all") {
-      barbersQuery = barbersQuery.eq("unit_id", selectedUnit);
-    }
-
     // Buscar metas do mês
     let goalsQuery = supabase
       .from("monthly_goals")
@@ -179,36 +150,8 @@ export default function ManagerReports() {
 
     const { data: goals } = await goalsQuery;
 
-    interface ConsolidatedStatRow {
-      barber_id: string;
-      total_revenue?: number | null;
-      totalRevenue?: number | null;
-      total_clients?: number | null;
-      totalClients?: number | null;
-      total_services?: number | null;
-      totalServices?: number | null;
-    }
-
-    interface CommissionRow {
-      barber_id: string;
-      commission_earned: number | null;
-    }
-
-    const safeConsolidated = (consolidatedRows || []) as unknown as ConsolidatedStatRow[];
-    const safeCommissions = (commissionRows || []) as CommissionRow[];
-
-    const totalRevenue = safeConsolidated.reduce((sum, row) => {
-      const revenue = Number(row.total_revenue ?? row.totalRevenue ?? 0) || 0;
-      return sum + revenue;
-    }, 0);
-    const totalClients = safeConsolidated.reduce((sum, row) => {
-      const clients = Number(row.total_clients ?? row.totalClients ?? 0) || 0;
-      return sum + clients;
-    }, 0);
-    const totalCommission = safeCommissions.reduce((sum, row) => sum + (Number(row.commission_earned) || 0), 0);
-
     const barberCommissions = new Map<string, number>();
-    safeCommissions.forEach((row) => {
+    (commissionRows || []).forEach((row: { barber_id: string; commission_earned: number | null }) => {
       const current = barberCommissions.get(row.barber_id) || 0;
       barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
     });
@@ -227,11 +170,11 @@ export default function ManagerReports() {
       totalRevenue,
       totalCommission,
       totalClients,
-      averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
+      averageTicket,
       goalsAchieved,
       totalBarbers: allBarbers?.length || 0,
     });
-  }, [dateRange, selectedBarber, selectedUnit]);
+  }, [dateRange, selectedBarber, selectedUnit, allBarbers]);
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
