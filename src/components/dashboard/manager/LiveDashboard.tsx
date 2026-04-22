@@ -1361,6 +1361,8 @@ export default function LiveDashboard() {
         initialIsNewClient={quickSaleModal.fromBridge ? false : undefined}
         initialDate={selectedDate}
         initialMode={quickSaleModal.mode}
+        units={units}
+        prefillUnitId={quickSaleModal.prefillUnitId}
       />
 
       {/* Edit Production Modal - Transaction Manager */}
