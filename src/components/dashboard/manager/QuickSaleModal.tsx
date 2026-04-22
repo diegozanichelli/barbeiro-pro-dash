@@ -327,7 +327,7 @@ export default function QuickSaleModal({
     (async () => {
       const { data, error } = await supabase
         .from("barbers")
-        .select("id, name")
+        .select("id, name, unit_id")
         .eq("organization_id", organizationId)
         .eq("status", "active")
         .order("name");
