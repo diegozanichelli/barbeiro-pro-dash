@@ -288,7 +288,7 @@ export default function QuickSaleModal({
     setManualCategory("basic");
     setSearchQuery("");
     setActiveTab("services");
-    setIsReceptionSale(false);
+    setAttribution(initialMode ?? (barberId ? "barber" : null));
     setClientType(initialIsNewClient ? "new" : "without_subscription");
     setClientName("");
     setMobilePhone("");
