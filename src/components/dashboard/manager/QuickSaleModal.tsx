@@ -541,7 +541,8 @@ export default function QuickSaleModal({
   const updateCartItemPriceInput = (tempId: string, newValue: string) => {
     setCart(prev => prev.map(item => {
       if (item.tempId !== tempId) return item;
-      
+      if (isSubscriptionCartItem(item)) return item; // subscription price is fixed by plan
+
       if (newValue === "") {
         return { ...item, customPriceInput: "", customPrice: 0 };
       }
@@ -564,7 +565,8 @@ export default function QuickSaleModal({
   const finalizeCartItemPrice = (tempId: string) => {
     setCart(prev => prev.map(item => {
       if (item.tempId !== tempId) return item;
-      
+      if (isSubscriptionCartItem(item)) return item;
+
       const formattedInput = item.customPrice > 0 
         ? item.customPrice.toFixed(2).replace(".", ",")
         : "0,00";
@@ -572,6 +574,57 @@ export default function QuickSaleModal({
       return { ...item, customPriceInput: formattedInput };
     }));
   };
+
+  // ─── Subscription cart helpers ───
+  const updateSubscriptionAction = (tempId: string, action: SubscriptionAction) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== tempId || !isSubscriptionCartItem(item)) return item;
+        return {
+          ...item,
+          action,
+          downgradeReason: action === "downgrade" ? item.downgradeReason ?? "" : undefined,
+        };
+      })
+    );
+  };
+
+  const updateSubscriptionReason = (tempId: string, reason: string) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== tempId || !isSubscriptionCartItem(item)) return item;
+        return { ...item, downgradeReason: reason };
+      })
+    );
+  };
+
+  const subscriptionInCart = useMemo(
+    () => cart.find(isSubscriptionCartItem) ?? null,
+    [cart]
+  );
+
+  const handleAddSubscriptionToCart = (plan: SubscriptionPlan) => {
+    if (subscriptionInCart) {
+      toast.warning("Apenas 1 plano de assinatura por venda. Remova o plano atual para trocar.");
+      return;
+    }
+    const currentPlan = selectedSubscriptionPlan;
+    const action = inferSubscriptionAction(clientType, currentPlan, plan);
+    setCart((prev) => [
+      ...prev,
+      {
+        tempId: crypto.randomUUID(),
+        type: "subscription",
+        planId: plan.id,
+        name: plan.name,
+        customPrice: plan.price,
+        action,
+        downgradeReason: action === "downgrade" ? "" : undefined,
+      },
+    ]);
+    toast.success(`Plano ${plan.name} adicionado — ${SUBSCRIPTION_ACTION_LABELS[action]}`);
+  };
+
 
   // Cart totals
   const cartTotal = useMemo(() => {
