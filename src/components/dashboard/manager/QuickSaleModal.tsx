@@ -1400,6 +1400,8 @@ export default function QuickSaleModal({
                   Em qual recepção? <span className="text-destructive">*</span>
                 </Label>
                 <Select
+                  open={unitSelectOpen}
+                  onOpenChange={setUnitSelectOpen}
                   value={selectedUnitId ?? ""}
                   onValueChange={(v) => {
                     setSelectedUnitId(v || null);
@@ -1407,6 +1409,7 @@ export default function QuickSaleModal({
                   }}
                 >
                   <SelectTrigger
+                    ref={unitSelectTriggerRef}
                     aria-invalid={unitError}
                     aria-describedby={unitError ? "unit-error" : undefined}
                     className={cn(
