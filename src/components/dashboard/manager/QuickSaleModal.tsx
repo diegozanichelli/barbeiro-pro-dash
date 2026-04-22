@@ -868,6 +868,7 @@ export default function QuickSaleModal({
       return;
     }
     if (needsUnitSelection && !selectedUnitId) {
+      setUnitError(true);
       toast.error("Selecione em qual recepção a venda aconteceu.");
       return;
     }
@@ -1031,6 +1032,7 @@ export default function QuickSaleModal({
       return;
     }
     if (needsUnitSelection && !selectedUnitId) {
+      setUnitError(true);
       toast.error("Selecione em qual recepção a venda aconteceu.");
       return;
     }
