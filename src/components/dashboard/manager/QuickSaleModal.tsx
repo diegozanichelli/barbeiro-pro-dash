@@ -497,6 +497,8 @@ export default function QuickSaleModal({
             if (!manualOverride) setClientType("without_subscription");
           } else if (res.status === "name_found") {
             if (!manualOverride) setClientType("without_subscription");
+          } else if (res.status === "not_found") {
+            if (!manualOverride) setClientType("new");
           }
         });
         // Auto-detect subscription
