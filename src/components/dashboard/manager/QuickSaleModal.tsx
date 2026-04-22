@@ -34,7 +34,6 @@ import {
   Crown,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -61,6 +60,7 @@ interface QuickSaleModalProps {
   onSuccess: () => void;
   initialIsNewClient?: boolean;
   initialDate?: string; // yyyy-MM-dd from LiveDashboard
+  initialMode?: "barber" | "reception"; // attribution mode preselected
 }
 
 interface CatalogItem {
@@ -129,6 +129,7 @@ export default function QuickSaleModal({
   onSuccess,
   initialIsNewClient,
   initialDate,
+  initialMode,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -148,8 +149,11 @@ export default function QuickSaleModal({
   const [manualValue, setManualValue] = useState("");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
   
-  // Reception mode (no barber attribution)
-  const [isReceptionSale, setIsReceptionSale] = useState(false);
+  // Attribution: Barbeiro vs Recepção (mandatory selection at Step 1)
+  const [attribution, setAttribution] = useState<"barber" | "reception" | null>(
+    initialMode ?? (barberId ? "barber" : null)
+  );
+  const isReceptionSale = attribution === "reception";
 
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
