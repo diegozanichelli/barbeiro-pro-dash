@@ -871,6 +871,14 @@ export default function QuickSaleModal({
 
       const safeClientName = registeredClient.clientName || clientName.trim() || "Cliente";
 
+      // Validate subscription cart item before any side-effect (downgrade reason)
+      if (subscriptionInCart && subscriptionInCart.action === "downgrade") {
+        if (!subscriptionInCart.downgradeReason || subscriptionInCart.downgradeReason.trim().length < 3) {
+          toast.error("Informe o motivo do downgrade da assinatura.");
+          return;
+        }
+      }
+
       await ensureSubscriptionAssigned(registeredClient.mobilePhone);
 
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
@@ -878,17 +886,37 @@ export default function QuickSaleModal({
       }
 
       // Build transaction payload for RPC
-      const transactions = cart.map(item => ({
-        item_type: item.type,
-        catalog_service_id: item.type === "service" ? item.id : null,
-        catalog_product_id: item.type === "product" ? item.id : null,
-        item_name: item.name,
-        service_category: item.type === "service" ? (item.category || null) : null,
-        price_sold: item.customPrice,
-        is_new_client: clientType === "new",
-        client_name: safeClientName,
-        mobile_phone: registeredClient.mobilePhone,
-      }));
+      const transactions = cart.map((item) => {
+        if (isSubscriptionCartItem(item)) {
+          return {
+            item_type: "subscription" as const,
+            catalog_service_id: null,
+            catalog_product_id: null,
+            item_name: `Assinatura ${item.name}`,
+            service_category: null,
+            price_sold: item.customPrice,
+            is_new_client: clientType === "new",
+            client_name: safeClientName,
+            mobile_phone: registeredClient.mobilePhone,
+            subscription_plan_id: item.planId,
+            subscription_action: item.action,
+            downgrade_reason: item.action === "downgrade" ? (item.downgradeReason ?? null) : null,
+            commission_rate_used: 0,
+            commission_amount: 0,
+          };
+        }
+        return {
+          item_type: item.type,
+          catalog_service_id: item.type === "service" ? item.id : null,
+          catalog_product_id: item.type === "product" ? item.id : null,
+          item_name: item.name,
+          service_category: item.type === "service" ? (item.category || null) : null,
+          price_sold: item.customPrice,
+          is_new_client: clientType === "new",
+          client_name: safeClientName,
+          mobile_phone: registeredClient.mobilePhone,
+        };
+      });
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
@@ -899,13 +927,29 @@ export default function QuickSaleModal({
       });
       if (error) throw error;
 
+      // If a subscription plan was sold in this transaction, link it to the client
+      if (subscriptionInCart) {
+        try {
+          const { error: linkError } = await (supabase
+            .from("clients") as any)
+            .update({ subscription_plan_id: subscriptionInCart.planId })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", registeredClient.mobilePhone);
+          if (linkError && !isSubscriptionPlanFieldMissing(linkError)) {
+            console.error("Erro ao vincular assinatura ao cliente:", linkError);
+          }
+        } catch (linkErr) {
+          console.error("Erro inesperado ao vincular assinatura:", linkErr);
+        }
+      }
+
       await recordClientPurchasesBestEffort({
         organizationId,
         clientName: registeredClient.clientName,
         mobilePhone: registeredClient.mobilePhone,
         purchases: cart.map((item) => ({
-          itemName: item.name,
-          itemType: item.type,
+          itemName: isSubscriptionCartItem(item) ? `Assinatura ${item.name}` : item.name,
+          itemType: isSubscriptionCartItem(item) ? "subscription" : item.type,
           amount: item.customPrice,
           quantity: 1,
           purchasedAt: `${dateStr}T12:00:00`,
@@ -913,8 +957,11 @@ export default function QuickSaleModal({
       });
 
       const sellerName = isReceptionSale ? "Recepção / Loja" : effectiveBarberName;
+      const subDescription = subscriptionInCart
+        ? ` • ${SUBSCRIPTION_ACTION_LABELS[subscriptionInCart.action]}: ${subscriptionInCart.name}`
+        : "";
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
-        description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
+        description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}${subDescription}`,
       });
 
       resetForm();
