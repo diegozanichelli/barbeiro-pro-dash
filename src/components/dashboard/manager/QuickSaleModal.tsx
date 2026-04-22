@@ -34,7 +34,6 @@ import {
   Crown,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -61,6 +60,7 @@ interface QuickSaleModalProps {
   onSuccess: () => void;
   initialIsNewClient?: boolean;
   initialDate?: string; // yyyy-MM-dd from LiveDashboard
+  initialMode?: "barber" | "reception"; // attribution mode preselected
 }
 
 interface CatalogItem {
@@ -129,6 +129,7 @@ export default function QuickSaleModal({
   onSuccess,
   initialIsNewClient,
   initialDate,
+  initialMode,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -148,8 +149,11 @@ export default function QuickSaleModal({
   const [manualValue, setManualValue] = useState("");
   const [manualCategory, setManualCategory] = useState<"basic" | "extra" | "product">("basic");
   
-  // Reception mode (no barber attribution)
-  const [isReceptionSale, setIsReceptionSale] = useState(false);
+  // Attribution: Barbeiro vs Recepção (mandatory selection at Step 1)
+  const [attribution, setAttribution] = useState<"barber" | "reception" | null>(
+    initialMode ?? (barberId ? "barber" : null)
+  );
+  const isReceptionSale = attribution === "reception";
 
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
@@ -191,13 +195,16 @@ export default function QuickSaleModal({
   });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Sync selectedDate with initialDate when modal opens or initialDate changes
+  // Sync selectedDate + attribution with initial props when modal opens
   useEffect(() => {
     if (open && initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
       setSelectedDate(new Date(y, m - 1, d, 12, 0, 0));
     }
-  }, [open, initialDate]);
+    if (open) {
+      setAttribution(initialMode ?? (barberId ? "barber" : null));
+    }
+  }, [open, initialDate, initialMode, barberId]);
 
   const fetchCatalog = useCallback(async () => {
     setLoadingCatalog(true);
@@ -284,7 +291,7 @@ export default function QuickSaleModal({
     setManualCategory("basic");
     setSearchQuery("");
     setActiveTab("services");
-    setIsReceptionSale(false);
+    setAttribution(initialMode ?? (barberId ? "barber" : null));
     setClientType(initialIsNewClient ? "new" : "without_subscription");
     setClientName("");
     setMobilePhone("");
@@ -675,12 +682,17 @@ export default function QuickSaleModal({
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
   const canProceedStep1 =
-    isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
+    !!attribution && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
     if (!organizationId) {
       toast.error("Organização não identificada");
+      return;
+    }
+
+    if (!attribution) {
+      toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
       return;
     }
 
@@ -783,6 +795,11 @@ export default function QuickSaleModal({
       return;
     }
 
+    if (!attribution) {
+      toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
+      return;
+    }
+
     const numericValue = parseFloat(manualValue.replace(",", "."));
     if (isNaN(numericValue) || numericValue <= 0) {
       toast.error("Informe um valor válido");
@@ -853,7 +870,7 @@ export default function QuickSaleModal({
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
-        p_barber_id: barberId,
+        p_barber_id: isReceptionSale ? null : barberId,
         p_date: dateStr,
         p_transactions: [transaction],
         p_source: "manager",
@@ -876,7 +893,7 @@ export default function QuickSaleModal({
         ],
       });
 
-      toast.success(`Venda manual registrada para ${barberName}`);
+      toast.success(`Venda manual registrada para ${isReceptionSale ? "Recepção / Loja" : barberName}`);
       
       resetForm();
       onOpenChange(false);
@@ -1145,21 +1162,46 @@ export default function QuickSaleModal({
           <div>{renderClientBadge()}</div>
         )}
 
-        {/* Reception toggle + Client type — grouped visually */}
+        {/* Attribution + Client type — grouped visually */}
         <div className="rounded-lg border bg-muted/20 divide-y divide-border">
-          {/* Toggle Reception Sale */}
-          <div className="flex items-center justify-between px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-muted-foreground" />
-              <Label htmlFor="reception-mode" className="text-sm cursor-pointer">
-                Venda Recepção / Loja
-              </Label>
-            </div>
-            <Switch
-              id="reception-mode"
-              checked={isReceptionSale}
-              onCheckedChange={setIsReceptionSale}
-            />
+          {/* Mandatory Attribution Selector */}
+          <div className="px-3 py-2.5 space-y-2">
+            <Label className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+              Atribuição da Venda <span className="text-destructive">*</span>
+            </Label>
+            <ToggleGroup
+              type="single"
+              value={attribution ?? ""}
+              onValueChange={(v) => {
+                if (v === "barber" || v === "reception") setAttribution(v);
+              }}
+              className="justify-start w-full"
+            >
+              <ToggleGroupItem
+                value="barber"
+                aria-label="Atribuir ao barbeiro"
+                disabled={!barberId}
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span className="truncate">{barberName || "Barbeiro"}</span>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="reception"
+                aria-label="Venda da Recepção"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black ring-1 ring-amber-500/40"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                Venda Recepção
+              </ToggleGroupItem>
+            </ToggleGroup>
+            {!attribution && (
+              <p className="text-[11px] text-destructive">
+                Selecione um Barbeiro ou "Venda Recepção" para prosseguir.
+              </p>
+            )}
           </div>
 
           {/* Client Type Selector */}
