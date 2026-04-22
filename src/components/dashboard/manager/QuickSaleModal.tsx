@@ -84,9 +84,44 @@ interface SubscriptionPlan {
   price: number;
 }
 
-type CategoryTab = "services" | "products" | "manual";
+type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
+
+interface SubscriptionCartItem {
+  tempId: string;
+  type: "subscription";
+  planId: string;
+  name: string;
+  customPrice: number;
+  action: SubscriptionAction;
+  downgradeReason?: string;
+}
+
+type AnyCartItem = CartItem | SubscriptionCartItem;
+
+const isSubscriptionCartItem = (i: AnyCartItem): i is SubscriptionCartItem =>
+  (i as SubscriptionCartItem).type === "subscription";
+
+const SUBSCRIPTION_ACTION_LABELS: Record<SubscriptionAction, string> = {
+  new: "Nova adesão",
+  renew: "Renovação",
+  upgrade: "Upgrade",
+  downgrade: "Downgrade",
+};
+
+type CategoryTab = "services" | "products" | "subscription" | "manual";
 
 type ClientType = "new" | "without_subscription" | "with_subscription";
+
+function inferSubscriptionAction(
+  clientType: ClientType,
+  currentPlan: SubscriptionPlan | null,
+  newPlan: SubscriptionPlan
+): SubscriptionAction {
+  if (clientType === "new" || clientType === "without_subscription") return "new";
+  if (!currentPlan) return "new";
+  if (currentPlan.id === newPlan.id) return "renew";
+  return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
+}
 
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
