@@ -1,53 +1,63 @@
 
 
-# Mostrar seletor de recepção logo após o contato
+# Destaque visual no seletor de unidade quando vazio
 
-## Problema atual
+## Objetivo
 
-No `QuickSaleModal`, quando o gestor escolhe **"Venda Recepção"** e a barbearia tem 2+ unidades, o seletor "Em qual recepção?" só aparece depois que o gestor preenche **nome + telefone completo** (porque ele está renderizado no bloco que aparece quando `attributionResolved` é true). O ideal é que apareça **assim que o telefone estiver completo** (ou até antes), para o gestor já decidir a unidade enquanto digita o nome.
+Quando o gestor escolhe **"Venda Recepção"** com 2+ unidades e tenta avançar sem selecionar a recepção, o seletor deve ficar **visualmente em estado de erro** (borda vermelha + mensagem inline), além do toast já existente.
 
-## Mudança proposta
+## Mudanças em `QuickSaleModal.tsx`
 
-No Step 1 do `QuickSaleModal.tsx`, **mover o bloco do seletor "🏢 Em qual recepção?"** para logo abaixo do `ToggleGroup` de atribuição (Barbeiro/Recepção), **fora** do bloco condicional que depende de `attributionResolved` ou de telefone preenchido.
-
-### Regras de exibição (continuam as mesmas)
-
-- Aparece **só quando** `attribution === "reception"` **E** `units.length > 1`.
-- Pré-seleção inteligente continua: `prefillUnitId` (filtro do header) > única unidade > vazio.
-- Se `units.length === 1`: continua oculto (auto-seleção silenciosa).
-- Se `units.length === 0`: continua oculto.
-
-### Ordem visual final no Step 1 (Recepção)
-
-```text
-┌─────────────────────────────────────────┐
-│ 1. Atribuição da venda                  │
-│    [ Barbeiro ]  [ 🏢 Recepção ]        │
-├─────────────────────────────────────────┤
-│ 2. 🏢 Em qual recepção?  ← MOVIDO       │
-│    [ Select de unidades ]               │
-├─────────────────────────────────────────┤
-│ 3. Telefone do cliente                  │
-│    [ (XX) XXXXX-XXXX ]                  │
-├─────────────────────────────────────────┤
-│ 4. Nome do cliente                      │
-│    [ ... ]                              │
-└─────────────────────────────────────────┘
+### 1. Novo estado de erro local
+```ts
+const [unitError, setUnitError] = useState(false);
 ```
 
-Para venda de Barbeiro a ordem permanece: Atribuição → (combobox de barbeiro se vier sem `barberId`) → Telefone → Nome.
+### 2. Disparar o erro quando o gestor tenta avançar
+- No handler do botão **"Avançar"** do Step 1: se `needsUnitSelection && !selectedUnitId`, setar `setUnitError(true)` (além do toast).
+- No `handleCartCheckout`: mesma lógica, setar `setUnitError(true)` antes do `return`.
 
-## Mudança concreta
+### 3. Limpar o erro automaticamente
+- No `onValueChange` do `Select` de unidade: `setUnitError(false)` quando o usuário escolher uma unidade.
+- No `useEffect` que reseta o modal ao abrir/fechar: zerar `unitError`.
+- Ao trocar de `attribution` (toggle Barbeiro ↔ Recepção): zerar `unitError`.
 
-Em `src/components/dashboard/manager/QuickSaleModal.tsx`:
+### 4. Aplicar o estilo de erro no seletor
+No `<SelectTrigger>` do bloco "🏢 Em qual recepção?":
+```tsx
+<SelectTrigger
+  className={cn(
+    unitError && "border-destructive ring-2 ring-destructive/30 focus:ring-destructive"
+  )}
+>
+```
 
-1. **Localizar** o bloco do seletor de unidade (atualmente renderizado depois de telefone/nome, dentro do trecho que só aparece após atribuição+contato resolvidos).
-2. **Movê-lo** para imediatamente após o `ToggleGroup` de atribuição (e após o combobox de seleção de barbeiro, quando aplicável), envolvendo na mesma condição `attribution === "reception" && units.length > 1`.
-3. **Sem mudanças** na validação (`canProceedStep1` continua exigindo `selectedUnitId` quando recepção+multi-unidade) nem no envio (`p_unit_id` na RPC).
+E logo abaixo do `<Select>`, mensagem inline condicional:
+```tsx
+{unitError && (
+  <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+    <AlertCircle className="h-3 w-3" />
+    Selecione em qual recepção a venda aconteceu.
+  </p>
+)}
+```
+
+### 5. Bônus de acessibilidade
+- Adicionar `aria-invalid={unitError}` e `aria-describedby` apontando para o `<p>` da mensagem (com `id="unit-error"`).
+
+## Comportamento final
+
+| Ação | Resultado |
+|---|---|
+| Abrir modal em Recepção multi-unidade sem unidade | Seletor neutro |
+| Tentar avançar sem escolher | Borda vermelha + mensagem inline + toast |
+| Selecionar uma unidade | Erro some imediatamente |
+| Alternar para Barbeiro | Erro some |
+| Reabrir modal | Erro zerado |
 
 ## Impacto
 
-- **UX:** o gestor vê e escolhe a unidade já no início, sem precisar preencher contato antes.
-- **Sem regressão:** validações, RPC e fluxo de barbeiro permanecem idênticos.
-- **Sem mudanças de banco.** Apenas reordenação de JSX em 1 arquivo.
+- **1 arquivo**: `src/components/dashboard/manager/QuickSaleModal.tsx`.
+- **Sem mudanças** em validação lógica, RPC, banco ou outras telas.
+- **Sem regressão** — apenas camada visual reforçando o feedback que já existia via toast.
 
