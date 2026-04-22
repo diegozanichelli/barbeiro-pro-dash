@@ -1701,7 +1701,61 @@ export default function QuickSaleModal({
             )}
           </TabsContent>
 
-          {/* Manual Entry */}
+          {/* Subscription Plans Grid */}
+          <TabsContent value="subscription" className="flex-1 min-h-0 m-0 overflow-hidden flex flex-col">
+            {subscriptionPlans.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground px-6 text-center">
+                <Crown className="h-12 w-12 mb-4 opacity-50" />
+                <p className="font-medium">Nenhum plano de assinatura cadastrado</p>
+                <p className="text-xs mt-1">Cadastre planos em "Gestão → Assinaturas" para vendê-los aqui.</p>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 px-3 py-3 overflow-y-auto overscroll-contain touch-pan-y space-y-3">
+                <div className="rounded-lg border border-amber-300/50 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
+                  <strong>Adesão / Renovação / Upgrade:</strong> escolha o plano. A ação é detectada automaticamente conforme o status atual do cliente — você pode ajustar no carrinho.
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {subscriptionPlans.map((plan) => {
+                    const alreadyInCart = subscriptionInCart?.planId === plan.id;
+                    const disabled = !!subscriptionInCart && !alreadyInCart;
+                    return (
+                      <Card
+                        key={plan.id}
+                        onClick={() => !disabled && handleAddSubscriptionToCart(plan)}
+                        className={cn(
+                          "relative cursor-pointer p-3 transition-all duration-200",
+                          alreadyInCart
+                            ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500"
+                            : disabled
+                              ? "opacity-50 cursor-not-allowed"
+                              : "hover:shadow-lg active:scale-[0.98] hover:bg-accent/50 hover:border-amber-400/50"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Crown className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="font-bold text-xs leading-tight line-clamp-2 text-foreground">
+                              {plan.name}
+                            </p>
+                            <p className="text-base font-black text-amber-600 dark:text-amber-400">
+                              {formatCurrency(plan.price)}
+                            </p>
+                            {alreadyInCart && (
+                              <Badge className="text-[10px] px-1.5 py-0 bg-amber-500 text-black border-0">
+                                No carrinho
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+
           <TabsContent value="manual" className="flex-1 m-0 px-3 py-4">
             <div className="space-y-6">
               <div className="space-y-2">
