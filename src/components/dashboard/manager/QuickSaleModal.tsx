@@ -497,6 +497,8 @@ export default function QuickSaleModal({
             if (!manualOverride) setClientType("without_subscription");
           } else if (res.status === "name_found") {
             if (!manualOverride) setClientType("without_subscription");
+          } else if (res.status === "not_found") {
+            if (!manualOverride) setClientType("new");
           }
         });
         // Auto-detect subscription
@@ -525,7 +527,7 @@ export default function QuickSaleModal({
     } else if (res.status === "name_found") {
       if (!manualOverride) setClientType("without_subscription");
     } else if (res.status === "not_found") {
-      // Não muda automaticamente — o gestor decide manualmente
+      if (!manualOverride) setClientType("new");
     }
   }, [mobilePhone, clientName, manualOverride, clientHistory]);
 
@@ -535,8 +537,11 @@ export default function QuickSaleModal({
       const digits = sanitizePhone(mobilePhone);
       if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
         const res = await clientHistory.checkHistory(mobilePhone, clientName);
-        if (res && res.status === "name_found" && !manualOverride) {
+        if (!res || manualOverride) return;
+        if (res.status === "name_found") {
           setClientType("without_subscription");
+        } else if (res.status === "not_found") {
+          setClientType("new");
         }
       }
     }
@@ -1484,6 +1489,24 @@ export default function QuickSaleModal({
                 Assinante
               </ToggleGroupItem>
             </ToggleGroup>
+
+            {clientHistory.status === "not_found" && clientType === "new" && !manualOverride && (
+              <div className="rounded-md bg-green-500/10 border border-green-500/30 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1.5">
+                <UserPlus className="w-3 h-3 shrink-0" />
+                <span>
+                  Telefone não encontrado na base — marcamos como <strong>Cliente Novo</strong> automaticamente.
+                </span>
+              </div>
+            )}
+
+            {clientHistory.status === "not_found" && clientType !== "new" && manualOverride && (
+              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                <span>
+                  Esse telefone não está na base. Tem certeza que não é um cliente novo?
+                </span>
+              </div>
+            )}
 
             {(clientType === "new" || clientType === "without_subscription") && (
               <p className="text-[11px] text-muted-foreground">
