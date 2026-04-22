@@ -356,7 +356,9 @@ export default function DayReviewModal({
 
     setIsLoading(true);
     try {
-      // 1. Get or create daily_production
+      // 1. Get or create daily_production (sem inserir transações duplicadas).
+      // A "Conferência do Dia" é APENAS leitura/confirmação: marca confirmed_presence=true.
+      // As vendas verdadeiras já estão em sale_transactions com source='manager' (recepção).
       let dailyProductionId: string;
       const { data: existingProd } = await supabase
         .from("daily_productions")
@@ -368,7 +370,8 @@ export default function DayReviewModal({
       if (existingProd) {
         dailyProductionId = existingProd.id;
 
-        // Replace only previous BARBER transactions (RLS only allows source='barber')
+        // Limpa quaisquer transações antigas source='barber' deste dia
+        // (resíduo do fluxo legado que duplicava lançamentos do gestor).
         await supabase
           .from("sale_transactions")
           .delete()
@@ -397,39 +400,13 @@ export default function DayReviewModal({
         dailyProductionId = newProd.id;
       }
 
-      // 2. Insert barber transactions from cart
-      const transactions = cart.map((item) => ({
-        organization_id: organizationId,
-        barber_id: barberId,
-        daily_production_id: dailyProductionId,
-        item_name: item.name,
-        item_type: item.type,
-        service_category: item.category || null,
-        catalog_service_id:
-          item.type === "service" ? item.catalogRefId : null,
-        catalog_product_id:
-          item.type === "product" ? item.catalogRefId : null,
-        price_sold: item.customPrice,
-        commission_rate_used: 0,
-        commission_amount: 0,
-        client_name: item.clientName,
-        mobile_phone: item.mobilePhone,
-        description: item.description,
-        source: "barber",
-        created_at: `${date}T12:00:00`,
-      }));
-
-      const { error: insertError } = await supabase
-        .from("sale_transactions")
-        .insert(transactions);
-      if (insertError) throw insertError;
-
-      // 3. Update clients_count
+      // 2. Marcar conferência sem reinserir transações.
+      // O total de clientes_count vem da prioridade gestor (tx_clients_count) > barbeiro,
+      // gerenciada pelo trigger recalculate_daily_production_from_transactions.
       await supabase
         .from("daily_productions")
         .update({
           manual_clients_count: clientsCount,
-          clients_count: clientsCount,
           confirmed_presence: true,
           presence_type: "present",
         })
