@@ -326,6 +326,7 @@ export default function QuickSaleModal({
     setSearchQuery("");
     setActiveTab("services");
     setAttribution(initialMode ?? (barberId ? "barber" : null));
+    setPickedBarberId("");
     setClientType(initialIsNewClient ? "new" : "without_subscription");
     setClientName("");
     setMobilePhone("");
@@ -1015,7 +1016,9 @@ export default function QuickSaleModal({
     <>
       <DialogHeader className="px-6 pt-5 pb-3">
         <DialogTitle className="text-lg font-semibold">
-          Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
+          {attribution === null
+            ? "Nova Venda"
+            : `Venda Rápida — ${isReceptionSale ? "🏢 Recepção / Loja" : effectiveBarberName}`}
         </DialogTitle>
         <DialogDescription className="text-xs">
           Preencha os dados do atendimento
