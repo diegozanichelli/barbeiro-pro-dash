@@ -1,129 +1,107 @@
 
 
-# Gap de Arquitetura: vender assinatura para cliente "Da Casa"
+# Capturar a Unidade na "Venda Recepção"
 
-## Diagnóstico
+## O problema
 
-Quando consolidamos os botões do Ao Vivo e fizemos o `QuickSaleModal` ser o ponto de entrada único, **deixamos um caso real de fora**: o gestor identifica um cliente "Da Casa" (avulso recorrente) e quer **convertê-lo em assinante na hora**, junto ou não com um corte/produto.
+Hoje, ao escolher **"Venda Recepção"** no `QuickSaleModal`, o sistema grava `barber_id = NULL` mas **não grava em qual recepção/unidade** a venda aconteceu. Para barbearias com mais de uma filial, isso significa:
 
-### Por que não funciona hoje
+- A venda existe, mas fica órfã de unidade.
+- O relatório **Performance de Assinaturas (Recepção)** já tenta ler `unit_id`, mas como nada é gravado, todas as vendas caem no balde **"Unidade não informada"**.
+- O dono da rede não consegue saber qual recepção está vendendo mais, qual está parada, nem comparar performance entre filiais.
 
-No Step 1 do `QuickSaleModal`, o "Tipo de Cliente" tem 3 opções:
-
-| Tipo | Significado atual | Permite criar assinatura? |
-|---|---|---|
-| **Novo** | Primeiro atendimento | ❌ Não |
-| **Da Casa** | Avulso, sem plano | ❌ Não |
-| **Assinante** | **Já tem** um plano ativo | ❌ Não — só aplica desconto |
-
-No Step 2, o catálogo só mostra **Serviços** e **Produtos** (`activeTab: "services" | "products" | "manual"`). Não existe aba/cartão para adicionar **Plano de Assinatura** ao carrinho. A criação de transação `item_type='subscription'` com `subscription_action='new'` só acontece no `SubscriptionWizardModal`, que tiramos do header.
-
-**Resultado prático:** o caminho do "cliente Da Casa que aceitou assinar" foi quebrado. Hoje o gestor teria que:
-1. Salvar o corte como "Da Casa".
-2. Reabrir o modal, marcar "Assinante", escolher o plano… mas isso só presume que ele já é — não cria a adesão (`subscription_action='new'`).
-3. Não há caminho 100% funcional sem voltar ao `SubscriptionWizardModal`.
+A coluna `sale_transactions.unit_id` já existe no banco — só falta o fluxo do PDV preenchê-la.
 
 ---
 
-## Proposta — adicionar "Assinatura" como item de carrinho
+## Solução — seletor obrigatório de Unidade quando for Recepção
 
-Tratar **plano de assinatura como um terceiro tipo de item** no Step 2 (ao lado de Serviços e Produtos), igual o `SubscriptionWizardModal` faz internamente, mas dentro do fluxo unificado. O "Tipo de Cliente" deixa de ser pré-requisito para vender assinatura — passa a ser **consequência** do que está no carrinho.
+Quando o gestor marcar **"Venda Recepção"** no Step 1, aparece **logo abaixo do toggle** um seletor obrigatório de **"Em qual recepção?"** listando todas as unidades ativas da barbearia.
 
-### Mudanças concretas
+Regras:
 
-**1. `QuickSaleModal.tsx` — Step 2: nova aba "Assinatura"**
-- Adicionar `"subscription"` em `CategoryTab` → `"services" | "products" | "subscription" | "manual"`.
-- Nova aba lista os `subscription_plans` ativos como cards (igual cards de catálogo).
-- Ao clicar num plano, adiciona ao carrinho um item especial:
-  ```ts
-  { type: "subscription", planId, name, customPrice: plan.price, action: "new" | "renew" | "upgrade" | "downgrade" }
+- **1 unidade ativa**: pré-seleciona automaticamente, esconde o seletor (não polui a UI).
+- **2+ unidades**: mostra o seletor, obrigatório, sem default. Sem unidade selecionada → bloqueia o avanço com toast: *"Selecione em qual recepção a venda aconteceu."*
+- **Pré-seleção inteligente**: se o gestor já estiver com uma unidade filtrada no header do Ao Vivo (`selectedUnit !== "all"`), o seletor abre já com aquela unidade marcada (mas editável).
+- **Venda atribuída a barbeiro**: a unidade vem automaticamente do cadastro do barbeiro (`barber.unit_id`) — não precisa pedir nada ao gestor.
+
+---
+
+## Mudanças concretas
+
+### 1. `LiveDashboard.tsx`
+- Estender o estado `quickSaleModal` com `prefillUnitId?: string`.
+- Ao abrir pelo botão **"Nova Venda"**, passar `prefillUnitId = selectedUnit !== "all" ? selectedUnit : undefined`.
+- Passar a lista `units` e `prefillUnitId` como novas props para `<QuickSaleModal />`.
+
+### 2. `QuickSaleModal.tsx`
+- **Novas props:** `units: { id: string; name: string }[]` e `prefillUnitId?: string`.
+- **Novo estado:** `selectedUnitId: string | null`, inicializado com:
+  - `prefillUnitId` (se houver), OU
+  - o ID da única unidade ativa (se `units.length === 1`), OU
+  - `null`.
+- Para vendas de barbeiro, derivar `unitId` a partir do `barber.unit_id` consultado junto com a busca já existente de barbeiros (`availableBarbers`).
+- **UI no Step 1** (logo abaixo do `ToggleGroup` de atribuição, só quando `attribution === "reception"` e `units.length > 1`):
+  ```text
+  🏢 Em qual recepção?
+  [ Select com lista de unidades ativas ]
   ```
-- Ao lado do plano selecionado no carrinho, exibir um pequeno `Select` com a **ação** (`Nova / Renovar / Upgrade / Downgrade`), **pré-selecionado conforme o tipo do cliente**:
-  - "Da Casa" ou "Novo" → default `Nova`
-  - "Assinante" (já tem plano) → default `Renovar` (ou `Upgrade` se preço maior)
-- Se `action === "downgrade"`, abrir input de motivo (mesmo campo que o Wizard já tem).
-- Permitir **apenas 1 plano por carrinho** (validação ao adicionar segundo).
+- **Validação:** estender `attributionResolved` para também exigir `selectedUnitId` quando `isReceptionSale === true` e houver mais de uma unidade. Bloquear `canProceedStep1` e o submit manual com toast claro.
+- **Envio:** incluir `p_unit_id` no payload da RPC `create_sale_and_ensure_production` (ver item 3). Cobre os dois caminhos: `handleCartCheckout` e o submit do "Manual".
 
-**2. `QuickSaleModal.tsx` — Step 1: relaxar a relação Tipo × Assinatura**
-- Manter o seletor "Novo / Da Casa / Assinante" como está, mas:
-  - Tornar o campo "Plano selecionado" (que aparece em Assinante) **opcional** quando o gestor pretende vender o plano agora.
-  - Adicionar dica visual: *"Para criar uma nova assinatura, vá para o próximo passo e adicione o plano no carrinho."*
-- Lógica de desconto de serviços inclusos (`getEffectiveItemPrice`) continua igual, mas passa a considerar **também o plano que está no carrinho** (não só o `subscription_plan_id` já vinculado em `clients`).
+### 3. RPC `create_sale_and_ensure_production` (migração)
+- Adicionar parâmetro `p_unit_id uuid DEFAULT NULL`.
+- Resolver a unidade efetiva dentro da função, com fallback automático:
+  1. Se `p_unit_id` foi passado → usa ele.
+  2. Senão, se `p_barber_id` não-nulo → `SELECT unit_id FROM barbers WHERE id = p_barber_id`.
+  3. Senão → `NULL` (compatível com vendas legadas).
+- Gravar a unidade resolvida na coluna `sale_transactions.unit_id` no `INSERT`.
+- Sem mudanças de schema na tabela (`unit_id` já existe e é nullable).
 
-**3. `handleCartCheckout` — montar transação de assinatura**
-- Quando o carrinho contiver um item `type: "subscription"`, adicionar ao array `transactions` um registro com:
-  ```ts
-  {
-    item_type: "subscription",
-    item_name: `Assinatura ${planName}`,
-    price_sold: plan.price,
-    subscription_plan_id: planId,
-    subscription_action: actionSelecionada, // 'new' | 'renew' | 'upgrade' | 'downgrade'
-    downgrade_reason: action === 'downgrade' ? motivo : null,
-    is_new_client: clientType === 'new',
-    catalog_service_id: null,
-    catalog_product_id: null,
-  }
-  ```
-- Após sucesso da RPC `create_sale_and_ensure_production`, chamar `ensureSubscriptionAssigned` com o `planId` do carrinho (não mais com `selectedSubscriptionPlanId` do Step 1) para vincular `clients.subscription_plan_id`.
-- Comissão de assinatura: enviar `commission_rate_used: 0`, `commission_amount: 0` (já é a regra — memória `subscription-commission-rate`).
-
-**4. UX — feedback claro no carrinho**
-- Card do plano no carrinho mostra ícone Crown amarelo + badge da ação (`Nova adesão`, `Renovação`, etc).
-- Toast final diferenciado: *"Assinatura criada para João — 1 corte + Plano Premium"* quando o carrinho tem mistura.
-
-**5. `SubscriptionWizardModal`**
-- Continua existindo, sem mudanças. Vira fallback contextual (ex.: aba Inteligência de Assinaturas), conforme decidido na auditoria UX anterior.
+### 4. `ReceptionPerformanceReport.tsx`
+- Sem mudanças. A partir de agora, novas vendas vão alimentar corretamente a quebra por unidade que o relatório já implementa. Vendas antigas (pré-correção) continuam aparecendo agrupadas em **"Unidade não informada"**, sem retroativo.
 
 ---
 
 ## Detalhes Técnicos
 
-**Aba nova no Step 2:**
-```tsx
-<TabsList>
-  <TabsTrigger value="services"><Scissors /> Serviços</TabsTrigger>
-  <TabsTrigger value="products"><Package /> Produtos</TabsTrigger>
-  <TabsTrigger value="subscription"><Crown /> Assinatura</TabsTrigger>
-  <TabsTrigger value="manual"><Hash /> Manual</TabsTrigger>
-</TabsList>
-```
-
-**Tipagem do CartItem estendida:**
+**Lookup de unidade do barbeiro no QuickSaleModal:**
 ```ts
-interface SubscriptionCartItem {
-  tempId: string;
-  type: "subscription";
-  planId: string;
-  name: string;
-  customPrice: number;
-  action: "new" | "renew" | "upgrade" | "downgrade";
-  downgradeReason?: string;
-}
-type AnyCartItem = CartItem | SubscriptionCartItem;
+const resolvedUnitId = isReceptionSale
+  ? selectedUnitId
+  : (availableBarbers.find(b => b.id === effectiveBarberIdResolved)?.unit_id ?? null);
 ```
 
-**Determinação automática da `action`:**
+**Chamada da RPC:**
 ```ts
-function inferAction(clientType: ClientType, currentPlan: Plan | null, newPlan: Plan): SubscriptionAction {
-  if (clientType === "new" || clientType === "without_subscription") return "new";
-  if (!currentPlan) return "new";
-  if (currentPlan.id === newPlan.id) return "renew";
-  return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
-}
+await supabase.rpc("create_sale_and_ensure_production", {
+  p_organization_id: organizationId,
+  p_barber_id: isReceptionSale ? null : effectiveBarberIdResolved,
+  p_unit_id: resolvedUnitId,         // novo
+  p_date: dateStr,
+  p_transactions: [...],
+  p_source: "manager",
+});
 ```
 
-**Sem mudanças de banco** — a tabela `sale_transactions` já suporta `item_type='subscription'` + `subscription_action` + `subscription_plan_id`.
-
----
-
-## Impacto
-
-| Antes | Depois |
-|---|---|
-| Cliente "Da Casa" não vira assinante no fluxo principal | Assinatura é item de carrinho, qualquer tipo de cliente pode aderir |
-| Mistura corte + adesão exige 2 modais | Carrinho único: corte + plano numa só transação |
-| `subscription_action` só nasce no Wizard | Nasce no `QuickSaleModal` com regra explícita |
+**Trecho da migração:**
+```sql
+CREATE OR REPLACE FUNCTION public.create_sale_and_ensure_production(
+  p_organization_id uuid,
+  p_barber_id uuid DEFAULT NULL,
+  p_date date DEFAULT CURRENT_DATE,
+  p_transactions jsonb DEFAULT '[]',
+  p_source text DEFAULT 'manager',
+  p_unit_id uuid DEFAULT NULL          -- novo
+) ...
+DECLARE v_unit_id uuid;
+BEGIN
+  v_unit_id := COALESCE(
+    p_unit_id,
+    (SELECT unit_id FROM barbers WHERE id = p_barber_id)
+  );
+  -- ... INSERT inclui v_unit_id em sale_transactions.unit_id
+```
 
 ---
 
@@ -131,12 +109,10 @@ function inferAction(clientType: ClientType, currentPlan: Plan | null, newPlan: 
 
 | # | Arquivo | Mudança |
 |---|---------|---------|
-| 1 | `QuickSaleModal.tsx` | Estender `CategoryTab` e `CartItem` para suportar tipo `subscription` |
-| 2 | `QuickSaleModal.tsx` | Nova aba "Assinatura" no Step 2 listando `subscription_plans` |
-| 3 | `QuickSaleModal.tsx` | Seletor de ação (Nova/Renovar/Upgrade/Downgrade) por item do carrinho + motivo do downgrade |
-| 4 | `QuickSaleModal.tsx` | `handleCartCheckout` monta transação `item_type='subscription'` e atualiza `clients.subscription_plan_id` ao final |
-| 5 | `QuickSaleModal.tsx` | `getEffectiveItemPrice` considera plano no carrinho para zerar serviços inclusos |
-| 6 | `QuickSaleModal.tsx` | Texto de ajuda no Step 1 indicando como aderir um plano |
+| 1 | Migração SQL | Adicionar `p_unit_id` à RPC + fallback via `barbers.unit_id` + gravar `sale_transactions.unit_id` |
+| 2 | `LiveDashboard.tsx` | Estender state e props para passar `units` + `prefillUnitId` (vindo do filtro) |
+| 3 | `QuickSaleModal.tsx` | Novo seletor "Em qual recepção?" no Step 1, validação obrigatória e envio de `p_unit_id` |
+| 4 | Memória | Atualizar `mem://features/reception-sales-management` registrando que recepção agora exige `unit_id` |
 
-Sem migração de banco. Apenas frontend. Estimativa: 1 sessão de implementação.
+Sem retroatividade em vendas antigas. Frontend + 1 migração de RPC. Estimativa: 1 sessão.
 
