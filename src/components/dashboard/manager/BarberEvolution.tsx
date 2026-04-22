@@ -83,9 +83,10 @@ function BarberEvolutionChart() {
     }
 
     // Buscar comissões ganhas por mês
+    // Prioridade: tx_commission_earned (auditado pelo gestor) > commission_earned (calculado)
     const { data: productions, error: productionsError } = await supabase
       .from("daily_productions")
-      .select("date, commission_earned")
+      .select("date, commission_earned, tx_commission_earned")
       .eq("barber_id", selectedBarberId)
       .gte("date", `${selectedYear}-01-01`)
       .lte("date", `${selectedYear}-12-31`);
@@ -96,11 +97,14 @@ function BarberEvolutionChart() {
       return;
     }
 
-    // Agrupar comissões por mês
+    // Agrupar comissões por mês usando dado auditado quando disponível
     const commissionByMonth = new Array(12).fill(0);
-    productions?.forEach((prod) => {
+    productions?.forEach((prod: any) => {
       const month = new Date(prod.date).getMonth();
-      commissionByMonth[month] += Number(prod.commission_earned);
+      const txCommission = Number(prod.tx_commission_earned) || 0;
+      const baseCommission = Number(prod.commission_earned) || 0;
+      // Usar tx (gestor) se houver lançamento auditado, senão usar a comissão padrão
+      commissionByMonth[month] += txCommission > 0 ? txCommission : baseCommission;
     });
 
     // Criar dados do gráfico

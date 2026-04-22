@@ -128,11 +128,21 @@ export default function UnitsComparison() {
 
       const servicesBasic = prod.services_basic_total ?? 0;
       const servicesExtra = prod.services_extra_total ?? 0;
+      const servicesTotalLegacy = prod.services_total ?? 0;
       const servicesTotal = servicesBasic > 0 || servicesExtra > 0 
         ? servicesBasic + servicesExtra 
-        : (prod.services_total ?? 0);
+        : servicesTotalLegacy;
 
-      metrics.receitaBasica += servicesBasic > 0 ? servicesBasic : (prod.services_total ?? 0);
+      // Básico: se já temos basic > 0, usar. Se temos extras mas basic=0, derivar.
+      // Senão, usar legado inteiro.
+      let receitaBasicaItem = servicesBasic;
+      if (servicesBasic === 0 && servicesExtra > 0) {
+        receitaBasicaItem = Math.max(0, servicesTotalLegacy - servicesExtra);
+      } else if (servicesBasic === 0 && servicesExtra === 0) {
+        receitaBasicaItem = servicesTotalLegacy;
+      }
+
+      metrics.receitaBasica += receitaBasicaItem;
       metrics.receitaExtra += servicesExtra;
       metrics.receitaProdutos += prod.products_total ?? 0;
       metrics.receita += servicesTotal + (prod.products_total ?? 0);

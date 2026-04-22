@@ -78,6 +78,7 @@ export default function SubscriptionAnalytics() {
         .from("sale_transactions")
         .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, subscription_plan_id, barbers(name), subscription_plans(name), units(name)")
         .eq("item_type", "subscription")
+        .eq("source", "manager") // Single source of truth: only manager-recorded subscriptions
         .gte("created_at", start)
         .lte("created_at", end)
         .order("created_at", { ascending: false }),
