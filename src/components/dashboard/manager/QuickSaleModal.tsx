@@ -167,6 +167,8 @@ export default function QuickSaleModal({
   initialIsNewClient,
   initialDate,
   initialMode,
+  units = [],
+  prefillUnitId,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
