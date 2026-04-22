@@ -1296,6 +1296,213 @@ export default function QuickSaleModal({
           </div>
         </div>
 
+        {/* Attribution + Client type — grouped visually (MOVED to top so manager picks unit early) */}
+        <div className="rounded-lg border bg-muted/20 divide-y divide-border">
+          {/* Mandatory Attribution Selector */}
+          <div className="px-3 py-2.5 space-y-2">
+            <Label className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+              Atribuição da Venda <span className="text-destructive">*</span>
+            </Label>
+            <ToggleGroup
+              type="single"
+              value={attribution ?? ""}
+              onValueChange={(v) => {
+                if (v === "barber" || v === "reception") setAttribution(v);
+              }}
+              className="justify-start w-full"
+            >
+              <ToggleGroupItem
+                value="barber"
+                aria-label="Atribuir ao barbeiro"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span className="truncate">
+                  {barberId
+                    ? (barberName || "Barbeiro")
+                    : pickedBarberId
+                      ? effectiveBarberName
+                      : "Barbeiro"}
+                </span>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="reception"
+                aria-label="Venda da Recepção"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black ring-1 ring-amber-500/40"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                Venda Recepção
+              </ToggleGroupItem>
+            </ToggleGroup>
+
+            {/* In-modal barber picker — visible when "Barbeiro" is chosen but no barber was pre-selected */}
+            {attribution === "barber" && !barberId && (
+              <Select value={pickedBarberId} onValueChange={setPickedBarberId}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione qual barbeiro fará a venda..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBarbers.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-muted-foreground">
+                      Nenhum barbeiro ativo encontrado.
+                    </div>
+                  ) : (
+                    availableBarbers.map((b) => (
+                      <SelectItem key={b.id} value={b.id} className="text-xs">
+                        {b.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+
+            {!attribution && (
+              <p className="text-[11px] text-destructive">
+                Selecione um Barbeiro ou "Venda Recepção" para prosseguir.
+              </p>
+            )}
+            {attribution === "barber" && !effectiveBarberIdResolved && (
+              <p className="text-[11px] text-destructive">
+                Escolha qual barbeiro fará a venda.
+              </p>
+            )}
+
+            {/* Reception unit picker — only when reception sale & multiple units */}
+            {isReceptionSale && units.length > 1 && (
+              <div className="space-y-1.5 pt-1">
+                <Label className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                  <Building2 className="w-3 h-3" />
+                  Em qual recepção? <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={selectedUnitId ?? ""}
+                  onValueChange={(v) => setSelectedUnitId(v || null)}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Selecione a unidade da recepção..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.map((u) => (
+                      <SelectItem key={u.id} value={u.id} className="text-xs">
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!selectedUnitId && (
+                  <p className="text-[11px] text-destructive">
+                    Obrigatório: identifique em qual unidade a venda da recepção aconteceu.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Client Type Selector */}
+          <div className="px-3 py-2.5 space-y-2">
+            <Label className="text-xs text-muted-foreground font-medium">Tipo de Cliente</Label>
+            <ToggleGroup
+              type="single"
+              value={clientType}
+              onValueChange={(v) => {
+                if (v) handleClientTypeChange(v as ClientType);
+              }}
+              className="justify-start"
+            >
+              <ToggleGroupItem
+                value="new"
+                aria-label="Cliente Novo"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-green-600 data-[state=on]:text-white"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Novo
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="without_subscription"
+                aria-label="Cliente sem Assinatura"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Home className="w-3.5 h-3.5" />
+                Da Casa
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="with_subscription"
+                aria-label="Cliente com Assinatura"
+                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black"
+                onPointerDown={(e) => e.preventDefault()}
+              >
+                <Crown className="w-3.5 h-3.5" />
+                Assinante
+              </ToggleGroupItem>
+            </ToggleGroup>
+
+            {(clientType === "new" || clientType === "without_subscription") && (
+              <p className="text-[11px] text-muted-foreground">
+                💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
+              </p>
+            )}
+
+            {clientType === "with_subscription" && (
+              <div className="space-y-2 pt-1">
+                <Select
+                  value={selectedSubscriptionPlanId}
+                  onValueChange={(value) => {
+                    setSelectedSubscriptionPlanId(value);
+                    setSubscriptionPlanAutoDetected(false);
+                  }}
+                  disabled={isResolvingSubscription}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue
+                      placeholder={
+                        isResolvingSubscription
+                          ? "Lendo assinatura..."
+                          : "Selecione o plano"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subscriptionPlans.length > 0 ? (
+                      subscriptionPlans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        Nenhum plano cadastrado
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+
+                {selectedSubscriptionPlan && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {subscriptionPlanAutoDetected ? "✓ Identificado automaticamente" : "✓ Selecionado"}: {selectedSubscriptionPlan.name}
+                    {(() => {
+                      const labels = services
+                        .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
+                        .map((service) => service.name);
+                      return labels.length > 0 ? ` — Serviços inclusos: ${labels.join(", ")}` : "";
+                    })()}
+                  </p>
+                )}
+
+                {!selectedSubscriptionPlanId && !isResolvingSubscription && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Selecione o plano para continuar.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Client Name */}
         <div className="space-y-1.5 relative">
           <Label htmlFor="client-name" className="text-xs text-muted-foreground font-medium">
