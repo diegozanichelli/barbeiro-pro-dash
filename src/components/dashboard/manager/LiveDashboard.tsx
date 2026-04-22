@@ -824,6 +824,7 @@ export default function LiveDashboard() {
                   open: true,
                   barberId: "",
                   barberName: "",
+                  prefillUnitId: selectedUnit !== "all" ? selectedUnit : undefined,
                   // sem mode: o gestor escolhe Barbeiro ou Recepção no Step 1
                 });
               }}
