@@ -1,89 +1,142 @@
 
 
-# Auditoria UX: "Vender Assinatura" vs "Venda Recepção" no Ao Vivo
+# Gap de Arquitetura: vender assinatura para cliente "Da Casa"
 
-## Diagnóstico — onde está a confusão
+## Diagnóstico
 
-Hoje o cabeçalho do **Ao Vivo** tem 3 gatilhos de venda que se sobrepõem:
+Quando consolidamos os botões do Ao Vivo e fizemos o `QuickSaleModal` ser o ponto de entrada único, **deixamos um caso real de fora**: o gestor identifica um cliente "Da Casa" (avulso recorrente) e quer **convertê-lo em assinante na hora**, junto ou não com um corte/produto.
 
-| Botão | Modal | Quando faz sentido | Sobreposição |
-|---|---|---|---|
-| **+** (linha do barbeiro) | `QuickSaleModal` (modo barbeiro) | Venda atribuída a um profissional específico | — |
-| **🟡 Vender Assinatura** | `SubscriptionWizardModal` | Adesão / renovação / upgrade de plano | Pode ser feita pela recepção OU por um barbeiro |
-| **🏢 Venda Recepção** | `QuickSaleModal` (modo recepção) | Venda sem atribuição (loja/balcão) | Suporta serviço, produto **e assinatura** internamente |
+### Por que não funciona hoje
 
-**Problemas reais:**
+No Step 1 do `QuickSaleModal`, o "Tipo de Cliente" tem 3 opções:
 
-1. **Eixos misturados.** "Vender Assinatura" é um **tipo de item**; "Venda Recepção" é uma **forma de atribuição**. O gestor precisa escolher entre eixos diferentes — não é uma escolha apples-to-apples.
-2. **Caminho ambíguo para vender uma assinatura na recepção.** O gestor pode (a) clicar "Vender Assinatura" e escolher "Recepção" no Step 2, OU (b) clicar "Venda Recepção" e adicionar uma assinatura no carrinho. Dois caminhos = dúvida + métricas inconsistentes (auditadas no item #3 anterior).
-3. **Retrabalho.** Cliente que entra para assinar e leva um produto: o gestor abre o Wizard de Assinatura, finaliza, depois abre Venda Recepção para o produto. Deveria ser um único fluxo.
-4. **Visual.** Os dois botões ficam lado a lado com pesos visuais diferentes (dourado vs cinza com borda dourada), reforçando que são "irmãos" quando na verdade são eixos ortogonais.
+| Tipo | Significado atual | Permite criar assinatura? |
+|---|---|---|
+| **Novo** | Primeiro atendimento | ❌ Não |
+| **Da Casa** | Avulso, sem plano | ❌ Não |
+| **Assinante** | **Já tem** um plano ativo | ❌ Não — só aplica desconto |
+
+No Step 2, o catálogo só mostra **Serviços** e **Produtos** (`activeTab: "services" | "products" | "manual"`). Não existe aba/cartão para adicionar **Plano de Assinatura** ao carrinho. A criação de transação `item_type='subscription'` com `subscription_action='new'` só acontece no `SubscriptionWizardModal`, que tiramos do header.
+
+**Resultado prático:** o caminho do "cliente Da Casa que aceitou assinar" foi quebrado. Hoje o gestor teria que:
+1. Salvar o corte como "Da Casa".
+2. Reabrir o modal, marcar "Assinante", escolher o plano… mas isso só presume que ele já é — não cria a adesão (`subscription_action='new'`).
+3. Não há caminho 100% funcional sem voltar ao `SubscriptionWizardModal`.
 
 ---
 
-## Proposta — Um único ponto de entrada para vendas sem atribuição
+## Proposta — adicionar "Assinatura" como item de carrinho
 
-Consolidar em **UM botão principal "Nova Venda"** que abre o `QuickSaleModal` já existente, com a atribuição (Barbeiro/Recepção) como **primeiro passo obrigatório** (já implementado no item #6 anterior). O `SubscriptionWizardModal` vira um **atalho contextual**, não um botão de mesmo peso.
+Tratar **plano de assinatura como um terceiro tipo de item** no Step 2 (ao lado de Serviços e Produtos), igual o `SubscriptionWizardModal` faz internamente, mas dentro do fluxo unificado. O "Tipo de Cliente" deixa de ser pré-requisito para vender assinatura — passa a ser **consequência** do que está no carrinho.
 
-### Layout do header (depois)
+### Mudanças concretas
 
-```text
-[ + Nova Venda ]   [ 👁 Auditar ]
+**1. `QuickSaleModal.tsx` — Step 2: nova aba "Assinatura"**
+- Adicionar `"subscription"` em `CategoryTab` → `"services" | "products" | "subscription" | "manual"`.
+- Nova aba lista os `subscription_plans` ativos como cards (igual cards de catálogo).
+- Ao clicar num plano, adiciona ao carrinho um item especial:
+  ```ts
+  { type: "subscription", planId, name, customPrice: plan.price, action: "new" | "renew" | "upgrade" | "downgrade" }
+  ```
+- Ao lado do plano selecionado no carrinho, exibir um pequeno `Select` com a **ação** (`Nova / Renovar / Upgrade / Downgrade`), **pré-selecionado conforme o tipo do cliente**:
+  - "Da Casa" ou "Novo" → default `Nova`
+  - "Assinante" (já tem plano) → default `Renovar` (ou `Upgrade` se preço maior)
+- Se `action === "downgrade"`, abrir input de motivo (mesmo campo que o Wizard já tem).
+- Permitir **apenas 1 plano por carrinho** (validação ao adicionar segundo).
+
+**2. `QuickSaleModal.tsx` — Step 1: relaxar a relação Tipo × Assinatura**
+- Manter o seletor "Novo / Da Casa / Assinante" como está, mas:
+  - Tornar o campo "Plano selecionado" (que aparece em Assinante) **opcional** quando o gestor pretende vender o plano agora.
+  - Adicionar dica visual: *"Para criar uma nova assinatura, vá para o próximo passo e adicione o plano no carrinho."*
+- Lógica de desconto de serviços inclusos (`getEffectiveItemPrice`) continua igual, mas passa a considerar **também o plano que está no carrinho** (não só o `subscription_plan_id` já vinculado em `clients`).
+
+**3. `handleCartCheckout` — montar transação de assinatura**
+- Quando o carrinho contiver um item `type: "subscription"`, adicionar ao array `transactions` um registro com:
+  ```ts
+  {
+    item_type: "subscription",
+    item_name: `Assinatura ${planName}`,
+    price_sold: plan.price,
+    subscription_plan_id: planId,
+    subscription_action: actionSelecionada, // 'new' | 'renew' | 'upgrade' | 'downgrade'
+    downgrade_reason: action === 'downgrade' ? motivo : null,
+    is_new_client: clientType === 'new',
+    catalog_service_id: null,
+    catalog_product_id: null,
+  }
+  ```
+- Após sucesso da RPC `create_sale_and_ensure_production`, chamar `ensureSubscriptionAssigned` com o `planId` do carrinho (não mais com `selectedSubscriptionPlanId` do Step 1) para vincular `clients.subscription_plan_id`.
+- Comissão de assinatura: enviar `commission_rate_used: 0`, `commission_amount: 0` (já é a regra — memória `subscription-commission-rate`).
+
+**4. UX — feedback claro no carrinho**
+- Card do plano no carrinho mostra ícone Crown amarelo + badge da ação (`Nova adesão`, `Renovação`, etc).
+- Toast final diferenciado: *"Assinatura criada para João — 1 corte + Plano Premium"* quando o carrinho tem mistura.
+
+**5. `SubscriptionWizardModal`**
+- Continua existindo, sem mudanças. Vira fallback contextual (ex.: aba Inteligência de Assinaturas), conforme decidido na auditoria UX anterior.
+
+---
+
+## Detalhes Técnicos
+
+**Aba nova no Step 2:**
+```tsx
+<TabsList>
+  <TabsTrigger value="services"><Scissors /> Serviços</TabsTrigger>
+  <TabsTrigger value="products"><Package /> Produtos</TabsTrigger>
+  <TabsTrigger value="subscription"><Crown /> Assinatura</TabsTrigger>
+  <TabsTrigger value="manual"><Hash /> Manual</TabsTrigger>
+</TabsList>
 ```
 
-- **+ Nova Venda** (primário, destacado): abre `QuickSaleModal` com `attribution = null` — o gestor escolhe Barbeiro ou Recepção no Step 1 e o tipo de item (serviço/produto/assinatura) no Step 2. Fluxo único.
-- **👁 Auditar**: mantém como está — entrada para `SubscriptionAuditModal`.
-- O botão **+** dentro de cada linha de barbeiro continua igual (atalho rápido com barbeiro pré-selecionado).
+**Tipagem do CartItem estendida:**
+```ts
+interface SubscriptionCartItem {
+  tempId: string;
+  type: "subscription";
+  planId: string;
+  name: string;
+  customPrice: number;
+  action: "new" | "renew" | "upgrade" | "downgrade";
+  downgradeReason?: string;
+}
+type AnyCartItem = CartItem | SubscriptionCartItem;
+```
 
-### Por que NÃO manter "Vender Assinatura" como botão separado?
+**Determinação automática da `action`:**
+```ts
+function inferAction(clientType: ClientType, currentPlan: Plan | null, newPlan: Plan): SubscriptionAction {
+  if (clientType === "new" || clientType === "without_subscription") return "new";
+  if (!currentPlan) return "new";
+  if (currentPlan.id === newPlan.id) return "renew";
+  return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
+}
+```
 
-- O `QuickSaleModal` já tem suporte completo a assinatura (`selectedSubscriptionPlanId`, `subscription_action`, autodetecção de plano por telefone). 
-- O wizard dedicado existe por motivos históricos, mas duplica lógica de identificação de cliente, atribuição e validação.
-- **Uma exceção**: a tela de **Performance de Assinaturas** (Evolução) e o botão **+** dentro dela ainda podem manter um atalho "Vender Assinatura" → abre o `QuickSaleModal` com `forceItemType='subscription'` (escopo contextual, não global).
-
----
-
-## Mudanças concretas
-
-### 1. `LiveDashboard.tsx` — header
-- **Remover** o botão "Vender Assinatura" (linhas 814-822).
-- **Renomear** "Venda Recepção" → "**Nova Venda**", trocar variant `secondary` por `default`, manter ícone `Plus`.
-- Ao clicar, abrir `QuickSaleModal` com `barberId=""`, `barberName=""`, **sem** `mode` (deixar o usuário escolher no Step 1, com Barbeiro/Recepção como `null` inicial).
-- Manter o botão **👁 Auditar** ao lado.
-
-### 2. `QuickSaleModal.tsx` — Step 1 de Atribuição
-- Quando `attribution === null` (caso do novo "Nova Venda"), o ToggleGroup precisa exibir **lista de barbeiros** + opção "Recepção" — não só o barbeiro pré-selecionado vs Recepção.
-- Adicionar um `Select` ou `BarberCombobox` dentro do toggle "Barbeiro" para escolher qual profissional, quando vier sem `barberId`.
-- Manter o atalho atual: se aberto a partir do botão **+** de uma linha, vem com barbeiro pré-selecionado e ToggleGroup já em "barber".
-
-### 3. `SubscriptionWizardModal.tsx`
-- **Manter** o componente (não remover) — ainda é útil em fluxos contextuais (ex: aba Inteligência de Assinaturas, conversão de cliente).
-- **Remover** apenas a entrada via header do Ao Vivo.
-- (Opcional, fora deste escopo) Avaliar futuramente se vale aposentar de vez em favor do `QuickSaleModal`.
-
-### 4. Memória
-- Atualizar `mem://features/subscription-flow-bridge` e `mem://features/subscription-wizard-attribution-logic` notando que o ponto de entrada principal no Ao Vivo é o `QuickSaleModal` unificado.
+**Sem mudanças de banco** — a tabela `sale_transactions` já suporta `item_type='subscription'` + `subscription_action` + `subscription_plan_id`.
 
 ---
 
-## Impacto esperado
+## Impacto
 
 | Antes | Depois |
 |---|---|
-| 3 gatilhos no header | 2 (Nova Venda + Auditar) |
-| 2 caminhos para vender assinatura sem barbeiro | 1 caminho único |
-| Atribuição implícita no nome do botão | Atribuição explícita como Step 1 obrigatório |
-| Retrabalho ao misturar assinatura + produto | Carrinho unificado |
-
-Sem mudanças de banco. Apenas frontend.
+| Cliente "Da Casa" não vira assinante no fluxo principal | Assinatura é item de carrinho, qualquer tipo de cliente pode aderir |
+| Mistura corte + adesão exige 2 modais | Carrinho único: corte + plano numa só transação |
+| `subscription_action` só nasce no Wizard | Nasce no `QuickSaleModal` com regra explícita |
 
 ---
 
-## Antes de implementar — 1 decisão
+## Plano de execução
 
-**Quer que o `SubscriptionWizardModal` continue acessível como atalho em outro lugar (ex: dentro do card "Inteligência de Assinaturas" na aba Evolução), ou pode ser totalmente desativado?**
+| # | Arquivo | Mudança |
+|---|---------|---------|
+| 1 | `QuickSaleModal.tsx` | Estender `CategoryTab` e `CartItem` para suportar tipo `subscription` |
+| 2 | `QuickSaleModal.tsx` | Nova aba "Assinatura" no Step 2 listando `subscription_plans` |
+| 3 | `QuickSaleModal.tsx` | Seletor de ação (Nova/Renovar/Upgrade/Downgrade) por item do carrinho + motivo do downgrade |
+| 4 | `QuickSaleModal.tsx` | `handleCartCheckout` monta transação `item_type='subscription'` e atualiza `clients.subscription_plan_id` ao final |
+| 5 | `QuickSaleModal.tsx` | `getEffectiveItemPrice` considera plano no carrinho para zerar serviços inclusos |
+| 6 | `QuickSaleModal.tsx` | Texto de ajuda no Step 1 indicando como aderir um plano |
 
-- **(a)** Manter como atalho contextual na aba Evolução (recomendado — preserva o fluxo guiado para gestores que preferem o wizard passo-a-passo).
-- **(b)** Remover de todos os lugares e usar somente o `QuickSaleModal` unificado.
-- **(c)** Manter como está em outras abas; mexer só no header do Ao Vivo.
+Sem migração de banco. Apenas frontend. Estimativa: 1 sessão de implementação.
 
