@@ -840,8 +840,10 @@ export default function QuickSaleModal({
     clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
+  const needsUnitSelection = isReceptionSale && units.length > 1;
   const attributionResolved =
-    attribution === "reception" || (attribution === "barber" && !!effectiveBarberIdResolved);
+    (attribution === "reception" && (!needsUnitSelection || !!selectedUnitId)) ||
+    (attribution === "barber" && !!effectiveBarberIdResolved);
   const canProceedStep1 =
     attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
