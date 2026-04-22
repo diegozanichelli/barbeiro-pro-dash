@@ -527,7 +527,7 @@ export default function QuickSaleModal({
     } else if (res.status === "name_found") {
       if (!manualOverride) setClientType("without_subscription");
     } else if (res.status === "not_found") {
-      // Não muda automaticamente — o gestor decide manualmente
+      if (!manualOverride) setClientType("new");
     }
   }, [mobilePhone, clientName, manualOverride, clientHistory]);
 
