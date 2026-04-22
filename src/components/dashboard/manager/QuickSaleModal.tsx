@@ -176,8 +176,8 @@ export default function QuickSaleModal({
   // Wizard step
   const [step, setStep] = useState<1 | 2>(1);
   
-  // Cart state (individualized with tempId)
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Cart state (individualized with tempId) — supports services, products and subscription plans
+  const [cart, setCart] = useState<AnyCartItem[]>([]);
   const [clientsCount, setClientsCount] = useState(1);
   
   // Manual sale state
