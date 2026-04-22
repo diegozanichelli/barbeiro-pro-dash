@@ -1490,6 +1490,24 @@ export default function QuickSaleModal({
               </ToggleGroupItem>
             </ToggleGroup>
 
+            {clientHistory.status === "not_found" && clientType === "new" && !manualOverride && (
+              <div className="rounded-md bg-green-500/10 border border-green-500/30 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1.5">
+                <UserPlus className="w-3 h-3 shrink-0" />
+                <span>
+                  Telefone não encontrado na base — marcamos como <strong>Cliente Novo</strong> automaticamente.
+                </span>
+              </div>
+            )}
+
+            {clientHistory.status === "not_found" && clientType !== "new" && manualOverride && (
+              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                <span>
+                  Esse telefone não está na base. Tem certeza que não é um cliente novo?
+                </span>
+              </div>
+            )}
+
             {(clientType === "new" || clientType === "without_subscription") && (
               <p className="text-[11px] text-muted-foreground">
                 💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
