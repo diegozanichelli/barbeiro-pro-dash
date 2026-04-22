@@ -531,7 +531,8 @@ export default function QuickSaleModal({
     }
   };
 
-  const countInCart = (itemId: string) => cart.filter(i => i.id === itemId).length;
+  const countInCart = (itemId: string) =>
+    cart.filter((i) => !isSubscriptionCartItem(i) && i.id === itemId).length;
 
   const removeFromCart = (tempId: string) => {
     setCart(prev => prev.filter(i => i.tempId !== tempId));
