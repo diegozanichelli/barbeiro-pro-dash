@@ -61,6 +61,8 @@ interface QuickSaleModalProps {
   initialIsNewClient?: boolean;
   initialDate?: string; // yyyy-MM-dd from LiveDashboard
   initialMode?: "barber" | "reception"; // attribution mode preselected
+  units?: { id: string; name: string }[];
+  prefillUnitId?: string;
 }
 
 interface CatalogItem {
@@ -165,6 +167,8 @@ export default function QuickSaleModal({
   initialIsNewClient,
   initialDate,
   initialMode,
+  units = [],
+  prefillUnitId,
 }: QuickSaleModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -191,7 +195,7 @@ export default function QuickSaleModal({
   const isReceptionSale = attribution === "reception";
 
   // In-modal barber picker (used when modal is opened without a pre-selected barber)
-  const [availableBarbers, setAvailableBarbers] = useState<{ id: string; name: string }[]>([]);
+  const [availableBarbers, setAvailableBarbers] = useState<{ id: string; name: string; unit_id?: string | null }[]>([]);
   const [pickedBarberId, setPickedBarberId] = useState<string>("");
   // Effective IDs/names — prefer prop barberId, fallback to in-modal pick
   const effectiveBarberIdResolved = barberId || pickedBarberId;
@@ -199,6 +203,9 @@ export default function QuickSaleModal({
     barberName ||
     availableBarbers.find((b) => b.id === pickedBarberId)?.name ||
     "Barbeiro";
+
+  // Reception unit selector — required when attribution=reception and there are 2+ units
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
 
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
@@ -240,7 +247,7 @@ export default function QuickSaleModal({
   });
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Sync selectedDate + attribution with initial props when modal opens
+  // Sync selectedDate + attribution + selectedUnitId with initial props when modal opens
   useEffect(() => {
     if (open && initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
@@ -248,8 +255,16 @@ export default function QuickSaleModal({
     }
     if (open) {
       setAttribution(initialMode ?? (barberId ? "barber" : null));
+      // Initialize unit: prefill > sole-unit auto-select > null
+      if (prefillUnitId) {
+        setSelectedUnitId(prefillUnitId);
+      } else if (units.length === 1) {
+        setSelectedUnitId(units[0].id);
+      } else {
+        setSelectedUnitId(null);
+      }
     }
-  }, [open, initialDate, initialMode, barberId]);
+  }, [open, initialDate, initialMode, barberId, prefillUnitId, units]);
 
   const fetchCatalog = useCallback(async () => {
     setLoadingCatalog(true);
@@ -312,7 +327,7 @@ export default function QuickSaleModal({
     (async () => {
       const { data, error } = await supabase
         .from("barbers")
-        .select("id, name")
+        .select("id, name, unit_id")
         .eq("organization_id", organizationId)
         .eq("status", "active")
         .order("name");
@@ -381,6 +396,14 @@ export default function QuickSaleModal({
       setSelectedDate(new Date());
     }
     setDatePickerOpen(false);
+    // Reset unit selection following the same precedence used on open
+    if (prefillUnitId) {
+      setSelectedUnitId(prefillUnitId);
+    } else if (units.length === 1) {
+      setSelectedUnitId(units[0].id);
+    } else {
+      setSelectedUnitId(null);
+    }
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -817,8 +840,10 @@ export default function QuickSaleModal({
     clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
+  const needsUnitSelection = isReceptionSale && units.length > 1;
   const attributionResolved =
-    attribution === "reception" || (attribution === "barber" && !!effectiveBarberIdResolved);
+    (attribution === "reception" && (!needsUnitSelection || !!selectedUnitId)) ||
+    (attribution === "barber" && !!effectiveBarberIdResolved);
   const canProceedStep1 =
     attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
@@ -835,6 +860,10 @@ export default function QuickSaleModal({
     }
     if (attribution === "barber" && !effectiveBarberIdResolved) {
       toast.error("Selecione qual barbeiro fará a venda.");
+      return;
+    }
+    if (needsUnitSelection && !selectedUnitId) {
+      toast.error("Selecione em qual recepção a venda aconteceu.");
       return;
     }
     if (cart.length === 0) {
@@ -918,12 +947,17 @@ export default function QuickSaleModal({
         };
       });
 
+      const resolvedUnitId = isReceptionSale
+        ? selectedUnitId
+        : (availableBarbers.find((b) => b.id === effectiveBarberIdResolved)?.unit_id ?? null);
+
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
         p_barber_id: effectiveBarberId,
         p_date: dateStr,
         p_transactions: transactions,
         p_source: "manager",
+        p_unit_id: resolvedUnitId,
       });
       if (error) throw error;
 
@@ -989,6 +1023,10 @@ export default function QuickSaleModal({
     }
     if (attribution === "barber" && !effectiveBarberIdResolved) {
       toast.error("Selecione qual barbeiro fará a venda.");
+      return;
+    }
+    if (needsUnitSelection && !selectedUnitId) {
+      toast.error("Selecione em qual recepção a venda aconteceu.");
       return;
     }
 
@@ -1060,12 +1098,17 @@ export default function QuickSaleModal({
           catalog_product_id: null,
       };
 
+      const resolvedUnitIdManual = isReceptionSale
+        ? selectedUnitId
+        : (availableBarbers.find((b) => b.id === effectiveBarberIdResolved)?.unit_id ?? null);
+
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
         p_barber_id: isReceptionSale ? null : effectiveBarberIdResolved,
         p_date: dateStr,
         p_transactions: [transaction],
         p_source: "manager",
+        p_unit_id: resolvedUnitIdManual,
       });
 
       if (error) throw error;
@@ -1428,6 +1471,36 @@ export default function QuickSaleModal({
               <p className="text-[11px] text-destructive">
                 Escolha qual barbeiro fará a venda.
               </p>
+            )}
+
+            {/* Reception unit picker — only when reception sale & multiple units */}
+            {isReceptionSale && units.length > 1 && (
+              <div className="space-y-1.5 pt-1">
+                <Label className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                  <Building2 className="w-3 h-3" />
+                  Em qual recepção? <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={selectedUnitId ?? ""}
+                  onValueChange={(v) => setSelectedUnitId(v || null)}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Selecione a unidade da recepção..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.map((u) => (
+                      <SelectItem key={u.id} value={u.id} className="text-xs">
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!selectedUnitId && (
+                  <p className="text-[11px] text-destructive">
+                    Obrigatório: identifique em qual unidade a venda da recepção aconteceu.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

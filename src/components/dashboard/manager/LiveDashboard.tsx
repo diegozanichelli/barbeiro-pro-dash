@@ -131,6 +131,7 @@ export default function LiveDashboard() {
     barberName: string;
     fromBridge?: boolean;
     mode?: "barber" | "reception";
+    prefillUnitId?: string;
   }>({ open: false, barberId: "", barberName: "" });
   const [editModal, setEditModal] = useState<{
     open: boolean;
@@ -823,6 +824,7 @@ export default function LiveDashboard() {
                   open: true,
                   barberId: "",
                   barberName: "",
+                  prefillUnitId: selectedUnit !== "all" ? selectedUnit : undefined,
                   // sem mode: o gestor escolhe Barbeiro ou Recepção no Step 1
                 });
               }}
@@ -1359,6 +1361,8 @@ export default function LiveDashboard() {
         initialIsNewClient={quickSaleModal.fromBridge ? false : undefined}
         initialDate={selectedDate}
         initialMode={quickSaleModal.mode}
+        units={units}
+        prefillUnitId={quickSaleModal.prefillUnitId}
       />
 
       {/* Edit Production Modal - Transaction Manager */}
