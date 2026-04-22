@@ -101,20 +101,24 @@ export default function ShopEvolution() {
       console.error("Erro ao buscar metas:", goalsError);
     }
 
-    // Buscar faturamento de assinaturas do ano
-    const { data: subscriptionEarnings, error: subError } = await supabase
-      .from("barber_subscription_earnings")
-      .select("month, total_revenue, barber_id, barbers!inner(unit_id)")
-      .eq("year", selectedYear);
+    // Buscar receita de assinaturas direto de sale_transactions (fonte única de verdade)
+    // Filtra por source='manager' para alinhar com o princípio "Gestão como Fonte de Verdade"
+    const { data: subscriptionTxs, error: subError } = await supabase
+      .from("sale_transactions")
+      .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
+      .eq("item_type", "subscription")
+      .eq("source", "manager")
+      .gte("created_at", `${selectedYear}-01-01T00:00:00`)
+      .lte("created_at", `${selectedYear}-12-31T23:59:59`);
 
     if (subError) {
-      console.error("Erro ao buscar ganhos de assinatura:", subError);
+      console.error("Erro ao buscar transações de assinatura:", subError);
     }
 
     // Filtrar assinaturas por unidade se selecionada
-    const filteredSubEarnings = selectedUnit === "all"
-      ? subscriptionEarnings
-      : subscriptionEarnings?.filter((s: any) => s.barbers?.unit_id === selectedUnit);
+    const filteredSubTxs = selectedUnit === "all"
+      ? subscriptionTxs
+      : subscriptionTxs?.filter((s: any) => s.barbers?.unit_id === selectedUnit);
 
     // Filtrar metas por unidade se selecionada
     const filteredGoals = selectedUnit === "all"
@@ -137,11 +141,22 @@ export default function ShopEvolution() {
       
       const servicesBasic = prod.services_basic_total ?? 0;
       const servicesExtra = prod.services_extra_total ?? 0;
+      const servicesTotalLegacy = prod.services_total ?? 0;
+      // Total de serviços: usar campos detalhados se algum estiver populado, senão legado
       const servicesTotal = servicesBasic > 0 || servicesExtra > 0 
         ? servicesBasic + servicesExtra 
-        : (prod.services_total ?? 0);
+        : servicesTotalLegacy;
       
-      monthlyAggregates[month].receitaBasica += servicesBasic > 0 ? servicesBasic : (prod.services_total ?? 0);
+      // Básico: se já temos basic > 0, usar. Se temos extras mas basic=0, derivar (legacy - extras).
+      // Caso contrário, usar legado inteiro (sem extras lançados).
+      let receitaBasicaItem = servicesBasic;
+      if (servicesBasic === 0 && servicesExtra > 0) {
+        receitaBasicaItem = Math.max(0, servicesTotalLegacy - servicesExtra);
+      } else if (servicesBasic === 0 && servicesExtra === 0) {
+        receitaBasicaItem = servicesTotalLegacy;
+      }
+
+      monthlyAggregates[month].receitaBasica += receitaBasicaItem;
       monthlyAggregates[month].receitaExtra += servicesExtra;
       monthlyAggregates[month].receitaProdutos += prod.products_total ?? 0;
       monthlyAggregates[month].receita += servicesTotal + (prod.products_total ?? 0);
@@ -149,11 +164,11 @@ export default function ShopEvolution() {
       monthlyAggregates[month].clientes += prod.clients_count ?? 0;
     });
 
-    // Agregar faturamento de assinaturas por mês
-    filteredSubEarnings?.forEach((sub: any) => {
-      const monthIndex = sub.month - 1;
+    // Agregar receita de assinaturas por mês (usando created_at da transação)
+    filteredSubTxs?.forEach((tx: any) => {
+      const monthIndex = new Date(tx.created_at).getMonth();
       if (monthIndex >= 0 && monthIndex < 12) {
-        const revenue = Number(sub.total_revenue) || 0;
+        const revenue = Number(tx.price_sold) || 0;
         monthlyAggregates[monthIndex].receitaAssinaturas += revenue;
         monthlyAggregates[monthIndex].receita += revenue;
       }
