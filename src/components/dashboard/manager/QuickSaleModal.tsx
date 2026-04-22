@@ -1650,8 +1650,17 @@ export default function QuickSaleModal({
         <Button
           type="button"
           className="flex-1"
-          onClick={() => setStep(2)}
-          disabled={!canProceedStep1}
+          onClick={() => {
+            // Allow click-through when only the reception unit is missing,
+            // so we can flag the picker visually instead of silently disabling Continuar.
+            if (needsUnitSelection && !selectedUnitId) {
+              setUnitError(true);
+              toast.error("Selecione em qual recepção a venda aconteceu.");
+              return;
+            }
+            setStep(2);
+          }}
+          disabled={!canProceedStep1 && !(needsUnitSelection && !selectedUnitId)}
         >
           {clientHistory.checking ? (
             <Loader2 className="h-4 w-4 animate-spin" />
