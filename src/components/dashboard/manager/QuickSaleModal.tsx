@@ -735,9 +735,15 @@ export default function QuickSaleModal({
     return () => { cancelled = true; };
   }, [resolveSubscriptionForClient]);
 
+  // Discount applies if either:
+  //  • client is already subscriber (clientType=with_subscription) OR
+  //  • a subscription plan is being added in this same sale (live conversion)
+  const subscriptionDiscountActive =
+    clientType === "with_subscription" || !!subscriptionInCart;
+
   const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
     if (
-      clientType === "with_subscription" &&
+      subscriptionDiscountActive &&
       item.type === "service" &&
       selectedPlanIncludedServiceIds.includes(item.id)
     ) {
@@ -749,10 +755,11 @@ export default function QuickSaleModal({
 
   useEffect(() => {
     setCart((prev) => {
-      if (clientType !== "with_subscription" || selectedPlanIncludedServiceIds.length === 0) return prev;
+      if (!subscriptionDiscountActive || selectedPlanIncludedServiceIds.length === 0) return prev;
 
       let changed = false;
       const next = prev.map((item) => {
+        if (isSubscriptionCartItem(item)) return item;
         if (
           item.type === "service" &&
           item.customPrice !== 0 &&
@@ -766,11 +773,11 @@ export default function QuickSaleModal({
 
       return changed ? next : prev;
     });
-  }, [clientType, selectedPlanIncludedServiceIds]);
+  }, [subscriptionDiscountActive, selectedPlanIncludedServiceIds]);
 
   const cartItemIncludedBySubscription = (item: CartItem) => {
     return (
-      clientType === "with_subscription" &&
+      subscriptionDiscountActive &&
       item.type === "service" &&
       selectedPlanIncludedServiceIds.includes(item.id)
     );
