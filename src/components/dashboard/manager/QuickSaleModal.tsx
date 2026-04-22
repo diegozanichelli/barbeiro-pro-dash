@@ -947,12 +947,17 @@ export default function QuickSaleModal({
         };
       });
 
+      const resolvedUnitId = isReceptionSale
+        ? selectedUnitId
+        : (availableBarbers.find((b) => b.id === effectiveBarberIdResolved)?.unit_id ?? null);
+
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
         p_barber_id: effectiveBarberId,
         p_date: dateStr,
         p_transactions: transactions,
         p_source: "manager",
+        p_unit_id: resolvedUnitId,
       });
       if (error) throw error;
 
