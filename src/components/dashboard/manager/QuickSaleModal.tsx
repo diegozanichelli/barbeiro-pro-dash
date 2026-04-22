@@ -1602,7 +1602,7 @@ export default function QuickSaleModal({
         className="flex-1 flex flex-col overflow-hidden"
       >
         <div className="px-3 pt-2">
-          <TabsList className="grid w-full grid-cols-3 h-10">
+          <TabsList className="grid w-full grid-cols-4 h-10">
             <TabsTrigger value="services" className="gap-1.5 text-xs">
               <Scissors className="h-3.5 w-3.5" />
               Serviços
@@ -1618,6 +1618,18 @@ export default function QuickSaleModal({
               {products.length > 0 && (
                 <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
                   {products.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="subscription"
+              className="gap-1.5 text-xs data-[state=active]:bg-amber-500 data-[state=active]:text-black"
+            >
+              <Crown className="h-3.5 w-3.5" />
+              Assinatura
+              {subscriptionPlans.length > 0 && (
+                <span className="text-[10px] bg-muted-foreground/20 px-1 py-0.5 rounded">
+                  {subscriptionPlans.length}
                 </span>
               )}
             </TabsTrigger>
