@@ -1629,40 +1629,98 @@ export default function QuickSaleModal({
             {/* Cart Items */}
             {cart.length > 0 && activeTab !== "manual" && (
               <div className="space-y-2 max-h-[25vh] overflow-y-auto overscroll-contain">
-                {cart.map((item) => (
-                  <div key={item.tempId} className="flex items-center gap-2 p-1.5 rounded-lg bg-background border min-h-[44px]">
-                    <span className="truncate text-xs font-medium flex-1 min-w-0 pl-1">{item.name}</span>
-                    {cartItemIncludedBySubscription(item) && (
-                      <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
-                        Assinatura
-                      </Badge>
-                    )}
-                    {item.fixed_commission !== null && (
-                      <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
-                        <Zap className="h-2 w-2 mr-0.5" />
-                        {item.fixed_commission}%
-                      </Badge>
-                    )}
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.customPriceInput}
-                      onChange={(e) => updateCartItemPriceInput(item.tempId, e.target.value)}
-                      onFocus={handleCartItemPriceFocus}
-                      onBlur={() => finalizeCartItemPrice(item.tempId)}
-                      className="w-20 text-right font-bold text-xs h-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => removeFromCart(item.tempId)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
+                {cart.map((item) => {
+                  if (isSubscriptionCartItem(item)) {
+                    return (
+                      <div
+                        key={item.tempId}
+                        className="flex flex-col gap-1.5 p-2 rounded-lg border bg-amber-50/60 dark:bg-amber-950/20 border-amber-300/60 min-h-[44px]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                          <span className="truncate text-xs font-semibold flex-1 min-w-0">
+                            Assinatura — {item.name}
+                          </span>
+                          <Badge className="shrink-0 text-[10px] px-1.5 py-0 bg-amber-500 text-black border-0">
+                            {SUBSCRIPTION_ACTION_LABELS[item.action]}
+                          </Badge>
+                          <span className="text-xs font-bold tabular-nums w-20 text-right">
+                            {formatCurrency(item.customPrice)}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                            onClick={() => removeFromCart(item.tempId)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-[10px] text-muted-foreground shrink-0">Ação:</Label>
+                          <Select
+                            value={item.action}
+                            onValueChange={(v) => updateSubscriptionAction(item.tempId, v as SubscriptionAction)}
+                          >
+                            <SelectTrigger className="h-7 text-xs flex-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new" className="text-xs">Nova adesão</SelectItem>
+                              <SelectItem value="renew" className="text-xs">Renovação</SelectItem>
+                              <SelectItem value="upgrade" className="text-xs">Upgrade</SelectItem>
+                              <SelectItem value="downgrade" className="text-xs">Downgrade</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {item.action === "downgrade" && (
+                          <Input
+                            type="text"
+                            placeholder="Motivo do downgrade..."
+                            value={item.downgradeReason ?? ""}
+                            onChange={(e) => updateSubscriptionReason(item.tempId, e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={item.tempId} className="flex items-center gap-2 p-1.5 rounded-lg bg-background border min-h-[44px]">
+                      <span className="truncate text-xs font-medium flex-1 min-w-0 pl-1">{item.name}</span>
+                      {cartItemIncludedBySubscription(item) && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
+                          Assinatura
+                        </Badge>
+                      )}
+                      {item.fixed_commission !== null && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
+                          <Zap className="h-2 w-2 mr-0.5" />
+                          {item.fixed_commission}%
+                        </Badge>
+                      )}
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        value={item.customPriceInput}
+                        onChange={(e) => updateCartItemPriceInput(item.tempId, e.target.value)}
+                        onFocus={handleCartItemPriceFocus}
+                        onBlur={() => finalizeCartItemPrice(item.tempId)}
+                        className="w-20 text-right font-bold text-xs h-8"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => removeFromCart(item.tempId)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
 
                 {/* Clients Counter */}
                 <div className="flex items-center justify-between p-2 rounded-lg bg-background border">
