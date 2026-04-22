@@ -571,12 +571,19 @@ export default function LiveDashboard() {
     const totalClientsMonth = filteredMonthProductions.reduce(
       (sum, p) => sum + (p.clients_count || 0), 0
     );
+    // Priority: tx_* (manager truth) > services_* split (manual/itemized) > services_total (legacy)
     const totalRevenueMonth = filteredMonthProductions.reduce((sum, p) => {
-      const servicesTotal =
-        p.services_basic_total !== null || p.services_extra_total !== null
-          ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
-          : p.services_total || 0;
-      return sum + servicesTotal + (p.products_total || 0);
+      const txTotal = (Number(p.tx_basic_total) || 0)
+        + (Number(p.tx_extra_total) || 0)
+        + (Number(p.tx_products_total) || 0);
+      if (txTotal > 0) return sum + txTotal;
+
+      const splitTotal = (Number(p.services_basic_total) || 0)
+        + (Number(p.services_extra_total) || 0)
+        + (Number(p.products_total) || 0);
+      if (splitTotal > 0) return sum + splitTotal;
+
+      return sum + (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
     }, 0);
 
     if (totalClientsMonth > 0 && totalRevenueMonth > 0) {
@@ -674,6 +681,7 @@ export default function LiveDashboard() {
   }));
 
   // Monthly revenue from monthProductions
+  // Priority: tx_* (manager truth) > services_* split (manual/itemized) > services_total (legacy)
   const monthRevenueTotal = useMemo(() => {
     const prods = selectedUnit === "all"
       ? monthProductions
@@ -682,10 +690,17 @@ export default function LiveDashboard() {
           return b?.unit_id === selectedUnit;
         });
     return prods.reduce((sum, p) => {
-      const svc = (p.services_basic_total !== null || p.services_extra_total !== null)
-        ? (p.services_basic_total || 0) + (p.services_extra_total || 0)
-        : (p.services_total || 0);
-      return sum + svc + (p.products_total || 0);
+      const txTotal = (Number(p.tx_basic_total) || 0)
+        + (Number(p.tx_extra_total) || 0)
+        + (Number(p.tx_products_total) || 0);
+      if (txTotal > 0) return sum + txTotal;
+
+      const splitTotal = (Number(p.services_basic_total) || 0)
+        + (Number(p.services_extra_total) || 0)
+        + (Number(p.products_total) || 0);
+      if (splitTotal > 0) return sum + splitTotal;
+
+      return sum + (Number(p.services_total) || 0) + (Number(p.products_total) || 0);
     }, 0);
   }, [monthProductions, selectedUnit, barbers]);
 
