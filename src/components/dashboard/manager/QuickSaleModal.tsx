@@ -682,12 +682,17 @@ export default function QuickSaleModal({
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
   const canProceedStep1 =
-    isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
+    !!attribution && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
     if (!organizationId) {
       toast.error("Organização não identificada");
+      return;
+    }
+
+    if (!attribution) {
+      toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
       return;
     }
 
