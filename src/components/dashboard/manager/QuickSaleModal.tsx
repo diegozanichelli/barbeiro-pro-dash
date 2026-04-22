@@ -209,6 +209,20 @@ export default function QuickSaleModal({
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   // Visual error flag for the unit picker (triggered when user tries to advance/submit without choosing)
   const [unitError, setUnitError] = useState(false);
+  // Controlled open state for unit picker so we can auto-open it when flagging the error
+  const [unitSelectOpen, setUnitSelectOpen] = useState(false);
+  const unitSelectTriggerRef = useRef<HTMLButtonElement>(null);
+
+  // Focuses the unit picker, opens its dropdown, sets the visual error and shows a toast.
+  const flagUnitError = useCallback(() => {
+    setUnitError(true);
+    toast.error("Selecione em qual recepção a venda aconteceu.");
+    // Defer focus/open to the next tick so it survives the current click/event
+    setTimeout(() => {
+      unitSelectTriggerRef.current?.focus();
+      setUnitSelectOpen(true);
+    }, 0);
+  }, []);
 
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
