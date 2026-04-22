@@ -537,8 +537,11 @@ export default function QuickSaleModal({
       const digits = sanitizePhone(mobilePhone);
       if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
         const res = await clientHistory.checkHistory(mobilePhone, clientName);
-        if (res && res.status === "name_found" && !manualOverride) {
+        if (!res || manualOverride) return;
+        if (res.status === "name_found") {
           setClientType("without_subscription");
+        } else if (res.status === "not_found") {
+          setClientType("new");
         }
       }
     }
