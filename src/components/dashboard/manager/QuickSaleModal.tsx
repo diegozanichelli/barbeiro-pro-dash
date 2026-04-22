@@ -155,6 +155,16 @@ export default function QuickSaleModal({
   );
   const isReceptionSale = attribution === "reception";
 
+  // In-modal barber picker (used when modal is opened without a pre-selected barber)
+  const [availableBarbers, setAvailableBarbers] = useState<{ id: string; name: string }[]>([]);
+  const [pickedBarberId, setPickedBarberId] = useState<string>("");
+  // Effective IDs/names — prefer prop barberId, fallback to in-modal pick
+  const effectiveBarberIdResolved = barberId || pickedBarberId;
+  const effectiveBarberName =
+    barberName ||
+    availableBarbers.find((b) => b.id === pickedBarberId)?.name ||
+    "Barbeiro";
+
   // Client type tracking (for conversion metrics and assinatura status)
   const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
   const [clientName, setClientName] = useState("");
@@ -259,6 +269,30 @@ export default function QuickSaleModal({
     }
   }, [open, organizationId]);
 
+  // Fetch active barbers when modal opens without a pre-selected barber
+  // (used for the in-modal "Barbeiro" picker on the unified "Nova Venda" flow)
+  useEffect(() => {
+    if (!open || !organizationId || barberId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("barbers")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+      if (cancelled) return;
+      if (error) {
+        console.error("Erro ao carregar barbeiros:", error);
+        return;
+      }
+      setAvailableBarbers(data || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, organizationId, barberId]);
+
   const fetchSubscriptionPlans = async () => {
     try {
       const { data, error } = await supabase
@@ -292,6 +326,7 @@ export default function QuickSaleModal({
     setSearchQuery("");
     setActiveTab("services");
     setAttribution(initialMode ?? (barberId ? "barber" : null));
+    setPickedBarberId("");
     setClientType(initialIsNewClient ? "new" : "without_subscription");
     setClientName("");
     setMobilePhone("");
@@ -681,8 +716,10 @@ export default function QuickSaleModal({
     clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
+  const attributionResolved =
+    attribution === "reception" || (attribution === "barber" && !!effectiveBarberIdResolved);
   const canProceedStep1 =
-    !!attribution && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
+    attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
@@ -695,7 +732,10 @@ export default function QuickSaleModal({
       toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
       return;
     }
-
+    if (attribution === "barber" && !effectiveBarberIdResolved) {
+      toast.error("Selecione qual barbeiro fará a venda.");
+      return;
+    }
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
       return;
@@ -704,7 +744,7 @@ export default function QuickSaleModal({
     isSubmittingRef.current = true;
     setIsLoading(true);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
-    const effectiveBarberId = isReceptionSale ? null : barberId;
+    const effectiveBarberId = isReceptionSale ? null : effectiveBarberIdResolved;
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
@@ -771,7 +811,7 @@ export default function QuickSaleModal({
         })),
       });
 
-      const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
+      const sellerName = isReceptionSale ? "Recepção / Loja" : effectiveBarberName;
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
@@ -797,6 +837,10 @@ export default function QuickSaleModal({
 
     if (!attribution) {
       toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
+      return;
+    }
+    if (attribution === "barber" && !effectiveBarberIdResolved) {
+      toast.error("Selecione qual barbeiro fará a venda.");
       return;
     }
 
@@ -870,7 +914,7 @@ export default function QuickSaleModal({
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
-        p_barber_id: isReceptionSale ? null : barberId,
+        p_barber_id: isReceptionSale ? null : effectiveBarberIdResolved,
         p_date: dateStr,
         p_transactions: [transaction],
         p_source: "manager",
@@ -893,7 +937,7 @@ export default function QuickSaleModal({
         ],
       });
 
-      toast.success(`Venda manual registrada para ${isReceptionSale ? "Recepção / Loja" : barberName}`);
+      toast.success(`Venda manual registrada para ${isReceptionSale ? "Recepção / Loja" : effectiveBarberName}`);
       
       resetForm();
       onOpenChange(false);
@@ -981,7 +1025,9 @@ export default function QuickSaleModal({
     <>
       <DialogHeader className="px-6 pt-5 pb-3">
         <DialogTitle className="text-lg font-semibold">
-          Venda Rápida — {isReceptionSale ? "🏢 Recepção / Loja" : barberName}
+          {attribution === null
+            ? "Nova Venda"
+            : `Venda Rápida — ${isReceptionSale ? "🏢 Recepção / Loja" : effectiveBarberName}`}
         </DialogTitle>
         <DialogDescription className="text-xs">
           Preencha os dados do atendimento
@@ -1180,12 +1226,17 @@ export default function QuickSaleModal({
               <ToggleGroupItem
                 value="barber"
                 aria-label="Atribuir ao barbeiro"
-                disabled={!barberId}
                 className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
                 onPointerDown={(e) => e.preventDefault()}
               >
                 <Scissors className="w-3.5 h-3.5" />
-                <span className="truncate">{barberName || "Barbeiro"}</span>
+                <span className="truncate">
+                  {barberId
+                    ? (barberName || "Barbeiro")
+                    : pickedBarberId
+                      ? effectiveBarberName
+                      : "Barbeiro"}
+                </span>
               </ToggleGroupItem>
               <ToggleGroupItem
                 value="reception"
@@ -1197,9 +1248,37 @@ export default function QuickSaleModal({
                 Venda Recepção
               </ToggleGroupItem>
             </ToggleGroup>
+
+            {/* In-modal barber picker — visible when "Barbeiro" is chosen but no barber was pre-selected */}
+            {attribution === "barber" && !barberId && (
+              <Select value={pickedBarberId} onValueChange={setPickedBarberId}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione qual barbeiro fará a venda..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBarbers.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-muted-foreground">
+                      Nenhum barbeiro ativo encontrado.
+                    </div>
+                  ) : (
+                    availableBarbers.map((b) => (
+                      <SelectItem key={b.id} value={b.id} className="text-xs">
+                        {b.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+
             {!attribution && (
               <p className="text-[11px] text-destructive">
                 Selecione um Barbeiro ou "Venda Recepção" para prosseguir.
+              </p>
+            )}
+            {attribution === "barber" && !effectiveBarberIdResolved && (
+              <p className="text-[11px] text-destructive">
+                Escolha qual barbeiro fará a venda.
               </p>
             )}
           </div>

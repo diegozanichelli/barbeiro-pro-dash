@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign, Building2 } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -813,17 +813,7 @@ export default function LiveDashboard() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              className="gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-md shadow-amber-500/20 text-xs h-8"
-              onClick={() => setSubscriptionWizardOpen(true)}
-            >
-              <Crown className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Vender Assinatura</span>
-              <span className="sm:hidden">Assinatura</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1.5 text-xs h-8 border border-amber-500/40 hover:bg-amber-500/10"
+              className="gap-1.5 text-xs h-8 shadow-md"
               onClick={() => {
                 if (!organizationId) {
                   toast.error("Organização não identificada.");
@@ -832,24 +822,25 @@ export default function LiveDashboard() {
                 setQuickSaleModal({
                   open: true,
                   barberId: "",
-                  barberName: "Recepção / Loja",
-                  mode: "reception",
+                  barberName: "",
+                  // sem mode: o gestor escolhe Barbeiro ou Recepção no Step 1
                 });
               }}
-              title="Registrar venda direta da Recepção (sem atribuir a barbeiro)"
+              title="Registrar nova venda — escolha entre Barbeiro ou Recepção"
             >
-              <Building2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Venda Recepção</span>
-              <span className="sm:hidden">Recepção</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Nova Venda</span>
+              <span className="sm:hidden">Vender</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="h-8 w-8 p-0 bg-card/50 backdrop-blur-sm"
+              className="h-8 gap-1.5 text-xs px-2 bg-card/50 backdrop-blur-sm"
               onClick={() => setSubscriptionAuditOpen(true)}
               title="Auditar Últimas Vendas"
             >
               <Eye className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Auditar</span>
             </Button>
           </div>
         </div>
