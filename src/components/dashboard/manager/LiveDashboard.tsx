@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Crown, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign, Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -130,6 +130,7 @@ export default function LiveDashboard() {
     barberId: string;
     barberName: string;
     fromBridge?: boolean;
+    mode?: "barber" | "reception";
   }>({ open: false, barberId: "", barberName: "" });
   const [editModal, setEditModal] = useState<{
     open: boolean;
