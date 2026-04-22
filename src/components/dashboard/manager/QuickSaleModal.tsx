@@ -811,7 +811,7 @@ export default function QuickSaleModal({
         })),
       });
 
-      const sellerName = isReceptionSale ? "Recepção / Loja" : barberName;
+      const sellerName = isReceptionSale ? "Recepção / Loja" : effectiveBarberName;
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
         description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}`,
       });
@@ -837,6 +837,10 @@ export default function QuickSaleModal({
 
     if (!attribution) {
       toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
+      return;
+    }
+    if (attribution === "barber" && !effectiveBarberIdResolved) {
+      toast.error("Selecione qual barbeiro fará a venda.");
       return;
     }
 
@@ -910,7 +914,7 @@ export default function QuickSaleModal({
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
-        p_barber_id: isReceptionSale ? null : barberId,
+        p_barber_id: isReceptionSale ? null : effectiveBarberIdResolved,
         p_date: dateStr,
         p_transactions: [transaction],
         p_source: "manager",
@@ -933,7 +937,7 @@ export default function QuickSaleModal({
         ],
       });
 
-      toast.success(`Venda manual registrada para ${isReceptionSale ? "Recepção / Loja" : barberName}`);
+      toast.success(`Venda manual registrada para ${isReceptionSale ? "Recepção / Loja" : effectiveBarberName}`);
       
       resetForm();
       onOpenChange(false);
