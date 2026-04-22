@@ -269,6 +269,30 @@ export default function QuickSaleModal({
     }
   }, [open, organizationId]);
 
+  // Fetch active barbers when modal opens without a pre-selected barber
+  // (used for the in-modal "Barbeiro" picker on the unified "Nova Venda" flow)
+  useEffect(() => {
+    if (!open || !organizationId || barberId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("barbers")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+      if (cancelled) return;
+      if (error) {
+        console.error("Erro ao carregar barbeiros:", error);
+        return;
+      }
+      setAvailableBarbers(data || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, organizationId, barberId]);
+
   const fetchSubscriptionPlans = async () => {
     try {
       const { data, error } = await supabase
