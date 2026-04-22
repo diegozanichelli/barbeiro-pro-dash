@@ -1,90 +1,103 @@
 
 
-# Auditoria: Aba Relatórios → Evolução (foco em Assinaturas)
+# Implementação Itens #4 e #6 — Funil de Conversão e Atribuição de Vendas
 
-Após varredura nos componentes `ShopEvolution`, `UnitsComparison`, `BarberEvolutionChart`, `SubscriptionPerformanceReport`, `ReceptionPerformanceReport` e `SubscriptionAnalytics`, identifiquei **8 erros de arquitetura/cálculo** — sendo 4 críticos relacionados a assinaturas. Os dados do banco confirmam o impacto.
+## Item #4 — Funil com clientes únicos por telefone
 
----
+**Arquivo:** `src/components/dashboard/manager/SubscriptionAnalytics.tsx`
 
-## 🔴 Críticos — Assinaturas
+Trocar a contagem `totalNewClients` (que hoje conta linhas de transação com `is_new_client=true`) por uma contagem distinta de telefones.
 
-### 1. `SubscriptionPerformanceReport` — Conversão infla com renovações/upgrades
-**Onde:** linhas 96-99 — conta como "venda de assinatura" qualquer transação com `item_type='subscription'`, incluindo `renew`, `upgrade` e `downgrade`.
-**Problema:** o card diz "Clientes Novos → Assinantes", mas se um cliente novo vira assinante e depois faz uma renovação no mesmo mês, a conversão conta 2. Pior: renovações de clientes antigos inflam o numerador sem ter relação com `is_new_client`.
-**Correção:** filtrar `subscription_action = 'new'` (e `is_new_client = true`) ao contar vendas de conversão.
-
-### 2. `SubscriptionPerformanceReport` — Sem filtro por organização
-**Onde:** linha 58-69 — query não filtra `organization_id`. Funciona hoje só por causa das RLS policies, mas o `super_admin` veria dados de TODAS as organizações misturados.
-**Correção:** adicionar filtro explícito `.eq("organization_id", organizationId)` usando `useOrganization()`.
-
-### 3. `SubscriptionAnalytics` — Inteligência ignora `source`
-**Onde:** linhas 76-91 — busca todas as transações `item_type='subscription'` sem filtrar `source='manager'`. O banco mostra **89 transações com `subscription_action = NULL`**, sendo **86 do barbeiro** (registros antigos/legados sem a ação preenchida). Esses registros somem do funil mas continuam aparecendo na tabela "Movimentações Recentes" como duplicatas dos registros do gestor.
-**Correção:** filtrar `source = 'manager'` (alinhado ao princípio "Gestão como Fonte de Verdade") em todas as agregações de assinatura.
-
-### 4. `SubscriptionAnalytics` — Funil de conversão com denominador errado
-**Onde:** linhas 84-90 e 124-134.
-- **Denominador (`totalNewClients`)**: conta `is_new_client=true` em **qualquer** transação (corte, produto, assinatura). Se um cliente novo comprou corte + produto + assinatura, ele conta 3 vezes como "oportunidade".
-- **Numerador**: usa `subscription_action='new' AND is_new_client=true` (correto), mas comparado contra um denominador inflado — taxa de conversão fica artificialmente baixa.
-
-**Correção:** denominador deve ser `COUNT(DISTINCT mobile_phone)` entre transações com `is_new_client=true` no período (ou contagem de clientes únicos via `clients` registrados no mês).
+- **Novo método de busca:** trocar a query head/count por `select("mobile_phone")` filtrando `is_new_client=true`, `source='manager'`, `organization_id`, e o intervalo do mês.
+- **Cálculo:** `new Set(rows.map(r => r.mobile_phone).filter(Boolean)).size` → este vira o `totalNewClients`.
+- **Impacto:** o denominador deixa de inflar quando o mesmo cliente novo compra corte + produto + assinatura no mesmo dia.
+- **Edge case:** transações sem `mobile_phone` são descartadas da contagem (não dá pra distinguir cliente único). Vou adicionar um comentário no código explicando.
+- **Adicionar filtro:** `.eq("organization_id", organizationId)` usando `useOrganization()` (hoje a query confia só na RLS).
 
 ---
 
-## 🟡 Importantes
+## Item #6 — Forçar atribuição "Barbeiro vs Recepção" no QuickSaleModal
 
-### 5. `ShopEvolution` — Receita de assinaturas duplicada com receita do barbeiro
-**Onde:** linhas 152-160. Soma `barber_subscription_earnings.total_revenue` (faturamento bruto da cadeira lançado pelo gestor) ao `receita` que já contém `services_total + products_total` das `daily_productions`. Mas a memória `subscription-operational-separation` diz que assinaturas **NÃO entram no faturamento operacional**. Como o `daily_productions` já exclui assinaturas, somar `barber_subscription_earnings` está correto **apenas se** o lançamento de earnings for feito mensalmente. Se o gestor esquecer de lançar, o gráfico mostra "Assinaturas: 0" em vez do dado real do `sale_transactions`.
-**Correção:** trocar fonte de `receitaAssinaturas` de `barber_subscription_earnings` para `SUM(price_sold) FROM sale_transactions WHERE item_type='subscription' AND source='manager'` agrupado por mês — fonte única de verdade e sem necessidade de lançamento manual.
+Hoje o `QuickSaleModal` é aberto a partir do botão `+` em uma linha de barbeiro específica no `LiveDashboard`, e existe um `Switch` discreto "Modo Recepção" dentro do modal. Vamos transformar isso num **passo de seleção obrigatório** no início do wizard.
 
-### 6. `ReceptionPerformanceReport` — Critério "recepção" frágil
-**Onde:** linha 76 — define "venda da recepção" como `barber_id IS NULL`. O banco mostra apenas **27 assinaturas no mês sem barber_id**, mas a maioria das vendas reais da recepção é registrada com `barber_id` atribuído (para fins de comissão). Esse relatório pode estar mostrando quase nada.
-**Correção:** alinhar a regra de negócio. Sugestão: considerar "venda da recepção" como `source='manager' AND created_by_role='manager'` ou criar coluna explícita `sold_at_reception`. Como mínimo, documentar visualmente que "Recepção" = vendas sem atribuição.
+### Mudanças no `LiveDashboard.tsx`
 
-### 7. `ShopEvolution` / `UnitsComparison` — Lógica de fallback de `services_basic_total` incorreta
-**Onde:** `ShopEvolution` linha 144 e `UnitsComparison` linha 135.
+1. **Novo botão "Venda Recepção"** ao lado do botão de "Adicionar venda" (no header, perto da seleção de unidade), que abre o `QuickSaleModal` em modo recepção pré-selecionado.
+2. Estender `quickSaleModal` state com `mode: 'barber' | 'reception' | 'unset'`.
+3. Botão visualmente destacado (cor `secondary` ou ícone `Building2`) para diferenciar das vendas por barbeiro.
+
+### Mudanças no `QuickSaleModal.tsx`
+
+1. **Nova prop:** `initialMode?: 'barber' | 'reception'` (default `'barber'` quando aberto a partir de uma linha de barbeiro).
+2. **Remover o Switch existente** "Modo Recepção" (linhas 1158-1162).
+3. **Novo step de Atribuição** no Step 1 do wizard, com `ToggleGroup` exibindo:
+   - **Botão Barbeiro** — mostra o nome do `barberName` recebido. Pré-selecionado quando aberto via linha do barbeiro.
+   - **Botão Venda Recepção** — destacado em cor `secondary/primary`, ícone `Building2`. Pré-selecionado quando aberto via botão dedicado.
+4. **Guarda de finalização:** desabilitar o botão "Finalizar Venda" enquanto `attribution === null`. Se o usuário tentar avançar, exibir toast: *"Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir."*
+5. **Lógica de envio:** `effectiveBarberId = attribution === 'reception' ? null : barberId` (lógica que já existe, só muda a fonte do estado).
+6. **Título do modal:** atualizar dinamicamente — `Venda Rápida — {attribution === 'reception' ? '🏢 Recepção / Loja' : barberName}`.
+
+### Mudanças no `ReceptionPerformanceReport.tsx`
+
+Manter o critério atual (`barber_id IS NULL`) — agora ele será confiável porque o gestor sempre tem que escolher explicitamente. Adicionar pequeno texto na descrição do card:
+
+> *"Considera apenas vendas de assinatura registradas como 'Venda Recepção' (sem atribuição a barbeiro)."*
+
+---
+
+## Detalhes Técnicos
+
+**Diff resumido — SubscriptionAnalytics:**
 ```ts
-metrics.receitaBasica += servicesBasic > 0 ? servicesBasic : (prod.services_total ?? 0);
+const newClientsRes = await supabase
+  .from("sale_transactions")
+  .select("mobile_phone")
+  .eq("is_new_client", true)
+  .eq("source", "manager")
+  .eq("organization_id", organizationId)
+  .gte("created_at", start)
+  .lte("created_at", end);
+
+const uniquePhones = new Set(
+  (newClientsRes.data || [])
+    .map(r => r.mobile_phone)
+    .filter(Boolean)
+);
+setTotalNewClients(uniquePhones.size);
 ```
-Quando `services_basic_total = 0` mas `services_extra_total > 0`, o código soma `services_total` inteiro (básico+extra) na coluna "básico" — duplicando o valor de extras (que também é somado em `receitaExtra`). Bug visível em meses de transição quando os campos detalhados começaram a ser populados.
-**Correção:** se `services_extra_total > 0` mas `services_basic_total = 0`, calcular `basico = services_total - services_extra` em vez de usar o total bruto.
 
-### 8. `BarberEvolutionChart` — Comissão sem normalização
-**Onde:** linha 91-95 — soma `commission_earned` mas não considera que esse campo agora prioriza `tx_commission_earned` (auditoria do gestor) versus `manual_*` (lançamento do barbeiro). Se a trigger de sincronização não rodou, mostra dado defasado.
-**Correção:** confirmar via SQL/trigger que `commission_earned` está sempre populado pelo lado auditado (gestor); caso contrário, usar `COALESCE(tx_commission_earned, commission_earned)`.
+**Diff resumido — QuickSaleModal (atribuição):**
+```tsx
+const [attribution, setAttribution] = useState<'barber' | 'reception' | null>(
+  initialMode ?? 'barber'
+);
+
+// No Step 1, antes do tipo de cliente:
+<ToggleGroup type="single" value={attribution ?? ''} onValueChange={(v) => setAttribution(v as any)}>
+  <ToggleGroupItem value="barber"><Scissors /> {barberName}</ToggleGroupItem>
+  <ToggleGroupItem value="reception" className="data-[state=on]:bg-primary">
+    <Building2 /> Venda Recepção
+  </ToggleGroupItem>
+</ToggleGroup>
+
+// No handleSubmit:
+if (!attribution) {
+  toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
+  return;
+}
+const effectiveBarberId = attribution === 'reception' ? null : barberId;
+```
 
 ---
 
-## 📊 Evidências dos dados (últimos 90 dias)
-
-| Métrica | Valor | Observação |
-|---|---|---|
-| Subs `source='manager'` | 285 (new), 14 (renew), 20 (upgrade) | Base oficial |
-| Subs `source='barber'` sem ação | 86 | **Duplicatas vazando no Inteligência** |
-| Subs sem `barber_id` | 27 (mês atual) | Recepção real, mas relatório dela só pega isso |
-| `is_new_client=true` (mês atual, manager) | 385 | Denominador inflado por contar visitas, não clientes únicos |
-
----
-
-## 📐 Plano de Implementação
+## Plano de Execução
 
 | # | Arquivo | Mudança |
 |---|---------|---------|
-| 1 | `SubscriptionPerformanceReport.tsx` | Adicionar filtro `subscription_action='new'` na contagem de vendas |
-| 2 | `SubscriptionPerformanceReport.tsx` | Filtrar query por `organization_id` |
-| 3 | `SubscriptionAnalytics.tsx` | Adicionar `.eq('source', 'manager')` na query de transações |
-| 4 | `SubscriptionAnalytics.tsx` | Trocar contagem de `totalNewClients` para `COUNT(DISTINCT mobile_phone)` |
-| 5 | `ShopEvolution.tsx` | Substituir fonte de `receitaAssinaturas` por `sale_transactions` agregada |
-| 6 | `ReceptionPerformanceReport.tsx` | Adicionar nota explicativa sobre o critério OU revisar regra de negócio |
-| 7 | `ShopEvolution.tsx` + `UnitsComparison.tsx` | Corrigir fallback do `services_basic_total` |
-| 8 | `BarberEvolution.tsx` | Usar `COALESCE(tx_commission_earned, commission_earned)` |
+| 1 | `SubscriptionAnalytics.tsx` | Trocar contagem para `COUNT(DISTINCT mobile_phone)` + filtro `organization_id` |
+| 2 | `LiveDashboard.tsx` | Adicionar botão "Venda Recepção" no header e propagar `initialMode='reception'` |
+| 3 | `QuickSaleModal.tsx` | Substituir Switch por `ToggleGroup` obrigatório de atribuição + guarda no submit |
+| 4 | `ReceptionPerformanceReport.tsx` | Nota explicativa sobre o critério de "Venda Recepção" |
 
----
-
-## ❓ Antes de implementar, preciso de 2 decisões
-
-**A) Item #6 (Recepção):** o critério "vendas sem barber_id" reflete o fluxo da sua barbearia? Ou as vendas de recepção também são atribuídas a um barbeiro (e então esse relatório precisa ser repensado)?
-
-**B) Item #4 (Funil):** quer que "Clientes Novos" no funil seja **(a)** clientes únicos por telefone no mês, ou **(b)** registros da tabela `clients` criados no mês?
-
-Posso implementar os itens **#1, #2, #3, #5, #7, #8** sem essas respostas — são correções óbvias. Os itens **#4 e #6** dependem das suas respostas.
+Sem mudanças de banco — apenas frontend.
 
