@@ -1,115 +1,82 @@
 
 
-# Corrigir contagem de "Clientes Novos" (Jesus e outros)
+# Corrigir cards zerados no Relatório do Gestor (Receita / Clientes / Ticket)
 
 ## Diagnóstico
 
-Investiguei `sale_transactions` no banco. O barbeiro Jesus em **abril/2026** tem só 2 linhas com `is_new_client = true` — ambas são `item_type = 'subscription'`. **Zero serviços** marcados como cliente novo.
+O console mostra o erro real:
 
-Olhando a base inteira da Performance Barber, o padrão se repete em quase todos os barbeiros:
-- Diego Indriago: 5 novos / **0 serviços** marcados / 5 assinaturas
-- Renan Alves: 4 / **0** / 4
-- Fagner Serra: 3 / **0** / 3
-- Jesus, Joaquim, Gabriel Peter, Henrique, Cesar, Carlos, AGEU: idem
+```
+ERRO DA VIEW: PGRST205
+Could not find the table 'public.v_consolidated_daily_production' in the schema cache
+em ManagerReports.tsx:92
+```
 
-Conclusão: a recepção **só marca "Cliente Novo" quando vende assinatura**. Cliente novo que veio só cortar cabelo passa marcado como "Da Casa".
+`ManagerReports.tsx` consulta a view `v_consolidated_daily_production` que **não existe no banco** (foi removida ou nunca foi criada — bate com a regra arquitetural do projeto de **não usar Views**). Como a query falha, `totalRevenue` e `totalClients` viram `0`, e por consequência `averageTicket` também zera.
 
-## Causa raiz no código
+## Solução
 
-No `QuickSaleModal.tsx`, quando o autocomplete responde `status === "not_found"` (telefone que não existe na base):
+Substituir a chamada à view inexistente pela **RPC já existente e validada** `get_manager_report_stats(p_date_from, p_date_to, p_unit_id, p_barber_id)`, que devolve exatamente:
 
+- `total_revenue` (com prioridade tx → manual → legado, igual aos demais relatórios)
+- `total_commission`
+- `total_clients`
+- `average_ticket`
+
+A RPC já é usada em outros pontos do sistema, está testada e respeita o `organization_id` via `get_user_organization()`. Zero risco de regressão.
+
+## Mudanças em `ManagerReports.tsx` (`fetchStats`)
+
+### Antes (linhas 97–158)
+- Monta `consolidatedQuery` na view inexistente
+- Faz query separada de comissões em `daily_productions`
+- Faz lookup manual de barbeiros por unidade
+
+### Depois
 ```ts
-} else if (res.status === "not_found") {
-  // Não muda automaticamente — o gestor decide manualmente
+const { data: statsData, error: statsError } = await supabase.rpc(
+  "get_manager_report_stats",
+  {
+    p_date_from: startDate,
+    p_date_to: endDate,
+    p_unit_id: selectedUnit !== "all" ? selectedUnit : null,
+    p_barber_id: selectedBarber !== "all" ? selectedBarber : null,
+  }
+);
+
+if (statsError) {
+  console.error("Erro ao buscar stats:", statsError);
 }
+
+const row = statsData?.[0] ?? { total_revenue: 0, total_commission: 0, total_clients: 0, average_ticket: 0 };
+const totalRevenue = Number(row.total_revenue) || 0;
+const totalClients = Number(row.total_clients) || 0;
+const totalCommission = Number(row.total_commission) || 0;
+const averageTicket = Number(row.average_ticket) || 0;
 ```
 
-E o default inicial do `clientType` é `"without_subscription"` ("Da Casa"). Resultado: o gestor digita um telefone que **nunca foi atendido antes**, o sistema sabe disso, mas mantém o toggle em "Da Casa". Só sobra um aviso visual sutil (não-bloqueante) que o gestor ignora.
+A parte que calcula **Metas Batidas** (`goalsAchieved`) continua igual — ela usa `daily_productions` + `monthly_goals` diretamente (não dependia da view).
 
-Isso quebra o relatório de Performance de Assinaturas (Evolução → Assinaturas), o Funil em Inteligência de Assinaturas, e a taxa de conversão geral.
+## Resultado esperado
 
-## Solução em 3 camadas
-
-### 1. Auto-sugerir "Cliente Novo" quando telefone não existe (mudança principal)
-
-Em `QuickSaleModal.tsx`, dentro dos 3 handlers do autocomplete (`useEffect` do telefone, `onValueChange` do telefone, e ao confirmar nome):
-
-```ts
-} else if (res.status === "not_found") {
-  if (!manualOverride) setClientType("new");
-}
-```
-
-Comportamento resultante:
-- Telefone novo + sem override manual → toggle pula automaticamente para **"Novo"** (verde).
-- Telefone existente → continua indo para "Da Casa" (como já é hoje).
-- Gestor pode trocar manualmente a qualquer momento (`manualOverride` segue funcionando).
-
-### 2. Banner visual quando o sistema sinalizar "cliente nunca atendido"
-
-Logo abaixo do `ToggleGroup` de Tipo de Cliente, quando `clientHistory.status === "not_found"` E `clientType === "new"` E `!manualOverride`:
-
-```tsx
-<div className="rounded-md bg-green-500/10 border border-green-500/30 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1.5">
-  <UserPlus className="w-3 h-3" />
-  Telefone não encontrado na base — marcamos como <strong>Cliente Novo</strong> automaticamente.
-</div>
-```
-
-E quando o gestor força "Da Casa" num telefone desconhecido (`status === "not_found"` + `clientType !== "new"` + `manualOverride === true`):
-
-```tsx
-<div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-  <AlertCircle className="w-3 h-3" />
-  Esse telefone não está na base. Tem certeza que não é um cliente novo?
-</div>
-```
-
-Não bloqueia, só chama atenção.
-
-### 3. Backfill (opcional, mas recomendado)
-
-Para corrigir os relatórios passados de abril/2026, posso gerar um SQL que marque retroativamente como `is_new_client = true` toda transação `source = 'manager'` cujo `mobile_phone` aparece pela **primeira vez** na história da `sale_transactions` da organização (ou seja, foi o primeiro atendimento daquele celular).
-
-Migration `mark_first_visit_as_new_client.sql`:
-```sql
-WITH first_visit AS (
-  SELECT DISTINCT ON (organization_id, mobile_phone)
-    id
-  FROM sale_transactions
-  WHERE mobile_phone IS NOT NULL
-    AND source = 'manager'
-  ORDER BY organization_id, mobile_phone, created_at ASC
-)
-UPDATE sale_transactions st
-SET is_new_client = true
-FROM first_visit fv
-WHERE st.id = fv.id
-  AND st.is_new_client IS DISTINCT FROM true;
-```
-
-Isso reescreve a história de forma justa: a primeira aparição de cada celular vira oficialmente "Cliente Novo". Os relatórios da aba Evolução e Inteligência passam a refletir a realidade.
-
-> ⚠️ Esse passo é opcional. Se preferir manter o histórico intocado e só corrigir daqui pra frente, basta aplicar os passos 1 e 2.
+| Card | Antes | Depois |
+|---|---|---|
+| Receita Bruta Total | R$ 0,00 | Valor real do período |
+| Total de Clientes | 0 | Soma real de `clients_count` |
+| Ticket Médio | R$ 0,00 | Receita / Clientes |
+| Comissão Total | (já funcionava) | Sem mudança |
+| Metas Batidas | (já funcionava) | Sem mudança |
 
 ## Arquivos afetados
 
 | # | Arquivo | Mudança |
 |---|---|---|
-| 1 | `src/components/dashboard/manager/QuickSaleModal.tsx` | Auto-sugerir `"new"` em 3 pontos do fluxo + 2 banners de feedback visual |
-| 2 | `supabase/migrations/<timestamp>_mark_first_visit_as_new_client.sql` | Backfill retroativo (opcional — eu pergunto antes de criar) |
-| 3 | `mem://features/global-client-type-classification` | Atualizar memória registrando que o sistema agora **sugere** o tipo automaticamente |
+| 1 | `src/components/dashboard/manager/ManagerReports.tsx` | `fetchStats`: trocar view por RPC `get_manager_report_stats` (~50 linhas removidas, ~15 adicionadas) |
 
-## Impacto esperado
+## Impacto / risco
 
-- Relatório **Performance de Assinaturas (Recepção/Evolução)** passa a mostrar o número real de oportunidades por barbeiro.
-- Taxa de conversão geral cai (porque o denominador agora inclui todos os clientes novos), mas vira um número confiável.
-- Funil em **Inteligência de Assinaturas** fica preciso.
-- Métricas de "Cliente Novo" no dashboard do barbeiro (se houver) também ficam corretas.
-
-## Ponto de decisão
-
-Antes de implementar eu confirmo com você:
-1. ✅ **Aplicar passo 1 + 2** (auto-marcação + feedback visual) — **recomendado, sem risco.**
-2. ⚠️ **Aplicar também passo 3** (backfill retroativo) — corrige o passado, mas reescreve dados. Decida se vale.
+- **Zero migration**, zero mudança de schema.
+- **Zero impacto** nos demais relatórios (Evolução, Ao Vivo, Folha, etc. — nenhum usa essa view).
+- Lógica de cálculo fica **mais consistente** com o resto do sistema (mesma RPC já usada em outros lugares).
+- Filtros por unidade e barbeiro continuam funcionando (são parâmetros nativos da RPC).
 
