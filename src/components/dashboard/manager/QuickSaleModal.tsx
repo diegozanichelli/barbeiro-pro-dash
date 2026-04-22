@@ -870,7 +870,7 @@ export default function QuickSaleModal({
 
       const { error } = await supabase.rpc("create_sale_and_ensure_production", {
         p_organization_id: organizationId,
-        p_barber_id: barberId,
+        p_barber_id: isReceptionSale ? null : barberId,
         p_date: dateStr,
         p_transactions: [transaction],
         p_source: "manager",
@@ -893,7 +893,7 @@ export default function QuickSaleModal({
         ],
       });
 
-      toast.success(`Venda manual registrada para ${barberName}`);
+      toast.success(`Venda manual registrada para ${isReceptionSale ? "Recepção / Loja" : barberName}`);
       
       resetForm();
       onOpenChange(false);
