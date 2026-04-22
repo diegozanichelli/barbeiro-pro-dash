@@ -61,6 +61,8 @@ interface QuickSaleModalProps {
   initialIsNewClient?: boolean;
   initialDate?: string; // yyyy-MM-dd from LiveDashboard
   initialMode?: "barber" | "reception"; // attribution mode preselected
+  units?: { id: string; name: string }[];
+  prefillUnitId?: string;
 }
 
 interface CatalogItem {
