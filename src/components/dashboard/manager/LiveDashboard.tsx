@@ -131,6 +131,7 @@ export default function LiveDashboard() {
     barberName: string;
     fromBridge?: boolean;
     mode?: "barber" | "reception";
+    prefillUnitId?: string;
   }>({ open: false, barberId: "", barberName: "" });
   const [editModal, setEditModal] = useState<{
     open: boolean;
