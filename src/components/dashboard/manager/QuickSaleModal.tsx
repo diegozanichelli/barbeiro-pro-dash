@@ -795,6 +795,11 @@ export default function QuickSaleModal({
       return;
     }
 
+    if (!attribution) {
+      toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
+      return;
+    }
+
     const numericValue = parseFloat(manualValue.replace(",", "."));
     if (isNaN(numericValue) || numericValue <= 0) {
       toast.error("Informe um valor válido");
