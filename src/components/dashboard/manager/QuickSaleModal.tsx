@@ -1471,6 +1471,12 @@ export default function QuickSaleModal({
               </ToggleGroupItem>
             </ToggleGroup>
 
+            {(clientType === "new" || clientType === "without_subscription") && (
+              <p className="text-[11px] text-muted-foreground">
+                💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
+              </p>
+            )}
+
             {clientType === "with_subscription" && (
               <div className="space-y-2 pt-1">
                 <Select
