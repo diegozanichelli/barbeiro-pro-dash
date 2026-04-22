@@ -716,8 +716,10 @@ export default function QuickSaleModal({
     clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
+  const attributionResolved =
+    attribution === "reception" || (attribution === "barber" && !!effectiveBarberIdResolved);
   const canProceedStep1 =
-    !!attribution && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
+    attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
@@ -730,7 +732,10 @@ export default function QuickSaleModal({
       toast.error("Ação necessária: Selecione um Barbeiro ou 'Venda Recepção' para prosseguir.");
       return;
     }
-
+    if (attribution === "barber" && !effectiveBarberIdResolved) {
+      toast.error("Selecione qual barbeiro fará a venda.");
+      return;
+    }
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
       return;
@@ -739,7 +744,7 @@ export default function QuickSaleModal({
     isSubmittingRef.current = true;
     setIsLoading(true);
     const dateStr = format(selectedDate, "yyyy-MM-dd");
-    const effectiveBarberId = isReceptionSale ? null : barberId;
+    const effectiveBarberId = isReceptionSale ? null : effectiveBarberIdResolved;
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
