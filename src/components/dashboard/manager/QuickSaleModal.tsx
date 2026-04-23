@@ -690,8 +690,64 @@ export default function QuickSaleModal({
     toast.success(`Plano ${plan.name} adicionado — ${SUBSCRIPTION_ACTION_LABELS[action]}`);
   };
 
+  /**
+   * 1-click renewal from the predictive cycle banner.
+   * Uses the plan from the last subscription transaction, marks action='renew',
+   * and stores the next cycle anchor (preserving paid-but-unused days).
+   */
+  const handleQuickRenewFromBanner = useCallback(() => {
+    if (!cycle) return;
 
-  // Cart totals
+    if (subscriptionInCart) {
+      toast.warning("Já existe um plano no carrinho. Remova-o para registrar a renovação.");
+      return;
+    }
+
+    // Resolve plan: prefer current client plan, fallback to cycle plan id
+    const planFromHistory = cyclePlanId
+      ? subscriptionPlans.find((p) => p.id === cyclePlanId)
+      : null;
+    const planFromClient = selectedSubscriptionPlan;
+    const plan = planFromHistory ?? planFromClient;
+
+    if (!plan) {
+      toast.error("Não consegui identificar o plano atual. Selecione manualmente na aba Assinatura.");
+      return;
+    }
+
+    // Compute next anchor (preserves remaining days unless overdue)
+    const { anchor, nextDue, preservedDays } = computeNextAnchor(cycle);
+
+    setPendingCycleAnchorISO(formatInTimeZone(anchor, TIMEZONE, "yyyy-MM-dd"));
+    setPendingCycleNextDueISO(formatInTimeZone(nextDue, TIMEZONE, "yyyy-MM-dd"));
+
+    setCart((prev) => [
+      ...prev,
+      {
+        tempId: crypto.randomUUID(),
+        type: "subscription",
+        planId: plan.id,
+        name: plan.name,
+        customPrice: plan.price,
+        action: "renew",
+        downgradeReason: undefined,
+      },
+    ]);
+
+    // Make sure UI reflects "with subscription"
+    setManualOverride(false);
+    setClientType("with_subscription");
+    setSelectedSubscriptionPlanId(plan.id);
+
+    const nextDueLabel = formatInTimeZone(nextDue, TIMEZONE, "dd/MM/yyyy");
+    toast.success(`Renovação preparada — ${plan.name}`, {
+      description:
+        preservedDays > 0
+          ? `Próximo vencimento: ${nextDueLabel} (mantidos ${preservedDays} ${preservedDays === 1 ? "dia" : "dias"} do ciclo anterior)`
+          : `Próximo vencimento: ${nextDueLabel}`,
+    });
+  }, [cycle, subscriptionInCart, cyclePlanId, subscriptionPlans, selectedSubscriptionPlan]);
+
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.customPrice, 0);
   }, [cart]);
