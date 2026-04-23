@@ -1073,6 +1073,28 @@ export default function QuickSaleModal({
         }
       }
 
+      // 1-click renewal from banner: persist cycle metadata into description.
+      if (subscriptionInCart && pendingCycleAnchorISO && pendingCycleNextDueISO) {
+        try {
+          const cycleJson = JSON.stringify({
+            cycle_anchor: pendingCycleAnchorISO,
+            next_due: pendingCycleNextDueISO,
+          });
+          await supabase
+            .from("sale_transactions")
+            .update({ description: cycleJson })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", registeredClient.mobilePhone)
+            .eq("item_type", "subscription")
+            .eq("subscription_plan_id", subscriptionInCart.planId)
+            .eq("subscription_action", subscriptionInCart.action)
+            .is("description", null)
+            .gte("created_at", new Date(Date.now() - 60_000).toISOString());
+        } catch (cycleErr) {
+          console.warn("[QuickSaleModal] Falha ao gravar cycle_anchor (não bloqueante):", cycleErr);
+        }
+      }
+
       await recordClientPurchasesBestEffort({
         organizationId,
         clientName: registeredClient.clientName,
