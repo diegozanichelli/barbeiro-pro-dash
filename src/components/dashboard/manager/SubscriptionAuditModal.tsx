@@ -304,6 +304,9 @@ export default function SubscriptionAuditModal({
                       <TableCell className="text-sm">
                         {tx.description || "—"}
                       </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {tx.units?.name || "—"}
+                      </TableCell>
                       <TableCell>
                         <Select value={editPlanId} onValueChange={setEditPlanId}>
                           <SelectTrigger className="h-8 text-xs">
