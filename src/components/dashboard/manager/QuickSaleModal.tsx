@@ -48,8 +48,13 @@ import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
+import { useSubscriptionCycle } from "@/hooks/useSubscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
+import { computeNextAnchor, serializeCycleMetadata } from "@/lib/subscriptionCycle";
+import { SubscriptionCycleBanner } from "@/components/dashboard/manager/SubscriptionCycleBanner";
+import { formatInTimeZone } from "date-fns-tz";
+import { TIMEZONE } from "@/lib/dateUtils";
 
 
 interface QuickSaleModalProps {
@@ -125,7 +130,6 @@ function inferSubscriptionAction(
   if (currentPlan.id === newPlan.id) return "renew";
   return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
 }
-
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
@@ -252,6 +256,19 @@ export default function QuickSaleModal({
     phoneQuery: mobilePhone,
     enabled: open,
   });
+
+  // Subscription cycle (predictive renewal alert)
+  const { cycle, loading: loadingCycle, planId: cyclePlanId, planName: cyclePlanName } =
+    useSubscriptionCycle({
+      organizationId,
+      mobilePhone,
+      enabled: open,
+    });
+
+  // When user clicks "Renovar agora" on the banner, we capture the anchor
+  // so we can serialize it into description JSON at submission time.
+  const [pendingCycleAnchorISO, setPendingCycleAnchorISO] = useState<string | null>(null);
+  const [pendingCycleNextDueISO, setPendingCycleNextDueISO] = useState<string | null>(null);
 
   // Date picker state - use initialDate from LiveDashboard if provided
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
@@ -406,6 +423,8 @@ export default function QuickSaleModal({
     setManualOverride(false);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
+    setPendingCycleAnchorISO(null);
+    setPendingCycleNextDueISO(null);
     clientHistory.reset();
     if (initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
@@ -672,8 +691,61 @@ export default function QuickSaleModal({
     toast.success(`Plano ${plan.name} adicionado — ${SUBSCRIPTION_ACTION_LABELS[action]}`);
   };
 
+  /**
+   * 1-click renewal from the predictive cycle banner.
+   * Uses the plan from the last subscription transaction, marks action='renew',
+   * and stores the next cycle anchor (preserving paid-but-unused days).
+   */
+  const handleQuickRenewFromBanner = useCallback(() => {
+    if (!cycle) return;
 
-  // Cart totals
+    if (subscriptionInCart) {
+      toast.warning("Já existe um plano no carrinho. Remova-o para registrar a renovação.");
+      return;
+    }
+
+    // Resolve plan: prefer current client plan, fallback to cycle plan id
+    const resolvedPlanId = cyclePlanId || selectedSubscriptionPlanId;
+    const plan = subscriptionPlans.find((p) => p.id === resolvedPlanId);
+
+    if (!plan) {
+      toast.error("Não consegui identificar o plano atual. Selecione manualmente na aba Assinatura.");
+      return;
+    }
+
+    // Compute next anchor (preserves remaining days unless overdue)
+    const { anchor, nextDue, preservedDays } = computeNextAnchor(cycle);
+
+    setPendingCycleAnchorISO(formatInTimeZone(anchor, TIMEZONE, "yyyy-MM-dd"));
+    setPendingCycleNextDueISO(formatInTimeZone(nextDue, TIMEZONE, "yyyy-MM-dd"));
+
+    setCart((prev) => [
+      ...prev,
+      {
+        tempId: crypto.randomUUID(),
+        type: "subscription",
+        planId: plan.id,
+        name: plan.name,
+        customPrice: plan.price,
+        action: "renew",
+        downgradeReason: undefined,
+      },
+    ]);
+
+    // Make sure UI reflects "with subscription"
+    setManualOverride(false);
+    setClientType("with_subscription");
+    setSelectedSubscriptionPlanId(plan.id);
+
+    const nextDueLabel = formatInTimeZone(nextDue, TIMEZONE, "dd/MM/yyyy");
+    toast.success(`Renovação preparada — ${plan.name}`, {
+      description:
+        preservedDays > 0
+          ? `Próximo vencimento: ${nextDueLabel} (mantidos ${preservedDays} ${preservedDays === 1 ? "dia" : "dias"} do ciclo anterior)`
+          : `Próximo vencimento: ${nextDueLabel}`,
+    });
+  }, [cycle, subscriptionInCart, cyclePlanId, selectedSubscriptionPlanId, subscriptionPlans]);
+
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.customPrice, 0);
   }, [cart]);
@@ -998,6 +1070,28 @@ export default function QuickSaleModal({
           }
         } catch (linkErr) {
           console.error("Erro inesperado ao vincular assinatura:", linkErr);
+        }
+      }
+
+      // 1-click renewal from banner: persist cycle metadata into description.
+      if (subscriptionInCart && pendingCycleAnchorISO && pendingCycleNextDueISO) {
+        try {
+          const cycleJson = JSON.stringify({
+            cycle_anchor: pendingCycleAnchorISO,
+            next_due: pendingCycleNextDueISO,
+          });
+          await supabase
+            .from("sale_transactions")
+            .update({ description: cycleJson })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", registeredClient.mobilePhone)
+            .eq("item_type", "subscription")
+            .eq("subscription_plan_id", subscriptionInCart.planId)
+            .eq("subscription_action", subscriptionInCart.action)
+            .is("description", null)
+            .gte("created_at", new Date(Date.now() - 60_000).toISOString());
+        } catch (cycleErr) {
+          console.warn("[QuickSaleModal] Falha ao gravar cycle_anchor (não bloqueante):", cycleErr);
         }
       }
 
@@ -1449,6 +1543,19 @@ export default function QuickSaleModal({
               </div>
             )}
           </div>
+
+          {/* Predictive renewal alert (cycle status) */}
+          {(loadingCycle || cycle) && (
+            <div className="px-3 pt-2.5">
+              <SubscriptionCycleBanner
+                cycle={cycle}
+                loading={loadingCycle}
+                planName={cyclePlanName}
+                onRenew={handleQuickRenewFromBanner}
+                hideRenewButton={!!subscriptionInCart}
+              />
+            </div>
+          )}
 
           {/* Client Type Selector */}
           <div className="px-3 py-2.5 space-y-2">
