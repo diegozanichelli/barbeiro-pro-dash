@@ -7,7 +7,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Crown, TrendingUp, Users, Target, Loader2, Star, AlertTriangle, Trophy } from "lucide-react";
+import { Crown, TrendingUp, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle } from "lucide-react";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
 interface BarberPerformance {
   barberId: string;
@@ -305,40 +307,75 @@ export default function SubscriptionPerformanceReport() {
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Users className="w-4 h-4" />
-                  <span className="text-xs">🎯 Oportunidades</span>
-                </div>
-                <p className="text-2xl font-bold">{totalNewClients}</p>
-                <p className="text-xs text-muted-foreground">Clientes Novos</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Crown className="w-4 h-4" />
-                  <span className="text-xs">👑 Vendas</span>
-                </div>
-                <p className="text-2xl font-bold">{totalSubscriptions}</p>
-                <p className="text-xs text-muted-foreground">Assinaturas</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Target className="w-4 h-4" />
-                  <span className="text-xs">📉 Conversão Geral</span>
-                </div>
-                <p className="text-2xl font-bold">
-                  {overallConversion.toFixed(1)}%
-                </p>
-                <p className="text-xs text-muted-foreground">Vendas / Oportunidades</p>
-              </CardContent>
-            </Card>
-          </div>
+          <TooltipProvider delayDuration={150}>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Users className="w-4 h-4" />
+                    <span className="text-xs">🎯 Oportunidades</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Oportunidades">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Pessoas únicas (por celular) marcadas como "cliente novo" no período. Cada
+                        pessoa conta uma vez, mesmo que tenha vários atendimentos.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">{totalNewClients}</p>
+                  <p className="text-xs text-muted-foreground">Clientes Novos</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Crown className="w-4 h-4" />
+                    <span className="text-xs">👑 Vendas</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Vendas">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Toda assinatura com ação = "nova" no mês — barbeiros + recepção, clientes
+                        novos e da casa. Mesmo critério da aba Carteira de Assinaturas.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">{totalSubscriptions}</p>
+                  <p className="text-xs text-muted-foreground">Assinaturas</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Target className="w-4 h-4" />
+                    <span className="text-xs">📉 Conversão Geral</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Conversão">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Vendas ÷ Oportunidades. Mostra o quanto dos clientes novos atendidos
+                        viraram assinantes no período.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">
+                    {overallConversion.toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">Vendas / Oportunidades</p>
+                </CardContent>
+              </Card>
+            </div>
+          </TooltipProvider>
 
           {/* Performance Table */}
           {loading ? (
