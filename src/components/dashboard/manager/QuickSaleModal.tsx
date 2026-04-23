@@ -129,9 +129,30 @@ function inferSubscriptionAction(
   if (!currentPlan) return "new";
   if (currentPlan.id === newPlan.id) return "renew";
   return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
-}
+      }
 
-
+      // If this was a "1-click renewal from banner", persist the cycle metadata
+      // (anchor + next_due) into the description field of the just-inserted subscription tx.
+      if (subscriptionInCart && pendingCycleAnchorISO && pendingCycleNextDueISO) {
+        try {
+          const cycleJson = JSON.stringify({
+            cycle_anchor: pendingCycleAnchorISO,
+            next_due: pendingCycleNextDueISO,
+          });
+          await supabase
+            .from("sale_transactions")
+            .update({ description: cycleJson })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", registeredClient.mobilePhone)
+            .eq("item_type", "subscription")
+            .eq("subscription_plan_id", subscriptionInCart.planId)
+            .eq("subscription_action", subscriptionInCart.action)
+            .is("description", null)
+            .gte("created_at", new Date(Date.now() - 60_000).toISOString());
+        } catch (cycleErr) {
+          console.warn("[QuickSaleModal] Falha ao gravar cycle_anchor (não bloqueante):", cycleErr);
+        }
+      }
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
   const details = String(error?.details || "").toLowerCase();
