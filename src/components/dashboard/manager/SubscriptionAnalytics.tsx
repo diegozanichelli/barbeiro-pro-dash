@@ -309,6 +309,8 @@ export default function SubscriptionAnalytics() {
         </CardContent>
       </Card>
 
+      <SubscriptionScopeFooter />
+
       <SubscriptionEditModal
         open={!!editingTransaction}
         onOpenChange={(open) => { if (!open) setEditingTransaction(null); }}
