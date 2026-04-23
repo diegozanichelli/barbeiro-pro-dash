@@ -268,6 +268,39 @@ export default function SubscriptionAuditModal({
               </Select>
             </div>
 
+            {/* Filtro por tipo de ação */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5 shrink-0">
+                🎯 Tipo de movimento:
+              </Label>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge
+                  variant={selectedAction === "all" ? "default" : "outline"}
+                  className="cursor-pointer text-xs font-normal"
+                  onClick={() => setSelectedAction("all")}
+                >
+                  Todas <span className="font-semibold ml-1">({transactions.length})</span>
+                </Badge>
+                {(["new", "renew", "upgrade", "downgrade", "unknown"] as const).map((key) => {
+                  const count = actionStats[key] || 0;
+                  if (count === 0) return null;
+                  const meta = getActionMeta(key === "unknown" ? null : key);
+                  const isActive = selectedAction === key;
+                  return (
+                    <Badge
+                      key={key}
+                      variant="outline"
+                      className={`cursor-pointer text-xs font-normal ${isActive ? meta.className : ""}`}
+                      onClick={() => setSelectedAction(isActive ? "all" : key)}
+                    >
+                      <span className="mr-1">{meta.emoji}</span>
+                      {meta.label} <span className="font-semibold ml-1">({count})</span>
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex flex-wrap gap-1.5">
               {Object.entries(unitStats).map(([key, stat]) => (
                 <Badge
