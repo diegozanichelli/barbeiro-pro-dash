@@ -338,6 +338,7 @@ export default function SubscriptionAuditModal({
               <TableRow>
                 <TableHead className="w-[60px]">🕒</TableHead>
                 <TableHead>👤 Cliente</TableHead>
+                <TableHead className="w-[110px]">🎯 Tipo</TableHead>
                 <TableHead>🏢 Unidade</TableHead>
                 <TableHead>👑 Plano</TableHead>
                 <TableHead>💼 Vendedor</TableHead>
