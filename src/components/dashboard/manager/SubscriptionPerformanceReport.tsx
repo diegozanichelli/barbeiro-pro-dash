@@ -233,9 +233,13 @@ export default function SubscriptionPerformanceReport() {
     return opportunities >= 5 && sales === 0;
   };
 
-  // Summary stats
-  const totalNewClients = performanceData.reduce((sum, p) => sum + p.newClientsCount, 0);
-  const totalSubscriptions = performanceData.reduce((sum, p) => sum + p.subscriptionsSold, 0);
+  // Summary stats — include reception so totals match Inteligência tab
+  const totalNewClients =
+    performanceData.reduce((sum, p) => sum + p.newClientsCount, 0) +
+    (receptionRow?.newClientsCount || 0);
+  const totalSubscriptions =
+    performanceData.reduce((sum, p) => sum + p.subscriptionsSold, 0) +
+    (receptionRow?.subscriptionsSold || 0);
   const overallConversion = totalNewClients > 0 ? (totalSubscriptions / totalNewClients) * 100 : 0;
 
   return (
