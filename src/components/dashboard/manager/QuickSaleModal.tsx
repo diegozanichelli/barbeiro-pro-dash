@@ -704,11 +704,8 @@ export default function QuickSaleModal({
     }
 
     // Resolve plan: prefer current client plan, fallback to cycle plan id
-    const planFromHistory = cyclePlanId
-      ? subscriptionPlans.find((p) => p.id === cyclePlanId)
-      : null;
-    const planFromClient = selectedSubscriptionPlan;
-    const plan = planFromHistory ?? planFromClient;
+    const resolvedPlanId = cyclePlanId || selectedSubscriptionPlanId;
+    const plan = subscriptionPlans.find((p) => p.id === resolvedPlanId);
 
     if (!plan) {
       toast.error("Não consegui identificar o plano atual. Selecione manualmente na aba Assinatura.");
@@ -746,7 +743,7 @@ export default function QuickSaleModal({
           ? `Próximo vencimento: ${nextDueLabel} (mantidos ${preservedDays} ${preservedDays === 1 ? "dia" : "dias"} do ciclo anterior)`
           : `Próximo vencimento: ${nextDueLabel}`,
     });
-  }, [cycle, subscriptionInCart, cyclePlanId, subscriptionPlans, selectedSubscriptionPlan]);
+  }, [cycle, subscriptionInCart, cyclePlanId, selectedSubscriptionPlanId, subscriptionPlans]);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.customPrice, 0);
