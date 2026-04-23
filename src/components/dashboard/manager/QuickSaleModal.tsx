@@ -48,8 +48,13 @@ import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
+import { useSubscriptionCycle } from "@/hooks/useSubscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
+import { computeNextAnchor, serializeCycleMetadata } from "@/lib/subscriptionCycle";
+import { SubscriptionCycleBanner } from "@/components/dashboard/manager/SubscriptionCycleBanner";
+import { formatInTimeZone } from "date-fns-tz";
+import { TIMEZONE } from "@/lib/dateUtils";
 
 
 interface QuickSaleModalProps {
