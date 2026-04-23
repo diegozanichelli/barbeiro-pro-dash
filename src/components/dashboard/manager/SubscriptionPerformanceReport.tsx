@@ -16,6 +16,7 @@ interface BarberPerformance {
   newClientsCount: number;
   subscriptionsSold: number;
   conversionRate: number;
+  isReception?: boolean;
 }
 
 export default function SubscriptionPerformanceReport() {
