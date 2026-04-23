@@ -424,6 +424,8 @@ export default function QuickSaleModal({
     setManualOverride(false);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
+    setPendingCycleAnchorISO(null);
+    setPendingCycleNextDueISO(null);
     clientHistory.reset();
     if (initialDate) {
       const [y, m, d] = initialDate.split("-").map(Number);
