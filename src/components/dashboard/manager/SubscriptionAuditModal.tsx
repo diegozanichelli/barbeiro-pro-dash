@@ -47,10 +47,21 @@ interface AuditTransaction {
   barber_id: string | null;
   subscription_plan_id: string | null;
   unit_id: string | null;
+  subscription_action: string | null;
   barbers: { name: string } | null;
   subscription_plans: { name: string; price: number } | null;
   units: { name: string } | null;
 }
+
+const ACTION_META: Record<string, { label: string; emoji: string; className: string }> = {
+  new: { label: "Nova", emoji: "🆕", className: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-400" },
+  renew: { label: "Renovação", emoji: "🔄", className: "bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-400" },
+  upgrade: { label: "Upgrade", emoji: "⬆️", className: "bg-violet-500/15 text-violet-700 border-violet-500/30 dark:text-violet-400" },
+  downgrade: { label: "Downgrade", emoji: "⬇️", className: "bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-400" },
+};
+
+const getActionMeta = (action: string | null) =>
+  (action && ACTION_META[action]) || { label: "Sem tipo", emoji: "❔", className: "bg-muted text-muted-foreground border-border" };
 
 interface SubscriptionPlan {
   id: string;
@@ -73,6 +84,7 @@ export default function SubscriptionAuditModal({
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  const [selectedAction, setSelectedAction] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -95,7 +107,7 @@ export default function SubscriptionAuditModal({
     try {
       const { data, error } = await supabase
         .from("sale_transactions")
-        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, barbers(name), subscription_plans(name, price), units(name)")
+        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, subscription_action, barbers(name), subscription_plans(name, price), units(name)")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .order("created_at", { ascending: false })
@@ -131,10 +143,12 @@ export default function SubscriptionAuditModal({
     setUnits(data || []);
   };
 
-  // Filtered transactions by unit
-  const filteredTransactions = selectedUnit === "all"
-    ? transactions
-    : transactions.filter((tx) => tx.unit_id === selectedUnit);
+  // Filtered transactions by unit + action
+  const filteredTransactions = transactions.filter((tx) => {
+    const unitOk = selectedUnit === "all" || tx.unit_id === selectedUnit;
+    const actionOk = selectedAction === "all" || (tx.subscription_action || "unknown") === selectedAction;
+    return unitOk && actionOk;
+  });
 
   // Aggregated stats per unit (from current loaded transactions)
   const unitStats = transactions.reduce<Record<string, { count: number; total: number; name: string }>>((acc, tx) => {
@@ -143,6 +157,13 @@ export default function SubscriptionAuditModal({
     if (!acc[key]) acc[key] = { count: 0, total: 0, name };
     acc[key].count += 1;
     acc[key].total += Number(tx.price_sold) || 0;
+    return acc;
+  }, {});
+
+  // Aggregated stats per action
+  const actionStats = transactions.reduce<Record<string, number>>((acc, tx) => {
+    const key = tx.subscription_action || "unknown";
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
@@ -247,6 +268,39 @@ export default function SubscriptionAuditModal({
               </Select>
             </div>
 
+            {/* Filtro por tipo de ação */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5 shrink-0">
+                🎯 Tipo de movimento:
+              </Label>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge
+                  variant={selectedAction === "all" ? "default" : "outline"}
+                  className="cursor-pointer text-xs font-normal"
+                  onClick={() => setSelectedAction("all")}
+                >
+                  Todas <span className="font-semibold ml-1">({transactions.length})</span>
+                </Badge>
+                {(["new", "renew", "upgrade", "downgrade", "unknown"] as const).map((key) => {
+                  const count = actionStats[key] || 0;
+                  if (count === 0) return null;
+                  const meta = getActionMeta(key === "unknown" ? null : key);
+                  const isActive = selectedAction === key;
+                  return (
+                    <Badge
+                      key={key}
+                      variant="outline"
+                      className={`cursor-pointer text-xs font-normal ${isActive ? meta.className : ""}`}
+                      onClick={() => setSelectedAction(isActive ? "all" : key)}
+                    >
+                      <span className="mr-1">{meta.emoji}</span>
+                      {meta.label} <span className="font-semibold ml-1">({count})</span>
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex flex-wrap gap-1.5">
               {Object.entries(unitStats).map(([key, stat]) => (
                 <Badge
@@ -284,6 +338,7 @@ export default function SubscriptionAuditModal({
               <TableRow>
                 <TableHead className="w-[60px]">🕒</TableHead>
                 <TableHead>👤 Cliente</TableHead>
+                <TableHead className="w-[110px]">🎯 Tipo</TableHead>
                 <TableHead>🏢 Unidade</TableHead>
                 <TableHead>👑 Plano</TableHead>
                 <TableHead>💼 Vendedor</TableHead>
@@ -303,6 +358,16 @@ export default function SubscriptionAuditModal({
                       </TableCell>
                       <TableCell className="text-sm">
                         {tx.description || "—"}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const m = getActionMeta(tx.subscription_action);
+                          return (
+                            <Badge variant="outline" className={`text-[10px] font-normal ${m.className}`}>
+                              <span className="mr-0.5">{m.emoji}</span>{m.label}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {tx.units?.name || "—"}
@@ -377,6 +442,16 @@ export default function SubscriptionAuditModal({
                     </TableCell>
                     <TableCell className="text-sm font-medium">
                       {tx.description || "—"}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const m = getActionMeta(tx.subscription_action);
+                        return (
+                          <Badge variant="outline" className={`text-[10px] font-normal ${m.className}`}>
+                            <span className="mr-0.5">{m.emoji}</span>{m.label}
+                          </Badge>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="text-xs">
                       {tx.units?.name ? (
