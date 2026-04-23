@@ -26,6 +26,7 @@ export default function SubscriptionPerformanceReport() {
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [loading, setLoading] = useState(true);
   const [performanceData, setPerformanceData] = useState<BarberPerformance[]>([]);
+  const [receptionRow, setReceptionRow] = useState<BarberPerformance | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
