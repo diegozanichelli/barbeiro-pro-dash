@@ -258,6 +258,19 @@ export default function QuickSaleModal({
     enabled: open,
   });
 
+  // Subscription cycle (predictive renewal alert)
+  const { cycle, loading: loadingCycle, planId: cyclePlanId, planName: cyclePlanName } =
+    useSubscriptionCycle({
+      organizationId,
+      mobilePhone,
+      enabled: open,
+    });
+
+  // When user clicks "Renovar agora" on the banner, we capture the anchor
+  // so we can serialize it into description JSON at submission time.
+  const [pendingCycleAnchorISO, setPendingCycleAnchorISO] = useState<string | null>(null);
+  const [pendingCycleNextDueISO, setPendingCycleNextDueISO] = useState<string | null>(null);
+
   // Date picker state - use initialDate from LiveDashboard if provided
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     if (initialDate) {
