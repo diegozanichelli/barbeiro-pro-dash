@@ -378,6 +378,16 @@ export default function SubscriptionAuditModal({
                     <TableCell className="text-sm font-medium">
                       {tx.description || "—"}
                     </TableCell>
+                    <TableCell className="text-xs">
+                      {tx.units?.name ? (
+                        <Badge variant="outline" className="font-normal">
+                          <Building2 className="w-3 h-3 mr-1" />
+                          {tx.units.name}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm">
                       {tx.subscription_plans?.name || tx.item_name}
                     </TableCell>
