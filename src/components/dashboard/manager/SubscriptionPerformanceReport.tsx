@@ -495,6 +495,7 @@ export default function SubscriptionPerformanceReport() {
           </div>
         </CardContent>
       </Card>
+      <SubscriptionScopeFooter />
     </div>
   );
 }
