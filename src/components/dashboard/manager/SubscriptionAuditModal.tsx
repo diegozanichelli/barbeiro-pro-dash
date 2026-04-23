@@ -107,7 +107,7 @@ export default function SubscriptionAuditModal({
     try {
       const { data, error } = await supabase
         .from("sale_transactions")
-        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, barbers(name), subscription_plans(name, price), units(name)")
+        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, subscription_action, barbers(name), subscription_plans(name, price), units(name)")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .order("created_at", { ascending: false })
