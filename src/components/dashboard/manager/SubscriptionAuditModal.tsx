@@ -143,10 +143,12 @@ export default function SubscriptionAuditModal({
     setUnits(data || []);
   };
 
-  // Filtered transactions by unit
-  const filteredTransactions = selectedUnit === "all"
-    ? transactions
-    : transactions.filter((tx) => tx.unit_id === selectedUnit);
+  // Filtered transactions by unit + action
+  const filteredTransactions = transactions.filter((tx) => {
+    const unitOk = selectedUnit === "all" || tx.unit_id === selectedUnit;
+    const actionOk = selectedAction === "all" || (tx.subscription_action || "unknown") === selectedAction;
+    return unitOk && actionOk;
+  });
 
   // Aggregated stats per unit (from current loaded transactions)
   const unitStats = transactions.reduce<Record<string, { count: number; total: number; name: string }>>((acc, tx) => {
@@ -155,6 +157,13 @@ export default function SubscriptionAuditModal({
     if (!acc[key]) acc[key] = { count: 0, total: 0, name };
     acc[key].count += 1;
     acc[key].total += Number(tx.price_sold) || 0;
+    return acc;
+  }, {});
+
+  // Aggregated stats per action
+  const actionStats = transactions.reduce<Record<string, number>>((acc, tx) => {
+    const key = tx.subscription_action || "unknown";
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
