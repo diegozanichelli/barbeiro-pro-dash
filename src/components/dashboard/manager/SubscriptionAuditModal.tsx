@@ -23,10 +23,12 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Pencil, Check, X, Loader2 } from "lucide-react";
+import { Pencil, Check, X, Loader2, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
 
 interface SubscriptionAuditModalProps {
