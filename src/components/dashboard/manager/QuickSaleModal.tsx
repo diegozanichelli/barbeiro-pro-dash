@@ -1544,6 +1544,19 @@ export default function QuickSaleModal({
             )}
           </div>
 
+          {/* Predictive renewal alert (cycle status) */}
+          {(loadingCycle || cycle) && (
+            <div className="px-3 pt-2.5">
+              <SubscriptionCycleBanner
+                cycle={cycle}
+                loading={loadingCycle}
+                planName={cyclePlanName}
+                onRenew={handleQuickRenewFromBanner}
+                hideRenewButton={!!subscriptionInCart}
+              />
+            </div>
+          )}
+
           {/* Client Type Selector */}
           <div className="px-3 py-2.5 space-y-2">
             <Label className="text-xs text-muted-foreground font-medium">Tipo de Cliente</Label>
