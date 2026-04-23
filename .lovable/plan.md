@@ -1,87 +1,71 @@
 
 
-# Esclarecer diferença entre abas Assinaturas, Recepção e Inteligência
+# Alerta preditivo de renovação de assinatura
 
-## Problema
+## Resumo
 
-O usuário vê 3 números diferentes nas 3 abas e não entende por que divergem:
+Mostrar status de vencimento da assinatura **dinamicamente calculado** (último `new`/`renew` + 1 mês) já no momento que a recepção identifica o cliente no PDV, com 3 estados visuais e ação de 1-clique para renovar. Antecipações somam à data original (não "queimam" dias pagos) — fidelização real.
 
-| Aba | O que mede hoje | Exemplo (Abr/2026) |
+## Como o ciclo será calculado
+
+**Não existe campo de vencimento no banco** (verifiquei `clients` e `sale_transactions`). O ciclo será derivado em tempo real:
+
+1. Buscar a **última transação** do cliente onde `item_type='subscription'` e `subscription_action IN ('new','renew','upgrade')`, filtrando por `mobile_phone` e `organization_id`.
+2. `dataInicio = created_at` dessa transação (em fuso `America/Manaus`).
+3. `dataVencimento = addMonths(dataInicio, 1)` via `date-fns`.
+4. `diffDias = differenceInCalendarDays(dataVencimento, todayManaus)`.
+
+Para **antecipação na renovação**: a nova data-base passa a ser `dataVencimento` (não `today`). Ex: vence 15/05, renova dia 12/05 → próximo vencimento = 15/06. Vencimento já passado (inadimplente) → base = `today`. Isso será calculado no momento do registro, gravado como `description` JSON na transação (`{"cycle_anchor":"2026-05-15"}`) — sem migration. Leitura futura: se houver `cycle_anchor` no `description`, usa ele; senão, usa `created_at`.
+
+## 3 estados visuais (no QuickSaleModal e botão "Renovar Plano" do Live)
+
+| Estado | Condição | UI |
 |---|---|---|
-| **Assinaturas** (Conversão) | Adesões **novas atribuídas a barbeiros** + linha agregada de Recepção. Denominador = clientes novos únicos atendidos | 295 clientes / 44 assinaturas |
-| **Recepção** | **Apenas** vendas sem barbeiro (`barber_id IS NULL`), separadas por unidade | 27 no Parque 10 |
-| **Inteligência** | Movimentação **completa da carteira**: novas + renovações + upgrades + downgrades, com receita | 60 novas / 6 renov / 5 upg / 0 down |
+| **EM DIA** | `diffDias > 5` | Badge verde discreto: `Assinatura ativa (Próx. 15/05)` — botão renovação normal |
+| **RENOVAÇÃO DISPONÍVEL** | `0 ≤ diffDias ≤ 5` | Botão dourado com `animate-pulse-slow`: `Renovar agora (Vence em 3 dias)` |
+| **VENCIDO** | `diffDias < 0` | Botão `bg-destructive`: `BLOQUEADO: Vencida em 14/04 — Renovar` (não bloqueia outras vendas, só sinaliza) |
 
-São **respostas para perguntas diferentes**, mas a UI não comunica isso. Os números são corretos — só falta contexto.
+Quando o cliente é identificado por telefone, o status aparece num **banner no topo do step 1** do QuickSaleModal e como **ícone-status** ao lado do botão "Renovar Plano" no LiveDashboard.
 
-## Solução: deixar o escopo explícito em cada aba
+## Ação 1-clique "Renovar agora"
 
-Sem mexer em cálculo nenhum. Apenas tornar a diferença óbvia.
+Botão único em qualquer estado do banner. Ao clicar:
 
-### 1. Renomear os títulos das abas (mais descritivos)
-
-| Antes | Depois |
-|---|---|
-| Assinaturas | Conversão por Barbeiro |
-| Recepção | Vendas da Recepção |
-| Inteligência | Carteira de Assinaturas |
-
-Os ícones permanecem.
-
-### 2. Banner explicativo no topo de cada aba
-
-Card discreto (cor neutra, ícone Info) abaixo do header de cada relatório:
-
-- **Conversão por Barbeiro**: "Mede quantos clientes novos atendidos pelos barbeiros viraram assinantes. Inclui também uma linha agregada da Recepção. Critério: assinaturas com ação = nova ÷ pessoas únicas (por celular)."
-- **Vendas da Recepção**: "Mostra **apenas** vendas registradas sem barbeiro atribuído (balcão), separadas por unidade. Não inclui vendas atribuídas a barbeiros."
-- **Carteira de Assinaturas**: "Visão completa da movimentação da carteira no período: novas adesões, renovações, upgrades e downgrades, com a receita gerada por cada tipo. Inclui vendas de barbeiros **e** da recepção."
-
-### 3. Tooltip de ajuda nos números principais
-
-Adicionar `<HoverCard>` ou tooltip no ícone `?` ao lado de cada métrica chave, explicando exatamente o que entra e o que não entra na conta.
-
-Exemplo (Inteligência → "Novas Assinaturas: 60"):
-> Inclui toda assinatura com `subscription_action = 'new'` no mês — barbeiros + recepção, clientes novos e da casa.
-
-Exemplo (Conversão → "Assinaturas Vendidas: 44"):
-> Mesmo critério da aba Carteira, mas exibido por barbeiro + recepção. Total geral aqui = total da aba Carteira.
-
-### 4. Linha "Como esses números se relacionam" (rodapé compartilhado)
-
-No rodapé das 3 abas, um pequeno bloco recorrente:
-
-> **Os 3 relatórios são complementares:**
-> - **Carteira** = todas as movimentações no mês (novas + renov + up/down)
-> - **Conversão** = só novas adesões, distribuídas por barbeiro
-> - **Recepção** = só novas adesões sem barbeiro, distribuídas por unidade
->
-> O número de "Novas Assinaturas" da Carteira deve coincidir com o total da aba Conversão (incluindo a linha Recepção).
+1. Adiciona o plano atual ao carrinho com `action='renew'` (já existe via `inferSubscriptionAction`).
+2. Calcula e armazena `cycle_anchor`:
+   - Se `EM DIA` ou `RENOVAÇÃO DISPONÍVEL`: `anchor = dataVencimento` (atual)
+   - Se `VENCIDO`: `anchor = todayManaus`
+3. Grava no `description` da transação como JSON `{"cycle_anchor":"YYYY-MM-DD","next_due":"YYYY-MM-DD"}`.
+4. Toast: `Renovado! Próximo vencimento: 15/06/2026 (mantidos 3 dias do ciclo anterior)`.
 
 ## Arquivos afetados
 
 | # | Arquivo | Mudança |
 |---|---|---|
-| 1 | `src/components/dashboard/manager/BarberEvolution.tsx` | Renomear labels das abas Assinaturas/Recepção/Inteligência |
-| 2 | `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx` | Adicionar banner Info no topo + tooltip nas métricas + bloco de relação no rodapé |
-| 3 | `src/components/dashboard/manager/ReceptionPerformanceReport.tsx` | Mesmo tratamento |
-| 4 | `src/components/dashboard/manager/SubscriptionAnalytics.tsx` | Mesmo tratamento |
+| 1 | `src/lib/subscriptionCycle.ts` *(novo)* | Funções puras: `computeCycleStatus(lastTx, today)`, `computeNextAnchor(currentAnchor, today, status)`. Retorna `{status, dueDate, daysLeft, label, variant}`. Usa `date-fns` + `date-fns-tz` (`TIMEZONE='America/Manaus'`). |
+| 2 | `src/hooks/useSubscriptionCycle.ts` *(novo)* | Hook que recebe `mobile_phone + organizationId`, busca a última transação `subscription` (`new`/`renew`/`upgrade`) ordenada por `created_at desc limit 1`, parseia `description` para `cycle_anchor` quando presente, e devolve o objeto de status. |
+| 3 | `src/components/dashboard/manager/SubscriptionCycleBanner.tsx` *(novo)* | Banner visual reutilizável com os 3 estados + botão "Renovar agora". Props: `status`, `onRenew`. Usa `bg-emerald-500/10`, `bg-amber-500/15 animate-pulse-slow`, `bg-destructive/15`. |
+| 4 | `src/components/dashboard/manager/QuickSaleModal.tsx` | Após `autoDetectSubscription`, chamar `useSubscriptionCycle`; renderizar `SubscriptionCycleBanner` no step 1 quando o cliente tem assinatura. Botão "Renovar agora" injeta o plano no carrinho + grava `cycle_anchor` no `description`. |
+| 5 | `src/components/dashboard/manager/LiveDashboard.tsx` | (opcional, mínimo) — nada novo aqui; o banner já cobre o fluxo principal via PDV. |
 
-## Resultado esperado
+## Lógica do cycle_anchor (sem migration, zero risco)
 
-O usuário abre qualquer uma das 3 abas e entende em 5 segundos:
-- O que aquela tela mede
-- Por que o número difere das outras abas
-- Onde encontrar o número que ele realmente quer ver
+- `description` da `sale_transactions` já existe como `text` nullable. Vamos gravar JSON simples lá.
+- Função utilitária `parseCycleAnchor(description)` → tenta `JSON.parse`, retorna `null` em qualquer erro.
+- Backwards-compatible: transações antigas sem `cycle_anchor` usam `created_at` como base.
 
-Zero mudança de cálculo, zero risco de regressão. Só clareza.
+## Impacto / risco
 
-## Pergunta antes de implementar
+- **Zero migration**, zero schema, zero RPC nova.
+- Cálculo 100% no frontend a partir de dados que já existem.
+- A política de antecipação (não queima dias) fica **transparente para o cliente** via toast.
+- Reutiliza `inferSubscriptionAction`, `useClientHistory` e o fluxo atual do PDV — nenhuma regra de comissão/relatório muda.
+- Os 3 relatórios de assinaturas (Conversão, Recepção, Carteira) continuam idênticos: o `cycle_anchor` é apenas metadado.
 
-Você prefere:
+## Detalhes técnicos relevantes
 
-- **(A)** Aplicar tudo de uma vez (renome + banners + tooltips + rodapé) — solução completa, mais texto na tela
-- **(B)** Só banners explicativos no topo (sem renomear abas, sem tooltip, sem rodapé) — minimalista, resolve 80% da confusão
-- **(C)** Renomear abas + banner no topo, sem tooltips/rodapé — meio-termo recomendado
-
-Me diz qual prefere que eu implemento.
+- Fuso: `formatInTimeZone(date, 'America/Manaus', 'yyyy-MM-dd')` para todas as comparações de data pura.
+- `addMonths` lida automaticamente com meses curtos (31/01 + 1 mês = 28/02 ou 29/02).
+- Hook usa cache via `useMemo` por telefone para evitar refetch ao trocar abas do modal.
+- Se a busca falhar (sem internet/sem permissão), banner não aparece (degradação graciosa).
 
