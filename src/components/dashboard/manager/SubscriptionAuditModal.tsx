@@ -23,10 +23,12 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Pencil, Check, X, Loader2 } from "lucide-react";
+import { Pencil, Check, X, Loader2, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
 
 interface SubscriptionAuditModalProps {
@@ -56,6 +58,11 @@ interface SubscriptionPlan {
   price: number;
 }
 
+interface UnitOption {
+  id: string;
+  name: string;
+}
+
 export default function SubscriptionAuditModal({
   open,
   onOpenChange,
@@ -64,6 +71,8 @@ export default function SubscriptionAuditModal({
 }: SubscriptionAuditModalProps) {
   const [transactions, setTransactions] = useState<AuditTransaction[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -77,6 +86,7 @@ export default function SubscriptionAuditModal({
     if (open && organizationId) {
       fetchTransactions();
       fetchPlans();
+      fetchUnits();
     }
   }, [open, organizationId]);
 
@@ -89,7 +99,7 @@ export default function SubscriptionAuditModal({
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(50);
 
       if (error) throw error;
       setTransactions((data as any) || []);
@@ -110,6 +120,31 @@ export default function SubscriptionAuditModal({
       .order("name");
     setPlans(data || []);
   };
+
+  const fetchUnits = async () => {
+    const { data } = await supabase
+      .from("units")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      .order("name");
+    setUnits(data || []);
+  };
+
+  // Filtered transactions by unit
+  const filteredTransactions = selectedUnit === "all"
+    ? transactions
+    : transactions.filter((tx) => tx.unit_id === selectedUnit);
+
+  // Aggregated stats per unit (from current loaded transactions)
+  const unitStats = transactions.reduce<Record<string, { count: number; total: number; name: string }>>((acc, tx) => {
+    const key = tx.unit_id || "no-unit";
+    const name = tx.units?.name || "Sem unidade";
+    if (!acc[key]) acc[key] = { count: 0, total: 0, name };
+    acc[key].count += 1;
+    acc[key].total += Number(tx.price_sold) || 0;
+    return acc;
+  }, {});
 
   const startEditing = (tx: AuditTransaction) => {
     setEditingId(tx.id);
@@ -180,12 +215,55 @@ export default function SubscriptionAuditModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             👁️ Auditoria de Assinaturas
           </DialogTitle>
         </DialogHeader>
+
+        {!loading && transactions.length > 0 && (
+          <div className="space-y-3 pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5 shrink-0">
+                <Building2 className="w-3.5 h-3.5" />
+                Filtrar por unidade:
+              </Label>
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger className="h-9 text-sm w-full sm:w-[240px]">
+                  <SelectValue placeholder="Todas as unidades" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades ({transactions.length})</SelectItem>
+                  {units.map((u) => {
+                    const stat = unitStats[u.id];
+                    return (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name} {stat ? `(${stat.count})` : "(0)"}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(unitStats).map(([key, stat]) => (
+                <Badge
+                  key={key}
+                  variant={selectedUnit === key ? "default" : "secondary"}
+                  className="cursor-pointer text-xs font-normal"
+                  onClick={() => setSelectedUnit(selectedUnit === key ? "all" : key)}
+                >
+                  {stat.name}: <span className="font-semibold ml-1">{stat.count}</span>
+                  <span className="ml-1.5 text-[10px] opacity-80">
+                    {stat.total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </span>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -195,6 +273,10 @@ export default function SubscriptionAuditModal({
           <p className="text-center text-muted-foreground py-8">
             Nenhuma venda de assinatura encontrada.
           </p>
+        ) : filteredTransactions.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8">
+            Nenhuma assinatura nesta unidade.
+          </p>
         ) : (
           <div className="max-h-[50vh] overflow-y-auto">
           <Table>
@@ -202,6 +284,7 @@ export default function SubscriptionAuditModal({
               <TableRow>
                 <TableHead className="w-[60px]">🕒</TableHead>
                 <TableHead>👤 Cliente</TableHead>
+                <TableHead>🏢 Unidade</TableHead>
                 <TableHead>👑 Plano</TableHead>
                 <TableHead>💼 Vendedor</TableHead>
                 <TableHead className="text-right">💰 Valor</TableHead>
@@ -209,7 +292,7 @@ export default function SubscriptionAuditModal({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((tx) => {
+              {filteredTransactions.map((tx) => {
                 const isEditing = editingId === tx.id;
 
                 if (isEditing) {
@@ -220,6 +303,9 @@ export default function SubscriptionAuditModal({
                       </TableCell>
                       <TableCell className="text-sm">
                         {tx.description || "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {tx.units?.name || "—"}
                       </TableCell>
                       <TableCell>
                         <Select value={editPlanId} onValueChange={setEditPlanId}>
@@ -291,6 +377,16 @@ export default function SubscriptionAuditModal({
                     </TableCell>
                     <TableCell className="text-sm font-medium">
                       {tx.description || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {tx.units?.name ? (
+                        <Badge variant="outline" className="font-normal">
+                          <Building2 className="w-3 h-3 mr-1" />
+                          {tx.units.name}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">
                       {tx.subscription_plans?.name || tx.item_name}
