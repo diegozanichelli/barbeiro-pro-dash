@@ -262,15 +262,15 @@ export default function BarberEvolution() {
         </TabsTrigger>
         <TabsTrigger value="assinaturas" className="flex items-center gap-1">
           <Crown className="w-4 h-4" />
-          <span className="hidden sm:inline">Assinaturas</span>
+          <span className="hidden sm:inline">Conversão por Barbeiro</span>
         </TabsTrigger>
         <TabsTrigger value="recepcao" className="flex items-center gap-1">
           <Users2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Recepção</span>
+          <span className="hidden sm:inline">Vendas da Recepção</span>
         </TabsTrigger>
         <TabsTrigger value="inteligencia" className="flex items-center gap-1">
           <Brain className="w-4 h-4" />
-          <span className="hidden sm:inline">Inteligência</span>
+          <span className="hidden sm:inline">Carteira de Assinaturas</span>
         </TabsTrigger>
       </TabsList>
       

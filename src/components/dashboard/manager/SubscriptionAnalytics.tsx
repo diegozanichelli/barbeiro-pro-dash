@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil } from "lucide-react";
+import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle } from "lucide-react";
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { useOrganization } from "@/hooks/useOrganization";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
 const ACTION_COLORS: Record<string, string> = {
   new: "#22c55e",
@@ -193,13 +195,17 @@ export default function SubscriptionAnalytics() {
         </CardHeader>
       </Card>
 
+      <SubscriptionScopeBanner scope="portfolio" />
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" />
-        <SummaryCard label="Renovações" count={counts.renew} amount={revenue.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" />
-        <SummaryCard label="Upgrades" count={counts.upgrade} amount={revenue.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" />
-        <SummaryCard label="Downgrades" count={counts.downgrade} amount={revenue.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" />
-      </div>
+      <TooltipProvider delayDuration={150}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" tooltip="Inclui toda assinatura com ação = 'nova' no mês — barbeiros + recepção, clientes novos e da casa." />
+          <SummaryCard label="Renovações" count={counts.renew} amount={revenue.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" tooltip="Assinantes que renovaram o mesmo plano no período." />
+          <SummaryCard label="Upgrades" count={counts.upgrade} amount={revenue.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" tooltip="Assinantes que migraram para um plano de maior valor." />
+          <SummaryCard label="Downgrades" count={counts.downgrade} amount={revenue.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" tooltip="Assinantes que migraram para um plano de menor valor." />
+        </div>
+      </TooltipProvider>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -303,6 +309,8 @@ export default function SubscriptionAnalytics() {
         </CardContent>
       </Card>
 
+      <SubscriptionScopeFooter />
+
       <SubscriptionEditModal
         open={!!editingTransaction}
         onOpenChange={(open) => { if (!open) setEditingTransaction(null); }}
@@ -313,12 +321,24 @@ export default function SubscriptionAnalytics() {
   );
 }
 
-function SummaryCard({ label, count, amount, icon, color }: { label: string; count: number; amount?: number; icon: React.ReactNode; color: string }) {
+function SummaryCard({ label, count, amount, icon, color, tooltip }: { label: string; count: number; amount?: number; icon: React.ReactNode; color: string; tooltip?: string }) {
   return (
     <Card className={`border-l-4 ${color}`}>
       <CardContent className="p-4 flex items-center justify-between">
         <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
+          <div className="flex items-center gap-1">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            {tooltip && (
+              <UITooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" aria-label={`Sobre ${label}`}>
+                    <HelpCircle className="w-3 h-3 text-muted-foreground opacity-60 hover:opacity-100" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-xs">{tooltip}</TooltipContent>
+              </UITooltip>
+            )}
+          </div>
           <p className="text-2xl font-bold">{count}</p>
           {amount !== undefined && amount > 0 && (
             <p className="text-sm font-semibold text-primary">

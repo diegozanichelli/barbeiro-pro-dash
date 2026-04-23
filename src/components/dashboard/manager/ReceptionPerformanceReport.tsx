@@ -4,7 +4,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
-import { Building2, Crown, TrendingUp, TrendingDown, Minus, Users } from "lucide-react";
+import { Building2, Crown, TrendingUp, TrendingDown, Minus, Users, HelpCircle } from "lucide-react";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
 interface UnitPerformance {
   unitId: string | null;
@@ -179,6 +181,7 @@ export default function ReceptionPerformanceReport() {
           </div>
         </CardHeader>
         <CardContent>
+          <SubscriptionScopeBanner scope="reception" />
           {/* Filtros */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div>
@@ -214,49 +217,76 @@ export default function ReceptionPerformanceReport() {
           </div>
 
           {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card className="bg-secondary/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <Crown className="w-8 h-8 text-primary" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total de Assinaturas</p>
-                    <p className="text-2xl font-bold">{totalSales}</p>
+          <TooltipProvider delayDuration={150}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <Card className="bg-secondary/50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <Crown className="w-8 h-8 text-primary" />
+                    <div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <p className="text-sm">Total de Assinaturas</p>
+                        <UITooltip>
+                          <TooltipTrigger asChild>
+                            <button type="button" aria-label="Sobre Total">
+                              <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            Vendas de assinatura sem barbeiro atribuído (apenas balcão), no período.
+                          </TooltipContent>
+                        </UITooltip>
+                      </div>
+                      <p className="text-2xl font-bold">{totalSales}</p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card className="bg-secondary/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <Users className="w-8 h-8 text-primary" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Clientes Novos</p>
-                    <p className="text-2xl font-bold">{totalNew}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {totalSales > 0 ? Math.round((totalNew / totalSales) * 100) : 0}% de conversão
-                    </p>
+              <Card className="bg-secondary/50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <Users className="w-8 h-8 text-primary" />
+                    <div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <p className="text-sm">Clientes Novos</p>
+                        <UITooltip>
+                          <TooltipTrigger asChild>
+                            <button type="button" aria-label="Sobre Clientes Novos">
+                              <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            Vendas marcadas como cliente novo (1ª assinatura) entre as vendas da
+                            recepção. Conta linhas, não pessoas únicas.
+                          </TooltipContent>
+                        </UITooltip>
+                      </div>
+                      <p className="text-2xl font-bold">{totalNew}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {totalSales > 0 ? Math.round((totalNew / totalSales) * 100) : 0}% de conversão
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card className="bg-secondary/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <Building2 className="w-8 h-8 text-primary" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Melhor Unidade</p>
-                    <p className="text-2xl font-bold">{bestUnit}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Média: {avgPerUnit} por unidade
-                    </p>
+              <Card className="bg-secondary/50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <Building2 className="w-8 h-8 text-primary" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Melhor Unidade</p>
+                      <p className="text-2xl font-bold">{bestUnit}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Média: {avgPerUnit} por unidade
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TooltipProvider>
 
           {/* Tabela */}
           {loading ? (
@@ -313,6 +343,7 @@ export default function ReceptionPerformanceReport() {
           )}
         </CardContent>
       </Card>
+      <SubscriptionScopeFooter />
     </div>
   );
 }
