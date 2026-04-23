@@ -67,21 +67,34 @@ export default function SubscriptionPerformanceReport() {
           is_new_client,
           item_type,
           subscription_action,
+          mobile_phone,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
-        .eq("source", "manager") // CRITICAL: Only manager data for accurate metrics
+        .eq("source", "manager")
         .gte("created_at", `${startDate}T00:00:00`)
         .lte("created_at", `${endDate}T23:59:59`)
         .not("barber_id", "is", null);
 
       if (txError) throw txError;
 
-      // Group data by barber
+      // Fetch reception transactions (no barber attached) for the same period
+      const { data: receptionTx, error: recError } = await supabase
+        .from("sale_transactions")
+        .select("is_new_client, item_type, subscription_action, mobile_phone")
+        .eq("organization_id", organizationId)
+        .eq("source", "manager")
+        .gte("created_at", `${startDate}T00:00:00`)
+        .lte("created_at", `${endDate}T23:59:59`)
+        .is("barber_id", null);
+
+      if (recError) throw recError;
+
+      // Group data by barber — using Set<mobile_phone> for unique people counting
       const barberMap = new Map<string, {
         name: string;
         unit: string;
-        newClients: number;
+        newClientPhones: Set<string>;
         subscriptions: number;
       }>();
 
@@ -91,21 +104,20 @@ export default function SubscriptionPerformanceReport() {
         const existing = barberMap.get(tx.barber_id) || {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
-          newClients: 0,
+          newClientPhones: new Set<string>(),
           subscriptions: 0,
         };
 
-        // Count new clients (is_new_client = true)
-        if (tx.is_new_client === true) {
-          existing.newClients++;
+        // Count UNIQUE new clients by phone (one person = one opportunity, not N items)
+        if (tx.is_new_client === true && tx.mobile_phone) {
+          existing.newClientPhones.add(tx.mobile_phone);
         }
 
-        // Count ONLY new subscriptions (exclude renew/upgrade/downgrade)
-        // A "conversion" is a brand-new subscription tied to a new client opportunity
+        // Aligned with Inteligência: ALL new subscription adhesions count
+        // (regardless of whether client was new or existing)
         if (
           tx.item_type === "subscription" &&
-          (tx as any).subscription_action === "new" &&
-          tx.is_new_client === true
+          (tx as any).subscription_action === "new"
         ) {
           existing.subscriptions++;
         }
@@ -115,22 +127,52 @@ export default function SubscriptionPerformanceReport() {
 
       // Convert to array and calculate conversion rate
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
-        ([barberId, data]) => ({
-          barberId,
-          barberName: data.name,
-          unitName: data.unit,
-          newClientsCount: data.newClients,
-          subscriptionsSold: data.subscriptions,
-          conversionRate: data.newClients > 0 
-            ? (data.subscriptions / data.newClients) * 100 
-            : 0,
-        })
+        ([barberId, data]) => {
+          const uniqueNew = data.newClientPhones.size;
+          return {
+            barberId,
+            barberName: data.name,
+            unitName: data.unit,
+            newClientsCount: uniqueNew,
+            subscriptionsSold: data.subscriptions,
+            conversionRate: uniqueNew > 0
+              ? (data.subscriptions / uniqueNew) * 100
+              : 0,
+          };
+        }
       );
 
       // Sort by conversion rate descending
       performance.sort((a, b) => b.conversionRate - a.conversionRate);
 
       setPerformanceData(performance);
+
+      // Build reception aggregate row (sales without assigned barber)
+      const receptionPhones = new Set<string>();
+      let receptionSubs = 0;
+      receptionTx?.forEach((tx) => {
+        if (tx.is_new_client === true && tx.mobile_phone) {
+          receptionPhones.add(tx.mobile_phone);
+        }
+        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
+          receptionSubs++;
+        }
+      });
+
+      if (receptionPhones.size > 0 || receptionSubs > 0) {
+        const uniqueRec = receptionPhones.size;
+        setReceptionRow({
+          barberId: "__reception__",
+          barberName: "Recepção",
+          unitName: "Sem barbeiro atribuído",
+          newClientsCount: uniqueRec,
+          subscriptionsSold: receptionSubs,
+          conversionRate: uniqueRec > 0 ? (receptionSubs / uniqueRec) * 100 : 0,
+          isReception: true,
+        });
+      } else {
+        setReceptionRow(null);
+      }
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
