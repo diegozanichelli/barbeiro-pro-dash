@@ -343,6 +343,7 @@ export default function ReceptionPerformanceReport() {
           )}
         </CardContent>
       </Card>
+      <SubscriptionScopeFooter />
     </div>
   );
 }

@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil } from "lucide-react";
+import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle } from "lucide-react";
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { useOrganization } from "@/hooks/useOrganization";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
 const ACTION_COLORS: Record<string, string> = {
   new: "#22c55e",
