@@ -401,6 +401,32 @@ export default function SubscriptionPerformanceReport() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {receptionRow && (
+                    <TableRow key="reception" className="bg-muted/30 border-t-2">
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 border-2 border-primary/20">
+                            <AvatarFallback className="bg-secondary text-secondary-foreground font-semibold">
+                              RC
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{receptionRow.barberName}</p>
+                            <p className="text-xs text-muted-foreground">{receptionRow.unitName}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-semibold text-lg">{receptionRow.newClientsCount}</span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-semibold text-lg">{receptionRow.subscriptionsSold}</span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {getConversionBadge(receptionRow.conversionRate, receptionRow.newClientsCount)}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
