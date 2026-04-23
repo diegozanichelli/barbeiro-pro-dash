@@ -345,7 +345,7 @@ export default function SubscriptionPerformanceReport() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
-          ) : performanceData.length === 0 ? (
+          ) : performanceData.length === 0 && !receptionRow ? (
             <div className="text-center py-12 text-muted-foreground">
               <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p className="font-medium">Nenhum dado encontrado</p>
