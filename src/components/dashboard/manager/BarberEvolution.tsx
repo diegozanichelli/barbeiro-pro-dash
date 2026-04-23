@@ -247,30 +247,30 @@ function BarberEvolutionChart() {
 export default function BarberEvolution() {
   return (
     <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full max-w-4xl grid-cols-6">
-        <TabsTrigger value="barbearia" className="flex items-center gap-1">
-          <Building2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Barbearia</span>
+      <TabsList className="grid w-full grid-cols-6 h-auto">
+        <TabsTrigger value="barbearia" title="Barbearia" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Building2 className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Barbearia</span>
         </TabsTrigger>
-        <TabsTrigger value="comparativo" className="flex items-center gap-1">
-          <GitCompare className="w-4 h-4" />
-          <span className="hidden sm:inline">Comparativo</span>
+        <TabsTrigger value="comparativo" title="Comparativo" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <GitCompare className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Comparativo</span>
         </TabsTrigger>
-        <TabsTrigger value="barbeiro" className="flex items-center gap-1">
-          <User className="w-4 h-4" />
-          <span className="hidden sm:inline">Barbeiro</span>
+        <TabsTrigger value="barbeiro" title="Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <User className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Barbeiro</span>
         </TabsTrigger>
-        <TabsTrigger value="assinaturas" className="flex items-center gap-1">
-          <Crown className="w-4 h-4" />
-          <span className="hidden sm:inline">Conversão por Barbeiro</span>
+        <TabsTrigger value="assinaturas" title="Conversão por Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Crown className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Conversão</span>
         </TabsTrigger>
-        <TabsTrigger value="recepcao" className="flex items-center gap-1">
-          <Users2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Vendas da Recepção</span>
+        <TabsTrigger value="recepcao" title="Vendas da Recepção" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Users2 className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Recepção</span>
         </TabsTrigger>
-        <TabsTrigger value="inteligencia" className="flex items-center gap-1">
-          <Brain className="w-4 h-4" />
-          <span className="hidden sm:inline">Carteira de Assinaturas</span>
+        <TabsTrigger value="inteligencia" title="Carteira de Assinaturas" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Brain className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Carteira</span>
         </TabsTrigger>
       </TabsList>
       
