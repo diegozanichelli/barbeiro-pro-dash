@@ -58,6 +58,11 @@ interface SubscriptionPlan {
   price: number;
 }
 
+interface UnitOption {
+  id: string;
+  name: string;
+}
+
 export default function SubscriptionAuditModal({
   open,
   onOpenChange,
@@ -66,6 +71,8 @@ export default function SubscriptionAuditModal({
 }: SubscriptionAuditModalProps) {
   const [transactions, setTransactions] = useState<AuditTransaction[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,6 +86,7 @@ export default function SubscriptionAuditModal({
     if (open && organizationId) {
       fetchTransactions();
       fetchPlans();
+      fetchUnits();
     }
   }, [open, organizationId]);
 
@@ -91,7 +99,7 @@ export default function SubscriptionAuditModal({
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(50);
 
       if (error) throw error;
       setTransactions((data as any) || []);
@@ -112,6 +120,31 @@ export default function SubscriptionAuditModal({
       .order("name");
     setPlans(data || []);
   };
+
+  const fetchUnits = async () => {
+    const { data } = await supabase
+      .from("units")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      .order("name");
+    setUnits(data || []);
+  };
+
+  // Filtered transactions by unit
+  const filteredTransactions = selectedUnit === "all"
+    ? transactions
+    : transactions.filter((tx) => tx.unit_id === selectedUnit);
+
+  // Aggregated stats per unit (from current loaded transactions)
+  const unitStats = transactions.reduce<Record<string, { count: number; total: number; name: string }>>((acc, tx) => {
+    const key = tx.unit_id || "no-unit";
+    const name = tx.units?.name || "Sem unidade";
+    if (!acc[key]) acc[key] = { count: 0, total: 0, name };
+    acc[key].count += 1;
+    acc[key].total += Number(tx.price_sold) || 0;
+    return acc;
+  }, {});
 
   const startEditing = (tx: AuditTransaction) => {
     setEditingId(tx.id);
