@@ -443,6 +443,16 @@ export default function SubscriptionAuditModal({
                     <TableCell className="text-sm font-medium">
                       {tx.description || "—"}
                     </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const m = getActionMeta(tx.subscription_action);
+                        return (
+                          <Badge variant="outline" className={`text-[10px] font-normal ${m.className}`}>
+                            <span className="mr-0.5">{m.emoji}</span>{m.label}
+                          </Badge>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="text-xs">
                       {tx.units?.name ? (
                         <Badge variant="outline" className="font-normal">
