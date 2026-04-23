@@ -84,6 +84,7 @@ export default function SubscriptionAuditModal({
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  const [selectedAction, setSelectedAction] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
