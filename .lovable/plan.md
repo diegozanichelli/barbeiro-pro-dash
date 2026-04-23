@@ -1,89 +1,87 @@
 
 
-# Corrigir contagem de "Clientes Novos" e alinhar métricas de assinaturas
+# Esclarecer diferença entre abas Assinaturas, Recepção e Inteligência
 
-## Diagnóstico (com prova SQL — abril/2026, todas as orgs)
+## Problema
 
-| Onde | Card | Hoje | Verdade |
-|---|---|---|---|
-| Inteligência | "Novas Assinaturas" | 62 (todas com `action='new'`) | ✅ correto |
-| Inteligência | Funil "Clientes Novos Atendidos" | 1.903 (celulares únicos) | ✅ correto |
-| Inteligência | Funil "Assinaturas Vendidas" | 57 (`new` + cliente novo) | ✅ correto |
-| **Performance** | **Coluna "Clientes Novos"** | **1.907 (linhas)** | ❌ **deveria ser pessoas únicas** |
-| **Performance** | **Coluna "Assinaturas Vendidas"** | **40 (`new` + `is_new_client`)** | ❌ **rótulo enganoso, deveria refletir o mesmo critério da aba Inteligência** |
+O usuário vê 3 números diferentes nas 3 abas e não entende por que divergem:
 
-### Causas
+| Aba | O que mede hoje | Exemplo (Abr/2026) |
+|---|---|---|
+| **Assinaturas** (Conversão) | Adesões **novas atribuídas a barbeiros** + linha agregada de Recepção. Denominador = clientes novos únicos atendidos | 295 clientes / 44 assinaturas |
+| **Recepção** | **Apenas** vendas sem barbeiro (`barber_id IS NULL`), separadas por unidade | 27 no Parque 10 |
+| **Inteligência** | Movimentação **completa da carteira**: novas + renovações + upgrades + downgrades, com receita | 60 novas / 6 renov / 5 upg / 0 down |
 
-1. **`SubscriptionPerformanceReport.tsx` (linha 97-99)** conta "novos clientes" incrementando uma variável a cada **transação** com `is_new_client=true`. Um cliente novo que tomou 3 itens vira 3.
-2. **Mesmo arquivo, linhas 103-109** define "Assinaturas Vendidas" como `action='new' AND is_new_client=true`. Isso **subconta**: quem já era cliente da casa e pegou a 1ª assinatura também é uma adesão nova legítima.
-3. **Linha 74** filtra `barber_id IS NOT NULL`, **excluindo assinaturas da recepção** (sem barbeiro). Esses números somem dos relatórios.
+São **respostas para perguntas diferentes**, mas a UI não comunica isso. Os números são corretos — só falta contexto.
 
-## Solução
+## Solução: deixar o escopo explícito em cada aba
 
-### Mudança 1 — `SubscriptionPerformanceReport.fetchPerformanceData`
+Sem mexer em cálculo nenhum. Apenas tornar a diferença óbvia.
 
-Trocar contagem por linhas → contagem por **celulares únicos**, e alinhar critério de "Assinaturas Vendidas" com a aba Inteligência (`action='new'`, sem exigir `is_new_client`).
-
-```ts
-// trocar select para incluir mobile_phone
-.select(`barber_id, is_new_client, item_type, subscription_action,
-         mobile_phone,
-         barbers!sale_transactions_barber_id_fkey(name, units(name))`)
-
-// trocar acumulador para Set de telefones
-const barberMap = new Map<string, {
-  name: string; unit: string;
-  newClientPhones: Set<string>;
-  subscriptions: number;
-}>();
-
-transactions?.forEach((tx) => {
-  if (!tx.barber_id) return;
-  const existing = barberMap.get(tx.barber_id) || {
-    name: ..., unit: ...,
-    newClientPhones: new Set<string>(),
-    subscriptions: 0,
-  };
-  if (tx.is_new_client && tx.mobile_phone) {
-    existing.newClientPhones.add(tx.mobile_phone);
-  }
-  // alinhado com Inteligência → conta TODA assinatura nova
-  if (tx.item_type === "subscription" && tx.subscription_action === "new") {
-    existing.subscriptions++;
-  }
-  barberMap.set(tx.barber_id, existing);
-});
-
-// usar phones.size na conversão
-newClientsCount: data.newClientPhones.size,
-```
-
-### Mudança 2 — Renomear coluna para clareza
-
-A coluna "Assinaturas Vendidas" passa a contar **todas** as adesões novas do barbeiro (independente de cliente novo/casa). O texto do card resumo "Conversão" continua `subs / clientes_novos_unicos`, agora consistente com Inteligência.
-
-### Mudança 3 — Recepção
-
-Manter o filtro `barber_id IS NOT NULL` (relatório é por barbeiro), **mas** adicionar uma linha agregada "Recepção / Sem barbeiro" no rodapé da tabela quando houver assinaturas com `barber_id=NULL` no período. Isso devolve as 5 assinaturas de balcão à visibilidade do gestor sem quebrar a estrutura por profissional.
-
-## Resultado esperado (org do usuário, abril/2026)
+### 1. Renomear os títulos das abas (mais descritivos)
 
 | Antes | Depois |
 |---|---|
-| Clientes Novos: 282 (linhas) | Clientes Novos: ~ pessoas únicas reais |
-| Assinaturas Vendidas: 23 | Assinaturas Vendidas: ~60 (alinhado com Inteligência) |
-| Assinaturas de recepção: invisíveis | Linha "Recepção" no rodapé |
+| Assinaturas | Conversão por Barbeiro |
+| Recepção | Vendas da Recepção |
+| Inteligência | Carteira de Assinaturas |
+
+Os ícones permanecem.
+
+### 2. Banner explicativo no topo de cada aba
+
+Card discreto (cor neutra, ícone Info) abaixo do header de cada relatório:
+
+- **Conversão por Barbeiro**: "Mede quantos clientes novos atendidos pelos barbeiros viraram assinantes. Inclui também uma linha agregada da Recepção. Critério: assinaturas com ação = nova ÷ pessoas únicas (por celular)."
+- **Vendas da Recepção**: "Mostra **apenas** vendas registradas sem barbeiro atribuído (balcão), separadas por unidade. Não inclui vendas atribuídas a barbeiros."
+- **Carteira de Assinaturas**: "Visão completa da movimentação da carteira no período: novas adesões, renovações, upgrades e downgrades, com a receita gerada por cada tipo. Inclui vendas de barbeiros **e** da recepção."
+
+### 3. Tooltip de ajuda nos números principais
+
+Adicionar `<HoverCard>` ou tooltip no ícone `?` ao lado de cada métrica chave, explicando exatamente o que entra e o que não entra na conta.
+
+Exemplo (Inteligência → "Novas Assinaturas: 60"):
+> Inclui toda assinatura com `subscription_action = 'new'` no mês — barbeiros + recepção, clientes novos e da casa.
+
+Exemplo (Conversão → "Assinaturas Vendidas: 44"):
+> Mesmo critério da aba Carteira, mas exibido por barbeiro + recepção. Total geral aqui = total da aba Carteira.
+
+### 4. Linha "Como esses números se relacionam" (rodapé compartilhado)
+
+No rodapé das 3 abas, um pequeno bloco recorrente:
+
+> **Os 3 relatórios são complementares:**
+> - **Carteira** = todas as movimentações no mês (novas + renov + up/down)
+> - **Conversão** = só novas adesões, distribuídas por barbeiro
+> - **Recepção** = só novas adesões sem barbeiro, distribuídas por unidade
+>
+> O número de "Novas Assinaturas" da Carteira deve coincidir com o total da aba Conversão (incluindo a linha Recepção).
 
 ## Arquivos afetados
 
 | # | Arquivo | Mudança |
 |---|---|---|
-| 1 | `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx` | `fetchPerformanceData`: trocar contagem por `Set<mobile_phone>`; remover `is_new_client` da contagem de assinaturas; adicionar query agregada para vendas sem barbeiro e linha "Recepção" na tabela |
+| 1 | `src/components/dashboard/manager/BarberEvolution.tsx` | Renomear labels das abas Assinaturas/Recepção/Inteligência |
+| 2 | `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx` | Adicionar banner Info no topo + tooltip nas métricas + bloco de relação no rodapé |
+| 3 | `src/components/dashboard/manager/ReceptionPerformanceReport.tsx` | Mesmo tratamento |
+| 4 | `src/components/dashboard/manager/SubscriptionAnalytics.tsx` | Mesmo tratamento |
 
-## Impacto / risco
+## Resultado esperado
 
-- **Zero migration**, zero schema.
-- **Zero impacto** em outros relatórios (Inteligência continua igual; ela já está correta).
-- Após o fix, **Performance e Inteligência mostram o mesmo número** de assinaturas no período — fim da confusão.
-- Conversão por barbeiro fica mais justa (denominador = pessoas, não itens).
+O usuário abre qualquer uma das 3 abas e entende em 5 segundos:
+- O que aquela tela mede
+- Por que o número difere das outras abas
+- Onde encontrar o número que ele realmente quer ver
+
+Zero mudança de cálculo, zero risco de regressão. Só clareza.
+
+## Pergunta antes de implementar
+
+Você prefere:
+
+- **(A)** Aplicar tudo de uma vez (renome + banners + tooltips + rodapé) — solução completa, mais texto na tela
+- **(B)** Só banners explicativos no topo (sem renomear abas, sem tooltip, sem rodapé) — minimalista, resolve 80% da confusão
+- **(C)** Renomear abas + banner no topo, sem tooltips/rodapé — meio-termo recomendado
+
+Me diz qual prefere que eu implemento.
 
