@@ -1414,6 +1414,17 @@ export default function QuickSaleModal({
           </div>
         </div>
 
+        {/* Predictive renewal alert (cycle status) — TOP do step 1 para máxima visibilidade */}
+        {(loadingCycle || cycle) && (
+          <SubscriptionCycleBanner
+            cycle={cycle}
+            loading={loadingCycle}
+            planName={cyclePlanName}
+            onRenew={handleQuickRenewFromBanner}
+            hideRenewButton={!!subscriptionInCart}
+          />
+        )}
+
         {/* Attribution + Client type — grouped visually (MOVED to top so manager picks unit early) */}
         <div className="rounded-lg border bg-muted/20 divide-y divide-border">
           {/* Mandatory Attribution Selector */}
@@ -1543,19 +1554,6 @@ export default function QuickSaleModal({
               </div>
             )}
           </div>
-
-          {/* Predictive renewal alert (cycle status) */}
-          {(loadingCycle || cycle) && (
-            <div className="px-3 pt-2.5">
-              <SubscriptionCycleBanner
-                cycle={cycle}
-                loading={loadingCycle}
-                planName={cyclePlanName}
-                onRenew={handleQuickRenewFromBanner}
-                hideRenewButton={!!subscriptionInCart}
-              />
-            </div>
-          )}
 
           {/* Client Type Selector */}
           <div className="px-3 py-2.5 space-y-2">
