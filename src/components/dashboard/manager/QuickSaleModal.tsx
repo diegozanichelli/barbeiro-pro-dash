@@ -1411,6 +1411,7 @@ export default function QuickSaleModal({
                 />
               </PopoverContent>
             </Popover>
+          </div>
         </div>
 
         {/* Predictive renewal alert (cycle status) — TOP do step 1 para máxima visibilidade */}
