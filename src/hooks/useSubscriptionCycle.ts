@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizePhone, isValidPhone } from "@/lib/phoneUtils";
 import {
+  buildLegacyCycle,
   computeCycleStatus,
   parseCycleAnchor,
   type CycleInfo,
@@ -17,19 +18,24 @@ interface UseSubscriptionCycleParams {
 interface UseSubscriptionCycleResult {
   loading: boolean;
   cycle: CycleInfo | null;
-  /** ID do plano da última transação — útil para botão "Renovar este plano agora" */
+  /** ID do plano atual (da última transação OU do vínculo direto em clients) */
   planId: string | null;
   planName: string | null;
-  /** ID da última transação (para debug/auditoria) */
+  /** ID da última transação de assinatura (null para legados sem histórico) */
   lastTransactionId: string | null;
   refetch: () => void;
 }
 
 /**
- * Busca a última transação de assinatura (new/renew/upgrade) do cliente identificado pelo telefone
- * e calcula o status de ciclo (em dia / renovação disponível / vencido).
+ * Calcula o status de ciclo do cliente identificado pelo telefone.
  *
- * Degrada graciosamente: se a busca falhar ou não houver transação, retorna cycle=null.
+ * Estratégia em duas camadas:
+ *  1) Tenta a última `sale_transaction` de assinatura (`new`/`renew`/`upgrade`) — fonte ideal.
+ *  2) Se não houver transação, mas o cliente estiver vinculado a um plano em `clients`,
+ *     retorna um ciclo neutro (`sem_historico`) para que o banner ainda apareça
+ *     e a primeira renovação ancore o ciclo definitivamente.
+ *
+ * Degrada graciosamente: se ambas as buscas falharem, retorna cycle=null.
  */
 export function useSubscriptionCycle({
   organizationId,
@@ -59,7 +65,8 @@ export function useSubscriptionCycle({
 
     (async () => {
       try {
-        const { data, error } = await supabase
+        // 1) Fonte primária: última transação de assinatura
+        const { data: txData, error: txError } = await supabase
           .from("sale_transactions")
           .select(
             "id, created_at, description, subscription_plan_id, item_name, subscription_action"
@@ -74,22 +81,42 @@ export function useSubscriptionCycle({
 
         if (cancelled) return;
 
-        if (error || !data) {
-          setCycle(null);
-          setPlanId(null);
-          setPlanName(null);
+        if (!txError && txData) {
+          const lastDate = new Date(txData.created_at);
+          const anchor = parseCycleAnchor(txData.description);
+          const info = computeCycleStatus(lastDate, anchor);
+
+          setCycle(info);
+          setPlanId(txData.subscription_plan_id ?? null);
+          setPlanName(txData.item_name ?? null);
+          setLastTransactionId(txData.id);
+          return;
+        }
+
+        // 2) Fonte secundária (fallback legado): cliente vinculado a um plano
+        //    sem nenhuma transação de assinatura registrada.
+        const { data: clientData, error: clientError } = await (supabase
+          .from("clients") as any)
+          .select("subscription_plan_id, subscription_plans(name)")
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", digits)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (!clientError && clientData?.subscription_plan_id) {
+          setCycle(buildLegacyCycle());
+          setPlanId(clientData.subscription_plan_id);
+          setPlanName(clientData.subscription_plans?.name ?? null);
           setLastTransactionId(null);
           return;
         }
 
-        const lastDate = new Date(data.created_at);
-        const anchor = parseCycleAnchor(data.description);
-        const info = computeCycleStatus(lastDate, anchor);
-
-        setCycle(info);
-        setPlanId(data.subscription_plan_id ?? null);
-        setPlanName(data.item_name ?? null);
-        setLastTransactionId(data.id);
+        // Sem assinatura
+        setCycle(null);
+        setPlanId(null);
+        setPlanName(null);
+        setLastTransactionId(null);
       } catch (err) {
         if (!cancelled) {
           // degradação graciosa: log silencioso
