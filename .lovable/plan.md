@@ -1,71 +1,72 @@
 
 
-# Alerta preditivo de renovação de assinatura
+# Por que o banner de renovação não aparece — diagnóstico e correção
 
-## Resumo
+## O que aconteceu no print
 
-Mostrar status de vencimento da assinatura **dinamicamente calculado** (último `new`/`renew` + 1 mês) já no momento que a recepção identifica o cliente no PDV, com 3 estados visuais e ação de 1-clique para renovar. Antecipações somam à data original (não "queimam" dias pagos) — fidelização real.
+O cliente **Alessandro Nogueira Monteiro (92 99255-5554)** está corretamente identificado como **Assinante** do plano **Gold Corte e Barba**, mas o banner de "Renovação" não apareceu entre a unidade e o "Tipo de Cliente".
 
-## Como o ciclo será calculado
+## Causa raiz (confirmada no banco)
 
-**Não existe campo de vencimento no banco** (verifiquei `clients` e `sale_transactions`). O ciclo será derivado em tempo real:
+O hook `useSubscriptionCycle` busca a **última transação** com `item_type='subscription'` e `subscription_action IN ('new','renew','upgrade')` para calcular o ciclo. Esse cliente tem `subscription_plan_id` preenchido na tabela `clients`, mas **zero transações** de assinatura no histórico. Resultado: `cycle = null` → banner escondido.
 
-1. Buscar a **última transação** do cliente onde `item_type='subscription'` e `subscription_action IN ('new','renew','upgrade')`, filtrando por `mobile_phone` e `organization_id`.
-2. `dataInicio = created_at` dessa transação (em fuso `America/Manaus`).
-3. `dataVencimento = addMonths(dataInicio, 1)` via `date-fns`.
-4. `diffDias = differenceInCalendarDays(dataVencimento, todayManaus)`.
+**Isso não é caso isolado**: dos 2.767 assinantes ativos no sistema, **2.510 (91%)** não têm nenhuma transação de assinatura registrada. Foram vinculados diretamente ao plano (importação legada / fluxo antigo / vínculo manual via gestão), sem passar por uma adesão `new` no PDV.
 
-Para **antecipação na renovação**: a nova data-base passa a ser `dataVencimento` (não `today`). Ex: vence 15/05, renova dia 12/05 → próximo vencimento = 15/06. Vencimento já passado (inadimplente) → base = `today`. Isso será calculado no momento do registro, gravado como `description` JSON na transação (`{"cycle_anchor":"2026-05-15"}`) — sem migration. Leitura futura: se houver `cycle_anchor` no `description`, usa ele; senão, usa `created_at`.
+Ou seja: o alerta preditivo só funciona para os 9% de assinantes recentes — exatamente o oposto do que precisamos.
 
-## 3 estados visuais (no QuickSaleModal e botão "Renovar Plano" do Live)
+## Solução: fallback inteligente
 
-| Estado | Condição | UI |
+O hook precisa ter uma **segunda fonte de data-âncora** quando não há transação de assinatura:
+
+| Prioridade | Fonte da data-âncora | Cobertura |
 |---|---|---|
-| **EM DIA** | `diffDias > 5` | Badge verde discreto: `Assinatura ativa (Próx. 15/05)` — botão renovação normal |
-| **RENOVAÇÃO DISPONÍVEL** | `0 ≤ diffDias ≤ 5` | Botão dourado com `animate-pulse-slow`: `Renovar agora (Vence em 3 dias)` |
-| **VENCIDO** | `diffDias < 0` | Botão `bg-destructive`: `BLOQUEADO: Vencida em 14/04 — Renovar` (não bloqueia outras vendas, só sinaliza) |
+| 1ª | Última `sale_transaction` de assinatura (`new`/`renew`/`upgrade`) com `cycle_anchor` no description | 9% atuais |
+| 2ª (NOVO) | `clients.subscription_started_at` se existir, senão `clients.updated_at` da linha que tem `subscription_plan_id` | resto dos 91% |
+| 3ª (NOVO) | Se nada disso existir, mostra banner **neutro** "Assinante (data de adesão indisponível)" + botão "Renovar agora" — assim o usuário ainda vê o status e pode renovar | edge cases |
 
-Quando o cliente é identificado por telefone, o status aparece num **banner no topo do step 1** do QuickSaleModal e como **ícone-status** ao lado do botão "Renovar Plano" no LiveDashboard.
+A primeira renovação feita pelo banner já grava o `cycle_anchor` no `description`, e a partir daí o cliente migra para a fonte 1 automaticamente. Auto-cura.
 
-## Ação 1-clique "Renovar agora"
+## UX adicional: tornar o banner óbvio
 
-Botão único em qualquer estado do banner. Ao clicar:
+Mesmo quando aparece, o banner está num espaço apertado entre dois blocos densos. Vamos:
 
-1. Adiciona o plano atual ao carrinho com `action='renew'` (já existe via `inferSubscriptionAction`).
-2. Calcula e armazena `cycle_anchor`:
-   - Se `EM DIA` ou `RENOVAÇÃO DISPONÍVEL`: `anchor = dataVencimento` (atual)
-   - Se `VENCIDO`: `anchor = todayManaus`
-3. Grava no `description` da transação como JSON `{"cycle_anchor":"YYYY-MM-DD","next_due":"YYYY-MM-DD"}`.
-4. Toast: `Renovado! Próximo vencimento: 15/06/2026 (mantidos 3 dias do ciclo anterior)`.
+1. **Mover o banner para o topo absoluto do step 1** (acima do "Em qual recepção?"), não no meio.
+2. **Aumentar a presença visual** quando for `RENOVAÇÃO DISPONÍVEL` ou `VENCIDO`: borda mais grossa + sombra dourada/vermelha + ícone maior.
+3. **Mostrar sempre que houver assinatura identificada** (mesmo `EM DIA`) — já está assim, mas com fallback agora cobre 100% dos assinantes.
+4. **Texto explícito do plano e data** no estado neutro: *"Assinante: Gold Corte e Barba — data de adesão não registrada • [Renovar agora]"*.
 
 ## Arquivos afetados
 
 | # | Arquivo | Mudança |
 |---|---|---|
-| 1 | `src/lib/subscriptionCycle.ts` *(novo)* | Funções puras: `computeCycleStatus(lastTx, today)`, `computeNextAnchor(currentAnchor, today, status)`. Retorna `{status, dueDate, daysLeft, label, variant}`. Usa `date-fns` + `date-fns-tz` (`TIMEZONE='America/Manaus'`). |
-| 2 | `src/hooks/useSubscriptionCycle.ts` *(novo)* | Hook que recebe `mobile_phone + organizationId`, busca a última transação `subscription` (`new`/`renew`/`upgrade`) ordenada por `created_at desc limit 1`, parseia `description` para `cycle_anchor` quando presente, e devolve o objeto de status. |
-| 3 | `src/components/dashboard/manager/SubscriptionCycleBanner.tsx` *(novo)* | Banner visual reutilizável com os 3 estados + botão "Renovar agora". Props: `status`, `onRenew`. Usa `bg-emerald-500/10`, `bg-amber-500/15 animate-pulse-slow`, `bg-destructive/15`. |
-| 4 | `src/components/dashboard/manager/QuickSaleModal.tsx` | Após `autoDetectSubscription`, chamar `useSubscriptionCycle`; renderizar `SubscriptionCycleBanner` no step 1 quando o cliente tem assinatura. Botão "Renovar agora" injeta o plano no carrinho + grava `cycle_anchor` no `description`. |
-| 5 | `src/components/dashboard/manager/LiveDashboard.tsx` | (opcional, mínimo) — nada novo aqui; o banner já cobre o fluxo principal via PDV. |
+| 1 | `src/hooks/useSubscriptionCycle.ts` | Adicionar fallback: se `sale_transactions` não retornar nada, buscar em `clients` (`subscription_plan_id`, `updated_at`, e o nome do plano via join com `subscription_plans`). Se houver plano mas sem data confiável, retornar um `cycle` especial com `status='sem_historico'`. |
+| 2 | `src/lib/subscriptionCycle.ts` | Adicionar 4º estado `sem_historico` ao tipo `CycleStatus` + variant `neutral`. Função `computeCycleStatus` continua igual; nova função `buildLegacyCycle(planName)` retorna o objeto neutro. |
+| 3 | `src/components/dashboard/manager/SubscriptionCycleBanner.tsx` | Adicionar visual do estado `sem_historico` (cinza com borda âmbar discreta, ícone de relógio, texto "Adesão sem registro — Renovar para iniciar ciclo"). Botão "Renovar agora" funciona normal. |
+| 4 | `src/components/dashboard/manager/QuickSaleModal.tsx` | (a) Mover o bloco do banner para **antes** do bloco "Em qual recepção?" (topo do step 1, depois apenas do título). (b) Garantir que `handleQuickRenewFromBanner` trata o caso `sem_historico` usando `today` como anchor. |
 
-## Lógica do cycle_anchor (sem migration, zero risco)
+## Lógica do fallback no hook (resumo técnico)
 
-- `description` da `sale_transactions` já existe como `text` nullable. Vamos gravar JSON simples lá.
-- Função utilitária `parseCycleAnchor(description)` → tenta `JSON.parse`, retorna `null` em qualquer erro.
-- Backwards-compatible: transações antigas sem `cycle_anchor` usam `created_at` como base.
+```
+1. Tenta buscar last sale_transaction (lógica atual)
+2. Se vazio E mobilePhone presente:
+     buscar clients.subscription_plan_id + plans.name + clients.updated_at
+     Se subscription_plan_id existe:
+        retornar cycle = { status: "sem_historico", ... }
+        retornar planId, planName
+3. Senão: retorna null como hoje (cliente sem assinatura)
+```
+
+## Comportamento da ação "Renovar agora" no estado `sem_historico`
+
+- Adiciona o plano atual ao carrinho com `action='renew'` (igual aos outros estados).
+- `cycle_anchor = today` (já que não temos data confiável de início).
+- Toast: *"Renovação registrada! Próximo vencimento: 23/05/2026 • A partir de agora seu ciclo está rastreado."*
 
 ## Impacto / risco
 
-- **Zero migration**, zero schema, zero RPC nova.
-- Cálculo 100% no frontend a partir de dados que já existem.
-- A política de antecipação (não queima dias) fica **transparente para o cliente** via toast.
-- Reutiliza `inferSubscriptionAction`, `useClientHistory` e o fluxo atual do PDV — nenhuma regra de comissão/relatório muda.
-- Os 3 relatórios de assinaturas (Conversão, Recepção, Carteira) continuam idênticos: o `cycle_anchor` é apenas metadado.
-
-## Detalhes técnicos relevantes
-
-- Fuso: `formatInTimeZone(date, 'America/Manaus', 'yyyy-MM-dd')` para todas as comparações de data pura.
-- `addMonths` lida automaticamente com meses curtos (31/01 + 1 mês = 28/02 ou 29/02).
-- Hook usa cache via `useMemo` por telefone para evitar refetch ao trocar abas do modal.
-- Se a busca falhar (sem internet/sem permissão), banner não aparece (degradação graciosa).
+- **Zero migration**, zero schema, zero RPC.
+- 100% dos assinantes passam a ver o status de ciclo no PDV (vs. 9% hoje).
+- A primeira renovação já normaliza o histórico — o sistema se cura sozinho.
+- Banner mais visível no topo do step 1 elimina o "sumiço" relatado pelo usuário.
+- Nenhum relatório/comissão muda — `cycle_anchor` continua sendo só metadado opcional.
 
