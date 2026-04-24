@@ -126,8 +126,10 @@ export function computeNextAnchor(
   today: Date = getManausDate()
 ): { anchor: Date; nextDue: Date; preservedDays: number } {
   const todayManaus = toZonedTime(today, TIMEZONE);
-  const anchor = current.status === "vencido" ? todayManaus : current.dueDate;
+  // Se vencido OU sem histórico confiável, parte de hoje (não há dias a preservar).
+  const useToday = current.status === "vencido" || current.status === "sem_historico";
+  const anchor = useToday ? todayManaus : current.dueDate;
   const nextDue = addMonths(anchor, 1);
-  const preservedDays = current.status === "vencido" ? 0 : Math.max(0, current.daysLeft);
+  const preservedDays = useToday ? 0 : Math.max(0, current.daysLeft);
   return { anchor, nextDue, preservedDays };
 }
