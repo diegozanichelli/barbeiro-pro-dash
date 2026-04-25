@@ -842,19 +842,57 @@ export default function QuickSaleModal({
 
     setAttributionHighlight(true);
 
-    // Scroll suave após o layout estabilizar — alinha o topo do bloco
-    // de Atribuição na área visível para que os botões Barbeiro / Recepção
-    // fiquem imediatamente à vista.
-    requestAnimationFrame(() => {
-      attributionCardRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
+    // Scroll programático no container scrollável do Step 1.
+    // Aguardamos um pouco para o layout estabilizar (ex.: o banner
+    // "Verificando ciclo da assinatura..." aparecer/sumir) antes de calcular
+    // a posição final, senão o scrollIntoView do Radix dentro do DialogContent
+    // não desce de forma confiável.
+    let rafId: number | null = null;
+    const scrollTimer = setTimeout(() => {
+      rafId = requestAnimationFrame(() => {
+        const card = attributionCardRef.current;
+        if (!card) return;
+        // Sobe pela árvore até achar o ancestral com overflow-y auto/scroll.
+        let scroller: HTMLElement | null = card.parentElement;
+        while (scroller && scroller !== document.body) {
+          const oy = window.getComputedStyle(scroller).overflowY;
+          if (oy === "auto" || oy === "scroll") break;
+          scroller = scroller.parentElement;
+        }
+        if (!scroller || scroller === document.body) {
+          card.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        const offset = 16; // pequena folga visual acima do card
+        const top =
+          card.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop -
+          offset;
+        scroller.scrollTo({ top, behavior: "smooth" });
       });
-    });
+    }, 180);
 
-    const timer = setTimeout(() => setAttributionHighlight(false), 3000);
-    return () => clearTimeout(timer);
+    const pulseTimer = setTimeout(() => setAttributionHighlight(false), 3000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(pulseTimer);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [clientHistory.status, attribution, barberId]);
+
+  // Quando o gestor escolhe "Venda Recepção" e existem múltiplas unidades,
+  // abre o seletor de unidade automaticamente — assim o usuário já vê
+  // imediatamente quais unidades pode escolher, sem precisar de mais um clique.
+  useEffect(() => {
+    if (attribution !== "reception") return;
+    if (units.length <= 1) return;
+    if (selectedUnitId) return;
+    const raf = requestAnimationFrame(() => {
+      setUnitSelectOpen(true);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [attribution, units.length, selectedUnitId]);
 
   // Reset do controle de highlight quando o modal fecha (reabrir = novo ciclo)
   useEffect(() => {

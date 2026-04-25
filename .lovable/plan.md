@@ -1,24 +1,33 @@
-## Problema
+## Problemas
 
-No modal de Venda Rápida (`QuickSaleModal`), o destaque visual de "próximo passo" está piscando o card inteiro que **agrupa "Atribuição da Venda" + "Tipo de Cliente"** (são dois blocos dentro de um mesmo container com `divide-y`). O `ref` e as classes `animate-pulse ring-amber-500` estão no `<div>` externo (linha 1545-1552), por isso os dois piscam juntos.
+1. **Auto-scroll não desce até o card de Atribuição.** O `attributionCardRef.scrollIntoView` é executado dentro de um `DialogContent` Radix com container scrollável próprio (`<div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4">`). Como o conteúdo ainda está mudando de altura no momento da chamada (banner "Verificando ciclo da assinatura..." aparece/some), o `scrollIntoView` falha em chegar até o card.
 
-O esperado: piscar **apenas** o bloco "Atribuição da Venda" e fazer o scroll suave parar nele já mostrando as opções **Barbeiro / Venda Recepção** centralizadas.
+2. **Ao clicar em "Venda Recepção" o seletor de unidades não abre sozinho.** O `Select` aparece, mas o usuário precisa clicar nele para ver as unidades disponíveis. Deveria abrir automaticamente quando há mais de uma unidade.
 
 ## Mudanças
 
 Arquivo: `src/components/dashboard/manager/QuickSaleModal.tsx`
 
-1. **Remover** `ref={attributionCardRef}` e as classes de highlight do `<div>` externo (~linha 1545-1552). O container externo volta a ser apenas um wrapper visual neutro.
+### 1. Scroll programático confiável (substitui `scrollIntoView`)
 
-2. **Mover** o `ref={attributionCardRef}` e o highlight condicional (`ring-2 ring-amber-500 shadow-lg shadow-amber-500/30 animate-pulse border-amber-500 rounded-md`) para o `<div className="px-3 py-2.5 space-y-2">` da seção "Mandatory Attribution Selector" (~linha 1554), envolvendo somente o bloco da Atribuição (label + seta auxiliar + ToggleGroup Barbeiro/Recepção + seletor de unidade).
+No `useEffect` que dispara o highlight (~linha 825-857):
 
-3. **Ajustar o auto-scroll** no `useEffect` (~linha 840-855) trocando `block: "center"` por `block: "start"` com um pequeno offset visual, para garantir que ao parar o scroll o usuário já enxergue logo abaixo do label os botões Barbeiro / Venda Recepção (e, no caso da recepção, o seletor da unidade quando expandir). Manter os 3 segundos de pulse e a limpeza do timer.
+- Aguardar **~180ms** com `setTimeout` antes do scroll, dando tempo para o banner do ciclo de assinatura entrar/sair e o layout estabilizar.
+- **Subir a árvore** a partir de `attributionCardRef.current` até encontrar o ancestral com `overflow-y: auto|scroll` (que é o container do Step 1).
+- Calcular `top` via `getBoundingClientRect()` + `scrollTop` do scroller, com offset de 16px de folga visual acima.
+- Chamar `scroller.scrollTo({ top, behavior: "smooth" })`.
+- Fallback para `scrollIntoView` caso nenhum scroller seja encontrado.
+- Limpar `setTimeout` e `requestAnimationFrame` no cleanup.
 
-4. **Tipo de Cliente** permanece intocado (sem anel, sem pulse, sem ref) — apenas o segundo bloco do mesmo wrapper.
+### 2. Abrir o Select de unidade automaticamente ao escolher Recepção
+
+Adicionar um `useEffect` (perto dos outros effects de atribuição):
+
+- Quando `attribution === "reception"` **E** `units.length > 1` **E** ainda não há `selectedUnitId`, setar `setUnitSelectOpen(true)` após um `requestAnimationFrame` (para o `<Select>` já estar montado no DOM).
+- Não reabrir se o usuário fechou e selecionou — o estado `selectedUnitId` evita o loop.
 
 ## Resultado esperado
 
-- Quando o cliente é identificado (novo ou existente) e ainda não há atribuição, **só o bloco "Atribuição da Venda"** ganha anel laranja pulsante por 3s.
-- O scroll suave centraliza o bloco de Atribuição com os botões **Barbeiro / Venda Recepção** visíveis na hora, deixando óbvio onde clicar.
-- O bloco "Tipo de Cliente" abaixo segue estático, sem distrair.
-- Demais comportamentos (validação obrigatória, seleção de unidade da recepção, fim do pulse ao escolher) continuam iguais.
+- Quando o cliente é identificado, o painel desce sozinho até o card de Atribuição da Venda (com 16px de folga acima), pulsando em laranja por 3s.
+- O usuário escolhe **Venda Recepção** → o dropdown de unidades **abre imediatamente** mostrando todas as unidades disponíveis para ele apenas clicar e escolher.
+- Se for unidade única, o `Select` nem aparece (comportamento atual mantido).
