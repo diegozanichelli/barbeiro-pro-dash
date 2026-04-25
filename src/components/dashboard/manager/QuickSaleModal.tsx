@@ -1371,7 +1371,115 @@ export default function QuickSaleModal({
           </div>
         </div>
 
-        {/* Predictive renewal alert (cycle status) — TOP do step 1 para máxima visibilidade */}
+        {/* ============================================================
+            IDENTIFICAÇÃO DO CLIENTE — sempre primeiro (Nome + Telefone)
+            Ordem: Nome + Celular (mesma linha) → Banner de ciclo → Atribuição/Tipo
+            ============================================================ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Client Name */}
+          <div className="space-y-1.5 relative">
+            <Label htmlFor="client-name" className="text-xs text-muted-foreground font-medium">
+              Nome do Cliente {clientHistory.status === "phone_found" ? "(auto)" : "*"}
+            </Label>
+            <Input
+              ref={nameInputRef}
+              id="client-name"
+              type="text"
+              autoComplete="off"
+              placeholder="Ex: João"
+              value={clientName}
+              onChange={(e) => {
+                setClientName(e.target.value);
+                setShowNameSuggestions(true);
+              }}
+              onFocus={() => setShowNameSuggestions(true)}
+              onBlur={(e) => {
+                setTimeout(() => setShowNameSuggestions(false), 200);
+                handleNameBlur();
+              }}
+              className="h-10"
+            />
+            {showNameSuggestions && nameSuggestions.length > 0 && (
+              <div
+                ref={nameSuggestionsRef}
+                className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-48 overflow-y-auto"
+              >
+                {nameSuggestions.map((client) => (
+                  <button
+                    key={client.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => selectClientSuggestion(client)}
+                  >
+                    <span className="font-medium">{client.name}</span>
+                    <span className="text-xs text-muted-foreground">{formatPhone(client.mobile_phone)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Phone */}
+          <div className="space-y-1.5 relative">
+            <Label htmlFor="mobile-phone" className="text-xs text-muted-foreground font-medium">
+              Celular do Cliente *
+            </Label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                ref={phoneInputRef}
+                id="mobile-phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="(11) 99999-9999"
+                value={mobilePhone}
+                onChange={handlePhoneChange}
+                onFocus={() => setShowPhoneSuggestions(true)}
+                onBlur={(e) => {
+                  setTimeout(() => setShowPhoneSuggestions(false), 200);
+                  handlePhoneBlur();
+                }}
+                className={cn("h-10 pl-10", phoneError && "border-destructive")}
+                maxLength={15}
+              />
+            </div>
+            {phoneError && (
+              <p className="text-xs text-destructive font-medium">{phoneError}</p>
+            )}
+            {showPhoneSuggestions && phoneSuggestions.length > 0 && (
+              <div
+                ref={phoneSuggestionsRef}
+                className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-48 overflow-y-auto"
+              >
+                {phoneSuggestions.map((client) => (
+                  <button
+                    key={client.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => selectClientSuggestion(client)}
+                  >
+                    <span className="text-xs font-mono">{formatPhone(client.mobile_phone)}</span>
+                    <span className="text-xs text-muted-foreground">{client.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
+          <p className="text-xs text-muted-foreground">Buscando sugestões...</p>
+        )}
+
+        {/* Client Status Badge (Recorrente / Novo / etc.) */}
+        {renderClientBadge() && (
+          <div>{renderClientBadge()}</div>
+        )}
+
+        {/* Predictive renewal alert (cycle status) — aparece logo após identificar telefone */}
         {(loadingCycle || cycle) && (
           <SubscriptionCycleBanner
             cycle={cycle}
@@ -1382,7 +1490,7 @@ export default function QuickSaleModal({
           />
         )}
 
-        {/* Attribution + Client type — grouped visually (MOVED to top so manager picks unit early) */}
+        {/* Attribution + Client type — grouped visually */}
         <div className="rounded-lg border bg-muted/20 divide-y divide-border">
           {/* Mandatory Attribution Selector */}
           <div className="px-3 py-2.5 space-y-2">
@@ -1632,108 +1740,6 @@ export default function QuickSaleModal({
           </div>
         </div>
 
-        {/* Client Name */}
-        <div className="space-y-1.5 relative">
-          <Label htmlFor="client-name" className="text-xs text-muted-foreground font-medium">
-            Nome do Cliente {clientHistory.status === "phone_found" ? "(auto)" : "*"}
-          </Label>
-          <Input
-            ref={nameInputRef}
-            id="client-name"
-            type="text"
-            autoComplete="off"
-            placeholder="Ex: João"
-            value={clientName}
-            onChange={(e) => {
-              setClientName(e.target.value);
-              setShowNameSuggestions(true);
-            }}
-            onFocus={() => setShowNameSuggestions(true)}
-            onBlur={(e) => {
-              // Delay to allow click on suggestion
-              setTimeout(() => setShowNameSuggestions(false), 200);
-              handleNameBlur();
-            }}
-            className="h-10"
-          />
-          {showNameSuggestions && nameSuggestions.length > 0 && (
-            <div
-              ref={nameSuggestionsRef}
-              className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-48 overflow-y-auto"
-            >
-              {nameSuggestions.map((client) => (
-                <button
-                  key={client.id}
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => selectClientSuggestion(client)}
-                >
-                  <span className="font-medium">{client.name}</span>
-                  <span className="text-xs text-muted-foreground">{formatPhone(client.mobile_phone)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Mobile Phone */}
-        <div className="space-y-1.5 relative">
-          <Label htmlFor="mobile-phone" className="text-xs text-muted-foreground font-medium">
-            Celular do Cliente
-          </Label>
-          <div className="relative">
-            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              ref={phoneInputRef}
-              id="mobile-phone"
-              type="tel"
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="(11) 99999-9999"
-              value={mobilePhone}
-              onChange={handlePhoneChange}
-              onFocus={() => setShowPhoneSuggestions(true)}
-              onBlur={(e) => {
-                setTimeout(() => setShowPhoneSuggestions(false), 200);
-                handlePhoneBlur();
-              }}
-              className={cn("h-10 pl-10", phoneError && "border-destructive")}
-              maxLength={15}
-            />
-          </div>
-          {phoneError && (
-            <p className="text-xs text-destructive font-medium">{phoneError}</p>
-          )}
-          {showPhoneSuggestions && phoneSuggestions.length > 0 && (
-            <div
-              ref={phoneSuggestionsRef}
-              className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-48 overflow-y-auto"
-            >
-              {phoneSuggestions.map((client) => (
-                <button
-                  key={client.id}
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => selectClientSuggestion(client)}
-                >
-                  <span className="text-xs font-mono">{formatPhone(client.mobile_phone)}</span>
-                  <span className="text-xs text-muted-foreground">{client.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {(loadingClientSuggestions && (clientName.trim().length >= 2 || phoneDigits.length >= 3)) && (
-          <p className="text-xs text-muted-foreground">Buscando sugestões...</p>
-        )}
-
-        {/* Client Status Badge */}
-        {renderClientBadge() && (
-          <div>{renderClientBadge()}</div>
-        )}
       </div>
 
 
