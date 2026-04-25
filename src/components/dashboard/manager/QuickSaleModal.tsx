@@ -539,13 +539,13 @@ export default function QuickSaleModal({
 
     if (res.status === "phone_found" && res.suggestedName) {
       setClientName(res.suggestedName);
-      if (!manualOverride) setClientType("without_subscription");
+      setClientType("returning");
     } else if (res.status === "name_found") {
-      if (!manualOverride) setClientType("without_subscription");
+      setClientType("returning");
     } else if (res.status === "not_found") {
-      if (!manualOverride) setClientType("new");
+      setClientType("new");
     }
-  }, [mobilePhone, clientName, manualOverride, clientHistory]);
+  }, [mobilePhone, clientName, clientHistory]);
 
   // Name blur: re-check if phone wasn't found
   const handleNameBlur = useCallback(async () => {
@@ -553,31 +553,15 @@ export default function QuickSaleModal({
       const digits = sanitizePhone(mobilePhone);
       if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
         const res = await clientHistory.checkHistory(mobilePhone, clientName);
-        if (!res || manualOverride) return;
+        if (!res) return;
         if (res.status === "name_found") {
-          setClientType("without_subscription");
+          setClientType("returning");
         } else if (res.status === "not_found") {
           setClientType("new");
         }
       }
     }
-  }, [mobilePhone, clientName, manualOverride, clientHistory]);
-
-  // Handle manual override of client type
-  const handleClientTypeChange = (value: ClientType) => {
-    try {
-      console.log("[QuickSaleModal] handleClientTypeChange:", value);
-      setManualOverride(true);
-      setClientType(value);
-      if (value !== "with_subscription") {
-        setSelectedSubscriptionPlanId("");
-        setSubscriptionPlanAutoDetected(false);
-      }
-    } catch (error) {
-      console.error("[QuickSaleModal] Erro ao mudar tipo de cliente:", error);
-      toast.error("Erro ao alterar tipo de cliente.");
-    }
-  };
+  }, [mobilePhone, clientName, clientHistory]);
 
   // Cart operations (individualized with tempId)
   const handleAddToCart = (item: CatalogItem) => {
