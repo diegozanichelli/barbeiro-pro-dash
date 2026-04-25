@@ -1356,11 +1356,14 @@ export default function QuickSaleModal({
   const renderStep1 = () => (
     <>
       <DialogHeader className="px-6 pt-5 pb-3">
-        <DialogTitle className="text-lg font-semibold">
-          {attribution === null
-            ? "Nova Venda"
-            : `Venda Rápida — ${isReceptionSale ? "🏢 Recepção / Loja" : effectiveBarberName}`}
-        </DialogTitle>
+        <div className="flex items-start justify-between gap-3">
+          <DialogTitle className="text-lg font-semibold">
+            {attribution === null
+              ? "Nova Venda"
+              : `Venda Rápida — ${isReceptionSale ? "🏢 Recepção / Loja" : effectiveBarberName}`}
+          </DialogTitle>
+          {renderActiveSubscriberBadge()}
+        </div>
         <DialogDescription className="text-xs">
           Preencha os dados do atendimento
         </DialogDescription>
