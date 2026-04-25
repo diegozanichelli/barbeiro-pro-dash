@@ -819,6 +819,49 @@ export default function QuickSaleModal({
     setIsResolvingSubscription(loadingCycle && clientType === "with_subscription");
   }, [loadingCycle, clientType]);
 
+  // Highlight pulsante no card de Atribuição quando o cliente acaba de ser
+  // identificado (qualquer status final) e ainda não há atribuição escolhida.
+  // Faz scroll suave + pulsa por 3 segundos, exatamente uma vez por identificação.
+  useEffect(() => {
+    const status = clientHistory.status;
+    const isResolved =
+      status === "phone_found" || status === "name_found" || status === "not_found";
+
+    if (!isResolved) {
+      lastHandledClientStatusRef.current = status;
+      return;
+    }
+
+    // Já tratou este status nesta sessão — não dispara de novo
+    if (lastHandledClientStatusRef.current === status) return;
+    lastHandledClientStatusRef.current = status;
+
+    // Só pulsa se ainda falta escolher atribuição
+    if (attribution !== null) return;
+    if (barberId) return; // modal aberto pelo barbeiro: já vem com attribution="barber"
+
+    setAttributionHighlight(true);
+
+    // Scroll suave após o layout estabilizar
+    requestAnimationFrame(() => {
+      attributionCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+
+    const timer = setTimeout(() => setAttributionHighlight(false), 3000);
+    return () => clearTimeout(timer);
+  }, [clientHistory.status, attribution, barberId]);
+
+  // Reset do controle de highlight quando o modal fecha (reabrir = novo ciclo)
+  useEffect(() => {
+    if (!open) {
+      lastHandledClientStatusRef.current = "idle";
+      setAttributionHighlight(false);
+    }
+  }, [open]);
+
   // Discount applies if either:
   //  • client is already subscriber (clientType=with_subscription) OR
   //  • a subscription plan is being added in this same sale (live conversion)
