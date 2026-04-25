@@ -75,12 +75,34 @@ export default function UnitsComparison() {
     const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
     const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${lastDay}`;
 
-    // Buscar produções com dados do barbeiro
-    const { data: productions, error: productionsError } = await supabase
-      .from("daily_productions")
-      .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
-      .gte("date", startDate)
-      .lte("date", endDate);
+    // Buscar produções com paginação (Supabase tem limite default de 1000 linhas).
+    // Inclui campos tx_* (gestor) e manual_* (barbeiro) para aplicar a hierarquia oficial:
+    // tx (gestor) > manual (barbeiro) > legacy detalhado > services_total
+    const productions: any[] = [];
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let productionsError: any = null;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("daily_productions")
+        .select(`date, services_total, services_basic_total, services_extra_total, products_total,
+                 tx_basic_total, tx_extra_total, tx_products_total,
+                 manual_basic_total, manual_extra_total, manual_products_total,
+                 commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        productionsError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      productions.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
 
     if (productionsError) {
       console.error("Erro ao buscar produções:", productionsError);
@@ -119,35 +141,60 @@ export default function UnitsComparison() {
       });
     });
 
-    // Agregar produções por unidade
+    // Agregar produções por unidade — aplicar hierarquia tx > manual > legacy
     productions?.forEach((prod: any) => {
       const unitId = prod.barbers?.unit_id;
       if (!unitId || !metricsMap.has(unitId)) return;
 
       const metrics = metricsMap.get(unitId)!;
 
-      const servicesBasic = prod.services_basic_total ?? 0;
-      const servicesExtra = prod.services_extra_total ?? 0;
-      const servicesTotalLegacy = prod.services_total ?? 0;
-      const servicesTotal = servicesBasic > 0 || servicesExtra > 0 
-        ? servicesBasic + servicesExtra 
-        : servicesTotalLegacy;
+      const txBasic = Number(prod.tx_basic_total) || 0;
+      const txExtra = Number(prod.tx_extra_total) || 0;
+      const txProducts = Number(prod.tx_products_total) || 0;
+      const txTotal = txBasic + txExtra + txProducts;
 
-      // Básico: se já temos basic > 0, usar. Se temos extras mas basic=0, derivar.
-      // Senão, usar legado inteiro.
-      let receitaBasicaItem = servicesBasic;
-      if (servicesBasic === 0 && servicesExtra > 0) {
-        receitaBasicaItem = Math.max(0, servicesTotalLegacy - servicesExtra);
-      } else if (servicesBasic === 0 && servicesExtra === 0) {
+      const mBasic = Number(prod.manual_basic_total) || 0;
+      const mExtra = Number(prod.manual_extra_total) || 0;
+      const mProducts = Number(prod.manual_products_total) || 0;
+      const manualTotal = mBasic + mExtra + mProducts;
+
+      const legacyBasic = Number(prod.services_basic_total) || 0;
+      const legacyExtra = Number(prod.services_extra_total) || 0;
+      const legacyProducts = Number(prod.products_total) || 0;
+      const servicesTotalLegacy = Number(prod.services_total) || 0;
+
+      let receitaBasicaItem = 0;
+      let receitaExtraItem = 0;
+      let receitaProdutosItem = 0;
+
+      if (txTotal > 0) {
+        receitaBasicaItem = txBasic;
+        receitaExtraItem = txExtra;
+        receitaProdutosItem = txProducts;
+      } else if (manualTotal > 0) {
+        receitaBasicaItem = mBasic;
+        receitaExtraItem = mExtra;
+        receitaProdutosItem = mProducts;
+      } else if (prod.services_basic_total != null || prod.services_extra_total != null) {
+        receitaExtraItem = legacyExtra;
+        if (legacyBasic === 0 && legacyExtra > 0) {
+          receitaBasicaItem = Math.max(0, servicesTotalLegacy - legacyExtra);
+        } else {
+          receitaBasicaItem = legacyBasic;
+        }
+        receitaProdutosItem = legacyProducts;
+      } else {
         receitaBasicaItem = servicesTotalLegacy;
+        receitaExtraItem = 0;
+        receitaProdutosItem = legacyProducts;
       }
 
       metrics.receitaBasica += receitaBasicaItem;
-      metrics.receitaExtra += servicesExtra;
-      metrics.receitaProdutos += prod.products_total ?? 0;
-      metrics.receita += servicesTotal + (prod.products_total ?? 0);
-      metrics.comissao += prod.commission_earned ?? 0;
-      metrics.clientes += prod.clients_count ?? 0;
+      metrics.receitaExtra += receitaExtraItem;
+      metrics.receitaProdutos += receitaProdutosItem;
+      metrics.receita += receitaBasicaItem + receitaExtraItem + receitaProdutosItem;
+      metrics.comissao += Number(prod.commission_earned) || 0;
+      metrics.clientes += Number(prod.clients_count) || 0;
     });
 
     // Agregar metas por unidade
