@@ -475,27 +475,12 @@ export default function QuickSaleModal({
   }, [clientHistory]);
 
   // Auto-detect if client has a subscription plan
-  const autoDetectSubscription = useCallback(async (phoneDigits: string) => {
-    if (manualOverride) return;
-    try {
-      const { data, error } = await (supabase
-        .from("clients") as any)
-        .select("subscription_plan_id")
-        .eq("organization_id", organizationId)
-        .eq("mobile_phone", phoneDigits)
-        .maybeSingle();
-
-      if (error) return;
-
-      if (data?.subscription_plan_id) {
-        setClientType("with_subscription");
-        setSelectedSubscriptionPlanId(data.subscription_plan_id);
-        setSubscriptionPlanAutoDetected(true);
-      }
-    } catch {
-      // silent
-    }
-  }, [organizationId, manualOverride]);
+  // (kept as a thin shim — the actual fetch is done by useSubscriptionCycle to
+  // avoid duplicate round-trips. We just rely on its result via the sync effect below.)
+  const autoDetectSubscription = useCallback(async (_phoneDigits: string) => {
+    // no-op: useSubscriptionCycle already runs for the same phone and exposes
+    // cyclePlanId/cyclePlanName. The sync effect picks them up.
+  }, []);
 
   // Phone input handler with mask
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
