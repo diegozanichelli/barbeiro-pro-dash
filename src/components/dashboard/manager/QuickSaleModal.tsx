@@ -120,15 +120,24 @@ const SUBSCRIPTION_ACTION_LABELS: Record<SubscriptionAction, string> = {
 
 type CategoryTab = "services" | "products" | "subscription" | "manual";
 
-type ClientType = "new" | "without_subscription" | "with_subscription";
+/**
+ * Tipo binário de aquisição. NÃO confundir com status de assinatura
+ * (esse é derivado automaticamente do telefone via useSubscriptionCycle).
+ *  • "new"       → telefone não está na base (1ª venda registrada)
+ *  • "returning" → telefone já consta no histórico
+ */
+type ClientType = "new" | "returning";
 
+/**
+ * Determina a ação correta de assinatura quando o gestor adiciona um plano
+ * ao carrinho. Baseado no estado real do cliente, NÃO no toggle de tipo.
+ */
 function inferSubscriptionAction(
-  clientType: ClientType,
+  hasActiveSubscription: boolean,
   currentPlan: SubscriptionPlan | null,
   newPlan: SubscriptionPlan
 ): SubscriptionAction {
-  if (clientType === "new" || clientType === "without_subscription") return "new";
-  if (!currentPlan) return "new";
+  if (!hasActiveSubscription || !currentPlan) return "new";
   if (currentPlan.id === newPlan.id) return "renew";
   return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
 }
