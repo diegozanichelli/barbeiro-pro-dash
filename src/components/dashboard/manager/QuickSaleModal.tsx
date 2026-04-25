@@ -1813,6 +1813,7 @@ export default function QuickSaleModal({
         <h3 className="text-sm font-semibold truncate flex-1">
           Selecionar Itens
         </h3>
+        {renderActiveSubscriberBadge()}
         {cart.length > 0 && (
           <Badge className="shrink-0 text-xs">
             {cart.length} {cart.length === 1 ? "item" : "itens"} • {formatCurrency(cartTotal)}
