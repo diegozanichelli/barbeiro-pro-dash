@@ -1,69 +1,59 @@
-## Problema
+# Corrigir ausência de dados em Março/Abril no gráfico de Evolução da Barbearia
 
-Hoje o card **"Melhor Performance"** (aba Evolução → Comparativo de Unidades) mostra Ponta Negra como vencedora porque o cálculo é:
+## Diagnóstico
 
-```
-performance = (comissão da unidade ÷ meta da unidade) × 100
-```
+O gráfico mostra valores quase zerados a partir de Março porque o componente `ShopEvolution.tsx` lê os totais apenas dos campos legados/manuais (`services_basic_total`, `services_extra_total`, `products_total`, `services_total`), ignorando os campos `tx_basic_total`, `tx_extra_total` e `tx_products_total`.
 
-Isso mede apenas **% de atingimento de meta**, então uma unidade com metas baixas (ou barbeiros sem meta cadastrada) sempre ganha, mesmo faturando menos. Não reflete a realidade operacional.
+A partir de Março, as vendas passaram a ser lançadas majoritariamente pela recepção (`source='manager'`), o que popula os campos `tx_*` na tabela `daily_productions`. Conferi o banco e os números são contundentes:
 
-## O que muda
+| Mês | basic (manual) | tx_basic (gestor) | extra (manual) | tx_extra | produtos (manual) | tx_produtos |
+|-----|---:|---:|---:|---:|---:|---:|
+| Jan | R$ 69.153 | R$ 2.420 | R$ 65.322 | R$ 3.241 | R$ 20.746 | R$ 671 |
+| Fev | R$ 100.461 | R$ 110.088 | R$ 68.658 | R$ 99.099 | R$ 20.992 | R$ 39.965 |
+| Mar | R$ 6.368 | **R$ 237.613** | R$ 4.729 | **R$ 193.936** | R$ 2.243 | **R$ 92.614** |
+| Abr | R$ 3.944 | **R$ 184.296** | R$ 2.934 | **R$ 131.661** | R$ 767 | **R$ 49.852** |
 
-O card "Melhor Performance" passa a representar **eficiência de conversão**: qual unidade extrai mais valor por cliente atendido.
+Os relatórios oficiais (`get_manager_report_stats`, `get_organization_rankings`) já aplicam a hierarquia correta: **tx (gestor) > manual (barbeiro) > legacy**. O `ShopEvolution` ficou para trás e por isso "some" com a maior parte do faturamento de Março/Abril.
 
-**Fórmula:** `receita ÷ clientes atendidos = ticket médio`
+## Mudança
 
-Exemplo: Parque 10 atendeu 10 clientes e faturou R$ 12.000 → R$ 1.200/cliente vence Ponta Negra com 10 clientes e R$ 8.000 → R$ 800/cliente.
+Atualizar a função `fetchShopEvolutionData` em `src/components/dashboard/manager/ShopEvolution.tsx` para aplicar a mesma hierarquia já usada nas RPCs do gestor, em cada produção diária:
 
-### Diferenciação dos 4 cards
+1. Trazer também os campos `tx_basic_total`, `tx_extra_total`, `tx_products_total`, `manual_basic_total`, `manual_extra_total`, `manual_products_total` no `select` da query de `daily_productions`.
+2. Para cada produção, escolher a fonte conforme prioridade:
+   - Se `tx_basic + tx_extra + tx_products > 0` → usa os campos `tx_*`.
+   - Senão, se `manual_basic + manual_extra + manual_products > 0` → usa `manual_*`.
+   - Senão, se `services_basic_total` ou `services_extra_total` estão preenchidos → usa eles + `products_total`.
+   - Senão, fallback final no `services_total` legado.
+3. Aplicar a mesma derivação atual para o "Básico" quando ele vier zerado e existir extras (continua válido só na fonte legada).
+4. A receita de assinaturas continua sendo lida de `sale_transactions` (já está correta).
 
-Hoje há `Maior Receita`, `Maior Ticket`, `Mais Clientes` e `Melhor Performance`. Para evitar duplicação com "Maior Ticket", os papéis ficam assim:
-
-| Card | O que mede | Para quem ganha |
-|---|---|---|
-| Maior Receita | Faturamento bruto (R$) | Quem vende mais em volume |
-| Mais Clientes | Nº de atendimentos | Quem tem mais movimento |
-| Maior Ticket | Receita ÷ clientes (sem filtro) | Maior valor por atendimento (mas pode ser unidade pequena com 1 venda alta) |
-| **Melhor Performance** (novo) | **Ticket médio com piso mínimo** | **Quem converte melhor com volume relevante** |
-
-### Regra do "piso mínimo"
-
-Para o card "Melhor Performance" não premiar unidade que atendeu só 5 clientes no mês com 1 venda alta, aplicamos um filtro: **a unidade só concorre se atendeu pelo menos 30% dos clientes da unidade líder em volume**. Isso garante que a vencedora tenha movimento operacional real.
-
-Caso nenhuma unidade atinja o piso (mês muito início ou dados zerados), cai no ticket médio puro como fallback.
-
-### Texto do card
-
-- Título: continua **"Melhor Performance"**
-- Subtítulo (novo): **"Conversão de atendimento"**
-- Linha grande: nome da unidade
-- Linha pequena: `R$ X,XX por cliente · Y atendimentos`
-
-## Arquivos afetados
-
-- `src/components/dashboard/manager/UnitsComparison.tsx` — alterar a função `getLeader` para o card de performance e atualizar o JSX do card (linhas ~192-202 e ~316-327).
+Isso restaura a exibição de Serviços Básicos, Extras, Produtos e Assinaturas em Março e Abril e mantém os meses anteriores idênticos.
 
 ## Detalhes técnicos
 
-```ts
-// Substituir:
-const performanceLeader = getLeader('performance');
+Arquivo: `src/components/dashboard/manager/ShopEvolution.tsx`
 
-// Por:
-const conversionLeader = (() => {
-  if (unitsMetrics.length === 0) return null;
-  const maxClientes = Math.max(...unitsMetrics.map(u => u.clientes));
-  const piso = maxClientes * 0.3;
-  const candidatas = unitsMetrics.filter(u => u.clientes >= piso && u.clientes > 0);
-  const pool = candidatas.length > 0 ? candidatas : unitsMetrics.filter(u => u.clientes > 0);
-  if (pool.length === 0) return null;
-  return pool.reduce((prev, cur) => cur.ticketMedio > prev.ticketMedio ? cur : prev);
-})();
+- Atualizar o `select` da query `daily_productions` para incluir os campos `tx_*` e `manual_*`.
+- Substituir o trecho atual de agregação (linhas ~139-165) por uma seleção da fonte por linha, espelhando a lógica do `get_organization_rankings`. Pseudo:
+
+```ts
+const txTotal = (tx_basic||0) + (tx_extra||0) + (tx_products||0);
+const manualTotal = (m_basic||0) + (m_extra||0) + (m_products||0);
+
+let basico, extra, produtos;
+if (txTotal > 0) {
+  basico = tx_basic; extra = tx_extra; produtos = tx_products;
+} else if (manualTotal > 0) {
+  basico = m_basic; extra = m_extra; produtos = m_products;
+} else if (services_basic_total != null || services_extra_total != null) {
+  basico = services_basic_total ?? 0;
+  extra = services_extra_total ?? 0;
+  // derivação atual de básico quando 0 + extras > 0 continua válida aqui
+  produtos = products_total ?? 0;
+} else {
+  basico = services_total ?? 0; extra = 0; produtos = products_total ?? 0;
+}
 ```
 
-E o JSX do 4º card passa a exibir:
-- `{conversionLeader?.unitName}`
-- `R$ {conversionLeader?.ticketMedio.toFixed(2)} por cliente · {conversionLeader?.clientes} atendimentos`
-
-Sem mudanças de banco de dados, sem mudanças nos outros cards, sem impacto em outros relatórios.
+Sem mudanças de banco, sem mudanças nas RPCs e sem impacto nos demais relatórios.

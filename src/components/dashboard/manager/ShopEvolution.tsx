@@ -70,9 +70,14 @@ export default function ShopEvolution() {
     setLoading(true);
 
     // Buscar todas as produções do ano com dados do barbeiro para filtrar por unidade
+    // Inclui campos tx_* (gestor) e manual_* (barbeiro) para aplicar a hierarquia oficial:
+    // tx (gestor) > manual (barbeiro) > legacy (services_basic/extra/products) > services_total
     let productionsQuery = supabase
       .from("daily_productions")
-      .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
+      .select(`date, services_total, services_basic_total, services_extra_total, products_total,
+               tx_basic_total, tx_extra_total, tx_products_total,
+               manual_basic_total, manual_extra_total, manual_products_total,
+               commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
       .gte("date", `${selectedYear}-01-01`)
       .lte("date", `${selectedYear}-12-31`);
 
