@@ -69,19 +69,35 @@ export default function ShopEvolution() {
   const fetchShopEvolutionData = async () => {
     setLoading(true);
 
-    // Buscar todas as produções do ano com dados do barbeiro para filtrar por unidade
+    // Buscar todas as produções do ano com paginação (Supabase tem limite default de 1000 linhas).
     // Inclui campos tx_* (gestor) e manual_* (barbeiro) para aplicar a hierarquia oficial:
     // tx (gestor) > manual (barbeiro) > legacy (services_basic/extra/products) > services_total
-    let productionsQuery = supabase
-      .from("daily_productions")
-      .select(`date, services_total, services_basic_total, services_extra_total, products_total,
-               tx_basic_total, tx_extra_total, tx_products_total,
-               manual_basic_total, manual_extra_total, manual_products_total,
-               commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
-      .gte("date", `${selectedYear}-01-01`)
-      .lte("date", `${selectedYear}-12-31`);
+    const productions: any[] = [];
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let productionsError: any = null;
+    // Loop de paginação: continua até receber menos linhas que o tamanho da página
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("daily_productions")
+        .select(`date, services_total, services_basic_total, services_extra_total, products_total,
+                 tx_basic_total, tx_extra_total, tx_products_total,
+                 manual_basic_total, manual_extra_total, manual_products_total,
+                 commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
+        .gte("date", `${selectedYear}-01-01`)
+        .lte("date", `${selectedYear}-12-31`)
+        .order("date", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
 
-    const { data: productions, error: productionsError } = await productionsQuery;
+      if (error) {
+        productionsError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      productions.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
 
     if (productionsError) {
       console.error("Erro ao buscar produções:", productionsError);
@@ -108,13 +124,30 @@ export default function ShopEvolution() {
 
     // Buscar receita de assinaturas direto de sale_transactions (fonte única de verdade)
     // Filtra por source='manager' para alinhar com o princípio "Gestão como Fonte de Verdade"
-    const { data: subscriptionTxs, error: subError } = await supabase
-      .from("sale_transactions")
-      .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
-      .eq("item_type", "subscription")
-      .eq("source", "manager")
-      .gte("created_at", `${selectedYear}-01-01T00:00:00`)
-      .lte("created_at", `${selectedYear}-12-31T23:59:59`);
+    // Paginação para evitar o limite default de 1000 linhas do Supabase
+    const subscriptionTxs: any[] = [];
+    let subFrom = 0;
+    let subError: any = null;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("sale_transactions")
+        .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
+        .eq("item_type", "subscription")
+        .eq("source", "manager")
+        .gte("created_at", `${selectedYear}-01-01T00:00:00`)
+        .lte("created_at", `${selectedYear}-12-31T23:59:59`)
+        .order("created_at", { ascending: true })
+        .range(subFrom, subFrom + PAGE_SIZE - 1);
+
+      if (error) {
+        subError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      subscriptionTxs.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      subFrom += PAGE_SIZE;
+    }
 
     if (subError) {
       console.error("Erro ao buscar transações de assinatura:", subError);
