@@ -47,6 +47,7 @@ export function useSubscriptionCycle({
   organizationId,
   mobilePhone,
   enabled = true,
+  skipLegacyFallback = false,
 }: UseSubscriptionCycleParams): UseSubscriptionCycleResult {
   const [loading, setLoading] = useState(false);
   const [cycle, setCycle] = useState<CycleInfo | null>(null);
