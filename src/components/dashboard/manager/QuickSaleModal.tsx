@@ -650,13 +650,24 @@ export default function QuickSaleModal({
     [cart]
   );
 
+  // Status de assinatura ATIVO derivado automaticamente do telefone.
+  // É a única fonte de verdade para badge "Assinante Ativo" e desconto
+  // automático nos serviços inclusos no plano. NÃO afeta `clientType`
+  // (que continua sendo apenas "new" vs "returning").
+  const isActiveSubscriber = !!cyclePlanId && !loadingCycle;
+
+  // Plano atual do cliente (já assinante) — derivado do hook de ciclo.
+  const currentClientPlan = useMemo<SubscriptionPlan | null>(
+    () => subscriptionPlans.find((p) => p.id === cyclePlanId) ?? null,
+    [subscriptionPlans, cyclePlanId]
+  );
+
   const handleAddSubscriptionToCart = (plan: SubscriptionPlan) => {
     if (subscriptionInCart) {
       toast.warning("Apenas 1 plano de assinatura por venda. Remova o plano atual para trocar.");
       return;
     }
-    const currentPlan = selectedSubscriptionPlan;
-    const action = inferSubscriptionAction(clientType, currentPlan, plan);
+    const action = inferSubscriptionAction(isActiveSubscriber, currentClientPlan, plan);
     setCart((prev) => [
       ...prev,
       {
@@ -685,9 +696,8 @@ export default function QuickSaleModal({
       return;
     }
 
-    // Resolve plan: prefer current client plan, fallback to cycle plan id
-    const resolvedPlanId = cyclePlanId || selectedSubscriptionPlanId;
-    const plan = subscriptionPlans.find((p) => p.id === resolvedPlanId);
+    // Resolve plan: usa o plano atual detectado via ciclo
+    const plan = subscriptionPlans.find((p) => p.id === cyclePlanId);
 
     if (!plan) {
       toast.error("Não consegui identificar o plano atual. Selecione manualmente na aba Assinatura.");
@@ -713,11 +723,6 @@ export default function QuickSaleModal({
       },
     ]);
 
-    // Make sure UI reflects "with subscription"
-    setManualOverride(false);
-    setClientType("with_subscription");
-    setSelectedSubscriptionPlanId(plan.id);
-
     const nextDueLabel = formatInTimeZone(nextDue, TIMEZONE, "dd/MM/yyyy");
     toast.success(`Renovação preparada — ${plan.name}`, {
       description:
@@ -725,7 +730,7 @@ export default function QuickSaleModal({
           ? `Próximo vencimento: ${nextDueLabel} (mantidos ${preservedDays} ${preservedDays === 1 ? "dia" : "dias"} do ciclo anterior)`
           : `Próximo vencimento: ${nextDueLabel}`,
     });
-  }, [cycle, subscriptionInCart, cyclePlanId, selectedSubscriptionPlanId, subscriptionPlans]);
+  }, [cycle, subscriptionInCart, cyclePlanId, subscriptionPlans]);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.customPrice, 0);
@@ -745,14 +750,10 @@ export default function QuickSaleModal({
 
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
-  const selectedSubscriptionPlan = useMemo(
-    () => subscriptionPlans.find((plan) => plan.id === selectedSubscriptionPlanId) || null,
-    [subscriptionPlans, selectedSubscriptionPlanId]
-  );
 
-  // The plan that drives the discount logic.
-  // Priority: plan added to cart (live conversion) > plan already linked to the client.
-  const effectivePlanIdForDiscount = subscriptionInCart?.planId || selectedSubscriptionPlanId;
+  // Plano que dirige a lógica de desconto.
+  // Prioridade: plano sendo vendido AGORA > plano atual do cliente.
+  const effectivePlanIdForDiscount = subscriptionInCart?.planId || cyclePlanId || "";
 
   useEffect(() => {
     const fetchIncludedServices = async () => {
@@ -778,31 +779,6 @@ export default function QuickSaleModal({
 
     void fetchIncludedServices();
   }, [organizationId, effectivePlanIdForDiscount]);
-
-
-  // Sync subscription detection from useSubscriptionCycle (single source of truth).
-  // Replaces the legacy autoDetectSubscription + resolveSubscriptionForClient
-  // duplicates that fired 2 extra `clients` queries per phone identification.
-  useEffect(() => {
-    if (manualOverride) return;
-    const digits = sanitizePhone(mobilePhone);
-    if (digits.length !== 11 || !isValidPhone(mobilePhone)) return;
-    if (loadingCycle) return;
-
-    if (cyclePlanId) {
-      setClientType("with_subscription");
-      setSelectedSubscriptionPlanId((prev) => (prev ? prev : cyclePlanId));
-      setSubscriptionPlanAutoDetected(true);
-      setIsResolvingSubscription(false);
-    }
-    // If no plan is found, we leave clientType as-is — useClientHistory
-    // already handles new vs without_subscription branching.
-  }, [cyclePlanId, loadingCycle, manualOverride, mobilePhone]);
-
-  // Mirror loading state for legacy UI bindings (placeholder text in <Select>).
-  useEffect(() => {
-    setIsResolvingSubscription(loadingCycle && clientType === "with_subscription");
-  }, [loadingCycle, clientType]);
 
   // Highlight pulsante no card de Atribuição quando o cliente acaba de ser
   // identificado (qualquer status final) e ainda não há atribuição escolhida.
