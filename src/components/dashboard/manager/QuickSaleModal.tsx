@@ -510,11 +510,11 @@ export default function QuickSaleModal({
           if (!res) return;
           if (res.status === "phone_found" && res.suggestedName) {
             setClientName(res.suggestedName);
-            if (!manualOverride) setClientType("without_subscription");
+            setClientType("returning");
           } else if (res.status === "name_found") {
-            if (!manualOverride) setClientType("without_subscription");
+            setClientType("returning");
           } else if (res.status === "not_found") {
-            if (!manualOverride) setClientType("new");
+            setClientType("new");
           }
         });
         // Auto-detect subscription
