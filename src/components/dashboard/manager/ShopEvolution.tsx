@@ -124,13 +124,30 @@ export default function ShopEvolution() {
 
     // Buscar receita de assinaturas direto de sale_transactions (fonte única de verdade)
     // Filtra por source='manager' para alinhar com o princípio "Gestão como Fonte de Verdade"
-    const { data: subscriptionTxs, error: subError } = await supabase
-      .from("sale_transactions")
-      .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
-      .eq("item_type", "subscription")
-      .eq("source", "manager")
-      .gte("created_at", `${selectedYear}-01-01T00:00:00`)
-      .lte("created_at", `${selectedYear}-12-31T23:59:59`);
+    // Paginação para evitar o limite default de 1000 linhas do Supabase
+    const subscriptionTxs: any[] = [];
+    let subFrom = 0;
+    let subError: any = null;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("sale_transactions")
+        .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
+        .eq("item_type", "subscription")
+        .eq("source", "manager")
+        .gte("created_at", `${selectedYear}-01-01T00:00:00`)
+        .lte("created_at", `${selectedYear}-12-31T23:59:59`)
+        .order("created_at", { ascending: true })
+        .range(subFrom, subFrom + PAGE_SIZE - 1);
+
+      if (error) {
+        subError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      subscriptionTxs.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      subFrom += PAGE_SIZE;
+    }
 
     if (subError) {
       console.error("Erro ao buscar transações de assinatura:", subError);
