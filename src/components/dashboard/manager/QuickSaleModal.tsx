@@ -1324,14 +1324,18 @@ export default function QuickSaleModal({
         </Badge>
       );
     }
-    if (manualOverride) {
-      return (
-        <Badge variant="secondary" className="gap-1 text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-          Classificação alterada manualmente
-        </Badge>
-      );
-    }
     return null;
+  };
+
+  // ─── Active Subscriber Badge (derivado automaticamente — sem ação) ───
+  const renderActiveSubscriberBadge = () => {
+    if (!isActiveSubscriber) return null;
+    return (
+      <Badge className="gap-1 text-xs bg-amber-500 hover:bg-amber-500 text-amber-950 border-0 font-semibold">
+        <Sparkles className="h-3 w-3" />
+        Assinante Ativo{cyclePlanName ? `: ${cyclePlanName}` : ""}
+      </Badge>
+    );
   };
 
   // ─── STEP 1: Client Data ───
