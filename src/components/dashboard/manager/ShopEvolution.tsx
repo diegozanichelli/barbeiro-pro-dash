@@ -258,6 +258,30 @@ export default function ShopEvolution() {
   const totalClientes = chartData.length > 0 ? chartData.reduce((acc, m) => acc + m.clientes, 0) : 0;
   const ticketMedioAnual = totalClientes > 0 ? totalAnual / totalClientes : 0;
 
+  const visibleChartData = useMemo(() => {
+    if (chartData.length === 0) return [];
+
+    if (selectedYear === manausNow.getFullYear()) {
+      return chartData.slice(0, manausNow.getMonth() + 1);
+    }
+
+    const lastMonthWithData = [...chartData]
+      .map((month, index) => ({ month, index }))
+      .reverse()
+      .find(({ month }) =>
+        month.receita > 0 ||
+        month.receitaBasica > 0 ||
+        month.receitaExtra > 0 ||
+        month.receitaProdutos > 0 ||
+        month.receitaAssinaturas > 0 ||
+        month.comissaoTotal > 0 ||
+        month.metaTotal > 0 ||
+        month.clientes > 0
+      )?.index;
+
+    return lastMonthWithData != null ? chartData.slice(0, lastMonthWithData + 1) : chartData;
+  }, [chartData, selectedYear, manausNow]);
+
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -422,7 +446,7 @@ export default function ShopEvolution() {
             <div className="w-full h-96">
               <ResponsiveContainer width="100%" height="100%">
                 {viewMode === 'receita' ? (
-                  <BarChart data={chartData}>
+                  <BarChart data={visibleChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }} barCategoryGap="18%">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} />
                     <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
@@ -434,7 +458,7 @@ export default function ShopEvolution() {
                     <Bar dataKey="receitaAssinaturas" name="Assinaturas" stackId="a" fill="hsl(280, 70%, 55%)" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 ) : viewMode === 'ticket' ? (
-                  <LineChart data={chartData}>
+                  <LineChart data={visibleChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} />
                     <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${v.toFixed(0)}`} />
@@ -443,7 +467,7 @@ export default function ShopEvolution() {
                     <Line type="monotone" dataKey="ticketMedio" name="Ticket Médio" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ fill: "hsl(var(--primary))", strokeWidth: 2 }} />
                   </LineChart>
                 ) : (
-                  <BarChart data={chartData}>
+                  <BarChart data={visibleChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }} barCategoryGap="18%">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} />
                     <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
