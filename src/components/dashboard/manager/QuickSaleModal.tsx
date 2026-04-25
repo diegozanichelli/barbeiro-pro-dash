@@ -792,8 +792,8 @@ export default function QuickSaleModal({
   // duplicates that fired 2 extra `clients` queries per phone identification.
   useEffect(() => {
     if (manualOverride) return;
-    if (!isPhoneCompleteCheap(mobilePhone)) return;
-    // Wait until cycle hook finishes its lookup
+    const digits = sanitizePhone(mobilePhone);
+    if (digits.length !== 11 || !isValidPhone(mobilePhone)) return;
     if (loadingCycle) return;
 
     if (cyclePlanId) {
