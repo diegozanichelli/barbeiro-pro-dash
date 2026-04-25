@@ -13,6 +13,12 @@ interface UseSubscriptionCycleParams {
   mobilePhone: string;
   /** Quando true, faz a busca; quando false, retorna estado vazio. */
   enabled?: boolean;
+  /**
+   * Se true, pula a 2ª query (fallback em `clients`).
+   * Útil quando já sabemos via outro hook que o cliente não existe na base
+   * (ex.: useClientHistory retornou 'not_found').
+   */
+  skipLegacyFallback?: boolean;
 }
 
 interface UseSubscriptionCycleResult {
@@ -41,6 +47,7 @@ export function useSubscriptionCycle({
   organizationId,
   mobilePhone,
   enabled = true,
+  skipLegacyFallback = false,
 }: UseSubscriptionCycleParams): UseSubscriptionCycleResult {
   const [loading, setLoading] = useState(false);
   const [cycle, setCycle] = useState<CycleInfo | null>(null);
@@ -95,6 +102,16 @@ export function useSubscriptionCycle({
 
         // 2) Fonte secundária (fallback legado): cliente vinculado a um plano
         //    sem nenhuma transação de assinatura registrada.
+        //    Pulamos quando `skipLegacyFallback` for true (ex.: já confirmamos
+        //    via outro hook que o cliente não está cadastrado).
+        if (skipLegacyFallback) {
+          setCycle(null);
+          setPlanId(null);
+          setPlanName(null);
+          setLastTransactionId(null);
+          return;
+        }
+
         const { data: clientData, error: clientError } = await (supabase
           .from("clients") as any)
           .select("subscription_plan_id, subscription_plans(name)")
@@ -134,7 +151,7 @@ export function useSubscriptionCycle({
     return () => {
       cancelled = true;
     };
-  }, [organizationId, mobilePhone, enabled, refetchToken]);
+  }, [organizationId, mobilePhone, enabled, skipLegacyFallback, refetchToken]);
 
   return {
     loading,
