@@ -151,7 +151,7 @@ export function useSubscriptionCycle({
     return () => {
       cancelled = true;
     };
-  }, [organizationId, mobilePhone, enabled, refetchToken]);
+  }, [organizationId, mobilePhone, enabled, skipLegacyFallback, refetchToken]);
 
   return {
     loading,
