@@ -34,6 +34,7 @@ import {
   Crown,
   AlertCircle,
   ArrowDown,
+  Sparkles,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
