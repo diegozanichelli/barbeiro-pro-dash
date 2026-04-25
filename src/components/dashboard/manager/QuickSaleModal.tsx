@@ -876,10 +876,9 @@ export default function QuickSaleModal({
   }, [open]);
 
   // Discount applies if either:
-  //  • client is already subscriber (clientType=with_subscription) OR
+  //  • client is already an active subscriber (detected automatically) OR
   //  • a subscription plan is being added in this same sale (live conversion)
-  const subscriptionDiscountActive =
-    clientType === "with_subscription" || !!subscriptionInCart;
+  const subscriptionDiscountActive = isActiveSubscriber || !!subscriptionInCart;
 
   const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
     if (
@@ -933,16 +932,17 @@ export default function QuickSaleModal({
     }
   };
 
+  /**
+   * Atualiza `clients.subscription_plan_id` SOMENTE quando o cliente está
+   * adquirindo/renovando/atualizando o plano nesta venda. Status pré-existente
+   * de assinatura é apenas leitura — não rebatemos no banco.
+   */
   const ensureSubscriptionAssigned = async (mobilePhoneSanitized: string) => {
-    if (clientType !== "with_subscription") return;
-
-    if (!selectedSubscriptionPlanId) {
-      throw new Error("Selecione a assinatura do cliente para continuar.");
-    }
+    if (!subscriptionInCart) return;
 
     const { error } = await (supabase
       .from("clients") as any)
-      .update({ subscription_plan_id: selectedSubscriptionPlanId })
+      .update({ subscription_plan_id: subscriptionInCart.planId })
       .eq("organization_id", organizationId)
       .eq("mobile_phone", mobilePhoneSanitized);
 
@@ -953,8 +953,6 @@ export default function QuickSaleModal({
   const phoneDigits = sanitizePhone(mobilePhone);
   const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
   const hasClientName = clientName.trim().length >= 3;
-  const hasSubscriptionResolved =
-    clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
   const needsUnitSelection = isReceptionSale && units.length > 1;
