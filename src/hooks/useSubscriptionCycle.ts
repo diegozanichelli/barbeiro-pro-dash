@@ -102,6 +102,16 @@ export function useSubscriptionCycle({
 
         // 2) Fonte secundária (fallback legado): cliente vinculado a um plano
         //    sem nenhuma transação de assinatura registrada.
+        //    Pulamos quando `skipLegacyFallback` for true (ex.: já confirmamos
+        //    via outro hook que o cliente não está cadastrado).
+        if (skipLegacyFallback) {
+          setCycle(null);
+          setPlanId(null);
+          setPlanName(null);
+          setLastTransactionId(null);
+          return;
+        }
+
         const { data: clientData, error: clientError } = await (supabase
           .from("clients") as any)
           .select("subscription_plan_id, subscription_plans(name)")
