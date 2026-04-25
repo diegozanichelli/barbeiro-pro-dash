@@ -33,6 +33,7 @@ import {
   Smartphone,
   Crown,
   AlertCircle,
+  ArrowDown,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -208,6 +209,13 @@ export default function QuickSaleModal({
     barberName ||
     availableBarbers.find((b) => b.id === pickedBarberId)?.name ||
     "Barbeiro";
+
+  // Highlight visual no card de Atribuição quando o cliente é identificado e
+  // o gestor ainda não escolheu Barbeiro/Recepção. Pulsa por 3s + auto-scroll.
+  const [attributionHighlight, setAttributionHighlight] = useState(false);
+  const attributionCardRef = useRef<HTMLDivElement>(null);
+  // Guarda o último status já tratado para evitar disparar highlight em loop
+  const lastHandledClientStatusRef = useRef<string>("idle");
 
   // Reception unit selector — required when attribution=reception and there are 2+ units
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
