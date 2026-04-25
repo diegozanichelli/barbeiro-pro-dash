@@ -258,11 +258,14 @@ export default function QuickSaleModal({
   });
 
   // Subscription cycle (predictive renewal alert)
+  // Skip the legacy `clients` fallback when history confirmed the phone is not
+  // in the base — saves an extra round-trip for new clients.
   const { cycle, loading: loadingCycle, planId: cyclePlanId, planName: cyclePlanName } =
     useSubscriptionCycle({
       organizationId,
       mobilePhone,
       enabled: open,
+      skipLegacyFallback: clientHistory.status === "not_found",
     });
 
   // When user clicks "Renovar agora" on the banner, we capture the anchor
