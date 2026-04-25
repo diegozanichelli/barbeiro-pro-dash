@@ -70,9 +70,14 @@ export default function ShopEvolution() {
     setLoading(true);
 
     // Buscar todas as produções do ano com dados do barbeiro para filtrar por unidade
+    // Inclui campos tx_* (gestor) e manual_* (barbeiro) para aplicar a hierarquia oficial:
+    // tx (gestor) > manual (barbeiro) > legacy (services_basic/extra/products) > services_total
     let productionsQuery = supabase
       .from("daily_productions")
-      .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
+      .select(`date, services_total, services_basic_total, services_extra_total, products_total,
+               tx_basic_total, tx_extra_total, tx_products_total,
+               manual_basic_total, manual_extra_total, manual_products_total,
+               commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
       .gte("date", `${selectedYear}-01-01`)
       .lte("date", `${selectedYear}-12-31`);
 
@@ -138,30 +143,59 @@ export default function ShopEvolution() {
 
     filteredProductions?.forEach((prod: any) => {
       const month = new Date(prod.date).getMonth();
-      
-      const servicesBasic = prod.services_basic_total ?? 0;
-      const servicesExtra = prod.services_extra_total ?? 0;
-      const servicesTotalLegacy = prod.services_total ?? 0;
-      // Total de serviços: usar campos detalhados se algum estiver populado, senão legado
-      const servicesTotal = servicesBasic > 0 || servicesExtra > 0 
-        ? servicesBasic + servicesExtra 
-        : servicesTotalLegacy;
-      
-      // Básico: se já temos basic > 0, usar. Se temos extras mas basic=0, derivar (legacy - extras).
-      // Caso contrário, usar legado inteiro (sem extras lançados).
-      let receitaBasicaItem = servicesBasic;
-      if (servicesBasic === 0 && servicesExtra > 0) {
-        receitaBasicaItem = Math.max(0, servicesTotalLegacy - servicesExtra);
-      } else if (servicesBasic === 0 && servicesExtra === 0) {
+
+      // Hierarquia oficial: tx (gestor) > manual (barbeiro) > legacy detalhado > services_total
+      const txBasic = Number(prod.tx_basic_total) || 0;
+      const txExtra = Number(prod.tx_extra_total) || 0;
+      const txProducts = Number(prod.tx_products_total) || 0;
+      const txTotal = txBasic + txExtra + txProducts;
+
+      const mBasic = Number(prod.manual_basic_total) || 0;
+      const mExtra = Number(prod.manual_extra_total) || 0;
+      const mProducts = Number(prod.manual_products_total) || 0;
+      const manualTotal = mBasic + mExtra + mProducts;
+
+      const legacyBasic = Number(prod.services_basic_total) || 0;
+      const legacyExtra = Number(prod.services_extra_total) || 0;
+      const legacyProducts = Number(prod.products_total) || 0;
+      const servicesTotalLegacy = Number(prod.services_total) || 0;
+
+      let receitaBasicaItem = 0;
+      let receitaExtraItem = 0;
+      let receitaProdutosItem = 0;
+
+      if (txTotal > 0) {
+        receitaBasicaItem = txBasic;
+        receitaExtraItem = txExtra;
+        receitaProdutosItem = txProducts;
+      } else if (manualTotal > 0) {
+        receitaBasicaItem = mBasic;
+        receitaExtraItem = mExtra;
+        receitaProdutosItem = mProducts;
+      } else if (prod.services_basic_total != null || prod.services_extra_total != null) {
+        receitaExtraItem = legacyExtra;
+        // Se basic = 0 mas há extras, derivar do total legado para não duplicar
+        if (legacyBasic === 0 && legacyExtra > 0) {
+          receitaBasicaItem = Math.max(0, servicesTotalLegacy - legacyExtra);
+        } else {
+          receitaBasicaItem = legacyBasic;
+        }
+        receitaProdutosItem = legacyProducts;
+      } else {
+        // Fallback final: tudo no services_total legado, sem split
         receitaBasicaItem = servicesTotalLegacy;
+        receitaExtraItem = 0;
+        receitaProdutosItem = legacyProducts;
       }
 
+      const servicesTotal = receitaBasicaItem + receitaExtraItem;
+
       monthlyAggregates[month].receitaBasica += receitaBasicaItem;
-      monthlyAggregates[month].receitaExtra += servicesExtra;
-      monthlyAggregates[month].receitaProdutos += prod.products_total ?? 0;
-      monthlyAggregates[month].receita += servicesTotal + (prod.products_total ?? 0);
-      monthlyAggregates[month].comissaoTotal += prod.commission_earned ?? 0;
-      monthlyAggregates[month].clientes += prod.clients_count ?? 0;
+      monthlyAggregates[month].receitaExtra += receitaExtraItem;
+      monthlyAggregates[month].receitaProdutos += receitaProdutosItem;
+      monthlyAggregates[month].receita += servicesTotal + receitaProdutosItem;
+      monthlyAggregates[month].comissaoTotal += Number(prod.commission_earned) || 0;
+      monthlyAggregates[month].clientes += Number(prod.clients_count) || 0;
     });
 
     // Agregar receita de assinaturas por mês (usando created_at da transação)
