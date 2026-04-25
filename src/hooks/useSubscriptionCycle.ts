@@ -13,6 +13,12 @@ interface UseSubscriptionCycleParams {
   mobilePhone: string;
   /** Quando true, faz a busca; quando false, retorna estado vazio. */
   enabled?: boolean;
+  /**
+   * Se true, pula a 2ª query (fallback em `clients`).
+   * Útil quando já sabemos via outro hook que o cliente não existe na base
+   * (ex.: useClientHistory retornou 'not_found').
+   */
+  skipLegacyFallback?: boolean;
 }
 
 interface UseSubscriptionCycleResult {
