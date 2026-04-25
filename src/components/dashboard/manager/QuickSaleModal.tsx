@@ -1540,9 +1540,12 @@ export default function QuickSaleModal({
           <p className="text-xs text-muted-foreground">Buscando sugestões...</p>
         )}
 
-        {/* Client Status Badge (Recorrente / Novo / etc.) */}
-        {renderClientBadge() && (
-          <div>{renderClientBadge()}</div>
+        {/* Client Status Badge + Active Subscriber Badge */}
+        {(renderClientBadge() || renderActiveSubscriberBadge()) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {renderClientBadge()}
+            {renderActiveSubscriberBadge()}
+          </div>
         )}
 
         {/* Predictive renewal alert (cycle status) — aparece logo após identificar telefone */}
