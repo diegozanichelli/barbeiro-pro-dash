@@ -428,15 +428,11 @@ export default function QuickSaleModal({
     setActiveTab("services");
     setAttribution(initialMode ?? (barberId ? "barber" : null));
     setPickedBarberId("");
-    setClientType(initialIsNewClient ? "new" : "without_subscription");
+    setClientType(initialIsNewClient ? "new" : "returning");
     setClientName("");
     setMobilePhone("");
     setPhoneError(null);
-    setSelectedSubscriptionPlanId("");
-    setSubscriptionPlanAutoDetected(false);
-    setIsResolvingSubscription(false);
     setSelectedPlanIncludedServiceIds([]);
-    setManualOverride(false);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
     setPendingCycleAnchorISO(null);
