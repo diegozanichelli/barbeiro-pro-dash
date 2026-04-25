@@ -782,22 +782,22 @@ const [todayProduction, setTodayProduction] = useState<{
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
-              <div>
-                <h1 className="text-xl font-bold text-foreground">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <img src={logo} alt="Performance Barber" className="h-12 w-auto sm:h-16" />
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-bold text-foreground">
                   Olá, {barber.name}!
                 </h1>
                 {isCurrentMonth && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4 shrink-0" />
                     Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
                   </p>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
               <PushNotificationToggle 
                 barberId={barber.id} 
                 organizationId={barber.organization_id} 
