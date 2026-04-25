@@ -260,9 +260,6 @@ export default function QuickSaleModal({
   // Phone state
   const [mobilePhone, setMobilePhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [selectedSubscriptionPlanId, setSelectedSubscriptionPlanId] = useState<string>("");
-  const [subscriptionPlanAutoDetected, setSubscriptionPlanAutoDetected] = useState(false);
-  const [isResolvingSubscription, setIsResolvingSubscription] = useState(false);
   const [selectedPlanIncludedServiceIds, setSelectedPlanIncludedServiceIds] = useState<string[]>([]);
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
 
