@@ -842,11 +842,13 @@ export default function QuickSaleModal({
 
     setAttributionHighlight(true);
 
-    // Scroll suave após o layout estabilizar
+    // Scroll suave após o layout estabilizar — alinha o topo do bloco
+    // de Atribuição na área visível para que os botões Barbeiro / Recepção
+    // fiquem imediatamente à vista.
     requestAnimationFrame(() => {
       attributionCardRef.current?.scrollIntoView({
         behavior: "smooth",
-        block: "center",
+        block: "start",
       });
     });
 
