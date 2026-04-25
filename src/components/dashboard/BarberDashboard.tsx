@@ -896,6 +896,13 @@ const [todayProduction, setTodayProduction] = useState<{
           </TabsList>
 
           <TabsContent value="daily" className="space-y-6">
+            {/* Aviso: app do barbeiro é somente para acompanhamento */}
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 flex items-start gap-2">
+              <span className="text-base leading-none mt-0.5">📋</span>
+              <p className="text-xs text-muted-foreground">
+                Este app é <strong className="text-foreground">somente para acompanhamento</strong>. Todos os lançamentos de venda são feitos pela recepção. Encontrou algum erro? Avise o gestor.
+              </p>
+            </div>
             {/* Alerta de Produções Pendentes */}
             {/* Dias Pendentes de Conferência (AO VIVO) */}
             <PendingDayReviews 

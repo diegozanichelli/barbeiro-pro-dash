@@ -1,72 +1,117 @@
 
+# Forçar escolha de Atribuição + Lockdown do app do barbeiro
 
-# Por que o banner de renovação não aparece — diagnóstico e correção
+Dois ajustes complementares: (1) UX da recepção que não deixa esquecer de atribuir a venda; (2) remover de vez a capacidade do barbeiro lançar/editar venda no app dele — barbeiro só visualiza e confere.
 
-## O que aconteceu no print
+---
 
-O cliente **Alessandro Nogueira Monteiro (92 99255-5554)** está corretamente identificado como **Assinante** do plano **Gold Corte e Barba**, mas o banner de "Renovação" não apareceu entre a unidade e o "Tipo de Cliente".
+## Parte 1 — Destaque pulsante na Atribuição (QuickSaleModal)
 
-## Causa raiz (confirmada no banco)
+### Comportamento atual (problema do print)
 
-O hook `useSubscriptionCycle` busca a **última transação** com `item_type='subscription'` e `subscription_action IN ('new','renew','upgrade')` para calcular o ciclo. Esse cliente tem `subscription_plan_id` preenchido na tabela `clients`, mas **zero transações** de assinatura no histórico. Resultado: `cycle = null` → banner escondido.
+1. Recepção digita telefone novo.
+2. Sistema marca "Tipo de Cliente = Novo" automaticamente. ✓
+3. **Falha:** o card "Atribuição da Venda" continua passivo, igual aos outros, e a recepção não percebe que precisa escolher Barbeiro/Recepção. O botão "Continuar" fica laranja como se estivesse pronto, mas só dá erro ao clicar.
 
-**Isso não é caso isolado**: dos 2.767 assinantes ativos no sistema, **2.510 (91%)** não têm nenhuma transação de assinatura registrada. Foram vinculados diretamente ao plano (importação legada / fluxo antigo / vínculo manual via gestão), sem passar por uma adesão `new` no PDV.
+### Comportamento novo
 
-Ou seja: o alerta preditivo só funciona para os 9% de assinantes recentes — exatamente o oposto do que precisamos.
+Logo após o cliente ser **identificado** (qualquer status: novo, recorrente, assinante) e **enquanto `attribution === null`**, o card de Atribuição da Venda recebe:
 
-## Solução: fallback inteligente
+- **Anel laranja pulsante** por 3 segundos (`ring-2 ring-amber-500 animate-pulse shadow-lg shadow-amber-500/30`).
+- **Auto-scroll suave** até o card (`scrollIntoView({ behavior: "smooth", block: "center" })`).
+- **Pequena seta + texto** acima do ToggleGroup: *"⬇ Próximo passo: quem está atendendo?"* (cor amber, desaparece assim que o gestor clica em qualquer opção).
+- O botão **Continuar** fica desabilitado e ganha tooltip *"Selecione Barbeiro ou Recepção primeiro"* enquanto `attribution === null` (já é assim hoje, mas vamos reforçar com o tooltip).
 
-O hook precisa ter uma **segunda fonte de data-âncora** quando não há transação de assinatura:
+A pulsação dispara via `useEffect` que observa `clientHistory.status` ir de `idle/checking` → `phone_found | name_found | not_found`. Um state `attributionHighlight` controla a animação e é zerado quando o gestor escolhe qualquer opção do ToggleGroup ou quando o modal fecha.
 
-| Prioridade | Fonte da data-âncora | Cobertura |
-|---|---|---|
-| 1ª | Última `sale_transaction` de assinatura (`new`/`renew`/`upgrade`) com `cycle_anchor` no description | 9% atuais |
-| 2ª (NOVO) | `clients.subscription_started_at` se existir, senão `clients.updated_at` da linha que tem `subscription_plan_id` | resto dos 91% |
-| 3ª (NOVO) | Se nada disso existir, mostra banner **neutro** "Assinante (data de adesão indisponível)" + botão "Renovar agora" — assim o usuário ainda vê o status e pode renovar | edge cases |
+### Edge cases
 
-A primeira renovação feita pelo banner já grava o `cycle_anchor` no `description`, e a partir daí o cliente migra para a fonte 1 automaticamente. Auto-cura.
+- **Modal aberto pelo barbeiro (já com `barberId` setado)**: `attribution` já vem como `"barber"` por default → não pulsa, não atrapalha.
+- **Modal reaberto na mesma sessão**: o highlight só dispara uma vez por identificação (controlado pelo `useEffect` que reage à mudança de status, não em loop).
 
-## UX adicional: tornar o banner óbvio
+### Arquivo afetado
 
-Mesmo quando aparece, o banner está num espaço apertado entre dois blocos densos. Vamos:
+- `src/components/dashboard/manager/QuickSaleModal.tsx`
+  - Novo state `attributionHighlight: boolean` e `useRef<HTMLDivElement>` para o card de Atribuição.
+  - Novo `useEffect` que dispara quando `clientHistory.status` sai de checking e `attribution === null`.
+  - Novo `useEffect` com `setTimeout(3000)` para parar a pulsação automaticamente.
+  - Texto auxiliar acima do ToggleGroup (~linha 1497).
+  - Classes condicionais no card wrapper (~linha 1494).
+  - Tooltip no botão Continuar (~linha 1760).
 
-1. **Mover o banner para o topo absoluto do step 1** (acima do "Em qual recepção?"), não no meio.
-2. **Aumentar a presença visual** quando for `RENOVAÇÃO DISPONÍVEL` ou `VENCIDO`: borda mais grossa + sombra dourada/vermelha + ícone maior.
-3. **Mostrar sempre que houver assinatura identificada** (mesmo `EM DIA`) — já está assim, mas com fallback agora cobre 100% dos assinantes.
-4. **Texto explícito do plano e data** no estado neutro: *"Assinante: Gold Corte e Barba — data de adesão não registrada • [Renovar agora]"*.
+---
 
-## Arquivos afetados
+## Parte 2 — Lockdown: barbeiro não lança nem edita venda
 
-| # | Arquivo | Mudança |
-|---|---|---|
-| 1 | `src/hooks/useSubscriptionCycle.ts` | Adicionar fallback: se `sale_transactions` não retornar nada, buscar em `clients` (`subscription_plan_id`, `updated_at`, e o nome do plano via join com `subscription_plans`). Se houver plano mas sem data confiável, retornar um `cycle` especial com `status='sem_historico'`. |
-| 2 | `src/lib/subscriptionCycle.ts` | Adicionar 4º estado `sem_historico` ao tipo `CycleStatus` + variant `neutral`. Função `computeCycleStatus` continua igual; nova função `buildLegacyCycle(planName)` retorna o objeto neutro. |
-| 3 | `src/components/dashboard/manager/SubscriptionCycleBanner.tsx` | Adicionar visual do estado `sem_historico` (cinza com borda âmbar discreta, ícone de relógio, texto "Adesão sem registro — Renovar para iniciar ciclo"). Botão "Renovar agora" funciona normal. |
-| 4 | `src/components/dashboard/manager/QuickSaleModal.tsx` | (a) Mover o bloco do banner para **antes** do bloco "Em qual recepção?" (topo do step 1, depois apenas do título). (b) Garantir que `handleQuickRenewFromBanner` trata o caso `sem_historico` usando `today` como anchor. |
+### Estado atual descoberto
 
-## Lógica do fallback no hook (resumo técnico)
+Boa notícia: o `BarberDashboard.tsx` **já não importa** mais o `BarberSaleForm` nem o `BarberEditProductionModal`. A aba "Ao Vivo" do barbeiro (linha 1165) já se descreve como *"Painel somente leitura"*, e a aba "Meu Painel" terminou em uma **Central de Conferência** (linha 1118-1122) que diz literalmente *"Lançamentos são feitos pela recepção. Aqui você apenas acompanha e confirma."*
 
+O que ainda existe e precisa ser fechado:
+
+1. Os arquivos órfãos `BarberSaleForm.tsx` e `BarberEditProductionModal.tsx` continuam no repositório (lixo morto, risco de alguém reativar por engano).
+2. A RLS atual permite ao barbeiro `UPDATE` e `DELETE` em `sale_transactions` próprias com `source='barber'` (memory `barber-transaction-edit-rls`).
+3. O `DayReviewModal` permite confirmar presença/ausência — isso **continua valendo** (faz parte da conferência, não é lançamento).
+
+### O que muda
+
+**a) Deletar arquivos órfãos**
+- Remover `src/components/dashboard/barber/BarberSaleForm.tsx`
+- Remover `src/components/dashboard/barber/BarberEditProductionModal.tsx`
+- Remover qualquer import residual (já confirmado: nenhum no `BarberDashboard.tsx`).
+
+**b) Endurecer a RLS de `sale_transactions`**
+
+Migration que **revoga** as políticas de UPDATE/DELETE do barbeiro sobre `sale_transactions`. O barbeiro continua com `SELECT` para visualizar, mas perde a permissão de modificar.
+
+```sql
+-- Revoga permissão de barbeiro mexer em transações
+DROP POLICY IF EXISTS "Barbers can update own transactions" ON public.sale_transactions;
+DROP POLICY IF EXISTS "Barbers can delete own transactions" ON public.sale_transactions;
 ```
-1. Tenta buscar last sale_transaction (lógica atual)
-2. Se vazio E mobilePhone presente:
-     buscar clients.subscription_plan_id + plans.name + clients.updated_at
-     Se subscription_plan_id existe:
-        retornar cycle = { status: "sem_historico", ... }
-        retornar planId, planName
-3. Senão: retorna null como hoje (cliente sem assinatura)
-```
 
-## Comportamento da ação "Renovar agora" no estado `sem_historico`
+Política de `INSERT` do barbeiro (se existir) também é revogada — todo lançamento passa pela recepção via `create_sale_and_ensure_production` (RPC já existente, executada com perfil de gestor).
 
-- Adiciona o plano atual ao carrinho com `action='renew'` (igual aos outros estados).
-- `cycle_anchor = today` (já que não temos data confiável de início).
-- Toast: *"Renovação registrada! Próximo vencimento: 23/05/2026 • A partir de agora seu ciclo está rastreado."*
+**c) Reforço visual no app do barbeiro**
 
-## Impacto / risco
+No topo da aba "Meu Painel", adicionar um banner informativo discreto (uma vez, sem ser intrusivo):
 
-- **Zero migration**, zero schema, zero RPC.
-- 100% dos assinantes passam a ver o status de ciclo no PDV (vs. 9% hoje).
-- A primeira renovação já normaliza o histórico — o sistema se cura sozinho.
-- Banner mais visível no topo do step 1 elimina o "sumiço" relatado pelo usuário.
-- Nenhum relatório/comissão muda — `cycle_anchor` continua sendo só metadado opcional.
+> *"📋 Este app é somente para acompanhamento. Todos os lançamentos são feitos pela recepção. Encontrou erro? Avise o gestor."*
 
+Compacto, fundo `bg-muted/30`, cor `text-muted-foreground`, dispensável visualmente mas elimina dúvida.
+
+### Arquivos afetados
+
+- `src/components/dashboard/barber/BarberSaleForm.tsx` → **deletar**
+- `src/components/dashboard/barber/BarberEditProductionModal.tsx` → **deletar**
+- `src/components/dashboard/BarberDashboard.tsx` → adicionar banner read-only no topo da aba "daily"
+- Nova migration SQL → revoga policies de UPDATE/DELETE/INSERT de barbeiro em `sale_transactions`
+
+### Memory a atualizar
+
+- `mem://security/barber-transaction-edit-rls` → atualizar para refletir o lockdown (barbeiro perde UPDATE/DELETE).
+- `mem://features/barber-sale-form-catalog-only` → marcar como obsoleto/removido.
+- Adicionar nova memory: *"Barbeiro é read-only — todos os lançamentos passam pela recepção via QuickSaleModal."*
+
+---
+
+## Resumo do que o usuário vai sentir
+
+**Recepção (gestor):**
+- Identifica o cliente → o card de "Atribuição da Venda" pulsa em laranja por 3s e a tela rola até ele.
+- Impossível esquecer de marcar Barbeiro ou Recepção; o botão Continuar fica travado com tooltip explicando.
+
+**Barbeiro:**
+- Abre o app e vê um banner *"App somente para acompanhamento"*.
+- Não tem mais nenhum botão de criar/editar/excluir venda em lugar nenhum — interface inteira é leitura + Conferência (presença/ausência) + Histórico.
+- Tentativas via API direta falham por RLS (defesa em profundidade).
+
+---
+
+## Detalhes técnicos
+
+- A pulsação usa apenas Tailwind (`animate-pulse` + classes amber existentes), sem novo CSS.
+- O `scrollIntoView` é disparado dentro do `useEffect` com `requestAnimationFrame` para esperar o layout estabilizar.
+- A migration de RLS é idempotente (`DROP POLICY IF EXISTS`) — segura para rodar mesmo se policies já não existirem.
+- Nenhuma RPC muda. Nenhum dado existente é afetado. Vendas antigas com `source='barber'` permanecem intactas, só não podem mais ser editadas pelo próprio barbeiro (gestor continua podendo via TransactionManagerModal).
+- Os arquivos deletados são órfãos confirmados via grep (`rg -n "BarberSaleForm" src/` retorna apenas o próprio arquivo).

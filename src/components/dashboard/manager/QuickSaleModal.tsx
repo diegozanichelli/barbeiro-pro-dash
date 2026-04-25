@@ -33,6 +33,7 @@ import {
   Smartphone,
   Crown,
   AlertCircle,
+  ArrowDown,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -208,6 +209,13 @@ export default function QuickSaleModal({
     barberName ||
     availableBarbers.find((b) => b.id === pickedBarberId)?.name ||
     "Barbeiro";
+
+  // Highlight visual no card de Atribuição quando o cliente é identificado e
+  // o gestor ainda não escolheu Barbeiro/Recepção. Pulsa por 3s + auto-scroll.
+  const [attributionHighlight, setAttributionHighlight] = useState(false);
+  const attributionCardRef = useRef<HTMLDivElement>(null);
+  // Guarda o último status já tratado para evitar disparar highlight em loop
+  const lastHandledClientStatusRef = useRef<string>("idle");
 
   // Reception unit selector — required when attribution=reception and there are 2+ units
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -810,6 +818,49 @@ export default function QuickSaleModal({
   useEffect(() => {
     setIsResolvingSubscription(loadingCycle && clientType === "with_subscription");
   }, [loadingCycle, clientType]);
+
+  // Highlight pulsante no card de Atribuição quando o cliente acaba de ser
+  // identificado (qualquer status final) e ainda não há atribuição escolhida.
+  // Faz scroll suave + pulsa por 3 segundos, exatamente uma vez por identificação.
+  useEffect(() => {
+    const status = clientHistory.status;
+    const isResolved =
+      status === "phone_found" || status === "name_found" || status === "not_found";
+
+    if (!isResolved) {
+      lastHandledClientStatusRef.current = status;
+      return;
+    }
+
+    // Já tratou este status nesta sessão — não dispara de novo
+    if (lastHandledClientStatusRef.current === status) return;
+    lastHandledClientStatusRef.current = status;
+
+    // Só pulsa se ainda falta escolher atribuição
+    if (attribution !== null) return;
+    if (barberId) return; // modal aberto pelo barbeiro: já vem com attribution="barber"
+
+    setAttributionHighlight(true);
+
+    // Scroll suave após o layout estabilizar
+    requestAnimationFrame(() => {
+      attributionCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+
+    const timer = setTimeout(() => setAttributionHighlight(false), 3000);
+    return () => clearTimeout(timer);
+  }, [clientHistory.status, attribution, barberId]);
+
+  // Reset do controle de highlight quando o modal fecha (reabrir = novo ciclo)
+  useEffect(() => {
+    if (!open) {
+      lastHandledClientStatusRef.current = "idle";
+      setAttributionHighlight(false);
+    }
+  }, [open]);
 
   // Discount applies if either:
   //  • client is already subscriber (clientType=with_subscription) OR
@@ -1491,12 +1542,28 @@ export default function QuickSaleModal({
         )}
 
         {/* Attribution + Client type — grouped visually */}
-        <div className="rounded-lg border bg-muted/20 divide-y divide-border">
+        <div
+          ref={attributionCardRef}
+          className={cn(
+            "rounded-lg border bg-muted/20 divide-y divide-border transition-all duration-300",
+            attributionHighlight &&
+              "ring-2 ring-amber-500 shadow-lg shadow-amber-500/30 animate-pulse border-amber-500"
+          )}
+        >
           {/* Mandatory Attribution Selector */}
           <div className="px-3 py-2.5 space-y-2">
             <Label className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
               Atribuição da Venda <span className="text-destructive">*</span>
             </Label>
+
+            {/* Seta + texto auxiliar quando o highlight está ativo */}
+            {attributionHighlight && (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-amber-500 animate-fade-in">
+                <ArrowDown className="w-3.5 h-3.5" />
+                <span>Próximo passo: quem está atendendo?</span>
+              </div>
+            )}
+
             <ToggleGroup
               type="single"
               value={attribution ?? ""}
@@ -1504,6 +1571,7 @@ export default function QuickSaleModal({
                 if (v === "barber" || v === "reception") {
                   setAttribution(v);
                   setUnitError(false);
+                  setAttributionHighlight(false);
                 }
               }}
               className="justify-start w-full"
