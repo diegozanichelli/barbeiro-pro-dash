@@ -1542,12 +1542,28 @@ export default function QuickSaleModal({
         )}
 
         {/* Attribution + Client type — grouped visually */}
-        <div className="rounded-lg border bg-muted/20 divide-y divide-border">
+        <div
+          ref={attributionCardRef}
+          className={cn(
+            "rounded-lg border bg-muted/20 divide-y divide-border transition-all duration-300",
+            attributionHighlight &&
+              "ring-2 ring-amber-500 shadow-lg shadow-amber-500/30 animate-pulse border-amber-500"
+          )}
+        >
           {/* Mandatory Attribution Selector */}
           <div className="px-3 py-2.5 space-y-2">
             <Label className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
               Atribuição da Venda <span className="text-destructive">*</span>
             </Label>
+
+            {/* Seta + texto auxiliar quando o highlight está ativo */}
+            {attributionHighlight && (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-amber-500 animate-fade-in">
+                <ArrowDown className="w-3.5 h-3.5" />
+                <span>Próximo passo: quem está atendendo?</span>
+              </div>
+            )}
+
             <ToggleGroup
               type="single"
               value={attribution ?? ""}
@@ -1555,6 +1571,7 @@ export default function QuickSaleModal({
                 if (v === "barber" || v === "reception") {
                   setAttribution(v);
                   setUnitError(false);
+                  setAttributionHighlight(false);
                 }
               }}
               className="justify-start w-full"
