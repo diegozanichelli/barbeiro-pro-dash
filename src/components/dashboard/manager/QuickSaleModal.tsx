@@ -573,8 +573,11 @@ export default function QuickSaleModal({
       customPriceInput: effectivePrice.toFixed(2).replace(".", ","),
     }]);
 
-    if (effectivePrice === 0 && selectedSubscriptionPlan?.name) {
-      toast.info(`Serviço incluído na assinatura ${selectedSubscriptionPlan.name}. Valor zerado automaticamente.`);
+    if (effectivePrice === 0) {
+      const discountPlanName = subscriptionInCart?.name || cyclePlanName;
+      if (discountPlanName) {
+        toast.info(`Serviço incluído na assinatura ${discountPlanName}. Valor zerado automaticamente.`);
+      }
     }
   };
 
