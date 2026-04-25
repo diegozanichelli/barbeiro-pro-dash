@@ -246,10 +246,10 @@ export default function QuickSaleModal({
     }, 0);
   }, []);
 
-  // Client type tracking (for conversion metrics and assinatura status)
-  const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
+  // Client type tracking — APENAS aquisição (novo vs recorrente).
+  // Status de assinatura é derivado automaticamente via `isActiveSubscriber`.
+  const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "returning");
   const [clientName, setClientName] = useState("");
-  const [manualOverride, setManualOverride] = useState(false);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
