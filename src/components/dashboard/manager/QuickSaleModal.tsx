@@ -787,60 +787,29 @@ export default function QuickSaleModal({
   }, [organizationId, effectivePlanIdForDiscount]);
 
 
-  const resolveSubscriptionForClient = useCallback(async () => {
-    if (clientType !== "with_subscription") {
-      return;
-    }
+  // Sync subscription detection from useSubscriptionCycle (single source of truth).
+  // Replaces the legacy autoDetectSubscription + resolveSubscriptionForClient
+  // duplicates that fired 2 extra `clients` queries per phone identification.
+  useEffect(() => {
+    if (manualOverride) return;
+    if (!isPhoneCompleteCheap(mobilePhone)) return;
+    // Wait until cycle hook finishes its lookup
+    if (loadingCycle) return;
 
-    const phoneDigitsToLookup = sanitizePhone(mobilePhone);
-    if (phoneDigitsToLookup.length !== 11 || !isValidPhone(mobilePhone)) {
-      setSelectedSubscriptionPlanId("");
-      setSubscriptionPlanAutoDetected(false);
-      return;
-    }
-
-    setIsResolvingSubscription(true);
-
-    try {
-      const { data, error } = await (supabase
-        .from("clients") as any)
-        .select("subscription_plan_id")
-        .eq("organization_id", organizationId)
-        .eq("mobile_phone", phoneDigitsToLookup)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data?.subscription_plan_id) {
-        setSelectedSubscriptionPlanId(data.subscription_plan_id);
-        setSubscriptionPlanAutoDetected(true);
-      } else {
-        setSelectedSubscriptionPlanId("");
-        setSubscriptionPlanAutoDetected(false);
-      }
-    } catch (error) {
-      console.error("Erro ao identificar assinatura do cliente:", error);
-      setSelectedSubscriptionPlanId("");
-      setSubscriptionPlanAutoDetected(false);
-    } finally {
+    if (cyclePlanId) {
+      setClientType("with_subscription");
+      setSelectedSubscriptionPlanId((prev) => (prev ? prev : cyclePlanId));
+      setSubscriptionPlanAutoDetected(true);
       setIsResolvingSubscription(false);
     }
-  }, [clientType, mobilePhone, organizationId]);
+    // If no plan is found, we leave clientType as-is — useClientHistory
+    // already handles new vs without_subscription branching.
+  }, [cyclePlanId, loadingCycle, manualOverride, mobilePhone]);
 
+  // Mirror loading state for legacy UI bindings (placeholder text in <Select>).
   useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        await resolveSubscriptionForClient();
-      } catch (error) {
-        if (!cancelled) {
-          console.error("[QuickSaleModal] Erro em resolveSubscriptionForClient:", error);
-        }
-      }
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [resolveSubscriptionForClient]);
+    setIsResolvingSubscription(loadingCycle && clientType === "with_subscription");
+  }, [loadingCycle, clientType]);
 
   // Discount applies if either:
   //  • client is already subscriber (clientType=with_subscription) OR
