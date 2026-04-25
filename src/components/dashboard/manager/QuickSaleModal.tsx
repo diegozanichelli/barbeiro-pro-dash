@@ -842,11 +842,13 @@ export default function QuickSaleModal({
 
     setAttributionHighlight(true);
 
-    // Scroll suave após o layout estabilizar
+    // Scroll suave após o layout estabilizar — alinha o topo do bloco
+    // de Atribuição na área visível para que os botões Barbeiro / Recepção
+    // fiquem imediatamente à vista.
     requestAnimationFrame(() => {
       attributionCardRef.current?.scrollIntoView({
         behavior: "smooth",
-        block: "center",
+        block: "start",
       });
     });
 
@@ -1542,16 +1544,16 @@ export default function QuickSaleModal({
         )}
 
         {/* Attribution + Client type — grouped visually */}
-        <div
-          ref={attributionCardRef}
-          className={cn(
-            "rounded-lg border bg-muted/20 divide-y divide-border transition-all duration-300",
-            attributionHighlight &&
-              "ring-2 ring-amber-500 shadow-lg shadow-amber-500/30 animate-pulse border-amber-500"
-          )}
-        >
+        <div className="rounded-lg border bg-muted/20 divide-y divide-border">
           {/* Mandatory Attribution Selector */}
-          <div className="px-3 py-2.5 space-y-2">
+          <div
+            ref={attributionCardRef}
+            className={cn(
+              "px-3 py-2.5 space-y-2 rounded-md transition-all duration-300 scroll-mt-4",
+              attributionHighlight &&
+                "ring-2 ring-amber-500 shadow-lg shadow-amber-500/30 animate-pulse border border-amber-500"
+            )}
+          >
             <Label className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
               Atribuição da Venda <span className="text-destructive">*</span>
             </Label>
