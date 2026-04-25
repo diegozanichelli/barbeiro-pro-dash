@@ -842,6 +842,15 @@ export default function QuickSaleModal({
 
     setAttributionHighlight(true);
 
+    // Pré-seleção inteligente: cliente novo (não encontrado) tipicamente é
+    // venda da recepção/loja. Já marcamos "Venda Recepção" para que o seletor
+    // de unidades abra automaticamente em seguida (via useEffect abaixo),
+    // reduzindo o risco de a venda ficar sem atribuição. O gestor ainda pode
+    // trocar para "Barbeiro" se for o caso.
+    if (status === "not_found") {
+      setAttribution("reception");
+    }
+
     // Scroll programático no container scrollável do Step 1.
     // Aguardamos um pouco para o layout estabilizar (ex.: o banner
     // "Verificando ciclo da assinatura..." aparecer/sumir) antes de calcular
