@@ -199,8 +199,22 @@ export default function UnitsComparison() {
 
   const receitaLeader = getLeader('receita');
   const ticketLeader = getLeader('ticketMedio');
-  const performanceLeader = getLeader('performance');
   const clientesLeader = getLeader('clientes');
+
+  // "Melhor Performance" = unidade que melhor converte atendimentos em receita
+  // (maior ticket médio), exigindo volume mínimo (>=30% dos atendimentos da líder)
+  // para evitar que uma unidade pequena com 1 venda alta vença injustamente.
+  const conversionLeader = (() => {
+    if (unitsMetrics.length === 0) return null;
+    const maxClientes = Math.max(...unitsMetrics.map(u => u.clientes));
+    const piso = maxClientes * 0.3;
+    const candidatas = unitsMetrics.filter(u => u.clientes >= piso && u.clientes > 0);
+    const pool = candidatas.length > 0
+      ? candidatas
+      : unitsMetrics.filter(u => u.clientes > 0);
+    if (pool.length === 0) return null;
+    return pool.reduce((prev, cur) => (cur.ticketMedio > prev.ticketMedio ? cur : prev));
+  })();
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -319,9 +333,14 @@ export default function UnitsComparison() {
                 <TrendingUp className="w-5 h-5 text-purple-500" />
                 <p className="text-sm text-muted-foreground">Melhor Performance</p>
               </div>
-              <p className="text-lg font-bold text-foreground">{performanceLeader?.unitName}</p>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-1">
+                Conversão de atendimento
+              </p>
+              <p className="text-lg font-bold text-foreground">{conversionLeader?.unitName ?? '—'}</p>
               <p className="text-sm text-muted-foreground">
-                {performanceLeader?.performance.toFixed(1)}% da meta
+                {conversionLeader
+                  ? `R$ ${conversionLeader.ticketMedio.toFixed(2)} por cliente · ${conversionLeader.clientes} atendimentos`
+                  : 'Sem dados suficientes'}
               </p>
             </CardContent>
           </Card>
