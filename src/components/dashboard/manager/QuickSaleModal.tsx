@@ -1706,14 +1706,15 @@ export default function QuickSaleModal({
             )}
           </div>
 
-          {/* Client Type Selector */}
+          {/* Client Type Selector — binário (Novo vs Da Casa). Status de
+              assinatura é derivado automaticamente e exibido como badge. */}
           <div className="px-3 py-2.5 space-y-2">
             <Label className="text-xs text-muted-foreground font-medium">Tipo de Cliente</Label>
             <ToggleGroup
               type="single"
               value={clientType}
               onValueChange={(v) => {
-                if (v) handleClientTypeChange(v as ClientType);
+                if (v === "new" || v === "returning") setClientType(v);
               }}
               className="justify-start"
             >
@@ -1727,26 +1728,17 @@ export default function QuickSaleModal({
                 Novo
               </ToggleGroupItem>
               <ToggleGroupItem
-                value="without_subscription"
-                aria-label="Cliente sem Assinatura"
+                value="returning"
+                aria-label="Cliente Da Casa"
                 className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
                 onPointerDown={(e) => e.preventDefault()}
               >
                 <Home className="w-3.5 h-3.5" />
                 Da Casa
               </ToggleGroupItem>
-              <ToggleGroupItem
-                value="with_subscription"
-                aria-label="Cliente com Assinatura"
-                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black"
-                onPointerDown={(e) => e.preventDefault()}
-              >
-                <Crown className="w-3.5 h-3.5" />
-                Assinante
-              </ToggleGroupItem>
             </ToggleGroup>
 
-            {clientHistory.status === "not_found" && clientType === "new" && !manualOverride && (
+            {clientHistory.status === "not_found" && clientType === "new" && (
               <div className="rounded-md bg-green-500/10 border border-green-500/30 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1.5">
                 <UserPlus className="w-3 h-3 shrink-0" />
                 <span>
@@ -1755,74 +1747,9 @@ export default function QuickSaleModal({
               </div>
             )}
 
-            {clientHistory.status === "not_found" && clientType !== "new" && manualOverride && (
-              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                <AlertCircle className="w-3 h-3 shrink-0" />
-                <span>
-                  Esse telefone não está na base. Tem certeza que não é um cliente novo?
-                </span>
-              </div>
-            )}
-
-            {(clientType === "new" || clientType === "without_subscription") && (
-              <p className="text-[11px] text-muted-foreground">
-                💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
-              </p>
-            )}
-
-            {clientType === "with_subscription" && (
-              <div className="space-y-2 pt-1">
-                <Select
-                  value={selectedSubscriptionPlanId}
-                  onValueChange={(value) => {
-                    setSelectedSubscriptionPlanId(value);
-                    setSubscriptionPlanAutoDetected(false);
-                  }}
-                  disabled={isResolvingSubscription}
-                >
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue
-                      placeholder={
-                        isResolvingSubscription
-                          ? "Lendo assinatura..."
-                          : "Selecione o plano"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subscriptionPlans.length > 0 ? (
-                      subscriptionPlans.map((plan) => (
-                        <SelectItem key={plan.id} value={plan.id}>
-                          {plan.name}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        Nenhum plano cadastrado
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
-
-                {selectedSubscriptionPlan && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {subscriptionPlanAutoDetected ? "✓ Identificado automaticamente" : "✓ Selecionado"}: {selectedSubscriptionPlan.name}
-                    {(() => {
-                      const labels = services
-                        .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
-                        .map((service) => service.name);
-                      return labels.length > 0 ? ` — Serviços inclusos: ${labels.join(", ")}` : "";
-                    })()}
-                  </p>
-                )}
-
-                {!selectedSubscriptionPlanId && !isResolvingSubscription && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Selecione o plano para continuar.
-                  </p>
-                )}
-              </div>
-            )}
+            <p className="text-[11px] text-muted-foreground">
+              💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
+            </p>
           </div>
         </div>
 
