@@ -960,7 +960,7 @@ export default function QuickSaleModal({
     (attribution === "reception" && (!needsUnitSelection || !!selectedUnitId)) ||
     (attribution === "barber" && !!effectiveBarberIdResolved);
   const canProceedStep1 =
-    attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
+    attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
