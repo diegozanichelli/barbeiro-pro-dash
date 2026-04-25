@@ -407,8 +407,6 @@ export default function QuickSaleModal({
 
       if (error) {
         if (isSubscriptionPlanFieldMissing(error)) {
-          setSelectedSubscriptionPlanId("");
-          setSubscriptionPlanAutoDetected(false);
           return;
         }
         throw error;
