@@ -11,6 +11,8 @@ import UnitsComparison from "./UnitsComparison";
 import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
 import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
 import SubscriptionAnalytics from "./SubscriptionAnalytics";
+import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
+import { useOrganization } from "@/hooks/useOrganization";
 
 interface Barber {
   id: string;
