@@ -160,7 +160,7 @@ function BarberEvolutionChart() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
                 Selecionar Barbeiro
@@ -181,7 +181,7 @@ function BarberEvolutionChart() {
 
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Selecionar Ano
+                Selecionar Ano (gráfico anual)
               </label>
               <Select
                 value={selectedYear.toString()}
@@ -196,6 +196,25 @@ function BarberEvolutionChart() {
                       {year}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">
+                Período (análise individual)
+              </label>
+              <Select
+                value={period}
+                onValueChange={(value) => setPeriod(value as DeepAnalysisPeriod)}
+              >
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current_month">Mês atual</SelectItem>
+                  <SelectItem value="last_3_months">Últimos 3 meses</SelectItem>
+                  <SelectItem value="year">Ano selecionado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
