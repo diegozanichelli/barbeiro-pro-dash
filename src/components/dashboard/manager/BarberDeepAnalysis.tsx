@@ -59,6 +59,19 @@ interface AggregatedTotals {
   commission: number;
 }
 
+interface ServiceTxRow {
+  barber_id: string | null;
+  created_at: string;
+  mobile_phone: string | null;
+  daily_production_id: string | null;
+}
+
+interface ClientMetrics {
+  atendimentos: number; // distinct created_at (definição "Ao Vivo")
+  servicos: number; // total de linhas item_type='service'
+  unicos: number; // telefones distintos
+}
+
 const PAGE_SIZE = 1000;
 
 function formatBRL(value: number) {
@@ -188,11 +201,19 @@ export default function BarberDeepAnalysis({
     total: number;
   }>({ clients: 0, products: 0, extra: 0, total: 0 });
   const [retention, setRetention] = useState<number | null>(null);
+  const [clientMetrics, setClientMetrics] = useState<ClientMetrics>({
+    atendimentos: 0,
+    servicos: 0,
+    unicos: 0,
+  });
+  const [houseClientAvg, setHouseClientAvg] = useState<number>(0);
+  const [houseClientMax, setHouseClientMax] = useState<number>(1);
   const [recentDays, setRecentDays] = useState<
     Array<{
       date: string;
       revenue: number;
-      clients: number;
+      clients: number; // atendimentos distintos do dia (sale_transactions)
+      servicos: number; // total de serviços vendidos no dia
       commission: number;
       dailyGoal: number;
     }>
@@ -309,11 +330,106 @@ export default function BarberDeepAnalysis({
         total: Math.max(selected.total, ...others.map((v) => v.total), 1),
       });
 
-      // 2) Histórico recente: 5 últimos dias com produção
+      // 2) Buscar SERVIÇOS itemizados de toda a organização no período
+      // (uma única query — usada para clientes/atendimentos do barbeiro,
+      // média da casa, retenção e histórico recente)
+      const serviceTx = await fetchPaginated<ServiceTxRow>((f, t) =>
+        supabase
+          .from("sale_transactions")
+          .select("barber_id, created_at, mobile_phone, daily_production_id")
+          .eq("organization_id", organizationId!)
+          .eq("item_type", "service")
+          .gte("created_at", start.toISOString())
+          .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
+          .range(f, t)
+      );
+
+      // Agregação de clientes por barbeiro
+      const perBarberClients = new Map<
+        string,
+        { atendimentos: Set<string>; servicos: number; phones: Set<string> }
+      >();
+      for (const t of serviceTx) {
+        if (!t.barber_id) continue;
+        const cur =
+          perBarberClients.get(t.barber_id) ??
+          { atendimentos: new Set<string>(), servicos: 0, phones: new Set<string>() };
+        cur.atendimentos.add(t.created_at);
+        cur.servicos += 1;
+        const phone = (t.mobile_phone || "").replace(/\D/g, "");
+        if (phone.length >= 8) cur.phones.add(phone);
+        perBarberClients.set(t.barber_id, cur);
+      }
+
+      const selectedClients =
+        perBarberClients.get(barberId) ??
+        { atendimentos: new Set<string>(), servicos: 0, phones: new Set<string>() };
+
+      const selectedAtendimentos = selectedClients.atendimentos.size;
+      const selectedServicos = selectedClients.servicos;
+      const selectedUnicos = selectedClients.phones.size;
+
+      // Fallback legado: se não houver transações itemizadas, usar clients_count agregado
+      const finalAtendimentos =
+        selectedAtendimentos > 0 ? selectedAtendimentos : selected.clients;
+      const finalServicos = selectedServicos > 0 ? selectedServicos : selected.clients;
+
+      setClientMetrics({
+        atendimentos: finalAtendimentos,
+        servicos: finalServicos,
+        unicos: selectedUnicos,
+      });
+
+      // Média/máximo da casa por atendimentos distintos (com fallback p/ clients_count)
+      const houseAtendimentosArr: number[] = [];
+      const allBarberIds = new Set<string>([
+        ...perBarber.keys(),
+        ...perBarberClients.keys(),
+      ]);
+      allBarberIds.forEach((bid) => {
+        const fromTx = perBarberClients.get(bid)?.atendimentos.size ?? 0;
+        const fromDp = perBarber.get(bid)?.clients ?? 0;
+        const v = fromTx > 0 ? fromTx : fromDp;
+        if (v > 0) houseAtendimentosArr.push(v);
+      });
+      const houseAtendimentosAvg =
+        houseAtendimentosArr.length > 0
+          ? houseAtendimentosArr.reduce((a, b) => a + b, 0) / houseAtendimentosArr.length
+          : 0;
+      const houseAtendimentosMax = Math.max(
+        finalAtendimentos,
+        ...houseAtendimentosArr,
+        1
+      );
+      setHouseClientAvg(houseAtendimentosAvg);
+      setHouseClientMax(houseAtendimentosMax);
+
+      // 3) Histórico recente: 5 últimos dias com produção
       const barberProductions = productions
         .filter((p) => p.barber_id === barberId)
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .slice(0, 5);
+
+      // Pré-computar atendimentos/serviços por dia (a partir de serviceTx)
+      const perDayBarber = new Map<
+        string,
+        { atendimentos: Set<string>; servicos: number }
+      >();
+      for (const t of serviceTx) {
+        if (t.barber_id !== barberId) continue;
+        // chave do dia em America/Manaus (offset -04:00)
+        const d = new Date(t.created_at);
+        const manaus = new Date(d.getTime() - 4 * 3600 * 1000);
+        const dayKey = `${manaus.getUTCFullYear()}-${String(
+          manaus.getUTCMonth() + 1
+        ).padStart(2, "0")}-${String(manaus.getUTCDate()).padStart(2, "0")}`;
+        const cur =
+          perDayBarber.get(dayKey) ??
+          { atendimentos: new Set<string>(), servicos: 0 };
+        cur.atendimentos.add(t.created_at);
+        cur.servicos += 1;
+        perDayBarber.set(dayKey, cur);
+      }
 
       // Buscar metas do(s) mês(es) envolvidos
       const monthsSet = new Set<string>();
@@ -342,35 +458,23 @@ export default function BarberDeepAnalysis({
           const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
           const goal = goalMap.get(key);
           const dailyGoal = goal ? goal.target / Math.max(goal.workDays, 1) : 0;
+          const dayMetrics = perDayBarber.get(p.date);
+          const atendimentosDia = dayMetrics?.atendimentos.size ?? 0;
+          const servicosDia = dayMetrics?.servicos ?? 0;
           return {
             date: p.date,
             revenue: agg.total,
-            clients: agg.clients,
+            // fallback legado se o dia não tem transações itemizadas
+            clients: atendimentosDia > 0 ? atendimentosDia : agg.clients,
+            servicos: servicosDia > 0 ? servicosDia : agg.clients,
             commission: agg.commission,
             dailyGoal,
           };
         })
       );
 
-      // 3) Taxa de Retenção — telefones únicos do barbeiro no período + lookup histórico
-      const txInPeriod = await fetchPaginated<{ mobile_phone: string | null }>((f, t) =>
-        supabase
-          .from("sale_transactions")
-          .select("mobile_phone")
-          .eq("organization_id", organizationId!)
-          .eq("barber_id", barberId)
-          .gte("created_at", start.toISOString())
-          .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
-          .not("mobile_phone", "is", null)
-          .range(f, t)
-      );
-
-      const phonesPeriod = new Set<string>();
-      for (const t of txInPeriod) {
-        const phone = (t.mobile_phone || "").replace(/\D/g, "");
-        if (phone.length >= 8) phonesPeriod.add(phone);
-      }
-
+      // 4) Taxa de Retenção — usa telefones únicos do barbeiro no período
+      const phonesPeriod = selectedClients.phones;
       if (phonesPeriod.size === 0) {
         setRetention(null);
       } else {
@@ -404,7 +508,9 @@ export default function BarberDeepAnalysis({
   }
 
   const ticketMedio =
-    barberTotals.clients > 0 ? barberTotals.total / barberTotals.clients : 0;
+    clientMetrics.atendimentos > 0
+      ? barberTotals.total / clientMetrics.atendimentos
+      : 0;
 
   const mixData = [
     { name: "Serviços Básicos", value: barberTotals.basic, color: "hsl(var(--primary))" },
@@ -417,10 +523,11 @@ export default function BarberDeepAnalysis({
   const radarData = [
     {
       eixo: "Clientes",
-      Barbeiro: houseMaxes.clients > 0 ? (barberTotals.clients / houseMaxes.clients) * 100 : 0,
-      Casa: houseMaxes.clients > 0 ? (houseAverages.clients / houseMaxes.clients) * 100 : 0,
-      barberRaw: barberTotals.clients,
-      houseRaw: houseAverages.clients,
+      Barbeiro:
+        houseClientMax > 0 ? (clientMetrics.atendimentos / houseClientMax) * 100 : 0,
+      Casa: houseClientMax > 0 ? (houseClientAvg / houseClientMax) * 100 : 0,
+      barberRaw: clientMetrics.atendimentos,
+      houseRaw: houseClientAvg,
     },
     {
       eixo: "Produtos",
@@ -471,7 +578,7 @@ export default function BarberDeepAnalysis({
             <CardTitle className="text-3xl">{formatBRL(ticketMedio)}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Receita de {formatBRL(barberTotals.total)} ÷ {barberTotals.clients} clientes
+            Receita {formatBRL(barberTotals.total)} ÷ {clientMetrics.atendimentos} atendimentos
           </CardContent>
         </Card>
 
@@ -481,10 +588,12 @@ export default function BarberDeepAnalysis({
               <Users className="w-4 h-4" />
               Clientes Atendidos
             </CardDescription>
-            <CardTitle className="text-3xl">{barberTotals.clients}</CardTitle>
+            <CardTitle className="text-3xl">{clientMetrics.atendimentos}</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Total no período: {PERIOD_LABEL[period]}
+          <CardContent className="text-sm text-muted-foreground space-y-0.5">
+            <div>{clientMetrics.servicos} serviços vendidos</div>
+            <div>{clientMetrics.unicos} clientes únicos (telefone)</div>
+            <div className="text-xs opacity-70">Período: {PERIOD_LABEL[period]}</div>
           </CardContent>
         </Card>
 
@@ -624,7 +733,8 @@ export default function BarberDeepAnalysis({
                 <TableRow>
                   <TableHead>Data</TableHead>
                   <TableHead className="text-right">Faturamento</TableHead>
-                  <TableHead className="text-right">Clientes</TableHead>
+                  <TableHead className="text-right">Atendimentos</TableHead>
+                  <TableHead className="text-right">Serviços</TableHead>
                   <TableHead className="text-right">Comissão</TableHead>
                   <TableHead className="text-right">Meta diária</TableHead>
                   <TableHead className="text-right">Humor</TableHead>
@@ -650,6 +760,7 @@ export default function BarberDeepAnalysis({
                       <TableCell className="font-medium">{dateLabel}</TableCell>
                       <TableCell className="text-right">{formatBRL(day.revenue)}</TableCell>
                       <TableCell className="text-right">{day.clients}</TableCell>
+                      <TableCell className="text-right">{day.servicos}</TableCell>
                       <TableCell className="text-right">{formatBRL(day.commission)}</TableCell>
                       <TableCell className="text-right">
                         {day.dailyGoal > 0 ? formatBRL(day.dailyGoal) : "—"}
