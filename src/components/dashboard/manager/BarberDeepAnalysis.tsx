@@ -201,11 +201,19 @@ export default function BarberDeepAnalysis({
     total: number;
   }>({ clients: 0, products: 0, extra: 0, total: 0 });
   const [retention, setRetention] = useState<number | null>(null);
+  const [clientMetrics, setClientMetrics] = useState<ClientMetrics>({
+    atendimentos: 0,
+    servicos: 0,
+    unicos: 0,
+  });
+  const [houseClientAvg, setHouseClientAvg] = useState<number>(0);
+  const [houseClientMax, setHouseClientMax] = useState<number>(1);
   const [recentDays, setRecentDays] = useState<
     Array<{
       date: string;
       revenue: number;
-      clients: number;
+      clients: number; // atendimentos distintos do dia (sale_transactions)
+      servicos: number; // total de serviços vendidos no dia
       commission: number;
       dailyGoal: number;
     }>
