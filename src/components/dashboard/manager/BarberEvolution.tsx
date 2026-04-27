@@ -27,9 +27,11 @@ interface MonthlyData {
 
 function BarberEvolutionChart() {
   const manausNow = useMemo(() => getManausDate(), []);
+  const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
+  const [period, setPeriod] = useState<DeepAnalysisPeriod>("current_month");
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
 
