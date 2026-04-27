@@ -733,7 +733,8 @@ export default function BarberDeepAnalysis({
                 <TableRow>
                   <TableHead>Data</TableHead>
                   <TableHead className="text-right">Faturamento</TableHead>
-                  <TableHead className="text-right">Clientes</TableHead>
+                  <TableHead className="text-right">Atendimentos</TableHead>
+                  <TableHead className="text-right">Serviços</TableHead>
                   <TableHead className="text-right">Comissão</TableHead>
                   <TableHead className="text-right">Meta diária</TableHead>
                   <TableHead className="text-right">Humor</TableHead>
