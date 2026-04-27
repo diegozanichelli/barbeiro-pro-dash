@@ -508,7 +508,9 @@ export default function BarberDeepAnalysis({
   }
 
   const ticketMedio =
-    barberTotals.clients > 0 ? barberTotals.total / barberTotals.clients : 0;
+    clientMetrics.atendimentos > 0
+      ? barberTotals.total / clientMetrics.atendimentos
+      : 0;
 
   const mixData = [
     { name: "Serviços Básicos", value: barberTotals.basic, color: "hsl(var(--primary))" },
@@ -521,10 +523,11 @@ export default function BarberDeepAnalysis({
   const radarData = [
     {
       eixo: "Clientes",
-      Barbeiro: houseMaxes.clients > 0 ? (barberTotals.clients / houseMaxes.clients) * 100 : 0,
-      Casa: houseMaxes.clients > 0 ? (houseAverages.clients / houseMaxes.clients) * 100 : 0,
-      barberRaw: barberTotals.clients,
-      houseRaw: houseAverages.clients,
+      Barbeiro:
+        houseClientMax > 0 ? (clientMetrics.atendimentos / houseClientMax) * 100 : 0,
+      Casa: houseClientMax > 0 ? (houseClientAvg / houseClientMax) * 100 : 0,
+      barberRaw: clientMetrics.atendimentos,
+      houseRaw: houseClientAvg,
     },
     {
       eixo: "Produtos",
