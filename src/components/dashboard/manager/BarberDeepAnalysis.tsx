@@ -59,6 +59,19 @@ interface AggregatedTotals {
   commission: number;
 }
 
+interface ServiceTxRow {
+  barber_id: string | null;
+  created_at: string;
+  mobile_phone: string | null;
+  daily_production_id: string | null;
+}
+
+interface ClientMetrics {
+  atendimentos: number; // distinct created_at (definição "Ao Vivo")
+  servicos: number; // total de linhas item_type='service'
+  unicos: number; // telefones distintos
+}
+
 const PAGE_SIZE = 1000;
 
 function formatBRL(value: number) {

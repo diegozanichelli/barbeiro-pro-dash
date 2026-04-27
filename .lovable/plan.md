@@ -1,93 +1,63 @@
-## Refatoração: Evolução > Barbeiro — Análise Individual Profunda
 
-### Objetivo
-Manter o gráfico anual atual (Meta vs Comissão) e adicionar **abaixo dele**, na mesma aba "Barbeiro", um dashboard de análise individual profunda do barbeiro selecionado, permitindo identificar rapidamente pontos fracos (ex.: vende serviço mas não produto, atende muita gente com ticket baixo, baixa retenção etc.).
+## Diagnóstico — Ageu Felipe, abril/2026
 
-### Mudanças de UI (em `BarberEvolution.tsx`)
+Resultados reais do banco para o período `01/04 → 27/04` (Manaus):
 
-A aba "Barbeiro" passa a ter:
+| Métrica | Valor |
+|---|---|
+| `daily_productions.clients_count` (somatório) | **66** ← é o que o relatório mostra hoje |
+| `tx_clients_count` (somatório) | 66 |
+| `manual_clients_count` (somatório) | 13 |
+| Transações de serviço (`sale_transactions`) | **110** |
+| Atendimentos distintos por `created_at` | **68** |
+| Telefones distintos | 54 |
 
-1. **Filtros (topo)** — mantém Barbeiro + adiciona seletor de **período**:
-   - Mês atual
-   - Últimos 3 meses
-   - Ano selecionado (mantém o seletor de ano existente, usado pelo gráfico anual)
+**O outro sistema mostra ~110 porque conta a quantidade de serviços vendidos (linhas em `sale_transactions` com `item_type='service'`)**. O nosso `BarberDeepAnalysis` (e a maioria dos relatórios) lê o campo agregado `clients_count` da `daily_productions`, que armazena **clientes únicos no dia** (ex.: dia 06/04 → 12 serviços, 7 atendimentos distintos, mas `clients_count = 8`; dia 25/04 → 10 serviços, 6 visitas distintas, `clients_count = 7`).
 
-2. **Gráfico anual existente** (Meta vs Comissão Ganha) — sem mudanças visuais, continua usando o ano selecionado.
+Ou seja, **não há perda de dados** — são duas métricas diferentes:
 
-3. **Bloco novo "Análise Individual"** — respeita o filtro de período:
+- **66 = clientes únicos atendidos no mês** (cada cliente conta 1× por dia).
+- **110 = atendimentos / serviços vendidos** (mais próximo do que o outro sistema chama de "clientes atendidos").
+- **68 = visitas distintas** (cada `created_at` único conta como 1 atendimento, regra já adotada no `LiveDashboard` — ver memória `client-visit-counting-logic`).
 
-   **a) Cards de KPI (grid 3 colunas no desktop, 1 no mobile):**
-   - **Ticket Médio**: `receita_total / total_clientes` no período.
-   - **Total de Clientes Atendidos**: contagem distinta de checkouts.
-   - **Taxa de Retenção**: % de clientes únicos do período (por `mobile_phone`) que já tinham sido atendidos por **esse mesmo barbeiro** antes do início do período. Fórmula: `clientes_recorrentes / clientes_unicos_periodo * 100`.
+A diferença entre 66 e 68 vem de dias em que o gestor lançou um número manual de clientes maior que o nº de visitas itemizadas (ex.: dia 06/04 marca 8, mas só há 7 timestamps distintos).
 
-   **b) Mix de Receita (PieChart Recharts):**
-   - 3 fatias: **Serviços Básicos**, **Serviços Extras** (Barba/Sobrancelha/etc.), **Produtos**.
-   - Usa cores do design system (`hsl(var(--primary))`, `hsl(var(--success))`, `hsl(var(--accent))`).
-   - Mostra valor R$ e % no tooltip e legenda.
+## O que vou ajustar
 
-   **c) Radar de Habilidades (RadarChart Recharts):**
-   - 4 eixos normalizados (0–100) comparando o barbeiro vs **Média da Casa** (média dos barbeiros ativos da organização no mesmo período):
-     - Volume de Clientes
-     - Venda de Produtos (R$)
-     - Venda de Serviços Extras (R$)
-     - Faturamento Total (R$)
-   - Normalização: cada eixo divide o valor do barbeiro pelo **máximo da casa** naquele eixo × 100, e a "Média da Casa" pela própria média/máximo. Garante leitura comparativa imediata.
-   - Duas séries sobrepostas: barbeiro (preenchido em cor primária com opacidade) e Média da Casa (linha tracejada).
+### 1. `BarberDeepAnalysis.tsx` — KPI "Clientes Atendidos"
 
-   **d) Histórico Recente (tabela):**
-   - Últimos **5 dias trabalhados** (com `daily_productions` ou transações no dia), ordem decrescente.
-   - Colunas: Data | Faturamento do dia | Clientes | Comissão | Meta diária | **Humor**.
-   - **Humor** = badge:
-     - Verde "Bateu meta" se `comissão_dia >= meta_diária`
-     - Amarelo "Próximo" se `>= 70%`
-     - Vermelho "Abaixo" caso contrário
-   - Meta diária = `monthly_goals.target_commission / monthly_goals.work_days` para o mês daquele dia.
+Trocar a fonte do número e adicionar transparência:
 
-### Lógica de Dados
+- **Número principal**: passa a ser **atendimentos distintos** contados via `sale_transactions` (regra `COUNT DISTINCT created_at` por `barber_id`+`item_type='service'` no período), batendo com o padrão do "Ao Vivo".
+- **Linha secundária do card**: mostrar também:
+  - `Serviços vendidos: 110` (total de linhas `item_type='service'`)
+  - `Clientes únicos: 54` (telefones distintos no período)
+- **Ticket médio**: continua `receita ÷ atendimentos`, mas usando o novo número (atendimentos distintos), que é a definição correta de ticket por atendimento.
 
-**Fonte de verdade — hierarquia obrigatória** (consistente com `recalculate_daily_production_from_transactions` e memória `commission-itemized-truth`):
+### 2. Radar de Habilidades (eixo "Clientes")
 
-Para `daily_productions` (agregação por barbeiro/dia):
-```
-basicTotal   = tx_basic_total > 0 ? tx_basic_total : (manual_basic_total > 0 ? manual_basic_total : services_basic_total ?? 0)
-extraTotal   = idem (tx_extra_total → manual_extra_total → services_extra_total)
-productsTotal= idem (tx_products_total → manual_products_total → products_total)
-clients      = tx_clients_count > 0 ? tx_clients_count : manual_clients_count > 0 ? manual_clients_count : clients_count
-commission   = tx_commission_earned > 0 ? tx_commission_earned : commission_earned
-```
+O eixo Clientes do barbeiro e a média da casa passam a usar a mesma métrica nova (atendimentos distintos via `sale_transactions`), garantindo que a comparação seja consistente entre todos os barbeiros.
 
-**Paginação obrigatória** (`.range()` em loop, página de 1000) para evitar truncamento — mesmo padrão já aplicado em `ShopEvolution.tsx` e `UnitsComparison.tsx`.
+### 3. Histórico Recente (tabela últimos 5 dias)
 
-**Retenção** — query a `sale_transactions` filtrando por `barber_id`:
-1. Buscar `mobile_phone` distintos com `created_at` no período → `clientesPeriodo`.
-2. Para cada telefone, verificar se existe transação do mesmo `barber_id` com `created_at < inicio_periodo`.
-3. `retencao = recorrentes / clientesPeriodo.size * 100`.
-4. Telefones nulos/vazios são ignorados na contagem (não distorce numerador nem denominador).
+A coluna "Clientes" passa a mostrar **atendimentos distintos do dia** (vindos de `sale_transactions`), com tooltip indicando "X serviços vendidos" para o gestor enxergar as duas leituras.
 
-**Média da Casa** (radar) — mesma agregação aplicada para todos os `barbers` ativos da organização do barbeiro selecionado, no mesmo período; tira média dos 4 indicadores e calcula o máximo por eixo para normalização.
+### 4. Sem mudanças na hierarquia de receita
 
-**Mix de Receita** — soma `basicTotal`, `extraTotal`, `productsTotal` agregados do período via hierarquia acima.
+A lógica `tx_* > manual_* > legacy` para faturamento (básico/extra/produtos) continua igual — só a métrica de clientes está sendo ajustada.
 
-**Filtro de período → intervalo de datas** (timezone Manaus via `getManausDate`):
-- "Mês atual": dia 1 do mês corrente até hoje.
-- "Últimos 3 meses": hoje − 90 dias até hoje.
-- "Ano": `${year}-01-01` até `${year}-12-31` (ou até hoje se ano corrente).
+## Detalhes técnicos
 
-### Arquivos Afetados
+- Adicionar uma query paginada extra em `BarberDeepAnalysis` sobre `sale_transactions` filtrando `organization_id`, `barber_id`, `item_type='service'`, intervalo `created_at`, retornando `created_at`, `mobile_phone`, `daily_production_id`. A partir dela calcula-se: `serviçosVendidos`, `atendimentosDistintos = new Set(created_at).size`, `clientesUnicos = new Set(telefonesNormalizados).size`, e por dia para o Histórico Recente.
+- A média/máximo da casa para o eixo "Clientes" do radar passa a ser computada agregando `atendimentos distintos` por `barber_id` a partir dessa mesma query (já filtrada por organização).
+- Se `sale_transactions` não tiver dados num dia (legado), faz fallback para `clients_count` da `daily_productions` (mantém compatibilidade com produções antigas — memória `legacy-production-fallback-display`).
 
-- **`src/components/dashboard/manager/BarberEvolution.tsx`** (refatorar):
-  - Adicionar seletor de período.
-  - Manter `BarberEvolutionChart` (gráfico anual) intacto.
-  - Adicionar componente `BarberDeepAnalysis` logo abaixo, recebendo `barberId` e `period`.
-- **Novo: `src/components/dashboard/manager/BarberDeepAnalysis.tsx`**:
-  - Encapsula KPIs, PieChart de mix, RadarChart e tabela de histórico.
-  - Faz fetches paralelos: produções do barbeiro, produções de toda organização (média da casa), transações para retenção, metas mensais para humor.
-  - Usa `Recharts` (`PieChart`, `RadarChart`, `PolarGrid`, `PolarAngleAxis`, `PolarRadiusAxis`, `Radar`).
-  - UI com `Card`, `Badge`, `Table` do design system; loading com `Skeleton`.
+## Resultado esperado para o Ageu (mês atual)
 
-### Observações
-- Tudo em **pt-BR**, fuso **America/Manaus**, formatação `R$ x.xxx,xx`.
-- Sem mudanças no banco — apenas leitura. Sem novas RPCs (volume cabe em paginação client-side; se passar de ~5k linhas no período "Ano", podemos migrar para RPC depois).
-- Responsivo: cards em grid colapsam para 1 coluna no mobile; gráficos em `ResponsiveContainer` 100%.
-- Sem alterar abas vizinhas (Barbearia, Comparativo, Conversão, Recepção, Carteira).
+| Card | Antes | Depois |
+|---|---|---|
+| Clientes Atendidos (número grande) | 66 | **68** (atendimentos distintos) |
+| Linha auxiliar | — | "110 serviços · 54 clientes únicos" |
+| Ticket Médio | receita ÷ 66 | receita ÷ 68 |
+
+Isso alinha o relatório à mesma definição usada pelo outro sistema (110 serviços) **e** mantém transparência sobre clientes únicos reais.
