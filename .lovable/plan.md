@@ -1,59 +1,93 @@
-# Corrigir ausência de dados em Março/Abril no gráfico de Evolução da Barbearia
+## Refatoração: Evolução > Barbeiro — Análise Individual Profunda
 
-## Diagnóstico
+### Objetivo
+Manter o gráfico anual atual (Meta vs Comissão) e adicionar **abaixo dele**, na mesma aba "Barbeiro", um dashboard de análise individual profunda do barbeiro selecionado, permitindo identificar rapidamente pontos fracos (ex.: vende serviço mas não produto, atende muita gente com ticket baixo, baixa retenção etc.).
 
-O gráfico mostra valores quase zerados a partir de Março porque o componente `ShopEvolution.tsx` lê os totais apenas dos campos legados/manuais (`services_basic_total`, `services_extra_total`, `products_total`, `services_total`), ignorando os campos `tx_basic_total`, `tx_extra_total` e `tx_products_total`.
+### Mudanças de UI (em `BarberEvolution.tsx`)
 
-A partir de Março, as vendas passaram a ser lançadas majoritariamente pela recepção (`source='manager'`), o que popula os campos `tx_*` na tabela `daily_productions`. Conferi o banco e os números são contundentes:
+A aba "Barbeiro" passa a ter:
 
-| Mês | basic (manual) | tx_basic (gestor) | extra (manual) | tx_extra | produtos (manual) | tx_produtos |
-|-----|---:|---:|---:|---:|---:|---:|
-| Jan | R$ 69.153 | R$ 2.420 | R$ 65.322 | R$ 3.241 | R$ 20.746 | R$ 671 |
-| Fev | R$ 100.461 | R$ 110.088 | R$ 68.658 | R$ 99.099 | R$ 20.992 | R$ 39.965 |
-| Mar | R$ 6.368 | **R$ 237.613** | R$ 4.729 | **R$ 193.936** | R$ 2.243 | **R$ 92.614** |
-| Abr | R$ 3.944 | **R$ 184.296** | R$ 2.934 | **R$ 131.661** | R$ 767 | **R$ 49.852** |
+1. **Filtros (topo)** — mantém Barbeiro + adiciona seletor de **período**:
+   - Mês atual
+   - Últimos 3 meses
+   - Ano selecionado (mantém o seletor de ano existente, usado pelo gráfico anual)
 
-Os relatórios oficiais (`get_manager_report_stats`, `get_organization_rankings`) já aplicam a hierarquia correta: **tx (gestor) > manual (barbeiro) > legacy**. O `ShopEvolution` ficou para trás e por isso "some" com a maior parte do faturamento de Março/Abril.
+2. **Gráfico anual existente** (Meta vs Comissão Ganha) — sem mudanças visuais, continua usando o ano selecionado.
 
-## Mudança
+3. **Bloco novo "Análise Individual"** — respeita o filtro de período:
 
-Atualizar a função `fetchShopEvolutionData` em `src/components/dashboard/manager/ShopEvolution.tsx` para aplicar a mesma hierarquia já usada nas RPCs do gestor, em cada produção diária:
+   **a) Cards de KPI (grid 3 colunas no desktop, 1 no mobile):**
+   - **Ticket Médio**: `receita_total / total_clientes` no período.
+   - **Total de Clientes Atendidos**: contagem distinta de checkouts.
+   - **Taxa de Retenção**: % de clientes únicos do período (por `mobile_phone`) que já tinham sido atendidos por **esse mesmo barbeiro** antes do início do período. Fórmula: `clientes_recorrentes / clientes_unicos_periodo * 100`.
 
-1. Trazer também os campos `tx_basic_total`, `tx_extra_total`, `tx_products_total`, `manual_basic_total`, `manual_extra_total`, `manual_products_total` no `select` da query de `daily_productions`.
-2. Para cada produção, escolher a fonte conforme prioridade:
-   - Se `tx_basic + tx_extra + tx_products > 0` → usa os campos `tx_*`.
-   - Senão, se `manual_basic + manual_extra + manual_products > 0` → usa `manual_*`.
-   - Senão, se `services_basic_total` ou `services_extra_total` estão preenchidos → usa eles + `products_total`.
-   - Senão, fallback final no `services_total` legado.
-3. Aplicar a mesma derivação atual para o "Básico" quando ele vier zerado e existir extras (continua válido só na fonte legada).
-4. A receita de assinaturas continua sendo lida de `sale_transactions` (já está correta).
+   **b) Mix de Receita (PieChart Recharts):**
+   - 3 fatias: **Serviços Básicos**, **Serviços Extras** (Barba/Sobrancelha/etc.), **Produtos**.
+   - Usa cores do design system (`hsl(var(--primary))`, `hsl(var(--success))`, `hsl(var(--accent))`).
+   - Mostra valor R$ e % no tooltip e legenda.
 
-Isso restaura a exibição de Serviços Básicos, Extras, Produtos e Assinaturas em Março e Abril e mantém os meses anteriores idênticos.
+   **c) Radar de Habilidades (RadarChart Recharts):**
+   - 4 eixos normalizados (0–100) comparando o barbeiro vs **Média da Casa** (média dos barbeiros ativos da organização no mesmo período):
+     - Volume de Clientes
+     - Venda de Produtos (R$)
+     - Venda de Serviços Extras (R$)
+     - Faturamento Total (R$)
+   - Normalização: cada eixo divide o valor do barbeiro pelo **máximo da casa** naquele eixo × 100, e a "Média da Casa" pela própria média/máximo. Garante leitura comparativa imediata.
+   - Duas séries sobrepostas: barbeiro (preenchido em cor primária com opacidade) e Média da Casa (linha tracejada).
 
-## Detalhes técnicos
+   **d) Histórico Recente (tabela):**
+   - Últimos **5 dias trabalhados** (com `daily_productions` ou transações no dia), ordem decrescente.
+   - Colunas: Data | Faturamento do dia | Clientes | Comissão | Meta diária | **Humor**.
+   - **Humor** = badge:
+     - Verde "Bateu meta" se `comissão_dia >= meta_diária`
+     - Amarelo "Próximo" se `>= 70%`
+     - Vermelho "Abaixo" caso contrário
+   - Meta diária = `monthly_goals.target_commission / monthly_goals.work_days` para o mês daquele dia.
 
-Arquivo: `src/components/dashboard/manager/ShopEvolution.tsx`
+### Lógica de Dados
 
-- Atualizar o `select` da query `daily_productions` para incluir os campos `tx_*` e `manual_*`.
-- Substituir o trecho atual de agregação (linhas ~139-165) por uma seleção da fonte por linha, espelhando a lógica do `get_organization_rankings`. Pseudo:
+**Fonte de verdade — hierarquia obrigatória** (consistente com `recalculate_daily_production_from_transactions` e memória `commission-itemized-truth`):
 
-```ts
-const txTotal = (tx_basic||0) + (tx_extra||0) + (tx_products||0);
-const manualTotal = (m_basic||0) + (m_extra||0) + (m_products||0);
-
-let basico, extra, produtos;
-if (txTotal > 0) {
-  basico = tx_basic; extra = tx_extra; produtos = tx_products;
-} else if (manualTotal > 0) {
-  basico = m_basic; extra = m_extra; produtos = m_products;
-} else if (services_basic_total != null || services_extra_total != null) {
-  basico = services_basic_total ?? 0;
-  extra = services_extra_total ?? 0;
-  // derivação atual de básico quando 0 + extras > 0 continua válida aqui
-  produtos = products_total ?? 0;
-} else {
-  basico = services_total ?? 0; extra = 0; produtos = products_total ?? 0;
-}
+Para `daily_productions` (agregação por barbeiro/dia):
+```
+basicTotal   = tx_basic_total > 0 ? tx_basic_total : (manual_basic_total > 0 ? manual_basic_total : services_basic_total ?? 0)
+extraTotal   = idem (tx_extra_total → manual_extra_total → services_extra_total)
+productsTotal= idem (tx_products_total → manual_products_total → products_total)
+clients      = tx_clients_count > 0 ? tx_clients_count : manual_clients_count > 0 ? manual_clients_count : clients_count
+commission   = tx_commission_earned > 0 ? tx_commission_earned : commission_earned
 ```
 
-Sem mudanças de banco, sem mudanças nas RPCs e sem impacto nos demais relatórios.
+**Paginação obrigatória** (`.range()` em loop, página de 1000) para evitar truncamento — mesmo padrão já aplicado em `ShopEvolution.tsx` e `UnitsComparison.tsx`.
+
+**Retenção** — query a `sale_transactions` filtrando por `barber_id`:
+1. Buscar `mobile_phone` distintos com `created_at` no período → `clientesPeriodo`.
+2. Para cada telefone, verificar se existe transação do mesmo `barber_id` com `created_at < inicio_periodo`.
+3. `retencao = recorrentes / clientesPeriodo.size * 100`.
+4. Telefones nulos/vazios são ignorados na contagem (não distorce numerador nem denominador).
+
+**Média da Casa** (radar) — mesma agregação aplicada para todos os `barbers` ativos da organização do barbeiro selecionado, no mesmo período; tira média dos 4 indicadores e calcula o máximo por eixo para normalização.
+
+**Mix de Receita** — soma `basicTotal`, `extraTotal`, `productsTotal` agregados do período via hierarquia acima.
+
+**Filtro de período → intervalo de datas** (timezone Manaus via `getManausDate`):
+- "Mês atual": dia 1 do mês corrente até hoje.
+- "Últimos 3 meses": hoje − 90 dias até hoje.
+- "Ano": `${year}-01-01` até `${year}-12-31` (ou até hoje se ano corrente).
+
+### Arquivos Afetados
+
+- **`src/components/dashboard/manager/BarberEvolution.tsx`** (refatorar):
+  - Adicionar seletor de período.
+  - Manter `BarberEvolutionChart` (gráfico anual) intacto.
+  - Adicionar componente `BarberDeepAnalysis` logo abaixo, recebendo `barberId` e `period`.
+- **Novo: `src/components/dashboard/manager/BarberDeepAnalysis.tsx`**:
+  - Encapsula KPIs, PieChart de mix, RadarChart e tabela de histórico.
+  - Faz fetches paralelos: produções do barbeiro, produções de toda organização (média da casa), transações para retenção, metas mensais para humor.
+  - Usa `Recharts` (`PieChart`, `RadarChart`, `PolarGrid`, `PolarAngleAxis`, `PolarRadiusAxis`, `Radar`).
+  - UI com `Card`, `Badge`, `Table` do design system; loading com `Skeleton`.
+
+### Observações
+- Tudo em **pt-BR**, fuso **America/Manaus**, formatação `R$ x.xxx,xx`.
+- Sem mudanças no banco — apenas leitura. Sem novas RPCs (volume cabe em paginação client-side; se passar de ~5k linhas no período "Ano", podemos migrar para RPC depois).
+- Responsivo: cards em grid colapsam para 1 coluna no mobile; gráficos em `ResponsiveContainer` 100%.
+- Sem alterar abas vizinhas (Barbearia, Comparativo, Conversão, Recepção, Carteira).

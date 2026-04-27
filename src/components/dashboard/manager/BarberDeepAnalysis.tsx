@@ -1,0 +1,673 @@
+import { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { supabase } from "@/integrations/supabase/client";
+import { getManausDate } from "@/lib/dateUtils";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+} from "recharts";
+import { Users, Receipt, Repeat, TrendingDown, TrendingUp } from "lucide-react";
+
+export type DeepAnalysisPeriod = "current_month" | "last_3_months" | "year";
+
+interface Props {
+  barberId: string;
+  organizationId: string | null;
+  period: DeepAnalysisPeriod;
+  selectedYear: number;
+}
+
+interface ProductionRow {
+  id: string;
+  date: string;
+  barber_id: string;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
+  manual_basic_total: number | null;
+  manual_extra_total: number | null;
+  manual_products_total: number | null;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  products_total: number | null;
+  services_total: number | null;
+  tx_clients_count: number | null;
+  manual_clients_count: number | null;
+  clients_count: number | null;
+  tx_commission_earned: number | null;
+  commission_earned: number | null;
+}
+
+interface AggregatedTotals {
+  basic: number;
+  extra: number;
+  products: number;
+  total: number;
+  clients: number;
+  commission: number;
+}
+
+const PAGE_SIZE = 1000;
+
+function formatBRL(value: number) {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+  });
+}
+
+function pickWithHierarchy(
+  txValue: number | null,
+  manualValue: number | null,
+  legacyValue: number | null
+): number {
+  const tx = Number(txValue) || 0;
+  const manual = Number(manualValue) || 0;
+  const legacy = Number(legacyValue) || 0;
+  if (tx > 0) return tx;
+  if (manual > 0) return manual;
+  return legacy;
+}
+
+function aggregateProduction(p: ProductionRow): AggregatedTotals {
+  const txTotal =
+    (Number(p.tx_basic_total) || 0) +
+    (Number(p.tx_extra_total) || 0) +
+    (Number(p.tx_products_total) || 0);
+  const manualTotal =
+    (Number(p.manual_basic_total) || 0) +
+    (Number(p.manual_extra_total) || 0) +
+    (Number(p.manual_products_total) || 0);
+
+  let basic: number, extra: number, products: number;
+
+  if (txTotal > 0) {
+    basic = Number(p.tx_basic_total) || 0;
+    extra = Number(p.tx_extra_total) || 0;
+    products = Number(p.tx_products_total) || 0;
+  } else if (manualTotal > 0) {
+    basic = Number(p.manual_basic_total) || 0;
+    extra = Number(p.manual_extra_total) || 0;
+    products = Number(p.manual_products_total) || 0;
+  } else if (
+    p.services_basic_total !== null ||
+    p.services_extra_total !== null ||
+    p.products_total !== null
+  ) {
+    basic = Number(p.services_basic_total) || 0;
+    extra = Number(p.services_extra_total) || 0;
+    products = Number(p.products_total) || 0;
+  } else {
+    // último fallback — não há separação básico/extra
+    basic = Number(p.services_total) || 0;
+    extra = 0;
+    products = Number(p.products_total) || 0;
+  }
+
+  const total = basic + extra + products;
+  const clients = pickWithHierarchy(p.tx_clients_count, p.manual_clients_count, p.clients_count);
+  const commission =
+    (Number(p.tx_commission_earned) || 0) > 0
+      ? Number(p.tx_commission_earned) || 0
+      : Number(p.commission_earned) || 0;
+
+  return { basic, extra, products, total, clients, commission };
+}
+
+function getDateRange(period: DeepAnalysisPeriod, selectedYear: number) {
+  const now = getManausDate();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (period === "current_month") {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { start, end: today };
+  }
+  if (period === "last_3_months") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 89);
+    return { start, end: today };
+  }
+  // year
+  const start = new Date(selectedYear, 0, 1);
+  const isCurrentYear = selectedYear === today.getFullYear();
+  const end = isCurrentYear ? today : new Date(selectedYear, 11, 31);
+  return { start, end };
+}
+
+function toIsoDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const PERIOD_LABEL: Record<DeepAnalysisPeriod, string> = {
+  current_month: "Mês atual",
+  last_3_months: "Últimos 3 meses",
+  year: "Ano",
+};
+
+export default function BarberDeepAnalysis({
+  barberId,
+  organizationId,
+  period,
+  selectedYear,
+}: Props) {
+  const [loading, setLoading] = useState(false);
+  const [barberTotals, setBarberTotals] = useState<AggregatedTotals>({
+    basic: 0,
+    extra: 0,
+    products: 0,
+    total: 0,
+    clients: 0,
+    commission: 0,
+  });
+  const [houseAverages, setHouseAverages] = useState<{
+    clients: number;
+    products: number;
+    extra: number;
+    total: number;
+  }>({ clients: 0, products: 0, extra: 0, total: 0 });
+  const [houseMaxes, setHouseMaxes] = useState<{
+    clients: number;
+    products: number;
+    extra: number;
+    total: number;
+  }>({ clients: 0, products: 0, extra: 0, total: 0 });
+  const [retention, setRetention] = useState<number | null>(null);
+  const [recentDays, setRecentDays] = useState<
+    Array<{
+      date: string;
+      revenue: number;
+      clients: number;
+      commission: number;
+      dailyGoal: number;
+    }>
+  >([]);
+
+  const { start, end } = useMemo(
+    () => getDateRange(period, selectedYear),
+    [period, selectedYear]
+  );
+
+  useEffect(() => {
+    if (!barberId || !organizationId) return;
+    fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barberId, organizationId, period, selectedYear]);
+
+  async function fetchPaginated<T>(
+    queryFactory: (from: number, to: number) => any
+  ): Promise<T[]> {
+    const all: T[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await queryFactory(from, from + PAGE_SIZE - 1);
+      if (error) {
+        console.error("[BarberDeepAnalysis] erro paginado:", error);
+        break;
+      }
+      if (!data || data.length === 0) break;
+      all.push(...(data as T[]));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return all;
+  }
+
+  async function fetchAll() {
+    setLoading(true);
+    try {
+      const startIso = toIsoDate(start);
+      const endIso = toIsoDate(end);
+
+      // 1) Produções da organização no período (para barbeiro + média da casa)
+      const productions = await fetchPaginated<ProductionRow>((f, t) =>
+        supabase
+          .from("daily_productions")
+          .select(
+            `id, date, barber_id,
+             tx_basic_total, tx_extra_total, tx_products_total,
+             manual_basic_total, manual_extra_total, manual_products_total,
+             services_basic_total, services_extra_total, products_total, services_total,
+             tx_clients_count, manual_clients_count, clients_count,
+             tx_commission_earned, commission_earned`
+          )
+          .eq("organization_id", organizationId!)
+          .gte("date", startIso)
+          .lte("date", endIso)
+          .range(f, t)
+      );
+
+      // Agregação por barbeiro
+      const perBarber = new Map<string, AggregatedTotals>();
+      for (const p of productions) {
+        const agg = aggregateProduction(p);
+        const cur = perBarber.get(p.barber_id) ?? {
+          basic: 0,
+          extra: 0,
+          products: 0,
+          total: 0,
+          clients: 0,
+          commission: 0,
+        };
+        cur.basic += agg.basic;
+        cur.extra += agg.extra;
+        cur.products += agg.products;
+        cur.total += agg.total;
+        cur.clients += agg.clients;
+        cur.commission += agg.commission;
+        perBarber.set(p.barber_id, cur);
+      }
+
+      const selected = perBarber.get(barberId) ?? {
+        basic: 0,
+        extra: 0,
+        products: 0,
+        total: 0,
+        clients: 0,
+        commission: 0,
+      };
+      setBarberTotals(selected);
+
+      // Média e máximo da casa (somente barbeiros com alguma atividade)
+      const others = Array.from(perBarber.values()).filter((v) => v.total > 0 || v.clients > 0);
+      const count = Math.max(others.length, 1);
+      const sum = others.reduce(
+        (acc, v) => {
+          acc.clients += v.clients;
+          acc.products += v.products;
+          acc.extra += v.extra;
+          acc.total += v.total;
+          return acc;
+        },
+        { clients: 0, products: 0, extra: 0, total: 0 }
+      );
+      setHouseAverages({
+        clients: sum.clients / count,
+        products: sum.products / count,
+        extra: sum.extra / count,
+        total: sum.total / count,
+      });
+      setHouseMaxes({
+        clients: Math.max(selected.clients, ...others.map((v) => v.clients), 1),
+        products: Math.max(selected.products, ...others.map((v) => v.products), 1),
+        extra: Math.max(selected.extra, ...others.map((v) => v.extra), 1),
+        total: Math.max(selected.total, ...others.map((v) => v.total), 1),
+      });
+
+      // 2) Histórico recente: 5 últimos dias com produção
+      const barberProductions = productions
+        .filter((p) => p.barber_id === barberId)
+        .sort((a, b) => (a.date < b.date ? 1 : -1))
+        .slice(0, 5);
+
+      // Buscar metas do(s) mês(es) envolvidos
+      const monthsSet = new Set<string>();
+      for (const p of barberProductions) {
+        const d = new Date(p.date + "T12:00:00");
+        monthsSet.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
+      }
+      const goalMap = new Map<string, { target: number; workDays: number }>();
+      if (monthsSet.size > 0) {
+        const { data: goals } = await supabase
+          .from("monthly_goals")
+          .select("month, year, target_commission, work_days")
+          .eq("barber_id", barberId);
+        (goals || []).forEach((g: any) => {
+          goalMap.set(`${g.year}-${g.month}`, {
+            target: Number(g.target_commission) || 0,
+            workDays: Number(g.work_days) || 22,
+          });
+        });
+      }
+
+      setRecentDays(
+        barberProductions.map((p) => {
+          const agg = aggregateProduction(p);
+          const d = new Date(p.date + "T12:00:00");
+          const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+          const goal = goalMap.get(key);
+          const dailyGoal = goal ? goal.target / Math.max(goal.workDays, 1) : 0;
+          return {
+            date: p.date,
+            revenue: agg.total,
+            clients: agg.clients,
+            commission: agg.commission,
+            dailyGoal,
+          };
+        })
+      );
+
+      // 3) Taxa de Retenção — telefones únicos do barbeiro no período + lookup histórico
+      const txInPeriod = await fetchPaginated<{ mobile_phone: string | null }>((f, t) =>
+        supabase
+          .from("sale_transactions")
+          .select("mobile_phone")
+          .eq("organization_id", organizationId!)
+          .eq("barber_id", barberId)
+          .gte("created_at", start.toISOString())
+          .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
+          .not("mobile_phone", "is", null)
+          .range(f, t)
+      );
+
+      const phonesPeriod = new Set<string>();
+      for (const t of txInPeriod) {
+        const phone = (t.mobile_phone || "").replace(/\D/g, "");
+        if (phone.length >= 8) phonesPeriod.add(phone);
+      }
+
+      if (phonesPeriod.size === 0) {
+        setRetention(null);
+      } else {
+        // Buscar telefones que esse barbeiro JÁ atendeu antes do período
+        const priorTx = await fetchPaginated<{ mobile_phone: string | null }>((f, t) =>
+          supabase
+            .from("sale_transactions")
+            .select("mobile_phone")
+            .eq("organization_id", organizationId!)
+            .eq("barber_id", barberId)
+            .lt("created_at", start.toISOString())
+            .not("mobile_phone", "is", null)
+            .range(f, t)
+        );
+        const priorPhones = new Set<string>();
+        for (const t of priorTx) {
+          const phone = (t.mobile_phone || "").replace(/\D/g, "");
+          if (phone.length >= 8) priorPhones.add(phone);
+        }
+        let recurrentes = 0;
+        phonesPeriod.forEach((p) => {
+          if (priorPhones.has(p)) recurrentes++;
+        });
+        setRetention((recurrentes / phonesPeriod.size) * 100);
+      }
+    } catch (err) {
+      console.error("[BarberDeepAnalysis] erro geral:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const ticketMedio =
+    barberTotals.clients > 0 ? barberTotals.total / barberTotals.clients : 0;
+
+  const mixData = [
+    { name: "Serviços Básicos", value: barberTotals.basic, color: "hsl(var(--primary))" },
+    { name: "Serviços Extras", value: barberTotals.extra, color: "hsl(var(--success))" },
+    { name: "Produtos", value: barberTotals.products, color: "hsl(var(--accent))" },
+  ].filter((d) => d.value > 0);
+
+  const totalMix = mixData.reduce((s, d) => s + d.value, 0);
+
+  const radarData = [
+    {
+      eixo: "Clientes",
+      Barbeiro: houseMaxes.clients > 0 ? (barberTotals.clients / houseMaxes.clients) * 100 : 0,
+      Casa: houseMaxes.clients > 0 ? (houseAverages.clients / houseMaxes.clients) * 100 : 0,
+      barberRaw: barberTotals.clients,
+      houseRaw: houseAverages.clients,
+    },
+    {
+      eixo: "Produtos",
+      Barbeiro: houseMaxes.products > 0 ? (barberTotals.products / houseMaxes.products) * 100 : 0,
+      Casa: houseMaxes.products > 0 ? (houseAverages.products / houseMaxes.products) * 100 : 0,
+      barberRaw: barberTotals.products,
+      houseRaw: houseAverages.products,
+    },
+    {
+      eixo: "Extras",
+      Barbeiro: houseMaxes.extra > 0 ? (barberTotals.extra / houseMaxes.extra) * 100 : 0,
+      Casa: houseMaxes.extra > 0 ? (houseAverages.extra / houseMaxes.extra) * 100 : 0,
+      barberRaw: barberTotals.extra,
+      houseRaw: houseAverages.extra,
+    },
+    {
+      eixo: "Faturamento",
+      Barbeiro: houseMaxes.total > 0 ? (barberTotals.total / houseMaxes.total) * 100 : 0,
+      Casa: houseMaxes.total > 0 ? (houseAverages.total / houseMaxes.total) * 100 : 0,
+      barberRaw: barberTotals.total,
+      houseRaw: houseAverages.total,
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Skeleton className="h-80 w-full" />
+          <Skeleton className="h-80 w-full" />
+        </div>
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Receipt className="w-4 h-4" />
+              Ticket Médio
+            </CardDescription>
+            <CardTitle className="text-3xl">{formatBRL(ticketMedio)}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Receita de {formatBRL(barberTotals.total)} ÷ {barberTotals.clients} clientes
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Clientes Atendidos
+            </CardDescription>
+            <CardTitle className="text-3xl">{barberTotals.clients}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Total no período: {PERIOD_LABEL[period]}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Repeat className="w-4 h-4" />
+              Taxa de Retenção
+            </CardDescription>
+            <CardTitle className="text-3xl">
+              {retention === null ? "—" : `${retention.toFixed(1)}%`}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Clientes do período já atendidos antes
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Gráficos lado a lado */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Mix de Receita</CardTitle>
+            <CardDescription>
+              Distribuição entre serviços básicos, extras e produtos
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {mixData.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-12 text-center">
+                Sem receita no período.
+              </p>
+            ) : (
+              <div className="w-full h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={mixData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      label={(entry: any) =>
+                        `${((entry.value / totalMix) * 100).toFixed(0)}%`
+                      }
+                    >
+                      {mixData.map((entry, idx) => (
+                        <Cell key={idx} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: any, name: any) => [
+                        `${formatBRL(Number(value))} (${((Number(value) / totalMix) * 100).toFixed(1)}%)`,
+                        name,
+                      ]}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Radar de Habilidades</CardTitle>
+            <CardDescription>
+              Barbeiro vs. Média da Casa (escala normalizada 0–100)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="w-full h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="hsl(var(--border))" />
+                  <PolarAngleAxis
+                    dataKey="eixo"
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  />
+                  <PolarRadiusAxis
+                    angle={90}
+                    domain={[0, 100]}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                  />
+                  <Radar
+                    name="Barbeiro"
+                    dataKey="Barbeiro"
+                    stroke="hsl(var(--primary))"
+                    fill="hsl(var(--primary))"
+                    fillOpacity={0.5}
+                  />
+                  <Radar
+                    name="Média da Casa"
+                    dataKey="Casa"
+                    stroke="hsl(var(--success))"
+                    fill="hsl(var(--success))"
+                    fillOpacity={0.15}
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any, props: any) => {
+                      const raw =
+                        name === "Barbeiro" ? props.payload.barberRaw : props.payload.houseRaw;
+                      const formatted =
+                        props.payload.eixo === "Clientes"
+                          ? `${Math.round(raw)} clientes`
+                          : formatBRL(raw);
+                      return [`${Number(value).toFixed(0)} pts (${formatted})`, name];
+                    }}
+                  />
+                  <Legend />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Histórico Recente */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Histórico Recente</CardTitle>
+          <CardDescription>
+            Últimos 5 dias trabalhados com humor da produção
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recentDays.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Nenhum dia trabalhado no período.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead className="text-right">Faturamento</TableHead>
+                  <TableHead className="text-right">Clientes</TableHead>
+                  <TableHead className="text-right">Comissão</TableHead>
+                  <TableHead className="text-right">Meta diária</TableHead>
+                  <TableHead className="text-right">Humor</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentDays.map((day) => {
+                  const ratio = day.dailyGoal > 0 ? day.commission / day.dailyGoal : 0;
+                  let badge: { label: string; variant: "default" | "secondary" | "destructive"; icon: any } ;
+                  if (day.dailyGoal === 0) {
+                    badge = { label: "Sem meta", variant: "secondary", icon: null };
+                  } else if (ratio >= 1) {
+                    badge = { label: "Bateu meta", variant: "default", icon: TrendingUp };
+                  } else if (ratio >= 0.7) {
+                    badge = { label: "Próximo", variant: "secondary", icon: null };
+                  } else {
+                    badge = { label: "Abaixo", variant: "destructive", icon: TrendingDown };
+                  }
+                  const Icon = badge.icon;
+                  const dateLabel = new Date(day.date + "T12:00:00").toLocaleDateString("pt-BR");
+                  return (
+                    <TableRow key={day.date}>
+                      <TableCell className="font-medium">{dateLabel}</TableCell>
+                      <TableCell className="text-right">{formatBRL(day.revenue)}</TableCell>
+                      <TableCell className="text-right">{day.clients}</TableCell>
+                      <TableCell className="text-right">{formatBRL(day.commission)}</TableCell>
+                      <TableCell className="text-right">
+                        {day.dailyGoal > 0 ? formatBRL(day.dailyGoal) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={badge.variant} className="gap-1">
+                          {Icon ? <Icon className="w-3 h-3" /> : null}
+                          {badge.label}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
