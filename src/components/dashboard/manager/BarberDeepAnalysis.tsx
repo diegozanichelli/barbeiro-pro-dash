@@ -760,6 +760,7 @@ export default function BarberDeepAnalysis({
                       <TableCell className="font-medium">{dateLabel}</TableCell>
                       <TableCell className="text-right">{formatBRL(day.revenue)}</TableCell>
                       <TableCell className="text-right">{day.clients}</TableCell>
+                      <TableCell className="text-right">{day.servicos}</TableCell>
                       <TableCell className="text-right">{formatBRL(day.commission)}</TableCell>
                       <TableCell className="text-right">
                         {day.dailyGoal > 0 ? formatBRL(day.dailyGoal) : "—"}
