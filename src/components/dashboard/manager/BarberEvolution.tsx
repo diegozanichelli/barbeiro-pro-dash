@@ -262,6 +262,15 @@ function BarberEvolutionChart() {
           )}
         </CardContent>
       </Card>
+
+      {selectedBarberId && (
+        <BarberDeepAnalysis
+          barberId={selectedBarberId}
+          organizationId={organizationId}
+          period={period}
+          selectedYear={selectedYear}
+        />
+      )}
     </div>
   );
 }
