@@ -578,7 +578,7 @@ export default function BarberDeepAnalysis({
             <CardTitle className="text-3xl">{formatBRL(ticketMedio)}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Receita de {formatBRL(barberTotals.total)} ÷ {barberTotals.clients} clientes
+            Receita {formatBRL(barberTotals.total)} ÷ {clientMetrics.atendimentos} atendimentos
           </CardContent>
         </Card>
 
@@ -588,10 +588,12 @@ export default function BarberDeepAnalysis({
               <Users className="w-4 h-4" />
               Clientes Atendidos
             </CardDescription>
-            <CardTitle className="text-3xl">{barberTotals.clients}</CardTitle>
+            <CardTitle className="text-3xl">{clientMetrics.atendimentos}</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Total no período: {PERIOD_LABEL[period]}
+          <CardContent className="text-sm text-muted-foreground space-y-0.5">
+            <div>{clientMetrics.servicos} serviços vendidos</div>
+            <div>{clientMetrics.unicos} clientes únicos (telefone)</div>
+            <div className="text-xs opacity-70">Período: {PERIOD_LABEL[period]}</div>
           </CardContent>
         </Card>
 
