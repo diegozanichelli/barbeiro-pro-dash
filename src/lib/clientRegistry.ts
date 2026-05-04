@@ -122,12 +122,7 @@ export async function registerClientOrThrow({
         };
       }
 
-      const { data: existingByName, error: existingByNameError } = await supabase
-        .from("clients")
-        .select("id")
-        .eq("organization_id", organizationId)
-        .eq("normalized_name", normalizedKey(name))
-        .maybeSingle();
+      throw new Error("Cliente já cadastrado (celular em uso).");
 
       if (existingByNameError && !isClientsSchemaMissing(existingByNameError)) {
         throw existingByNameError;
