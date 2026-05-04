@@ -84,23 +84,8 @@ export async function registerClientOrThrow({
     };
   }
 
-  const { data: duplicateName, error: duplicateNameError } = await supabase
-    .from("clients")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("normalized_name", normalizedKey(name))
-    .maybeSingle();
-
-  if (duplicateNameError) {
-    if (isClientsSchemaMissing(duplicateNameError)) {
-      return fallbackWithoutRegistry(name, phone);
-    }
-    throw duplicateNameError;
-  }
-
-  if (duplicateName) {
-    throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");
-  }
+  // Permitimos clientes homônimos (mesmo nome) desde que tenham telefones diferentes.
+  // A unicidade é garantida apenas por (organization_id, mobile_phone).
 
   const { data: createdClient, error: createError } = await supabase
     .from("clients")
@@ -137,22 +122,7 @@ export async function registerClientOrThrow({
         };
       }
 
-      const { data: existingByName, error: existingByNameError } = await supabase
-        .from("clients")
-        .select("id")
-        .eq("organization_id", organizationId)
-        .eq("normalized_name", normalizedKey(name))
-        .maybeSingle();
-
-      if (existingByNameError && !isClientsSchemaMissing(existingByNameError)) {
-        throw existingByNameError;
-      }
-
-      if (existingByName) {
-        throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");
-      }
-
-      throw new Error("Cliente já cadastrado (nome ou celular em uso).");
+      throw new Error("Cliente já cadastrado (celular em uso).");
     }
     throw createError;
   }
