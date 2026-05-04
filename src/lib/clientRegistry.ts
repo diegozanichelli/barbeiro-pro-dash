@@ -123,16 +123,6 @@ export async function registerClientOrThrow({
       }
 
       throw new Error("Cliente já cadastrado (celular em uso).");
-
-      if (existingByNameError && !isClientsSchemaMissing(existingByNameError)) {
-        throw existingByNameError;
-      }
-
-      if (existingByName) {
-        throw new Error("Já existe um cliente cadastrado com esse nome. Use o celular já cadastrado ou ajuste o nome.");
-      }
-
-      throw new Error("Cliente já cadastrado (nome ou celular em uso).");
     }
     throw createError;
   }
