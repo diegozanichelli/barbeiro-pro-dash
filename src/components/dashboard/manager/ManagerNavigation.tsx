@@ -127,21 +127,34 @@ export default function ManagerNavigation({
   const isGroupActive = (group: NavGroup) =>
     group.items.some((item) => item.id === activeTab);
 
+  const [railHover, setRailHover] = useState(false);
+  const [suppressHover, setSuppressHover] = useState(false);
+  const railExpanded = railHover && !suppressHover;
+
   const handleSelect = (id: string) => {
     onTabChange(id);
     setMobileOpen(false);
     setHoveredGroup(null);
+    // Trava expansão até o mouse sair e voltar
+    setSuppressHover(true);
   };
 
   // ---------- Desktop: left rail with hover-expand + click flyout ----------
   const DesktopRail = () => {
     return (
-      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail">
+      <aside
+        className="hidden md:flex fixed left-0 top-0 bottom-0 z-40"
+        onMouseEnter={() => setRailHover(true)}
+        onMouseLeave={() => {
+          setRailHover(false);
+          setSuppressHover(false);
+        }}
+      >
         <div
           className={cn(
             "relative h-full glass-strong border-r border-white/[0.06]",
             "flex flex-col py-3 transition-[width] duration-200 ease-out",
-            "w-14 hover:w-56"
+            railExpanded ? "w-56" : "w-14"
           )}
         >
           <nav className="flex-1 flex flex-col gap-1 px-2 overflow-hidden">
