@@ -81,10 +81,13 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
                 className="h-10 md:h-12 w-auto"
               />
               <div className="hidden lg:block">
-                <h1 className="text-base font-bold text-foreground leading-tight">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-primary/80">
+                  Performance Barber
+                </p>
+                <h1 className="font-display text-base font-semibold leading-tight text-foreground">
                   Painel do Gestor
                 </h1>
-                <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                <p className="text-xs text-muted-foreground/80 truncate max-w-[200px]">
                   {user.email}
                 </p>
               </div>
