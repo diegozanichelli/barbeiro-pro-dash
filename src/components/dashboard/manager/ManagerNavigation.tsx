@@ -103,8 +103,8 @@ export default function ManagerNavigation({
 
   // ---------- Desktop: left rail with hover-expand + click flyout ----------
   const DesktopRail = () => {
-    const groupBtnRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
-    const [flyoutTop, setFlyoutTop] = React.useState<number>(0);
+    const groupBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+    const [flyoutTop, setFlyoutTop] = useState<number>(0);
 
     const openGroup = (groupId: string) => {
       if (hoveredGroup === groupId) {
