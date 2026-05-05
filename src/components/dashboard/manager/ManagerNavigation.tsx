@@ -218,6 +218,7 @@ export default function ManagerNavigation({
         {/* Flyout panel — posicionado na altura do botão clicado */}
         {hoveredGroup && (
           <div
+            ref={flyoutRef}
             style={{ top: flyoutTop }}
             className="fixed left-14 w-56 glass-strong border border-white/[0.06] rounded-xl py-2 px-2 shadow-card-custom animate-in fade-in slide-in-from-left-2 duration-150"
           >
