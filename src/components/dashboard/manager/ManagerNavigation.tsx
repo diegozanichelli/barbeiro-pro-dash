@@ -146,7 +146,6 @@ export default function ManagerNavigation({
             return (
               <button
                 key={group.id}
-                onMouseEnter={() => setHoveredGroup(group.id)}
                 onClick={() =>
                   setHoveredGroup(hoveredGroup === group.id ? null : group.id)
                 }
