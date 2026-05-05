@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -50,7 +50,27 @@ export default function ManagerNavigation({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const groupBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
   const [flyoutTop, setFlyoutTop] = useState<number>(0);
+
+  useEffect(() => {
+    if (!hoveredGroup) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (flyoutRef.current?.contains(target)) return;
+      if (Object.values(groupBtnRefs.current).some((b) => b?.contains(target))) return;
+      setHoveredGroup(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHoveredGroup(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [hoveredGroup]);
 
   const openGroup = (groupId: string) => {
     if (hoveredGroup === groupId) {
@@ -198,6 +218,7 @@ export default function ManagerNavigation({
         {/* Flyout panel — posicionado na altura do botão clicado */}
         {hoveredGroup && (
           <div
+            ref={flyoutRef}
             style={{ top: flyoutTop }}
             className="fixed left-14 w-56 glass-strong border border-white/[0.06] rounded-xl py-2 px-2 shadow-card-custom animate-in fade-in slide-in-from-left-2 duration-150"
           >
