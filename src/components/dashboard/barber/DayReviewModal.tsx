@@ -197,7 +197,6 @@ export default function DayReviewModal({
       // [AUDITORIA] Log de itens do gestor vs barbeiro
       const totalGestor = live.reduce((s, t) => s + t.price_sold, 0);
       const totalBarbeiro = cartFromLive.reduce((s, i) => s + (i.customPrice || 0), 0);
-      console.log('[AUDITORIA] Itens Gestor vs Barbeiro:', { itensGestor: live.length, itensBarbeiro: cartFromLive.length, date });
       if (Math.abs(totalGestor - totalBarbeiro) > 0.01) {
         console.warn('[AUDITORIA] DIVERGÊNCIA detectada:', { totalGestor, totalBarbeiro, diff: totalGestor - totalBarbeiro });
       }

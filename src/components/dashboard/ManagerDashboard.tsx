@@ -48,7 +48,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
         } else if (data && typeof data === 'object' && 'goals_created' in data) {
           const result = data as { goals_created: number; month: number; year: number };
           if (result.goals_created > 0) {
-            console.log(`Metas replicadas automaticamente: ${result.goals_created} para ${result.month}/${result.year}`);
           }
         }
       } catch (err) {

@@ -407,7 +407,6 @@ const [todayProduction, setTodayProduction] = useState<{
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('Comissão atualizada pelo gerente:', payload);
           const oldBarber = payload.old as BarberData;
           const newBarber = payload.new as BarberData;
           
@@ -458,7 +457,6 @@ const [todayProduction, setTodayProduction] = useState<{
             filter: `barber_id=eq.${barber.id}`,
           },
           (payload) => {
-            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
             // Forçar recálculo IMEDIATO das estatísticas
             fetchMonthlyStats();
             fetchMonthlyGoal();

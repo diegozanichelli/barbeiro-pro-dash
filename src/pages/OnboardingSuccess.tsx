@@ -29,7 +29,6 @@ export default function OnboardingSuccess() {
           return;
         }
 
-        console.log("Completing onboarding with session:", sessionId);
 
         const { data, error } = await supabase.functions.invoke("complete-onboarding", {
           body: { sessionId }
@@ -46,7 +45,6 @@ export default function OnboardingSuccess() {
           return;
         }
 
-        console.log("Onboarding completed:", data);
         setCompleted(true);
         setIsCompleting(false);
 
