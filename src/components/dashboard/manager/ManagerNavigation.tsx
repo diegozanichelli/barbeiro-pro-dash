@@ -127,21 +127,34 @@ export default function ManagerNavigation({
   const isGroupActive = (group: NavGroup) =>
     group.items.some((item) => item.id === activeTab);
 
+  const [railHover, setRailHover] = useState(false);
+  const [suppressHover, setSuppressHover] = useState(false);
+  const railExpanded = railHover && !suppressHover;
+
   const handleSelect = (id: string) => {
     onTabChange(id);
     setMobileOpen(false);
     setHoveredGroup(null);
+    // Trava expansão até o mouse sair e voltar
+    setSuppressHover(true);
   };
 
   // ---------- Desktop: left rail with hover-expand + click flyout ----------
   const DesktopRail = () => {
     return (
-      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail">
+      <aside
+        className="hidden md:flex fixed left-0 top-0 bottom-0 z-40"
+        onMouseEnter={() => setRailHover(true)}
+        onMouseLeave={() => {
+          setRailHover(false);
+          setSuppressHover(false);
+        }}
+      >
         <div
           className={cn(
             "relative h-full glass-strong border-r border-white/[0.06]",
             "flex flex-col py-3 transition-[width] duration-200 ease-out",
-            "w-14 hover:w-56"
+            railExpanded ? "w-56" : "w-14"
           )}
         >
           <nav className="flex-1 flex flex-col gap-1 px-2 overflow-hidden">
@@ -170,7 +183,7 @@ export default function ManagerNavigation({
                       link.id === "live" && "animate-pulse"
                     )}
                   />
-                  <span className="opacity-0 group-hover/rail:opacity-100 transition-opacity whitespace-nowrap">
+                  <span className={cn("transition-opacity whitespace-nowrap", railExpanded ? "opacity-100" : "opacity-0")}>
                     {link.label}
                   </span>
                 </button>
@@ -200,13 +213,14 @@ export default function ManagerNavigation({
                     <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.6)]" />
                   )}
                   <group.icon className="w-5 h-5 shrink-0" />
-                  <span className="flex-1 text-left opacity-0 group-hover/rail:opacity-100 transition-opacity whitespace-nowrap">
+                  <span className={cn("flex-1 text-left transition-opacity whitespace-nowrap", railExpanded ? "opacity-100" : "opacity-0")}>
                     {group.label}
                   </span>
                   <ChevronRight
                     className={cn(
-                      "w-3.5 h-3.5 transition-all opacity-0 group-hover/rail:opacity-60",
-                      open && "rotate-90 opacity-100"
+                      "w-3.5 h-3.5 transition-all",
+                      railExpanded ? "opacity-60" : "opacity-0",
+                      open && "rotate-90 !opacity-100"
                     )}
                   />
                 </button>
