@@ -31,9 +31,13 @@
     --muted: 222 18% 12%;
     --muted-foreground: 220 12% 65%;
 
-    /* Acento secundário — ciano elétrico para dados/realtime */
-    --accent: 188 95% 55%;
-    --accent-foreground: 222 30% 6%;
+    /* Hover/elevação neutra (sem ciano) — leve viés âmbar quente */
+    --accent: 36 18% 18%;
+    --accent-foreground: 40 30% 96%;
+
+    /* Ciano elétrico fica disponível só para dados/realtime via utilitário */
+    --neon: 188 95% 55%;
+    --neon-foreground: 222 30% 6%;
 
     --success: 152 76% 45%;
     --success-foreground: 222 30% 6%;
@@ -88,8 +92,8 @@
     --secondary-foreground: 40 30% 96%;
     --muted: 222 18% 12%;
     --muted-foreground: 220 12% 65%;
-    --accent: 188 95% 55%;
-    --accent-foreground: 222 30% 6%;
+    --accent: 36 18% 18%;
+    --accent-foreground: 40 30% 96%;
     --success: 152 76% 45%;
     --success-foreground: 222 30% 6%;
     --destructive: 350 90% 58%;
