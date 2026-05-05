@@ -50,7 +50,27 @@ export default function ManagerNavigation({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const groupBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
   const [flyoutTop, setFlyoutTop] = useState<number>(0);
+
+  useEffect(() => {
+    if (!hoveredGroup) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (flyoutRef.current?.contains(target)) return;
+      if (Object.values(groupBtnRefs.current).some((b) => b?.contains(target))) return;
+      setHoveredGroup(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHoveredGroup(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [hoveredGroup]);
 
   const openGroup = (groupId: string) => {
     if (hoveredGroup === groupId) {
