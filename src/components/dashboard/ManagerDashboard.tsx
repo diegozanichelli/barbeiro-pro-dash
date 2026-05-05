@@ -69,12 +69,17 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
+    <div className="min-h-screen bg-background md:pl-14">
+      <ManagerNavigation
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        hasSubscriptionModule={hasSubscriptionModule}
+      />
+
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-30">
         <div className="container mx-auto px-4 py-3">
           <div className="flex flex-row items-center justify-between gap-4">
-            {/* Left: Logo + Title */}
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 md:pl-2">
               <img
                 src={logo}
                 alt="Performance Barber"
@@ -93,16 +98,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               </div>
             </div>
 
-            {/* Center/Right: Navigation */}
-            <div className="flex-1 flex justify-end">
-              <ManagerNavigation
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                hasSubscriptionModule={hasSubscriptionModule}
-              />
-            </div>
-
-            {/* Far Right: Actions */}
             <div className="flex items-center gap-2 shrink-0">
               <SendNotificationsButton />
               <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>
