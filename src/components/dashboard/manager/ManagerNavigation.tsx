@@ -128,15 +128,12 @@ export default function ManagerNavigation({
     group.items.some((item) => item.id === activeTab);
 
   const [railHover, setRailHover] = useState(false);
-  const [suppressHover, setSuppressHover] = useState(false);
-  const railExpanded = railHover && !suppressHover;
+  const railExpanded = railHover;
 
   const handleSelect = (id: string) => {
     onTabChange(id);
     setMobileOpen(false);
-    setHoveredGroup(null);
-    // Trava expansão até o mouse sair e voltar
-    setSuppressHover(true);
+    // NÃO fecha o dropdown nem colapsa a barra — só fecha ao tirar o mouse
   };
 
   // ---------- Desktop: left rail with hover-expand + click flyout ----------
@@ -147,7 +144,7 @@ export default function ManagerNavigation({
         onMouseEnter={() => setRailHover(true)}
         onMouseLeave={() => {
           setRailHover(false);
-          setSuppressHover(false);
+          setHoveredGroup(null);
         }}
       >
         <div
