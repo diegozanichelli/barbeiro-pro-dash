@@ -70,7 +70,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
         <div className="container mx-auto px-4 py-3">
           <div className="flex flex-row items-center justify-between gap-4">
             {/* Left: Logo + Title */}
