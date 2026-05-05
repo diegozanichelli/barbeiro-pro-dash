@@ -89,7 +89,6 @@ export default function SubscriptionBlocked() {
       if (error) throw error;
 
       toast.success("Organização transferida com sucesso!");
-      console.log("Resultado da migração:", data);
     } catch (error: any) {
       toast.error(error.message || "Erro ao transferir organização");
     } finally {

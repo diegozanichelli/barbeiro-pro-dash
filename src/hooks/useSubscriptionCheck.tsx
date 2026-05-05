@@ -40,14 +40,12 @@ export function useSubscriptionCheck() {
                           data?.message?.includes("invalid claim");
       
       if (isAuthError) {
-        console.log("Auth issue detected, waiting for token refresh before retrying...", data?.message);
         
         // Wait for autoRefreshToken to complete
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         const { data: { session: freshSession } } = await supabase.auth.getSession();
         if (!freshSession) {
-          console.log("No fresh session after retry, signing out");
           await supabase.auth.signOut();
           setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
           setLoading(false);
@@ -58,7 +56,6 @@ export function useSubscriptionCheck() {
         // Retry with fresh session
         const retryResult = await supabase.functions.invoke("check-subscription-status");
         if (retryResult.data?.message?.includes("Invalid") || retryResult.data?.message?.includes("invalid claim")) {
-          console.log("Retry also failed, signing out");
           await supabase.auth.signOut();
           setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
           setLoading(false);
