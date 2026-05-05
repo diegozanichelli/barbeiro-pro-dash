@@ -101,103 +101,144 @@ export default function ManagerNavigation({
     setHoveredGroup(null);
   };
 
-  // ---------- Desktop: left rail with hover-expand + flyout ----------
-  const DesktopRail = () => (
-    <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail">
-      <div
-        className={cn(
-          "h-full glass-strong border-r border-white/[0.06]",
-          "flex flex-col py-3 transition-[width] duration-200 ease-out",
-          "w-14 hover:w-56"
-        )}
-      >
-        <nav className="flex-1 flex flex-col gap-1 px-2 overflow-hidden">
-          {directLinks.map((link) => {
-            const active = activeTab === link.id;
-            return (
-              <button
-                key={link.id}
-                onClick={() => handleSelect(link.id)}
-                onMouseEnter={() => setHoveredGroup(null)}
-                className={cn(
-                  "h-10 flex items-center gap-3 rounded-lg px-2.5 text-sm transition-colors",
-                  "hover:bg-accent/60",
-                  active && "bg-accent text-foreground font-medium",
-                  link.id === "live" && "text-destructive hover:text-destructive"
-                )}
-              >
-                <link.icon
-                  className={cn(
-                    "w-5 h-5 shrink-0",
-                    link.id === "live" && "animate-pulse"
-                  )}
-                />
-                <span className="opacity-0 group-hover/rail:opacity-100 transition-opacity whitespace-nowrap">
-                  {link.label}
-                </span>
-              </button>
-            );
-          })}
+  // ---------- Desktop: left rail with hover-expand + click flyout ----------
+  const DesktopRail = () => {
+    const groupBtnRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+    const [flyoutTop, setFlyoutTop] = React.useState<number>(0);
 
-          <div className="my-2 mx-2 h-px bg-white/[0.06]" />
+    const openGroup = (groupId: string) => {
+      if (hoveredGroup === groupId) {
+        setHoveredGroup(null);
+        return;
+      }
+      const btn = groupBtnRefs.current[groupId];
+      if (btn) {
+        const rect = btn.getBoundingClientRect();
+        setFlyoutTop(rect.top);
+      }
+      setHoveredGroup(groupId);
+    };
 
-          {groups.map((group) => {
-            const active = isGroupActive(group);
-            return (
-              <button
-                key={group.id}
-                onClick={() =>
-                  setHoveredGroup(hoveredGroup === group.id ? null : group.id)
-                }
-                className={cn(
-                  "h-10 flex items-center gap-3 rounded-lg px-2.5 text-sm transition-colors",
-                  "hover:bg-accent/60",
-                  active && "bg-accent/40 text-foreground font-medium"
-                )}
-              >
-                <group.icon className="w-5 h-5 shrink-0" />
-                <span className="flex-1 text-left opacity-0 group-hover/rail:opacity-100 transition-opacity whitespace-nowrap">
-                  {group.label}
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 opacity-0 group-hover/rail:opacity-60 transition-opacity" />
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* Flyout panel for hovered group */}
-      {hoveredGroup && (
+    return (
+      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail">
         <div
-          onMouseEnter={() => {/* keep open */}}
-          className="h-full w-56 glass-strong border-r border-white/[0.06] py-3 px-2 animate-in fade-in slide-in-from-left-2 duration-150"
+          className={cn(
+            "relative h-full glass-strong border-r border-white/[0.06]",
+            "flex flex-col py-3 transition-[width] duration-200 ease-out",
+            "w-14 hover:w-56"
+          )}
         >
-          <p className="px-2 pb-2 text-[10px] font-mono uppercase tracking-[0.22em] text-primary/80">
-            {groups.find((g) => g.id === hoveredGroup)?.label}
-          </p>
-          <div className="flex flex-col gap-1">
-            {groups
-              .find((g) => g.id === hoveredGroup)
-              ?.items.map((item) => (
+          <nav className="flex-1 flex flex-col gap-1 px-2 overflow-hidden">
+            {directLinks.map((link) => {
+              const active = activeTab === link.id;
+              return (
                 <button
-                  key={item.id}
-                  onClick={() => handleSelect(item.id)}
+                  key={link.id}
+                  onClick={() => handleSelect(link.id)}
+                  onMouseEnter={() => setHoveredGroup(null)}
                   className={cn(
-                    "h-9 flex items-center gap-3 rounded-lg px-2.5 text-sm transition-colors",
+                    "relative h-10 flex items-center gap-3 rounded-lg px-2.5 text-sm transition-colors",
                     "hover:bg-accent/60",
-                    activeTab === item.id &&
-                      "bg-accent text-foreground font-medium"
+                    active
+                      ? "bg-accent text-primary font-semibold"
+                      : "text-foreground/80",
+                    link.id === "live" && !active && "text-destructive hover:text-destructive"
                   )}
                 >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  <span className="whitespace-nowrap">{item.label}</span>
+                  {active && (
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.6)]" />
+                  )}
+                  <link.icon
+                    className={cn(
+                      "w-5 h-5 shrink-0",
+                      link.id === "live" && "animate-pulse"
+                    )}
+                  />
+                  <span className="opacity-0 group-hover/rail:opacity-100 transition-opacity whitespace-nowrap">
+                    {link.label}
+                  </span>
                 </button>
-              ))}
-          </div>
+              );
+            })}
+
+            <div className="my-2 mx-2 h-px bg-white/[0.06]" />
+
+            {groups.map((group) => {
+              const active = isGroupActive(group);
+              const open = hoveredGroup === group.id;
+              return (
+                <button
+                  key={group.id}
+                  ref={(el) => (groupBtnRefs.current[group.id] = el)}
+                  onClick={() => openGroup(group.id)}
+                  className={cn(
+                    "relative h-10 flex items-center gap-3 rounded-lg px-2.5 text-sm transition-colors",
+                    "hover:bg-accent/60",
+                    active
+                      ? "bg-accent text-primary font-semibold"
+                      : "text-foreground/80",
+                    open && !active && "bg-accent/40 text-foreground"
+                  )}
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.6)]" />
+                  )}
+                  <group.icon className="w-5 h-5 shrink-0" />
+                  <span className="flex-1 text-left opacity-0 group-hover/rail:opacity-100 transition-opacity whitespace-nowrap">
+                    {group.label}
+                  </span>
+                  <ChevronRight
+                    className={cn(
+                      "w-3.5 h-3.5 transition-all opacity-0 group-hover/rail:opacity-60",
+                      open && "rotate-90 opacity-100"
+                    )}
+                  />
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      )}
-    </aside>
-  );
+
+        {/* Flyout panel — posicionado na altura do botão clicado */}
+        {hoveredGroup && (
+          <div
+            style={{ top: flyoutTop }}
+            className="fixed left-14 w-56 glass-strong border border-white/[0.06] rounded-xl py-2 px-2 shadow-card-custom animate-in fade-in slide-in-from-left-2 duration-150"
+          >
+            <p className="px-2 pb-2 text-[10px] font-mono uppercase tracking-[0.22em] text-primary/80">
+              {groups.find((g) => g.id === hoveredGroup)?.label}
+            </p>
+            <div className="flex flex-col gap-1">
+              {groups
+                .find((g) => g.id === hoveredGroup)
+                ?.items.map((item) => {
+                  const active = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelect(item.id)}
+                      className={cn(
+                        "relative h-9 flex items-center gap-3 rounded-lg px-2.5 text-sm transition-colors",
+                        "hover:bg-accent/60",
+                        active
+                          ? "bg-accent text-primary font-semibold"
+                          : "text-foreground/80"
+                      )}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-primary" />
+                      )}
+                      <item.icon className="w-4 h-4 shrink-0" />
+                      <span className="whitespace-nowrap">{item.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </aside>
+    );
+  };
 
   // ---------- Mobile: sheet ----------
   const MobileNav = () => (
