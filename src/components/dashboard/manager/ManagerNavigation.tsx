@@ -213,13 +213,14 @@ export default function ManagerNavigation({
                     <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.6)]" />
                   )}
                   <group.icon className="w-5 h-5 shrink-0" />
-                  <span className="flex-1 text-left transition-opacity ${RAIL_LABEL} transition-opacity whitespace-nowrap">
+                  <span className={cn("flex-1 text-left transition-opacity whitespace-nowrap", railExpanded ? "opacity-100" : "opacity-0")}>
                     {group.label}
                   </span>
                   <ChevronRight
                     className={cn(
-                      "w-3.5 h-3.5 transition-all transition-opacity ${RAIL_LABEL_60}",
-                      open && "rotate-90 opacity-100"
+                      "w-3.5 h-3.5 transition-all",
+                      railExpanded ? "opacity-60" : "opacity-0",
+                      open && "rotate-90 !opacity-100"
                     )}
                   />
                 </button>
