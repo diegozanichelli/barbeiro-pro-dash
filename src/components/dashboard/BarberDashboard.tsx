@@ -711,7 +711,7 @@ const [todayProduction, setTodayProduction] = useState<{
   if (missingLink) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+        <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -778,7 +778,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
