@@ -183,7 +183,7 @@ export default function ManagerNavigation({
                       link.id === "live" && "animate-pulse"
                     )}
                   />
-                  <span className="transition-opacity ${RAIL_LABEL} transition-opacity whitespace-nowrap">
+                  <span className={cn("transition-opacity whitespace-nowrap", railExpanded ? "opacity-100" : "opacity-0")}>
                     {link.label}
                   </span>
                 </button>
