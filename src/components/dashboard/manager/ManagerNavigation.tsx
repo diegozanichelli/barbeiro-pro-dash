@@ -103,10 +103,7 @@ export default function ManagerNavigation({
 
   // ---------- Desktop: left rail with hover-expand + flyout ----------
   const DesktopRail = () => (
-    <aside
-      className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail"
-      onMouseLeave={() => setHoveredGroup(null)}
-    >
+    <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail">
       <div
         className={cn(
           "h-full glass-strong border-r border-white/[0.06]",
@@ -149,7 +146,6 @@ export default function ManagerNavigation({
             return (
               <button
                 key={group.id}
-                onMouseEnter={() => setHoveredGroup(group.id)}
                 onClick={() =>
                   setHoveredGroup(hoveredGroup === group.id ? null : group.id)
                 }
