@@ -49,6 +49,18 @@ export default function ManagerNavigation({
 }: ManagerNavigationProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
+  const groupBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [flyoutTop, setFlyoutTop] = useState<number>(0);
+
+  const openGroup = (groupId: string) => {
+    if (hoveredGroup === groupId) {
+      setHoveredGroup(null);
+      return;
+    }
+    const btn = groupBtnRefs.current[groupId];
+    if (btn) setFlyoutTop(btn.getBoundingClientRect().top);
+    setHoveredGroup(groupId);
+  };
 
   const directLinks: NavItem[] = [
     { id: "live", label: "Ao Vivo", icon: Radio },
@@ -103,22 +115,6 @@ export default function ManagerNavigation({
 
   // ---------- Desktop: left rail with hover-expand + click flyout ----------
   const DesktopRail = () => {
-    const groupBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-    const [flyoutTop, setFlyoutTop] = useState<number>(0);
-
-    const openGroup = (groupId: string) => {
-      if (hoveredGroup === groupId) {
-        setHoveredGroup(null);
-        return;
-      }
-      const btn = groupBtnRefs.current[groupId];
-      if (btn) {
-        const rect = btn.getBoundingClientRect();
-        setFlyoutTop(rect.top);
-      }
-      setHoveredGroup(groupId);
-    };
-
     return (
       <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 group/rail">
         <div
