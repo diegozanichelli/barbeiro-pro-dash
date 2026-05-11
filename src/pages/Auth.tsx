@@ -212,107 +212,26 @@ export default function Auth() {
         </div>
       </div>
 
-      {/* Right side - dashboard mockup */}
-      <div className="hidden lg:flex relative flex-1 overflow-hidden bg-zinc-900 border-l border-zinc-800">
-        {/* Subtle grid */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              "linear-gradient(hsl(var(--primary)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px)",
-            backgroundSize: "64px 64px",
-          }}
-        />
-        {/* Glow */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(circle at 75% 30%, hsl(var(--primary) / 0.12), transparent 60%)",
-          }}
-        />
-
+      {/* Right side - minimalist */}
+      <div className="hidden lg:flex relative flex-1 overflow-hidden bg-zinc-950 border-l border-zinc-900">
         <div className="relative z-10 h-full w-full flex flex-col justify-between p-12">
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-zinc-500">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-zinc-600">
             <span className="inline-block w-6 h-px bg-primary" />
-            Painel do Gestor
-          </div>
-
-          {/* Glassmorphism mockup */}
-          <div className="relative max-w-md w-full">
-            {/* Floating background card */}
-            <div className="absolute -top-6 -right-6 w-full h-full rounded-2xl bg-primary/5 border border-primary/10 backdrop-blur-sm" />
-
-            <div className="relative rounded-2xl bg-zinc-900/70 border border-zinc-800 backdrop-blur-xl p-6 shadow-2xl space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-zinc-500">Faturamento do mês</p>
-                  <p className="text-2xl font-bold text-foreground mt-1">R$ 84.320</p>
-                </div>
-                <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-1 rounded-md flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  +18,4%
-                </span>
-              </div>
-
-              {/* Mini bars */}
-              <div className="flex items-end gap-1.5 h-20">
-                {[40, 65, 50, 78, 60, 88, 72, 95, 70, 82, 90, 100].map((h, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 rounded-sm bg-gradient-to-t from-primary/30 to-primary"
-                    style={{ height: `${h}%` }}
-                  />
-                ))}
-              </div>
-
-              {/* Ranking row */}
-              <div className="space-y-2 pt-2 border-t border-zinc-800">
-                {[
-                  { n: "Lucas R.", v: "R$ 12.4k", p: "92%" },
-                  { n: "Felipe M.", v: "R$ 10.8k", p: "84%" },
-                  { n: "André S.", v: "R$ 9.1k", p: "71%" },
-                ].map((b, i) => (
-                  <div key={b.n} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center font-semibold">
-                        {i + 1}
-                      </span>
-                      <span className="text-foreground font-medium">{b.n}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-zinc-400">{b.v}</span>
-                      <span className="text-primary font-semibold w-10 text-right">{b.p}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            Performance Barber
           </div>
 
           <div className="space-y-6 max-w-md">
-            <h2 className="text-4xl font-semibold text-foreground leading-[1.1] tracking-tight">
+            <h2 className="text-5xl font-semibold text-foreground leading-[1.05] tracking-tight">
               Performance que vira <span className="text-primary">resultado</span>.
             </h2>
-            <p className="text-zinc-400 text-sm leading-relaxed">
-              Metas, comissões e produção da sua equipe — tudo em um só lugar, atualizado em tempo real.
+            <p className="text-zinc-500 text-base leading-relaxed">
+              Gestão completa da sua barbearia, em tempo real.
             </p>
-
-            {/* Minimal feature list */}
-            <ul className="space-y-3 pt-2">
-              {[
-                { icon: TrendingUp, label: "Metas e pacing em tempo real" },
-                { icon: BarChart3, label: "Relatórios financeiros completos" },
-                { icon: Users, label: "Multi-unidade e ranking de barbeiros" },
-                { icon: Zap, label: "IA de coaching diária" },
-              ].map(({ icon: Icon, label }) => (
-                <li key={label} className="flex items-center gap-3 text-sm text-zinc-300">
-                  <Icon className="w-4 h-4 text-primary shrink-0" />
-                  {label}
-                </li>
-              ))}
-            </ul>
           </div>
+
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-700">
+            v1.0
+          </p>
         </div>
       </div>
     </div>
