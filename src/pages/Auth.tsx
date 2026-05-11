@@ -9,8 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { signInSchema, signUpSchema, type SignInFormData, type SignUpFormData } from "@/lib/validations/auth";
 import logo from "@/assets/performance-barber-logo-transparent.png";
-import sideImage from "@/assets/auth-side-abstract.jpg";
-import { Loader2 } from "lucide-react";
+import { Loader2, TrendingUp, Users, BarChart3, Zap } from "lucide-react";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -190,23 +189,63 @@ export default function Auth() {
         </div>
       </div>
 
-      {/* Image side - hidden on mobile */}
-      <div className="hidden lg:block relative flex-1 overflow-hidden">
-        <img
-          src={sideImage}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover"
+      {/* Pattern side - hidden on mobile */}
+      <div className="hidden lg:flex relative flex-1 overflow-hidden bg-card border-l border-border">
+        {/* Grid pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage:
+              "linear-gradient(hsl(var(--primary)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px)",
+            backgroundSize: "56px 56px",
+          }}
         />
-        <div className="absolute inset-0 bg-gradient-to-tr from-background/80 via-background/20 to-transparent" />
-        <div className="relative z-10 h-full flex flex-col justify-end p-12">
-          <div className="max-w-md space-y-3">
-            <h2 className="text-4xl font-bold text-white leading-tight drop-shadow-lg">
-              Performance que vira <span className="text-primary">resultado</span>.
+        {/* Radial glow */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(circle at 70% 40%, hsl(var(--primary) / 0.18), transparent 55%)",
+          }}
+        />
+        {/* Diagonal accent line */}
+        <div className="absolute -left-px top-1/4 h-32 w-px bg-gradient-to-b from-transparent via-primary to-transparent" />
+
+        <div className="relative z-10 h-full w-full flex flex-col justify-between p-12">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <span className="inline-block w-8 h-px bg-primary" />
+            Performance Barber
+          </div>
+
+          <div className="max-w-md space-y-6">
+            <h2 className="text-5xl font-bold text-foreground leading-[1.1] tracking-tight">
+              Performance que vira{" "}
+              <span className="text-primary">resultado</span>.
             </h2>
-            <p className="text-white/80 text-base drop-shadow">
+            <p className="text-muted-foreground text-base leading-relaxed">
               Gestão completa, dados em tempo real e inteligência para a sua barbearia crescer todos os dias.
             </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 max-w-md">
+            {[
+              { icon: TrendingUp, label: "Metas em tempo real" },
+              { icon: BarChart3, label: "Relatórios completos" },
+              { icon: Users, label: "Multi-unidade" },
+              { icon: Zap, label: "IA de coaching" },
+            ].map(({ icon: Icon, label }) => (
+              <div
+                key={label}
+                className="flex items-center gap-3 p-3 rounded-lg border border-border/60 bg-background/40 backdrop-blur-sm"
+              >
+                <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
+                  <Icon className="h-4 w-4 text-primary" />
+                </div>
+                <span className="text-sm text-foreground/90 font-medium">
+                  {label}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
