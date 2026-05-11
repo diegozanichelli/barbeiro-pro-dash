@@ -9,8 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { signInSchema, signUpSchema, type SignInFormData, type SignUpFormData } from "@/lib/validations/auth";
 import logo from "@/assets/performance-barber-logo-transparent.png";
-import sideImage from "@/assets/auth-side-abstract.jpg";
-import { Loader2 } from "lucide-react";
+import { Loader2, TrendingUp, Users, BarChart3, Zap } from "lucide-react";
 
 export default function Auth() {
   const navigate = useNavigate();
