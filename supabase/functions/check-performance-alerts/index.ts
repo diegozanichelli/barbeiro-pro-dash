@@ -132,6 +132,16 @@ Deno.serve(async (req) => {
           .lte('date', ultimoDiaMesStr);
 
         if (producoesError) {
+          otherErrors++;
+          pushError({
+            stage: 'fetch_productions',
+            barberId: barber.id,
+            barberName: barber.name,
+            message: producoesError.message,
+            code: (producoesError as any).code,
+            details: (producoesError as any).details,
+            hint: (producoesError as any).hint,
+          });
           logStep('Error fetching productions', { barberId: barber.id, error: producoesError.message });
           continue;
         }
@@ -151,11 +161,43 @@ Deno.serve(async (req) => {
           });
 
         if (pacingError) {
-          logStep('Error calculating pacing', { barberId: barber.id, error: pacingError.message });
+          pacingErrors++;
+          pushError({
+            stage: 'calc_expected_pacing',
+            barberId: barber.id,
+            barberName: barber.name,
+            organizationId: barber.organization_id,
+            refDate: refDateStr,
+            message: pacingError.message,
+            code: (pacingError as any).code,
+            details: (pacingError as any).details,
+            hint: (pacingError as any).hint,
+          });
+          logStep('Error calculating pacing', {
+            barberId: barber.id,
+            barberName: barber.name,
+            error: pacingError.message,
+            code: (pacingError as any).code,
+            details: (pacingError as any).details,
+            hint: (pacingError as any).hint,
+          });
           continue;
         }
 
         const pacing = Array.isArray(pacingRows) ? pacingRows[0] : pacingRows;
+        if (!pacing) {
+          pacingErrors++;
+          pushError({
+            stage: 'calc_expected_pacing_empty',
+            barberId: barber.id,
+            barberName: barber.name,
+            refDate: refDateStr,
+            message: 'RPC retornou vazio',
+          });
+          logStep('Pacing RPC returned empty', { barberId: barber.id, barberName: barber.name });
+          continue;
+        }
+
         const metaTotal = Number(pacing?.target_commission ?? meta.target_commission ?? 0);
         const metaEsperadaAteHoje = Number(pacing?.expected_commission ?? 0);
         const diasUteisCorridos = Number(pacing?.working_days_passed ?? 0);
