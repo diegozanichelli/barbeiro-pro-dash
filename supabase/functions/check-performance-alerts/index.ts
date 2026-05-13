@@ -98,8 +98,16 @@ Deno.serve(async (req) => {
 
     logStep('Goals found', { count: metas.length });
 
+    const startedAt = Date.now();
     let alertsCreated = 0;
     let alertsUpdated = 0;
+    let pacingErrors = 0;
+    let otherErrors = 0;
+    const errors: Array<Record<string, unknown>> = [];
+    const pushError = (entry: Record<string, unknown>) => {
+      // Limita para evitar payload gigante
+      if (errors.length < 200) errors.push({ at: new Date().toISOString(), ...entry });
+    };
 
     // Processar cada meta
     for (const meta of metas) {
@@ -124,6 +132,16 @@ Deno.serve(async (req) => {
           .lte('date', ultimoDiaMesStr);
 
         if (producoesError) {
+          otherErrors++;
+          pushError({
+            stage: 'fetch_productions',
+            barberId: barber.id,
+            barberName: barber.name,
+            message: producoesError.message,
+            code: (producoesError as any).code,
+            details: (producoesError as any).details,
+            hint: (producoesError as any).hint,
+          });
           logStep('Error fetching productions', { barberId: barber.id, error: producoesError.message });
           continue;
         }
@@ -143,11 +161,43 @@ Deno.serve(async (req) => {
           });
 
         if (pacingError) {
-          logStep('Error calculating pacing', { barberId: barber.id, error: pacingError.message });
+          pacingErrors++;
+          pushError({
+            stage: 'calc_expected_pacing',
+            barberId: barber.id,
+            barberName: barber.name,
+            organizationId: barber.organization_id,
+            refDate: refDateStr,
+            message: pacingError.message,
+            code: (pacingError as any).code,
+            details: (pacingError as any).details,
+            hint: (pacingError as any).hint,
+          });
+          logStep('Error calculating pacing', {
+            barberId: barber.id,
+            barberName: barber.name,
+            error: pacingError.message,
+            code: (pacingError as any).code,
+            details: (pacingError as any).details,
+            hint: (pacingError as any).hint,
+          });
           continue;
         }
 
         const pacing = Array.isArray(pacingRows) ? pacingRows[0] : pacingRows;
+        if (!pacing) {
+          pacingErrors++;
+          pushError({
+            stage: 'calc_expected_pacing_empty',
+            barberId: barber.id,
+            barberName: barber.name,
+            refDate: refDateStr,
+            message: 'RPC retornou vazio',
+          });
+          logStep('Pacing RPC returned empty', { barberId: barber.id, barberName: barber.name });
+          continue;
+        }
+
         const metaTotal = Number(pacing?.target_commission ?? meta.target_commission ?? 0);
         const metaEsperadaAteHoje = Number(pacing?.expected_commission ?? 0);
         const diasUteisCorridos = Number(pacing?.working_days_passed ?? 0);
@@ -245,25 +295,51 @@ Deno.serve(async (req) => {
           }
         }
       } catch (barberError) {
-        logStep('Error processing barber', { 
-          barberId: meta.barber?.id, 
-          error: barberError instanceof Error ? barberError.message : String(barberError)
+        otherErrors++;
+        const msg = barberError instanceof Error ? barberError.message : String(barberError);
+        pushError({
+          stage: 'barber_loop_exception',
+          barberId: meta.barber?.id,
+          barberName: meta.barber?.name,
+          message: msg,
         });
+        logStep('Error processing barber', { barberId: meta.barber?.id, error: msg });
       }
     }
 
-    logStep('Job completed', { alertsCreated, alertsUpdated });
+    const durationMs = Date.now() - startedAt;
+    logStep('Job completed', { alertsCreated, alertsUpdated, pacingErrors, otherErrors, durationMs });
+
+    // Auditoria: persistir resumo + erros
+    const { error: auditError } = await supabaseClient
+      .from('performance_alert_run_logs')
+      .insert({
+        metas_processadas: metas.length,
+        alerts_created: alertsCreated,
+        alerts_updated: alertsUpdated,
+        pacing_errors: pacingErrors,
+        other_errors: otherErrors,
+        errors,
+        duration_ms: durationMs,
+      });
+    if (auditError) {
+      logStep('Audit insert failed', { error: auditError.message });
+    }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        alertsCreated, 
+      JSON.stringify({
+        success: true,
+        alertsCreated,
         alertsUpdated,
-        metasProcessadas: metas.length 
+        metasProcessadas: metas.length,
+        pacingErrors,
+        otherErrors,
+        durationMs,
+        errors: errors.slice(0, 20),
       }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
+        status: 200
       }
     );
 

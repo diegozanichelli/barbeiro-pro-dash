@@ -631,6 +631,42 @@ export type Database = {
         }
         Relationships: []
       }
+      performance_alert_run_logs: {
+        Row: {
+          alerts_created: number
+          alerts_updated: number
+          duration_ms: number | null
+          errors: Json
+          id: string
+          metas_processadas: number
+          other_errors: number
+          pacing_errors: number
+          ran_at: string
+        }
+        Insert: {
+          alerts_created?: number
+          alerts_updated?: number
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          metas_processadas?: number
+          other_errors?: number
+          pacing_errors?: number
+          ran_at?: string
+        }
+        Update: {
+          alerts_created?: number
+          alerts_updated?: number
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          metas_processadas?: number
+          other_errors?: number
+          pacing_errors?: number
+          ran_at?: string
+        }
+        Relationships: []
+      }
       performance_alerts: {
         Row: {
           alerta_tipo: string
