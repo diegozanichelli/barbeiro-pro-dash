@@ -295,25 +295,51 @@ Deno.serve(async (req) => {
           }
         }
       } catch (barberError) {
-        logStep('Error processing barber', { 
-          barberId: meta.barber?.id, 
-          error: barberError instanceof Error ? barberError.message : String(barberError)
+        otherErrors++;
+        const msg = barberError instanceof Error ? barberError.message : String(barberError);
+        pushError({
+          stage: 'barber_loop_exception',
+          barberId: meta.barber?.id,
+          barberName: meta.barber?.name,
+          message: msg,
         });
+        logStep('Error processing barber', { barberId: meta.barber?.id, error: msg });
       }
     }
 
-    logStep('Job completed', { alertsCreated, alertsUpdated });
+    const durationMs = Date.now() - startedAt;
+    logStep('Job completed', { alertsCreated, alertsUpdated, pacingErrors, otherErrors, durationMs });
+
+    // Auditoria: persistir resumo + erros
+    const { error: auditError } = await supabaseClient
+      .from('performance_alert_run_logs')
+      .insert({
+        metas_processadas: metas.length,
+        alerts_created: alertsCreated,
+        alerts_updated: alertsUpdated,
+        pacing_errors: pacingErrors,
+        other_errors: otherErrors,
+        errors,
+        duration_ms: durationMs,
+      });
+    if (auditError) {
+      logStep('Audit insert failed', { error: auditError.message });
+    }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        alertsCreated, 
+      JSON.stringify({
+        success: true,
+        alertsCreated,
         alertsUpdated,
-        metasProcessadas: metas.length 
+        metasProcessadas: metas.length,
+        pacingErrors,
+        otherErrors,
+        durationMs,
+        errors: errors.slice(0, 20),
       }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
+        status: 200
       }
     );
 
