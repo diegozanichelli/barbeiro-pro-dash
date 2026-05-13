@@ -98,8 +98,16 @@ Deno.serve(async (req) => {
 
     logStep('Goals found', { count: metas.length });
 
+    const startedAt = Date.now();
     let alertsCreated = 0;
     let alertsUpdated = 0;
+    let pacingErrors = 0;
+    let otherErrors = 0;
+    const errors: Array<Record<string, unknown>> = [];
+    const pushError = (entry: Record<string, unknown>) => {
+      // Limita para evitar payload gigante
+      if (errors.length < 200) errors.push({ at: new Date().toISOString(), ...entry });
+    };
 
     // Processar cada meta
     for (const meta of metas) {
