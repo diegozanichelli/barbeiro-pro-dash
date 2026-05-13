@@ -1078,6 +1078,16 @@ export type Database = {
     }
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
+      calc_expected_pacing: {
+        Args: { p_barber_id: string; p_ref_date?: string }
+        Returns: {
+          expected_commission: number
+          expected_percent: number
+          target_commission: number
+          working_days_passed: number
+          working_days_total: number
+        }[]
+      }
       cleanup_old_client_names: { Args: never; Returns: undefined }
       create_sale_and_ensure_production: {
         Args: {
