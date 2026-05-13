@@ -134,37 +134,30 @@ Deno.serve(async (req) => {
           0
         ) || 0;
 
-        // Calcular meta esperada até hoje (pacing)
-        const diasUteisConfigurados = meta.work_days;
-        const metaTotal = Number(meta.target_commission);
-        
-        // Contar apenas dias úteis (seg-sáb) transcorridos até hoje
-        let diasUteisCorridos = 0;
-        for (let d = 1; d <= diaAtual; d++) {
-          const date = new Date(anoAtual, mesAtual - 1, d);
-          if (date.getDay() !== 0) diasUteisCorridos++; // Excluir domingos
+        // Pacing unificado via RPC (mesma fonte do dashboard)
+        const refDateStr = formatDate(hoje);
+        const { data: pacingRows, error: pacingError } = await supabaseClient
+          .rpc('calc_expected_pacing', {
+            p_barber_id: barber.id,
+            p_ref_date: refDateStr,
+          });
+
+        if (pacingError) {
+          logStep('Error calculating pacing', { barberId: barber.id, error: pacingError.message });
+          continue;
         }
-        
-        // Meta esperada proporcional aos dias úteis corridos
-        const metaEsperadaAteHoje = (diasUteisCorridos / diasUteisConfigurados) * metaTotal;
-        
+
+        const pacing = Array.isArray(pacingRows) ? pacingRows[0] : pacingRows;
+        const metaTotal = Number(pacing?.target_commission ?? meta.target_commission ?? 0);
+        const metaEsperadaAteHoje = Number(pacing?.expected_commission ?? 0);
+        const diasUteisCorridos = Number(pacing?.working_days_passed ?? 0);
+        const diasUteisTotais = Number(pacing?.working_days_total ?? meta.work_days ?? 1);
+        const diasRestantes = Math.max(0, diasUteisTotais - diasUteisCorridos);
+
         // Threshold de 85% da meta esperada
         const threshold = metaEsperadaAteHoje * 0.85;
-        
-        // Calcular deficit
         const deficit = metaEsperadaAteHoje - comissaoAcumulada;
-        
-        // Calcular percentual atingido
-        const percentualAtingido = (comissaoAcumulada / metaTotal) * 100;
-        
-        // Dias úteis restantes (sem domingos)
-        let diasUteisRestantes = 0;
-        const ultimoDiaMesNum = new Date(anoAtual, mesAtual, 0).getDate();
-        for (let d = diaAtual + 1; d <= ultimoDiaMesNum; d++) {
-          const date = new Date(anoAtual, mesAtual - 1, d);
-          if (date.getDay() !== 0) diasUteisRestantes++;
-        }
-        const diasRestantes = diasUteisRestantes;
+        const percentualAtingido = metaTotal > 0 ? (comissaoAcumulada / metaTotal) * 100 : 0;
 
         logStep('Barber analysis', {
           barberName: barber.name,
