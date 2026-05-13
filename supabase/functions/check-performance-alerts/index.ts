@@ -109,7 +109,43 @@ Deno.serve(async (req) => {
       if (errors.length < 200) errors.push({ at: new Date().toISOString(), ...entry });
     };
 
-    // Processar cada meta
+    // OTIMIZAÇÃO: pré-buscar pacing + comissão acumulada de todos os barbeiros
+    // por organização em uma única RPC, evitando 2*N round-trips.
+    const refDateStr = formatDate(hoje);
+    const orgIds = Array.from(new Set(
+      metas.map((m: any) => m.barber?.organization_id).filter(Boolean)
+    )) as string[];
+    const pacingByBarber = new Map<string, any>();
+
+    for (const orgId of orgIds) {
+      const { data: rows, error: batchError } = await supabaseClient
+        .rpc('calc_expected_pacing_batch', {
+          p_organization_id: orgId,
+          p_ref_date: refDateStr,
+        });
+
+      if (batchError) {
+        pacingErrors++;
+        pushError({
+          stage: 'calc_expected_pacing_batch',
+          organizationId: orgId,
+          refDate: refDateStr,
+          message: batchError.message,
+          code: (batchError as any).code,
+          details: (batchError as any).details,
+          hint: (batchError as any).hint,
+        });
+        logStep('Error in pacing batch', { organizationId: orgId, error: batchError.message });
+        continue;
+      }
+      for (const r of (rows ?? [])) {
+        pacingByBarber.set(r.barber_id, r);
+      }
+    }
+
+    logStep('Pacing batch loaded', { orgs: orgIds.length, barbersCached: pacingByBarber.size });
+
+    // Processar cada meta usando o cache em memória
     for (const meta of metas) {
       try {
         const barber = meta.barber;
@@ -118,85 +154,21 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Buscar produções acumuladas do barbeiro no mês
-        const primeiroDiaMes = new Date(anoAtual, mesAtual - 1, 1);
-        const ultimoDiaMes = new Date(anoAtual, mesAtual, 0);
-        const primeiroDiaMesStr = formatDate(primeiroDiaMes);
-        const ultimoDiaMesStr = formatDate(ultimoDiaMes);
-        
-        const { data: producoes, error: producoesError } = await supabaseClient
-          .from('daily_productions')
-          .select('commission_earned')
-          .eq('barber_id', barber.id)
-          .gte('date', primeiroDiaMesStr)
-          .lte('date', ultimoDiaMesStr);
-
-        if (producoesError) {
-          otherErrors++;
-          pushError({
-            stage: 'fetch_productions',
-            barberId: barber.id,
-            barberName: barber.name,
-            message: producoesError.message,
-            code: (producoesError as any).code,
-            details: (producoesError as any).details,
-            hint: (producoesError as any).hint,
-          });
-          logStep('Error fetching productions', { barberId: barber.id, error: producoesError.message });
-          continue;
-        }
-
-        // Calcular comissão acumulada
-        const comissaoAcumulada = producoes?.reduce(
-          (acc, prod) => acc + Number(prod.commission_earned), 
-          0
-        ) || 0;
-
-        // Pacing unificado via RPC (mesma fonte do dashboard)
-        const refDateStr = formatDate(hoje);
-        const { data: pacingRows, error: pacingError } = await supabaseClient
-          .rpc('calc_expected_pacing', {
-            p_barber_id: barber.id,
-            p_ref_date: refDateStr,
-          });
-
-        if (pacingError) {
+        const pacing = pacingByBarber.get(barber.id);
+        if (!pacing) {
           pacingErrors++;
           pushError({
-            stage: 'calc_expected_pacing',
+            stage: 'pacing_missing_in_batch',
             barberId: barber.id,
             barberName: barber.name,
             organizationId: barber.organization_id,
             refDate: refDateStr,
-            message: pacingError.message,
-            code: (pacingError as any).code,
-            details: (pacingError as any).details,
-            hint: (pacingError as any).hint,
-          });
-          logStep('Error calculating pacing', {
-            barberId: barber.id,
-            barberName: barber.name,
-            error: pacingError.message,
-            code: (pacingError as any).code,
-            details: (pacingError as any).details,
-            hint: (pacingError as any).hint,
+            message: 'Barbeiro não retornado pelo batch (provável status != active)',
           });
           continue;
         }
 
-        const pacing = Array.isArray(pacingRows) ? pacingRows[0] : pacingRows;
-        if (!pacing) {
-          pacingErrors++;
-          pushError({
-            stage: 'calc_expected_pacing_empty',
-            barberId: barber.id,
-            barberName: barber.name,
-            refDate: refDateStr,
-            message: 'RPC retornou vazio',
-          });
-          logStep('Pacing RPC returned empty', { barberId: barber.id, barberName: barber.name });
-          continue;
-        }
+        const comissaoAcumulada = Number(pacing.comissao_acumulada ?? 0);
 
         const metaTotal = Number(pacing?.target_commission ?? meta.target_commission ?? 0);
         const metaEsperadaAteHoje = Number(pacing?.expected_commission ?? 0);
