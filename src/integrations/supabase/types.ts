@@ -1124,6 +1124,18 @@ export type Database = {
           working_days_total: number
         }[]
       }
+      calc_expected_pacing_batch: {
+        Args: { p_organization_id: string; p_ref_date?: string }
+        Returns: {
+          barber_id: string
+          comissao_acumulada: number
+          expected_commission: number
+          expected_percent: number
+          target_commission: number
+          working_days_passed: number
+          working_days_total: number
+        }[]
+      }
       cleanup_old_client_names: { Args: never; Returns: undefined }
       create_sale_and_ensure_production: {
         Args: {
