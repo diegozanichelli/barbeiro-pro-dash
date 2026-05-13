@@ -1,67 +1,96 @@
-## Diagnóstico da discrepância
+## Diagnóstico
 
-Os dois lugares calculam "ritmo esperado" com fórmulas **completamente diferentes**, então é normal um barbeiro aparecer "Abaixo do Ritmo" no card de alertas mas com outro percentual no Lançamentos Diários (e vice-versa).
+Yan Dutra existe e está ativo (`db53d32a-7cda-4a23-94bf-dc61e72ac03d`, unidade Parque 10), mas o RPC `calc_expected_pacing` criado na última iteração tem **ambiguidade de nome de coluna**:
 
-### 1. Dashboard – `DailyGoalsTracking.tsx` (linhas 66–183)
 ```
-workingDaysPassed = dias corridos do mês até hoje (1..hoje), excluindo só feriados
-                    → INCLUI domingos
-monthDays         = dias totais do mês (28/30/31)
-expectedProgress  = workingDaysPassed / monthDays * 100
-```
-- **Não usa** `monthly_goals.work_days`.
-- **Não exclui** domingos.
-- Compara contra % de comissão atingida no mês.
-
-### 2. Edge function – `check-performance-alerts/index.ts` (linhas 138–190)
-```
-diasUteisCorridos      = dias seg–sáb transcorridos (EXCLUI domingos)
-                         → NÃO exclui feriados
-diasUteisConfigurados  = monthly_goals.work_days (ex.: 26)
-metaEsperadaAteHoje    = (diasUteisCorridos / work_days) * target_commission
-threshold              = metaEsperadaAteHoje * 0.85
-classifica em "Meta Impossível" / "Abaixo do Ritmo" / "Risco Moderado"
-                         por percentualAtingido (acumulado / meta total)
+ERROR 42702: column reference "target_commission" is ambiguous
+QUERY: SELECT COALESCE(target_commission, 0) FROM monthly_goals ...
 ```
 
-### Por que os números não batem
-| Aspecto | Dashboard | Alerta |
-|---|---|---|
-| Denominador de pacing | dias do mês (ex. 31) | `work_days` configurado (ex. 26) |
-| Domingos | conta como dia esperado | exclui |
-| Feriados | exclui | ignora (conta como dia útil) |
-| Ausências/folgas futuras | considera no diário | ignora |
-| Base do esperado | proporção de tempo | proporção × meta total |
-| Thresholds | -5 / -20 (dashboard) | 85% pacing + 60/70% (alerta) |
+A coluna `monthly_goals.target_commission` colide com o parâmetro de saída homônimo da função. Isso faz a RPC falhar em runtime para **qualquer** barbeiro. Dentro de `check-performance-alerts`, o erro cai no `continue` do loop e **nenhum alerta é criado ou atualizado** desde o último deploy — por isso o Yan (e potencialmente outros) não aparecem.
 
-Exemplo Gabriel Silva (img): dashboard mostra 18,2% × esperado 41,9% (-23,7%). Pela régua do alerta com `work_days=26` e domingos fora, o esperado é maior ainda (~46–50%), e cai em "Abaixo do Ritmo" (<60%). Já Felipe (-39,9% no dashboard) pode não ter sido classificado como "Meta Impossível" porque a edge function exige `dias_restantes < 5` para isso.
+## Correção
 
-## Plano de correção
+### 1. Migration — recriar a função com nomes desambiguados
 
-Padronizar **uma única fonte de verdade** para "esperado até hoje", usada nos dois lugares.
+```sql
+CREATE OR REPLACE FUNCTION public.calc_expected_pacing(
+  p_barber_id uuid,
+  p_ref_date  date DEFAULT CURRENT_DATE
+)
+RETURNS TABLE(
+  working_days_passed integer,
+  working_days_total  integer,
+  target_commission   numeric,
+  expected_commission numeric,
+  expected_percent    numeric
+)
+LANGUAGE plpgsql
+STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_org      uuid;
+  v_month    integer := EXTRACT(MONTH FROM p_ref_date)::integer;
+  v_year     integer := EXTRACT(YEAR  FROM p_ref_date)::integer;
+  v_first    date    := make_date(v_year, v_month, 1);
+  v_last     date    := (v_first + interval '1 month - 1 day')::date;
+  v_target   numeric := 0;
+  v_passed   integer := 0;
+  v_total    integer := 0;
+BEGIN
+  SELECT b.organization_id INTO v_org FROM barbers b WHERE b.id = p_barber_id;
 
-### Opção recomendada (alinhar à régua do dashboard, que respeita feriados/folgas)
-1. **Criar função SQL `public.calc_expected_pacing(barber_id, ref_date)`** que retorna:
-   - `working_days_passed` (dias do mês até hoje, excluindo feriados da org e dias marcados como `day_off`/`absence`/`optional_sunday` em `daily_productions` do barbeiro)
-   - `working_days_total` (mesmo critério para o mês inteiro, considerando `monthly_goals.work_days` como teto se preenchido)
-   - `expected_commission` = `target_commission * working_days_passed / working_days_total`
-   - `expected_percent` = `working_days_passed / working_days_total * 100`
-2. **Edge function `check-performance-alerts`**: substituir o bloco `diasUteisCorridos / diasUteisConfigurados` por chamada à RPC. Manter a árvore de classificação (Meta Impossível / Abaixo do Ritmo / Risco Moderado) baseada em `comissao_acumulada / expected_commission`.
-3. **`DailyGoalsTracking.tsx`**: substituir `getWorkingDaysPassed()` + `monthDays` pelo mesmo RPC (ou função TS equivalente reutilizada de `dateUtils.ts`) para que `expectedProgress` use exatamente a mesma base.
-4. **Alinhar thresholds visuais**: ajustar `progressDiff` do dashboard para refletir as mesmas faixas usadas no alerta (ex.: <-15% = "Risco Moderado", <-30% = "Abaixo do Ritmo"), garantindo coerência entre o badge "Crítico" e o card de alertas.
-5. **Backfill**: rodar a edge function uma vez após o deploy para reclassificar alertas ativos com a nova fórmula.
+  SELECT COALESCE(mg.target_commission, 0) INTO v_target
+  FROM monthly_goals mg
+  WHERE mg.barber_id = p_barber_id
+    AND mg.month     = v_month
+    AND mg.year      = v_year
+  LIMIT 1;
 
-### Detalhe técnico — feriados na edge function
-Hoje a função lê só `daily_productions.commission_earned`. Precisa passar a ler:
-- `organization_holidays` (mês corrente)
-- `daily_productions.presence_type` para descontar folgas/ausências do barbeiro
+  SELECT COUNT(*)::int INTO v_passed
+  FROM generate_series(v_first, p_ref_date, interval '1 day') AS d(day)
+  WHERE NOT EXISTS (SELECT 1 FROM organization_holidays oh
+                    WHERE oh.organization_id = v_org AND oh.date = d.day::date)
+    AND NOT EXISTS (SELECT 1 FROM daily_productions dp
+                    WHERE dp.barber_id = p_barber_id
+                      AND dp.date = d.day::date
+                      AND dp.presence_type IN ('day_off','absence','optional_sunday'));
 
-### Arquivos afetados
-- `supabase/functions/check-performance-alerts/index.ts`
-- `src/components/dashboard/manager/DailyGoalsTracking.tsx`
-- `src/lib/dateUtils.ts` (extrair helper compartilhado)
-- nova migration com a função `calc_expected_pacing`
+  SELECT COUNT(*)::int INTO v_total
+  FROM generate_series(v_first, v_last, interval '1 day') AS d(day)
+  WHERE NOT EXISTS (SELECT 1 FROM organization_holidays oh
+                    WHERE oh.organization_id = v_org AND oh.date = d.day::date)
+    AND NOT EXISTS (SELECT 1 FROM daily_productions dp
+                    WHERE dp.barber_id = p_barber_id
+                      AND dp.date = d.day::date
+                      AND dp.presence_type IN ('day_off','absence','optional_sunday'));
 
-### Fora de escopo
-- Não mexer em RLS de `performance_alerts`.
-- Não alterar formato dos cards de alerta nem a UI da listagem.
+  IF v_total <= 0 THEN v_total := 1; END IF;
+
+  working_days_passed := v_passed;
+  working_days_total  := v_total;
+  target_commission   := v_target;
+  expected_commission := ROUND(v_target * v_passed::numeric / v_total::numeric, 2);
+  expected_percent    := ROUND(v_passed::numeric * 100 / v_total::numeric, 2);
+  RETURN NEXT;
+END;
+$$;
+```
+
+Mudanças mínimas: alias `mg.` na coluna `monthly_goals.target_commission` e `b.` na de `barbers`. Assinatura e nomes de retorno preservados → nenhum ajuste no código TS.
+
+### 2. Validação pós-migration
+
+- `SELECT * FROM calc_expected_pacing('db53d32a-7cda-4a23-94bf-dc61e72ac03d', CURRENT_DATE);` → deve retornar números, não erro.
+- Conferir `SUM(commission_earned)` do Yan em maio/2026 vs `expected_commission` para confirmar se ele está abaixo ou acima do threshold de 85%.
+- Invocar `check-performance-alerts` (curl) para reclassificar todos os barbeiros.
+
+### 3. Resultado esperado
+
+- Se Yan estiver < 85% do esperado → vai aparecer no card de alertas.
+- Se estiver ≥ 85% → corretamente fica fora (regra de negócio existente, "Tudo em dia").
+
+## Fora de escopo
+- Thresholds da edge function.
+- UI de alertas e RLS.
