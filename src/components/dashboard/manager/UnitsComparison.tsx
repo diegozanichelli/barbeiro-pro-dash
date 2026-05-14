@@ -213,6 +213,18 @@ export default function UnitsComparison() {
       metrics.receita += receitaBasicaItem + receitaExtraItem + receitaProdutosItem;
       metrics.comissao += Number(prod.commission_earned) || 0;
       metrics.clientes += Number(prod.clients_count) || 0;
+
+      // Agregar por barbeiro
+      const barberId = prod.barber_id;
+      const barberName = prod.barbers?.name || 'Sem nome';
+      if (barberId) {
+        const key = barberId;
+        const existing = barberAgg.get(key) || { barberId, barberName, unitId, basic: 0, extra: 0, products: 0 };
+        existing.basic += receitaBasicaItem;
+        existing.extra += receitaExtraItem;
+        existing.products += receitaProdutosItem;
+        barberAgg.set(key, existing);
+      }
     });
 
     // Agregar metas por unidade
