@@ -686,6 +686,16 @@ export default function UnitsComparison() {
           </CardContent>
         </Card>
       )}
+
+      <BarberPeriodDetailModal
+        open={!!detailBarber}
+        onOpenChange={(o) => { if (!o) setDetailBarber(null); }}
+        barberId={detailBarber?.id ?? null}
+        barberName={detailBarber?.name ?? ''}
+        unitName={detailBarber?.unitName}
+        year={selectedYear}
+        month={selectedMonth}
+      />
     </div>
   );
 }
