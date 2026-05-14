@@ -593,6 +593,73 @@ export default function UnitsComparison() {
           )}
         </CardContent>
       </Card>
+
+      {/* Top barbeiros por unidade */}
+      {!loading && topBarbersByUnit.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Destaques por Unidade</CardTitle>
+            <CardDescription>
+              Barbeiros que mais venderam em cada categoria - {monthNames[selectedMonth - 1]} {selectedYear}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {topBarbersByUnit.map((unit) => (
+                <Card key={unit.unitId} className="bg-muted/30 border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{unit.unitName}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <Scissors className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Serviços Básicos</p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {unit.topBasic?.barberName ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {unit.topBasic ? `R$ ${unit.topBasic.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-4 h-4 text-success" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Serviços Extras</p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {unit.topExtra?.barberName ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {unit.topExtra ? `R$ ${unit.topExtra.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                        <Package className="w-4 h-4 text-blue-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Produtos</p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {unit.topProducts?.barberName ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {unit.topProducts ? `R$ ${unit.topProducts.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
