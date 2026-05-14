@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
+import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
 
 interface Unit {
   id: string;
@@ -54,6 +55,7 @@ export default function UnitsComparison() {
   const [unitsMetrics, setUnitsMetrics] = useState<UnitMetrics[]>([]);
   const [topBarbersByUnit, setTopBarbersByUnit] = useState<UnitTopBarbers[]>([]);
   const [loading, setLoading] = useState(false);
+  const [detailBarber, setDetailBarber] = useState<{ id: string; name: string; unitName: string } | null>(null);
 
   const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
@@ -617,9 +619,17 @@ export default function UnitsComparison() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Serviços Básicos</p>
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {unit.topBasic?.barberName ?? '—'}
-                        </p>
+                        {unit.topBasic ? (
+                          <button
+                            type="button"
+                            onClick={() => setDetailBarber({ id: unit.topBasic!.barberId, name: unit.topBasic!.barberName, unitName: unit.unitName })}
+                            className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline text-left w-full"
+                          >
+                            {unit.topBasic.barberName}
+                          </button>
+                        ) : (
+                          <p className="text-sm font-semibold text-foreground truncate">—</p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           {unit.topBasic ? `R$ ${unit.topBasic.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
                         </p>
@@ -631,9 +641,17 @@ export default function UnitsComparison() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Serviços Extras</p>
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {unit.topExtra?.barberName ?? '—'}
-                        </p>
+                        {unit.topExtra ? (
+                          <button
+                            type="button"
+                            onClick={() => setDetailBarber({ id: unit.topExtra!.barberId, name: unit.topExtra!.barberName, unitName: unit.unitName })}
+                            className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline text-left w-full"
+                          >
+                            {unit.topExtra.barberName}
+                          </button>
+                        ) : (
+                          <p className="text-sm font-semibold text-foreground truncate">—</p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           {unit.topExtra ? `R$ ${unit.topExtra.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
                         </p>
@@ -645,9 +663,17 @@ export default function UnitsComparison() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Produtos</p>
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {unit.topProducts?.barberName ?? '—'}
-                        </p>
+                        {unit.topProducts ? (
+                          <button
+                            type="button"
+                            onClick={() => setDetailBarber({ id: unit.topProducts!.barberId, name: unit.topProducts!.barberName, unitName: unit.unitName })}
+                            className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline text-left w-full"
+                          >
+                            {unit.topProducts.barberName}
+                          </button>
+                        ) : (
+                          <p className="text-sm font-semibold text-foreground truncate">—</p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           {unit.topProducts ? `R$ ${unit.topProducts.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
                         </p>
@@ -660,6 +686,16 @@ export default function UnitsComparison() {
           </CardContent>
         </Card>
       )}
+
+      <BarberPeriodDetailModal
+        open={!!detailBarber}
+        onOpenChange={(o) => { if (!o) setDetailBarber(null); }}
+        barberId={detailBarber?.id ?? null}
+        barberName={detailBarber?.name ?? ''}
+        unitName={detailBarber?.unitName}
+        year={selectedYear}
+        month={selectedMonth}
+      />
     </div>
   );
 }
