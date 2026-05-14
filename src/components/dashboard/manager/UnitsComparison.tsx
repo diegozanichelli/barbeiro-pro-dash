@@ -156,7 +156,10 @@ export default function UnitsComparison() {
       });
     });
 
-    // Agregar produções por unidade — aplicar hierarquia tx > manual > legacy
+    // Agregar receita por barbeiro (para identificar líderes por unidade)
+    const barberAgg = new Map<string, { barberId: string; barberName: string; unitId: string; basic: number; extra: number; products: number }>();
+
+
     productions?.forEach((prod: any) => {
       const unitId = prod.barbers?.unit_id;
       if (!unitId || !metricsMap.has(unitId)) return;
