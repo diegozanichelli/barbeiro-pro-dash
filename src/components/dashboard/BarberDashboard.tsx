@@ -1072,10 +1072,35 @@ const [todayProduction, setTodayProduction] = useState<{
             {/* Card de Progresso Mensal */}
             <Card className="bg-card border-border shadow-card-custom">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-success" />
-                  SEU PROGRESSO NO MÊS
-                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-success" />
+                    SEU PROGRESSO NO MÊS
+                  </CardTitle>
+                  {pacingStatus && (
+                    pacingStatus === "ahead" ? (
+                      <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                        <TrendingUp className="w-3 h-3 mr-1" />
+                        Acima da Meta
+                      </Badge>
+                    ) : pacingStatus === "on-track" ? (
+                      <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        No Ritmo
+                      </Badge>
+                    ) : pacingStatus === "behind" ? (
+                      <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        Atenção
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-red-500/20 text-red-500 border-red-500/30">
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Crítico
+                      </Badge>
+                    )
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
