@@ -1113,7 +1113,10 @@ const [todayProduction, setTodayProduction] = useState<{
                   {monthlyGoal ? (
                     <>
                       <Progress value={progressPercentage} className="h-3" />
-                      <div className="flex justify-end text-sm">
+                      <div className="flex justify-between text-sm">
+                        {expectedPercent !== null ? (
+                          <span className="text-muted-foreground">Esperado: {expectedPercent.toFixed(1)}%</span>
+                        ) : <span />}
                         <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
                       </div>
                     </>
