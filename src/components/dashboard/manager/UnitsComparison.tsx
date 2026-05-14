@@ -245,6 +245,26 @@ export default function UnitsComparison() {
     // Ordenar por receita (maior primeiro)
     const sortedMetrics = Array.from(metricsMap.values()).sort((a, b) => b.receita - a.receita);
     setUnitsMetrics(sortedMetrics);
+
+    // Top barbeiros por unidade (básico, extra, produtos)
+    const tops: UnitTopBarbers[] = sortedMetrics.map((u) => {
+      const barbersOfUnit = Array.from(barberAgg.values()).filter((b) => b.unitId === u.unitId);
+      const pickTop = (key: 'basic' | 'extra' | 'products'): BarberLeader | null => {
+        const filtered = barbersOfUnit.filter((b) => b[key] > 0);
+        if (filtered.length === 0) return null;
+        const winner = filtered.reduce((a, b) => (b[key] > a[key] ? b : a));
+        return { barberId: winner.barberId, barberName: winner.barberName, value: winner[key] };
+      };
+      return {
+        unitId: u.unitId,
+        unitName: u.unitName,
+        topBasic: pickTop('basic'),
+        topExtra: pickTop('extra'),
+        topProducts: pickTop('products'),
+      };
+    });
+    setTopBarbersByUnit(tops);
+
     setLoading(false);
   };
 
