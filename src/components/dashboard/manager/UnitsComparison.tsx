@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { GitCompare, TrendingUp, TrendingDown, Medal } from "lucide-react";
+import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
 
