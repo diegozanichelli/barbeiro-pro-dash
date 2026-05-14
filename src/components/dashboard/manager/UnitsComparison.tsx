@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { GitCompare, TrendingUp, TrendingDown, Medal } from "lucide-react";
+import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
 
@@ -26,6 +26,20 @@ interface UnitMetrics {
   performance: number;
 }
 
+interface BarberLeader {
+  barberId: string;
+  barberName: string;
+  value: number;
+}
+
+interface UnitTopBarbers {
+  unitId: string;
+  unitName: string;
+  topBasic: BarberLeader | null;
+  topExtra: BarberLeader | null;
+  topProducts: BarberLeader | null;
+}
+
 const monthNames = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -38,6 +52,7 @@ export default function UnitsComparison() {
   const [selectedMonth, setSelectedMonth] = useState<number>(manausNow.getMonth() + 1);
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitsMetrics, setUnitsMetrics] = useState<UnitMetrics[]>([]);
+  const [topBarbersByUnit, setTopBarbersByUnit] = useState<UnitTopBarbers[]>([]);
   const [loading, setLoading] = useState(false);
 
   const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
@@ -88,7 +103,7 @@ export default function UnitsComparison() {
         .select(`date, services_total, services_basic_total, services_extra_total, products_total,
                  tx_basic_total, tx_extra_total, tx_products_total,
                  manual_basic_total, manual_extra_total, manual_products_total,
-                 commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
+                 commission_earned, clients_count, barber_id, barbers!inner(unit_id, name)`)
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: true })
@@ -141,7 +156,10 @@ export default function UnitsComparison() {
       });
     });
 
-    // Agregar produções por unidade — aplicar hierarquia tx > manual > legacy
+    // Agregar receita por barbeiro (para identificar líderes por unidade)
+    const barberAgg = new Map<string, { barberId: string; barberName: string; unitId: string; basic: number; extra: number; products: number }>();
+
+
     productions?.forEach((prod: any) => {
       const unitId = prod.barbers?.unit_id;
       if (!unitId || !metricsMap.has(unitId)) return;
@@ -195,6 +213,18 @@ export default function UnitsComparison() {
       metrics.receita += receitaBasicaItem + receitaExtraItem + receitaProdutosItem;
       metrics.comissao += Number(prod.commission_earned) || 0;
       metrics.clientes += Number(prod.clients_count) || 0;
+
+      // Agregar por barbeiro
+      const barberId = prod.barber_id;
+      const barberName = prod.barbers?.name || 'Sem nome';
+      if (barberId) {
+        const key = barberId;
+        const existing = barberAgg.get(key) || { barberId, barberName, unitId, basic: 0, extra: 0, products: 0 };
+        existing.basic += receitaBasicaItem;
+        existing.extra += receitaExtraItem;
+        existing.products += receitaProdutosItem;
+        barberAgg.set(key, existing);
+      }
     });
 
     // Agregar metas por unidade
@@ -215,6 +245,26 @@ export default function UnitsComparison() {
     // Ordenar por receita (maior primeiro)
     const sortedMetrics = Array.from(metricsMap.values()).sort((a, b) => b.receita - a.receita);
     setUnitsMetrics(sortedMetrics);
+
+    // Top barbeiros por unidade (básico, extra, produtos)
+    const tops: UnitTopBarbers[] = sortedMetrics.map((u) => {
+      const barbersOfUnit = Array.from(barberAgg.values()).filter((b) => b.unitId === u.unitId);
+      const pickTop = (key: 'basic' | 'extra' | 'products'): BarberLeader | null => {
+        const filtered = barbersOfUnit.filter((b) => b[key] > 0);
+        if (filtered.length === 0) return null;
+        const winner = filtered.reduce((a, b) => (b[key] > a[key] ? b : a));
+        return { barberId: winner.barberId, barberName: winner.barberName, value: winner[key] };
+      };
+      return {
+        unitId: u.unitId,
+        unitName: u.unitName,
+        topBasic: pickTop('basic'),
+        topExtra: pickTop('extra'),
+        topProducts: pickTop('products'),
+      };
+    });
+    setTopBarbersByUnit(tops);
+
     setLoading(false);
   };
 
@@ -543,6 +593,73 @@ export default function UnitsComparison() {
           )}
         </CardContent>
       </Card>
+
+      {/* Top barbeiros por unidade */}
+      {!loading && topBarbersByUnit.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Destaques por Unidade</CardTitle>
+            <CardDescription>
+              Barbeiros que mais venderam em cada categoria - {monthNames[selectedMonth - 1]} {selectedYear}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {topBarbersByUnit.map((unit) => (
+                <Card key={unit.unitId} className="bg-muted/30 border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{unit.unitName}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <Scissors className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Serviços Básicos</p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {unit.topBasic?.barberName ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {unit.topBasic ? `R$ ${unit.topBasic.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-4 h-4 text-success" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Serviços Extras</p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {unit.topExtra?.barberName ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {unit.topExtra ? `R$ ${unit.topExtra.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                        <Package className="w-4 h-4 text-blue-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Top Produtos</p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {unit.topProducts?.barberName ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {unit.topProducts ? `R$ ${unit.topProducts.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem vendas'}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
