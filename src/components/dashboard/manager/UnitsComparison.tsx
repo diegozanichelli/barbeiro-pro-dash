@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
+import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
 
 interface Unit {
   id: string;
