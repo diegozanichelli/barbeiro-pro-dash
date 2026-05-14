@@ -124,6 +124,8 @@ const [todayProduction, setTodayProduction] = useState<{
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
   const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
   const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
+  const [pacingStatus, setPacingStatus] = useState<"ahead" | "on-track" | "behind" | "critical" | null>(null);
+  const [expectedPercent, setExpectedPercent] = useState<number | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
