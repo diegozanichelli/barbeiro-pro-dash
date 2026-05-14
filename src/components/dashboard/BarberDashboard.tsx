@@ -520,6 +520,37 @@ const [todayProduction, setTodayProduction] = useState<{
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
+  // Buscar pacing (Crítico/Atenção/No Ritmo/Acima) — mesma lógica do painel do gestor
+  useEffect(() => {
+    if (!barber || !isCurrentMonth || !monthlyGoal || !stats) {
+      setPacingStatus(null);
+      setExpectedPercent(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("calc_expected_pacing", {
+        p_barber_id: barber.id,
+        p_ref_date: getTodayString(),
+      });
+      if (cancelled || error) return;
+      const pacing = Array.isArray(data) ? data[0] : data;
+      const expected = Number(pacing?.expected_percent ?? 0);
+      const progress = monthlyGoal.target_commission > 0
+        ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
+        : 0;
+      const diff = progress - expected;
+      let status: "ahead" | "on-track" | "behind" | "critical";
+      if (diff >= 10) status = "ahead";
+      else if (diff >= -5) status = "on-track";
+      else if (diff >= -20) status = "behind";
+      else status = "critical";
+      setExpectedPercent(expected);
+      setPacingStatus(status);
+    })();
+    return () => { cancelled = true; };
+  }, [barber, isCurrentMonth, monthlyGoal, stats]);
+
   // Check localStorage for existing war plan
   useEffect(() => {
     if (!barber) return;
