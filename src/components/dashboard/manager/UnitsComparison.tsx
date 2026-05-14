@@ -26,6 +26,20 @@ interface UnitMetrics {
   performance: number;
 }
 
+interface BarberLeader {
+  barberId: string;
+  barberName: string;
+  value: number;
+}
+
+interface UnitTopBarbers {
+  unitId: string;
+  unitName: string;
+  topBasic: BarberLeader | null;
+  topExtra: BarberLeader | null;
+  topProducts: BarberLeader | null;
+}
+
 const monthNames = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
