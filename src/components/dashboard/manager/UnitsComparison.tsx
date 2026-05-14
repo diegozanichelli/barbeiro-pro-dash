@@ -52,6 +52,7 @@ export default function UnitsComparison() {
   const [selectedMonth, setSelectedMonth] = useState<number>(manausNow.getMonth() + 1);
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitsMetrics, setUnitsMetrics] = useState<UnitMetrics[]>([]);
+  const [topBarbersByUnit, setTopBarbersByUnit] = useState<UnitTopBarbers[]>([]);
   const [loading, setLoading] = useState(false);
 
   const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
