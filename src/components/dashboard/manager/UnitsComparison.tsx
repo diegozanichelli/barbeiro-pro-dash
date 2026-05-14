@@ -103,7 +103,7 @@ export default function UnitsComparison() {
         .select(`date, services_total, services_basic_total, services_extra_total, products_total,
                  tx_basic_total, tx_extra_total, tx_products_total,
                  manual_basic_total, manual_extra_total, manual_products_total,
-                 commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
+                 commission_earned, clients_count, barber_id, barbers!inner(unit_id, name)`)
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: true })
