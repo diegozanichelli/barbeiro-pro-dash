@@ -55,6 +55,7 @@ export default function UnitsComparison() {
   const [unitsMetrics, setUnitsMetrics] = useState<UnitMetrics[]>([]);
   const [topBarbersByUnit, setTopBarbersByUnit] = useState<UnitTopBarbers[]>([]);
   const [loading, setLoading] = useState(false);
+  const [detailBarber, setDetailBarber] = useState<{ id: string; name: string; unitName: string } | null>(null);
 
   const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
