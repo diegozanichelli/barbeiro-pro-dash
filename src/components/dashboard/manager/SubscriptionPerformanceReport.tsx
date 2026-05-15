@@ -45,6 +45,17 @@ export default function SubscriptionPerformanceReport() {
   const [globalOpportunities, setGlobalOpportunities] = useState(0);
   const [globalNewClientAdhesions, setGlobalNewClientAdhesions] = useState(0);
   const [globalTotalAdhesions, setGlobalTotalAdhesions] = useState(0);
+  // Filtro de unidade + saúde dos dados
+  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("all"); // "all" | "no_unit" | uuid
+  const [dataHealth, setDataHealth] = useState<DataHealth>({
+    totalInPeriod: 0,
+    txSemUnidade: 0,
+    novoSemTelefone: 0,
+    novaAdesaoSemTelefone: 0,
+    novaAdesaoSemIsNewClient: 0,
+  });
+  const [healthOpen, setHealthOpen] = useState(false);
 
   const months = [
     { value: 1, label: "Janeiro" },
