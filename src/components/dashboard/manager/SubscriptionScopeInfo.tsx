@@ -6,8 +6,10 @@ const BANNERS: Record<Scope, { title: string; body: string }> = {
   conversion: {
     title: "O que esta aba mede",
     body:
-      "Quantos clientes novos atendidos pelos barbeiros viraram assinantes. Inclui também uma linha agregada da Recepção. " +
-      "Critério: assinaturas com ação = nova ÷ pessoas únicas (por celular).",
+      "Duas métricas lado a lado para cada barbeiro (e Recepção): " +
+      "Conversão Estrita = adesões de assinatura feitas para clientes novos ÷ oportunidades (≤100%); " +
+      "Penetração = todas as adesões 'novas' (incl. clientes da casa) ÷ oportunidades (pode passar de 100%). " +
+      "Oportunidades = pessoas únicas por celular marcadas como cliente novo.",
   },
   reception: {
     title: "O que esta aba mede",
