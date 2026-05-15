@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Crown, TrendingUp, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle } from "lucide-react";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
@@ -15,9 +15,11 @@ interface BarberPerformance {
   barberId: string;
   barberName: string;
   unitName: string;
-  newClientsCount: number;
-  subscriptionsSold: number;
-  conversionRate: number;
+  opportunities: number;          // pessoas únicas com is_new_client=true
+  newClientAdhesions: number;     // assinaturas action='new' AND is_new_client=true
+  totalAdhesions: number;         // assinaturas action='new' (qualquer cliente)
+  strictConversion: number;       // newClientAdhesions / opportunities
+  penetration: number;            // totalAdhesions / opportunities
   isReception?: boolean;
 }
 
@@ -29,6 +31,10 @@ export default function SubscriptionPerformanceReport() {
   const [loading, setLoading] = useState(true);
   const [performanceData, setPerformanceData] = useState<BarberPerformance[]>([]);
   const [receptionRow, setReceptionRow] = useState<BarberPerformance | null>(null);
+  // Total geral DEDUPLICADO entre barbeiros (Set global)
+  const [globalOpportunities, setGlobalOpportunities] = useState(0);
+  const [globalNewClientAdhesions, setGlobalNewClientAdhesions] = useState(0);
+  const [globalTotalAdhesions, setGlobalTotalAdhesions] = useState(0);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -55,13 +61,15 @@ export default function SubscriptionPerformanceReport() {
     if (!organizationId) return;
     setLoading(true);
 
-    // Calculate date range for the selected month
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split("T")[0];
 
+    // Filtros com timezone Manaus (UTC-4) explícito para evitar bordas erradas
+    const startISO = `${startDate}T00:00:00-04:00`;
+    const endISO = `${endDate}T23:59:59-04:00`;
+
     try {
-      // Fetch ONLY manager transactions for the period (source='manager')
-      // Explicit organization_id filter to avoid super_admin cross-tenant leakage
+      // Transações de barbeiros
       const { data: transactions, error: txError } = await supabase
         .from("sale_transactions")
         .select(`
@@ -74,31 +82,37 @@ export default function SubscriptionPerformanceReport() {
         `)
         .eq("organization_id", organizationId)
         .eq("source", "manager")
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${endDate}T23:59:59`)
+        .gte("created_at", startISO)
+        .lte("created_at", endISO)
         .not("barber_id", "is", null);
 
       if (txError) throw txError;
 
-      // Fetch reception transactions (no barber attached) for the same period
+      // Transações da recepção (sem barber_id)
       const { data: receptionTx, error: recError } = await supabase
         .from("sale_transactions")
         .select("is_new_client, item_type, subscription_action, mobile_phone")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${endDate}T23:59:59`)
+        .gte("created_at", startISO)
+        .lte("created_at", endISO)
         .is("barber_id", null);
 
       if (recError) throw recError;
 
-      // Group data by barber — using Set<mobile_phone> for unique people counting
+      // Agrupar por barbeiro
       const barberMap = new Map<string, {
         name: string;
         unit: string;
-        newClientPhones: Set<string>;
-        subscriptions: number;
+        opportunityPhones: Set<string>;
+        newClientAdhesions: number;
+        totalAdhesions: number;
       }>();
+
+      // Sets globais para deduplicar a visão organizacional
+      const globalOpportunityPhones = new Set<string>();
+      let globalNewClientAdh = 0;
+      let globalTotalAdh = 0;
 
       transactions?.forEach((tx) => {
         if (!tx.barber_id) return;
@@ -106,75 +120,90 @@ export default function SubscriptionPerformanceReport() {
         const existing = barberMap.get(tx.barber_id) || {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
-          newClientPhones: new Set<string>(),
-          subscriptions: 0,
+          opportunityPhones: new Set<string>(),
+          newClientAdhesions: 0,
+          totalAdhesions: 0,
         };
 
-        // Count UNIQUE new clients by phone (one person = one opportunity, not N items)
         if (tx.is_new_client === true && tx.mobile_phone) {
-          existing.newClientPhones.add(tx.mobile_phone);
+          existing.opportunityPhones.add(tx.mobile_phone);
+          globalOpportunityPhones.add(tx.mobile_phone);
         }
 
-        // Aligned with Inteligência: ALL new subscription adhesions count
-        // (regardless of whether client was new or existing)
-        if (
-          tx.item_type === "subscription" &&
-          (tx as any).subscription_action === "new"
-        ) {
-          existing.subscriptions++;
+        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
+          existing.totalAdhesions++;
+          globalTotalAdh++;
+          if (tx.is_new_client === true) {
+            existing.newClientAdhesions++;
+            globalNewClientAdh++;
+          }
         }
 
         barberMap.set(tx.barber_id, existing);
       });
 
-      // Convert to array and calculate conversion rate
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
         ([barberId, data]) => {
-          const uniqueNew = data.newClientPhones.size;
+          const opp = data.opportunityPhones.size;
           return {
             barberId,
             barberName: data.name,
             unitName: data.unit,
-            newClientsCount: uniqueNew,
-            subscriptionsSold: data.subscriptions,
-            conversionRate: uniqueNew > 0
-              ? (data.subscriptions / uniqueNew) * 100
-              : 0,
+            opportunities: opp,
+            newClientAdhesions: data.newClientAdhesions,
+            totalAdhesions: data.totalAdhesions,
+            strictConversion: opp > 0 ? (data.newClientAdhesions / opp) * 100 : 0,
+            penetration: opp > 0 ? (data.totalAdhesions / opp) * 100 : 0,
           };
         }
       );
 
-      // Sort by conversion rate descending
-      performance.sort((a, b) => b.conversionRate - a.conversionRate);
-
+      // Ordena por conversão estrita desc, com penetração como desempate
+      performance.sort((a, b) =>
+        b.strictConversion - a.strictConversion || b.penetration - a.penetration
+      );
       setPerformanceData(performance);
 
-      // Build reception aggregate row (sales without assigned barber)
+      // Recepção
       const receptionPhones = new Set<string>();
-      let receptionSubs = 0;
+      let receptionNewClientAdh = 0;
+      let receptionTotalAdh = 0;
+
       receptionTx?.forEach((tx) => {
         if (tx.is_new_client === true && tx.mobile_phone) {
           receptionPhones.add(tx.mobile_phone);
+          globalOpportunityPhones.add(tx.mobile_phone);
         }
         if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
-          receptionSubs++;
+          receptionTotalAdh++;
+          globalTotalAdh++;
+          if (tx.is_new_client === true) {
+            receptionNewClientAdh++;
+            globalNewClientAdh++;
+          }
         }
       });
 
-      if (receptionPhones.size > 0 || receptionSubs > 0) {
-        const uniqueRec = receptionPhones.size;
+      if (receptionPhones.size > 0 || receptionTotalAdh > 0) {
+        const opp = receptionPhones.size;
         setReceptionRow({
           barberId: "__reception__",
           barberName: "Recepção",
           unitName: "Sem barbeiro atribuído",
-          newClientsCount: uniqueRec,
-          subscriptionsSold: receptionSubs,
-          conversionRate: uniqueRec > 0 ? (receptionSubs / uniqueRec) * 100 : 0,
+          opportunities: opp,
+          newClientAdhesions: receptionNewClientAdh,
+          totalAdhesions: receptionTotalAdh,
+          strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
+          penetration: opp > 0 ? (receptionTotalAdh / opp) * 100 : 0,
           isReception: true,
         });
       } else {
         setReceptionRow(null);
       }
+
+      setGlobalOpportunities(globalOpportunityPhones.size);
+      setGlobalNewClientAdhesions(globalNewClientAdh);
+      setGlobalTotalAdhesions(globalTotalAdh);
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
@@ -182,9 +211,17 @@ export default function SubscriptionPerformanceReport() {
     }
   };
 
-  const getConversionBadge = (rate: number, opportunities: number) => {
-    // If no opportunities, show N/A
+  // Badge para Conversão estrita (≤100%)
+  const getStrictBadge = (rate: number, opportunities: number, sales: number) => {
     if (opportunities === 0) {
+      if (sales > 0) {
+        return (
+          <Badge variant="destructive" className="text-xs gap-1 font-medium">
+            <AlertTriangle className="w-3 h-3" />
+            <span>Sem oport. ({sales} vendas)</span>
+          </Badge>
+        );
+      }
       return (
         <Badge variant="secondary" className="text-xs gap-1">
           <span>N/A</span>
@@ -192,7 +229,6 @@ export default function SubscriptionPerformanceReport() {
       );
     }
 
-    // Elite: > 30%
     if (rate >= 30) {
       return (
         <Badge className="bg-success text-white text-xs gap-1 font-semibold">
@@ -201,8 +237,6 @@ export default function SubscriptionPerformanceReport() {
         </Badge>
       );
     }
-
-    // Regular: 10-29%
     if (rate >= 10) {
       return (
         <Badge className="bg-warning text-warning-foreground text-xs gap-1 font-medium">
@@ -211,8 +245,6 @@ export default function SubscriptionPerformanceReport() {
         </Badge>
       );
     }
-
-    // Critical: < 10%
     return (
       <Badge variant="destructive" className="text-xs gap-1 font-medium">
         <AlertTriangle className="w-3 h-3" />
@@ -221,28 +253,18 @@ export default function SubscriptionPerformanceReport() {
     );
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
+  const getInitials = (name: string) =>
+    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  // Highlight critical cases: many opportunities, few sales
-  const isCriticalCase = (opportunities: number, sales: number) => {
-    return opportunities >= 5 && sales === 0;
-  };
+  const isCriticalCase = (opportunities: number, sales: number) =>
+    opportunities >= 5 && sales === 0;
 
-  // Summary stats — include reception so totals match Inteligência tab
-  const totalNewClients =
-    performanceData.reduce((sum, p) => sum + p.newClientsCount, 0) +
-    (receptionRow?.newClientsCount || 0);
-  const totalSubscriptions =
-    performanceData.reduce((sum, p) => sum + p.subscriptionsSold, 0) +
-    (receptionRow?.subscriptionsSold || 0);
-  const overallConversion = totalNewClients > 0 ? (totalSubscriptions / totalNewClients) * 100 : 0;
+  const overallStrict = globalOpportunities > 0
+    ? (globalNewClientAdhesions / globalOpportunities) * 100
+    : 0;
+  const overallPenetration = globalOpportunities > 0
+    ? (globalTotalAdhesions / globalOpportunities) * 100
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -255,60 +277,44 @@ export default function SubscriptionPerformanceReport() {
             <div>
               <CardTitle>Relatório de Conversão de Assinaturas</CardTitle>
               <CardDescription>
-                Taxa de conversão: Clientes Novos → Assinantes
+                Conversão Estrita (cliente novo → assinou) e Penetração (todas adesões ÷ oportunidades)
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
+          <SubscriptionScopeBanner scope="conversion" />
+
           {/* Filters */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Mês
-              </label>
-              <Select
-                value={selectedMonth.toString()}
-                onValueChange={(v) => setSelectedMonth(Number(v))}
-              >
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Mês</label>
+              <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {months.map((month) => (
-                    <SelectItem key={month.value} value={month.value.toString()}>
-                      {month.label}
-                    </SelectItem>
+                    <SelectItem key={month.value} value={month.value.toString()}>{month.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Ano
-              </label>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(v) => setSelectedYear(Number(v))}
-              >
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Ano</label>
+              <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(Number(v))}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
+                    <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          {/* Summary Cards */}
+          {/* Summary Cards (4) */}
           <TooltipProvider delayDuration={150}>
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <Card className="bg-muted/50">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
@@ -321,57 +327,86 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Pessoas únicas (por celular) marcadas como "cliente novo" no período. Cada
-                        pessoa conta uma vez, mesmo que tenha vários atendimentos.
+                        Pessoas únicas (por celular) marcadas como "cliente novo" no período. Total
+                        deduplicado: a mesma pessoa atendida por dois barbeiros conta uma única vez.
                       </TooltipContent>
                     </UITooltip>
                   </div>
-                  <p className="text-2xl font-bold">{totalNewClients}</p>
-                  <p className="text-xs text-muted-foreground">Clientes Novos</p>
+                  <p className="text-2xl font-bold">{globalOpportunities}</p>
+                  <p className="text-xs text-muted-foreground">Clientes Novos únicos</p>
                 </CardContent>
               </Card>
+
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <UserPlus className="w-4 h-4" />
+                    <span className="text-xs">👤 Ades. Cliente Novo</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Adesões de Cliente Novo">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Assinaturas com ação = "nova" feitas para clientes marcados como novos.
+                        Critério usado pelo funil da aba Inteligência.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">{globalNewClientAdhesions}</p>
+                  <p className="text-xs text-muted-foreground">Novo cliente que assinou</p>
+                </CardContent>
+              </Card>
+
               <Card className="bg-muted/50">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
                     <Crown className="w-4 h-4" />
-                    <span className="text-xs">👑 Vendas</span>
+                    <span className="text-xs">👑 Ades. Totais</span>
                     <UITooltip>
                       <TooltipTrigger asChild>
-                        <button type="button" aria-label="Sobre Vendas">
+                        <button type="button" aria-label="Sobre Adesões Totais">
                           <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês — barbeiros + recepção, clientes
-                        novos e da casa. Mesmo critério da aba Carteira de Assinaturas.
+                        Toda assinatura com ação = "nova" no mês — clientes novos + clientes da
+                        casa, barbeiros + recepção. Não inclui renovações/upgrades (esses estão na
+                        aba Carteira).
                       </TooltipContent>
                     </UITooltip>
                   </div>
-                  <p className="text-2xl font-bold">{totalSubscriptions}</p>
-                  <p className="text-xs text-muted-foreground">Assinaturas</p>
+                  <p className="text-2xl font-bold">{globalTotalAdhesions}</p>
+                  <p className="text-xs text-muted-foreground">Toda nova adesão</p>
                 </CardContent>
               </Card>
+
               <Card className="bg-muted/50">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
                     <Target className="w-4 h-4" />
-                    <span className="text-xs">📉 Conversão Geral</span>
+                    <span className="text-xs">📉 Conv. / Penetração</span>
                     <UITooltip>
                       <TooltipTrigger asChild>
-                        <button type="button" aria-label="Sobre Conversão">
+                        <button type="button" aria-label="Sobre Conversão e Penetração">
                           <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Vendas ÷ Oportunidades. Mostra o quanto dos clientes novos atendidos
-                        viraram assinantes no período.
+                        <strong>Conversão Estrita</strong>: Ades. Cliente Novo ÷ Oportunidades. Mede
+                        quantos novos viraram assinantes (sempre ≤100%).<br />
+                        <strong>Penetração</strong>: Ades. Totais ÷ Oportunidades. Pode passar de
+                        100% se vender muito para clientes da casa.
                       </TooltipContent>
                     </UITooltip>
                   </div>
                   <p className="text-2xl font-bold">
-                    {overallConversion.toFixed(1)}%
+                    <span className="text-success">{overallStrict.toFixed(1)}%</span>
+                    <span className="text-muted-foreground mx-1">/</span>
+                    <span className="text-primary">{overallPenetration.toFixed(1)}%</span>
                   </p>
-                  <p className="text-xs text-muted-foreground">Vendas / Oportunidades</p>
+                  <p className="text-xs text-muted-foreground">Estrita / Penetração</p>
                 </CardContent>
               </Card>
             </div>
@@ -389,52 +424,61 @@ export default function SubscriptionPerformanceReport() {
               <p className="text-sm">Selecione outro período ou registre atendimentos com clientes novos</p>
             </div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
+            <div className="rounded-lg border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Barbeiro</TableHead>
-                    <TableHead className="text-center">🎯 Oportunidades</TableHead>
-                    <TableHead className="text-center">👑 Vendas</TableHead>
-                    <TableHead className="text-center">📉 Taxa de Conversão</TableHead>
+                    <TableHead className="text-center">🎯 Oport.</TableHead>
+                    <TableHead className="text-center">👤 Ades. Cliente Novo</TableHead>
+                    <TableHead className="text-center">👑 Ades. Totais</TableHead>
+                    <TableHead className="text-center">📉 Conv. Estrita</TableHead>
+                    <TableHead className="text-center">📈 Penetração</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {performanceData.map((barber) => (
-                    <TableRow 
-                      key={barber.barberId}
-                      className={isCriticalCase(barber.newClientsCount, barber.subscriptionsSold) 
-                        ? "bg-destructive/10" 
-                        : ""
-                      }
+                  {performanceData.map((b) => (
+                    <TableRow
+                      key={b.barberId}
+                      className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border-2 border-primary/20">
                             <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                              {getInitials(barber.barberName)}
+                              {getInitials(b.barberName)}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{barber.barberName}</p>
-                            <p className="text-xs text-muted-foreground">{barber.unitName}</p>
+                            <p className="font-medium">{b.barberName}</p>
+                            <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <span className={`font-semibold text-lg ${
-                          isCriticalCase(barber.newClientsCount, barber.subscriptionsSold)
-                            ? "text-destructive"
-                            : ""
+                          isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""
                         }`}>
-                          {barber.newClientsCount}
+                          {b.opportunities}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{barber.subscriptionsSold}</span>
+                        <span className="font-semibold text-lg">{b.newClientAdhesions}</span>
                       </TableCell>
                       <TableCell className="text-center">
-                        {getConversionBadge(barber.conversionRate, barber.newClientsCount)}
+                        <span className="font-semibold text-lg">{b.totalAdhesions}</span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {getStrictBadge(b.strictConversion, b.opportunities, b.totalAdhesions)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {b.opportunities > 0 ? (
+                          <span className={`font-semibold ${b.penetration > 100 ? "text-primary" : ""}`}>
+                            {b.penetration.toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -454,13 +498,25 @@ export default function SubscriptionPerformanceReport() {
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.newClientsCount}</span>
+                        <span className="font-semibold text-lg">{receptionRow.opportunities}</span>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.subscriptionsSold}</span>
+                        <span className="font-semibold text-lg">{receptionRow.newClientAdhesions}</span>
                       </TableCell>
                       <TableCell className="text-center">
-                        {getConversionBadge(receptionRow.conversionRate, receptionRow.newClientsCount)}
+                        <span className="font-semibold text-lg">{receptionRow.totalAdhesions}</span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {getStrictBadge(receptionRow.strictConversion, receptionRow.opportunities, receptionRow.totalAdhesions)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {receptionRow.opportunities > 0 ? (
+                          <span className={`font-semibold ${receptionRow.penetration > 100 ? "text-primary" : ""}`}>
+                            {receptionRow.penetration.toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   )}
@@ -471,6 +527,7 @@ export default function SubscriptionPerformanceReport() {
 
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
+            <span className="text-xs font-medium uppercase tracking-wider">Conv. Estrita:</span>
             <div className="flex items-center gap-1">
               <Badge className="bg-success text-white text-xs gap-1">
                 <Trophy className="w-3 h-3" />
@@ -491,6 +548,13 @@ export default function SubscriptionPerformanceReport() {
                 Baixo
               </Badge>
               <span>&lt; 10%</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Badge variant="destructive" className="text-xs gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Sem oport.
+              </Badge>
+              <span>vendeu sem registrar cliente novo</span>
             </div>
           </div>
         </CardContent>
