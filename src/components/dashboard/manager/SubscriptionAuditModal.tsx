@@ -177,6 +177,8 @@ export default function SubscriptionAuditModal({
     setEditBarberId(tx.barber_id);
     setEditPlanId(tx.subscription_plan_id || "");
     setEditValue(String(tx.price_sold));
+    setEditPhone(tx.mobile_phone ? formatPhone(tx.mobile_phone) : "");
+    setEditAction(tx.subscription_action);
   };
 
   const cancelEditing = () => {
@@ -184,6 +186,8 @@ export default function SubscriptionAuditModal({
     setEditBarberId(null);
     setEditPlanId("");
     setEditValue("");
+    setEditPhone("");
+    setEditAction(null);
   };
 
   const handleSave = async (txId: string) => {
@@ -194,6 +198,16 @@ export default function SubscriptionAuditModal({
 
       if (isNaN(priceValue) || priceValue < 0) {
         toast.error("Valor inválido");
+        setSaving(false);
+        return;
+      }
+
+      const guard = assertPhoneForNewClient({
+        subscriptionAction: editAction,
+        mobilePhone: editPhone,
+      });
+      if (guard.ok === false) {
+        toast.error(guard.message);
         setSaving(false);
         return;
       }
@@ -220,6 +234,11 @@ export default function SubscriptionAuditModal({
         updatePayload.item_name = `Assinatura ${selectedPlan.name}`;
       }
 
+      // Persist phone (sanitized) when present and valid; required when action='new'
+      if (editPhone && isValidPhone(editPhone)) {
+        updatePayload.mobile_phone = sanitizePhone(editPhone);
+      }
+
       const { error } = await supabase
         .from("sale_transactions")
         .update(updatePayload)
@@ -233,7 +252,7 @@ export default function SubscriptionAuditModal({
       onRefresh?.();
     } catch (error) {
       console.error("Error updating transaction:", error);
-      toast.error("Erro ao salvar alteração");
+      toast.error(translateSaleError(error));
     } finally {
       setSaving(false);
     }
