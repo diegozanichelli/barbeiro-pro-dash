@@ -185,6 +185,9 @@ export default function UnitsComparison() {
       console.error("Erro ao buscar transações de assinatura:", transactionsError);
     }
 
+    // Agregação por barbeiro (para top barbeiros por unidade)
+    const barberAgg = new Map<string, { barberId: string; barberName: string; unitId: string; basic: number; extra: number; products: number }>();
+
     // Agregar produções por unidade
     productions?.forEach((prod: any) => {
       const unitId = prod.barbers?.unit_id;
