@@ -339,9 +339,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar status:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar status"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsSavingPresence(false);
     }
