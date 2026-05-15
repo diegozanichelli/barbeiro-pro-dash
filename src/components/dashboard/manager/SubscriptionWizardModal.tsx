@@ -274,7 +274,7 @@ export default function SubscriptionWizardModal({
         isNewClient,
         mobilePhone,
       });
-      if (!guard.ok) {
+      if (guard.ok === false) {
         toast.error(guard.message);
         return;
       }
