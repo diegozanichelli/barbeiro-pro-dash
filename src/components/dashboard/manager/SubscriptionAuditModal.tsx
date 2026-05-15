@@ -30,6 +30,8 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { assertPhoneForNewClient, translateSaleError } from "@/lib/saleGuards";
 
 interface SubscriptionAuditModalProps {
   open: boolean;
