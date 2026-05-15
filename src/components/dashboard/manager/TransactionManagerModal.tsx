@@ -386,7 +386,7 @@ export default function TransactionManagerModal({
       onSuccess();
     } catch (error) {
       console.error("Error adding transactions:", error);
-      toast.error("Erro ao adicionar itens");
+      toast.error(translateSaleError(error));
     } finally {
       setIsSubmitting(false);
       isSubmittingRef.current = false;
