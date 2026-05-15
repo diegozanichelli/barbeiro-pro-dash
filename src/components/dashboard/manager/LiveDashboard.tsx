@@ -777,8 +777,6 @@ export default function LiveDashboard() {
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.revenue - a.revenue);
   }, [units, managerTransactions]);
-      .sort((a, b) => b.revenue - a.revenue);
-  }, [units, barbers, managerTransactions, productions]);
 
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
