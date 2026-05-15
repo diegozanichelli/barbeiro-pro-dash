@@ -362,7 +362,7 @@ export default function SubscriptionPerformanceReport() {
           <SubscriptionScopeBanner scope="conversion" />
 
           {/* Filters */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">Mês</label>
               <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(Number(v))}>
@@ -386,7 +386,99 @@ export default function SubscriptionPerformanceReport() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="col-span-2 lg:col-span-1">
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Unidade</label>
+              <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {units.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
+                  <SelectItem value="no_unit">⚠️ Sem unidade (legado)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+
+          {/* Saúde dos dados — colapsável e discreto */}
+          {(() => {
+            const totalIssues =
+              dataHealth.txSemUnidade +
+              dataHealth.novoSemTelefone +
+              dataHealth.novaAdesaoSemTelefone +
+              dataHealth.novaAdesaoSemIsNewClient;
+            const hasIssues = totalIssues > 0;
+            return (
+              <div className="mb-6">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setHealthOpen((o) => !o)}
+                  className="w-full justify-between text-xs h-auto py-2 px-3 border border-border/50 bg-muted/30 hover:bg-muted/60"
+                >
+                  <span className="flex items-center gap-2">
+                    {hasIssues ? (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                        <span className="font-medium">
+                          Saúde dos dados — {totalIssues} {totalIssues === 1 ? "ponto de atenção" : "pontos de atenção"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-success" />
+                        <span className="font-medium">Saúde dos dados — tudo certo no período</span>
+                      </>
+                    )}
+                  </span>
+                  {healthOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </Button>
+                {healthOpen && (
+                  <div className="mt-2 rounded-md border border-border/50 bg-muted/20 p-3 space-y-2 text-xs">
+                    <p className="text-muted-foreground">
+                      Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
+                      Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Sem unidade vinculada</span>
+                        <Badge variant={dataHealth.txSemUnidade > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.txSemUnidade}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Cliente novo sem telefone</span>
+                        <Badge variant={dataHealth.novoSemTelefone > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novoSemTelefone}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Nova adesão sem telefone</span>
+                        <Badge variant={dataHealth.novaAdesaoSemTelefone > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novaAdesaoSemTelefone}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Nova adesão sem marcar "cliente novo"</span>
+                        <Badge variant={dataHealth.novaAdesaoSemIsNewClient > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novaAdesaoSemIsNewClient}
+                        </Badge>
+                      </div>
+                    </div>
+                    {hasIssues && (
+                      <p className="text-muted-foreground italic pt-1">
+                        Novos lançamentos já são bloqueados na origem. Os números acima representam
+                        registros antigos (legado) que ainda precisam ser corrigidos manualmente.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Summary Cards (4) */}
           <TooltipProvider delayDuration={150}>
