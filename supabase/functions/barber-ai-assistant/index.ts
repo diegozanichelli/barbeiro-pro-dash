@@ -1587,6 +1587,101 @@ IMPORTANTE:
 
       await logUsage(barberId, organizationId, 'war_plan');
 
+      // ===== CATÁLOGO DE ESTRATÉGIAS (a IA escolhe 1-2 baseada no contexto) =====
+      const STRATEGIES = [
+        {
+          id: "blitz_matinal",
+          nome: "Blitz Matinal",
+          quando: "Quando o gap diário é alto e há clientes cedo na agenda",
+          foco: "Atacar nos 3 primeiros atendimentos com combo cheio (corte + barba + sobrancelha) pra já garantir 60% da meta antes do almoço.",
+        },
+        {
+          id: "ticket_minimo_garantido",
+          nome: "Ticket Mínimo Garantido",
+          quando: "Quando o ticket médio do barbeiro está abaixo da loja",
+          foco: "Definir um piso de ticket (ex: R$ X) e NUNCA deixar cliente sair abaixo disso. Script: sempre oferecer 1 adicional barato (sobrancelha/pigmentação) que sobe R$ 10-15.",
+        },
+        {
+          id: "volume_terca_quarta",
+          nome: "Volume Inteligente (Ter/Qua)",
+          quando: "Quando hoje é terça ou quarta (dias historicamente lentos)",
+          foco: "Não é dia de ticket alto, é dia de VOLUME. Estratégia: corte básico rápido + 1 produto leve (pomada/balm R$ 25-35). Atender 1-2 clientes a mais que o normal. Mandar 5 mensagens pra inativos antes das 11h.",
+        },
+        {
+          id: "combo_express",
+          nome: "Combo Express R$ 10",
+          quando: "Ticket baixo + muitos clientes (modo fábrica)",
+          foco: "Vender APENAS um adicional de R$ 10-15 (sobrancelha na navalha, pigmentação básica, hidratação rápida). Não tenta upsell pesado — soma R$ 10 em 8 clientes = +R$ 80 no dia.",
+        },
+        {
+          id: "produto_carro_chefe",
+          nome: "Produto Carro-Chefe do Dia",
+          quando: "Quando a conversão de produto está abaixo de 30%",
+          foco: "Escolher UM produto só (o top do barbeiro) e oferecer pra 100% dos clientes. Script único, treinado. Meta: 3 vendas do mesmo produto.",
+        },
+        {
+          id: "assinatura_focada",
+          nome: "Caça à Assinatura",
+          quando: "Quando assinaturas do mês < 3 e há clientes recorrentes na agenda",
+          foco: "Identificar 2 clientes que vêm ≥2x no mês e fazer a conta pra eles: 'assinatura X paga em 2 cortes'. Meta: 1 nova adesão.",
+        },
+        {
+          id: "resgate_inativos",
+          nome: "Resgate de Inativos",
+          quando: "Quando a agenda está fraca (poucos clientes) ou é dia lento",
+          foco: "Antes de abrir cadeira, mandar mensagem personalizada pra 5-8 clientes que não voltam há 30+ dias. Oferta: 'separei horário hoje pra você'. Meta: encher 2 buracos da agenda.",
+        },
+        {
+          id: "captacao_novo_cliente",
+          nome: "Captação de Novo Cliente",
+          quando: "Quando clientes novos no mês < 5",
+          foco: "Pedir 1 indicação a cada cliente atendido. Script: 'manda meu contato pra 1 amigo seu — ganha R$ 10 de desconto na próxima'. Meta: 2 novos clientes na semana.",
+        },
+        {
+          id: "upsell_barba",
+          nome: "Operação Barba",
+          quando: "Quando a taxa de extras está baixa (<30%)",
+          foco: "Foco TOTAL em barba/acabamento. Toda vez que cortar cabelo, perguntar: 'fechamos o visual com a barba? sai por +R$ X'. Meta: barba em 50% dos cortes do dia.",
+        },
+        {
+          id: "ataque_pontos_cegos",
+          nome: "Ataque aos Pontos Cegos",
+          quando: "Quando há serviços/produtos com zero vendas no histórico",
+          foco: "Pegar UM item esquecido e oferecer pra 100% dos clientes do dia. Quebrar o tabu — 1 venda já vira hábito.",
+        },
+        {
+          id: "sprint_meta_proxima",
+          nome: "Sprint Final",
+          quando: "Quando faltam <= 5 dias no mês E meta está em 80-99%",
+          foco: "Esquece estratégia bonita. É hora de aceitar TUDO: encaixe, hora extra, atendimento rápido. Conta exata: 'faltam R$ X em Y dias = R$ Z/dia'.",
+        },
+        {
+          id: "consolidacao_fim_semana",
+          nome: "Consolidação de Fim de Semana",
+          quando: "Quando hoje é sexta ou sábado",
+          foco: "Dia de ticket alto. Foco em combo completo (corte+barba+produto) e venda de assinatura pra cliente que costuma vir todo sábado. Não desperdiça cadeira com básico.",
+        },
+        {
+          id: "recuperacao_segunda",
+          nome: "Recuperação de Segunda",
+          quando: "Quando hoje é segunda-feira",
+          foco: "Dia de organizar a semana. Atende quem chega + agenda os próximos 3 dias (Ter/Qua/Qui) com 5 ligações/mensagens. Meta: garantir 2 clientes pra terça.",
+        },
+        {
+          id: "qualidade_quinta",
+          nome: "Quinta Premium",
+          quando: "Quando hoje é quinta-feira",
+          foco: "Quinta é o ensaio do fim de semana. Foca em ticket: combo + produto. Ofereça serviços premium (pigmentação, hidratação) pra cliente que vai sair no fim de semana.",
+        },
+      ];
+
+      // Rotação leve por dia para evitar mesma cara sempre
+      const rotationSeed = parseInt(todayDate.replace(/-/g, '')) + (barberId.charCodeAt(0) || 0);
+      const shuffled = [...STRATEGIES].sort(() => 0.5 - ((rotationSeed * 9301 + 49297) % 233280) / 233280);
+      const strategiesForPrompt = shuffled.map(s =>
+        `- [${s.id}] ${s.nome} — QUANDO: ${s.quando}. FOCO: ${s.foco}`
+      ).join('\n');
+
       // Tentativa via IA (só se chave existir)
       if (LOVABLE_API_KEY) {
         const dataContext = `
@@ -1624,32 +1719,53 @@ DADOS REAIS DO BARBEIRO (NÃO INVENTE NADA — use SOMENTE estes números):
 - Pior dia da semana histórico: ${worstDow >= 0 ? dayNames[worstDow] : 'sem padrão'}${worstDow === todayDow ? ' ⚠️ (HOJE!)' : ''}
 `;
 
-        const systemPrompt = `Você é o estrategista de elite de um barbeiro. Gere um PLANO DE GUERRA do DIA — um briefing executivo curto, baseado 100% em dados reais.
+        const systemPrompt = `Você é o estrategista de elite de um barbeiro brasileiro. Gere um PLANO DE GUERRA único e PERSONALIZADO para HOJE — baseado 100% em dados reais, analisando com calma o cenário antes de prescrever.
 
-FORMATO OBRIGATÓRIO em Markdown (use EXATAMENTE esses 5 blocos, com emojis e quebras de linha):
+# CATÁLOGO DE ESTRATÉGIAS DISPONÍVEIS (escolha 1 PRINCIPAL e, se fizer sentido, 1 SECUNDÁRIA)
+${strategiesForPrompt}
+
+# COMO ESCOLHER A ESTRATÉGIA
+1. PRIMEIRO analise o cenário: dia da semana, dias restantes no mês, gap diário, gap mensal, ticket vs loja, conversão de produto, taxa de extras, assinaturas/novos clientes do mês, pontos cegos, agenda de hoje.
+2. Considere REGRAS DE DIA DA SEMANA:
+   - Terça e quarta: dias historicamente mais devagar → foque em VOLUME e tickets baixos somados (combos express R$ 10-15), não em ticket alto.
+   - Segunda: dia de ORGANIZAR a semana e ligar pra clientes.
+   - Quinta: ensaio do fim de semana, ticket sobe.
+   - Sexta/sábado: dia de combo cheio e ticket alto.
+   - Domingo: se houver expediente, foca em consolidar.
+3. Considere DIAS RESTANTES no mês:
+   - >15 dias: pode investir em estratégia de longo prazo (assinatura, captação).
+   - 6-15 dias: equilibrar volume + ticket.
+   - ≤5 dias: SPRINT — aceita tudo, encaixe, hora extra.
+4. NÃO escolha sempre a mesma estratégia. Varie conforme o contexto muda. NÃO repita a estrutura genérica — cada plano deve PARECER único.
+5. Quando ticket está baixo: prefira estratégias de VOLUME e adicionais baratos (R$ 10-15), NÃO upsell pesado.
+
+# FORMATO OBRIGATÓRIO (Markdown, 5 blocos, com emojis)
 
 🎯 META DO DIA
-• 2-3 linhas com gap diário, % da meta mensal, dias restantes.
+• Gap diário em R$ + % da meta mensal + dias restantes. Cite o dia da semana e se é dia historicamente fraco/forte.
 
-📊 SEU PERFIL (30d)
-• 3-4 bullets curtos com ticket médio (vs loja se tiver), conversão de produto, taxa de extras, assinaturas no mês, clientes novos no mês.
+📊 LEITURA DO CENÁRIO
+• 3-4 bullets analisando: ticket vs loja, conversão produto, taxa extras, assinaturas/novos no mês. Destaque o MAIOR problema ou MAIOR oportunidade visível nos dados.
 
-🔥 TOP ARMAS
-• Top serviço e top produto com contagem. UMA frase de como ancorar a meta com eles.
+🎯 ESTRATÉGIA DE HOJE: [NOME DA ESTRATÉGIA ESCOLHIDA]
+• 1 frase explicando POR QUE essa estratégia hoje (cite o dado que justifica: "porque é terça", "porque ticket está 20% abaixo da loja", etc).
+• 2-3 bullets aplicando a estratégia aos NÚMEROS REAIS do barbeiro (use o top serviço/produto dele, a agenda dele).
 
-⚠️ PONTOS CEGOS
-• Serviços/produtos esquecidos. Se hoje for o pior dia da semana, ALERTA.
+⚠️ ARMADILHAS A EVITAR HOJE
+• 1-2 alertas específicos baseados em pontos cegos OU no perfil (ex: "não tenta vender produto premium hoje, sua conversão tá em X%").
 
-⚔️ MISSÃO TÁTICA
-• Conta matemática clara: "Para bater R$ X com Y clientes, ticket médio precisa ser R$ Z."
-• 3 metas concretas: 1 produto + 1 extra + 1 assinatura.
+⚔️ MISSÃO TÁTICA (números exatos)
+• Conta matemática: "Pra fechar R$ X com Y clientes na agenda, ticket médio precisa ser R$ Z."
+• 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia escolhida (não use sempre "1 produto + 1 extra + 1 assinatura" — adapte!).
 
-REGRAS DURAS:
+# REGRAS DURAS
 - USE APENAS os números fornecidos. NUNCA invente.
-- NÃO escreva parágrafos longos. SÓ bullets curtos.
-- Trate o barbeiro pelo nome. Tom direto, "técnico-parceiro".
-- Máximo 250 palavras.
-- Sem introdução, sem despedida — direto nos blocos.`;
+- Bullets curtos. Sem parágrafos longos.
+- Trate o barbeiro pelo nome. Tom direto, parceiro técnico, gírias de barbearia OK.
+- Máximo 280 palavras.
+- Sem introdução, sem despedida — direto nos blocos.
+- A estratégia escolhida DEVE aparecer nominalmente no bloco "ESTRATÉGIA DE HOJE".
+- NUNCA escreva "consulte o catálogo" ou meta-comentários sobre como você escolheu — apenas execute.`;
 
         try {
           const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -1662,10 +1778,10 @@ REGRAS DURAS:
               model: "google/gemini-2.5-flash",
               messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nGere o Plano de Guerra agora.` },
+                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nAnalise o cenário com calma, escolha a estratégia mais adequada do catálogo e gere o Plano de Guerra agora.` },
               ],
-              max_tokens: 600,
-              temperature: 0.6,
+              max_tokens: 800,
+              temperature: 0.85,
             }),
           });
 
