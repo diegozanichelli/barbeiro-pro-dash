@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
 import { getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { assertPhoneForNewClient, translateSaleError } from "@/lib/saleGuards";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
