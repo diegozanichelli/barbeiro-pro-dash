@@ -64,7 +64,20 @@ interface SalesHelpRequest {
   scenario: string;
 }
 
-type RequestBody = DailyInsightRequest | SalesHelpRequest;
+interface WarPlanRequest {
+  type: 'war_plan';
+  barberId: string;
+  organizationId: string;
+  barberName: string;
+  monthlyGoal: number;
+  soldThisMonth: number;
+  dailyTarget: number;
+  todayRevenue: number;
+  daysRemaining: number;
+  clientsInAgenda: number;
+}
+
+type RequestBody = DailyInsightRequest | SalesHelpRequest | WarPlanRequest;
 
 interface DayStats {
   ticketMedio: number;
