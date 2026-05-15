@@ -269,8 +269,17 @@ export default function SubscriptionWizardModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
-      if (!phoneSanitized) {
-        toast.error("Celular do cliente é obrigatório");
+      const guard = assertPhoneForNewClient({
+        subscriptionAction,
+        isNewClient,
+        mobilePhone,
+      });
+      if (!guard.ok) {
+        toast.error(guard.message);
+        return;
+      }
+      if (!phoneSanitized || phoneSanitized.length !== 11 || !isValidPhone(mobilePhone)) {
+        toast.error("Celular válido com DDD é obrigatório (11 dígitos).");
         return;
       }
 
