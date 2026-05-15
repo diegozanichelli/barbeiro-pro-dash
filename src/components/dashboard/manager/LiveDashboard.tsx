@@ -53,6 +53,7 @@ interface ManagerTransaction {
   price_sold: number;
   item_type: string;
   service_category: string | null;
+  unit_id: string | null;
 }
 
 interface Barber {
