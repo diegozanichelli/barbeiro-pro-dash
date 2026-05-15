@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
 import { getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { assertPhoneForNewClient, translateSaleError } from "@/lib/saleGuards";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
@@ -268,8 +269,17 @@ export default function SubscriptionWizardModal({
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
-      if (!phoneSanitized) {
-        toast.error("Celular do cliente é obrigatório");
+      const guard = assertPhoneForNewClient({
+        subscriptionAction,
+        isNewClient,
+        mobilePhone,
+      });
+      if (guard.ok === false) {
+        toast.error(guard.message);
+        return;
+      }
+      if (!phoneSanitized || phoneSanitized.length !== 11 || !isValidPhone(mobilePhone)) {
+        toast.error("Celular válido com DDD é obrigatório (11 dígitos).");
         return;
       }
 
@@ -385,7 +395,7 @@ export default function SubscriptionWizardModal({
       setStep("success");
     } catch (error: any) {
       console.error("Erro ao registrar assinatura:", error);
-      toast.error(error?.message || "Erro ao registrar assinatura");
+      toast.error(translateSaleError(error));
     } finally {
       setLoading(false);
     }

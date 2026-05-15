@@ -48,6 +48,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { translateSaleError } from "@/lib/saleGuards";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { useSubscriptionCycle } from "@/hooks/useSubscriptionCycle";
@@ -1140,7 +1141,7 @@ export default function QuickSaleModal({
       onSuccess();
     } catch (error: any) {
       console.error("Error registering sale:", error);
-      toast.error(error?.message || "Erro ao registrar venda");
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -1272,7 +1273,7 @@ export default function QuickSaleModal({
       onSuccess();
     } catch (error: any) {
       console.error("Error registering manual sale:", error);
-      toast.error(error?.message || "Erro ao registrar venda");
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
