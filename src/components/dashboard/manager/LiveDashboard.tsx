@@ -989,23 +989,50 @@ export default function LiveDashboard() {
       {teamMonthlyGoal.totalTarget > 0 && (
         <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
           <CardContent className="px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-primary" />
                 <span className="text-sm font-bold text-foreground">Meta Mensal da Equipe</span>
+                {teamPacing && (() => {
+                  const map = {
+                    ahead:    { label: "ACIMA DO ESPERADO", cls: "bg-green-500/15 text-green-500 border-green-500/30" },
+                    "on-track": { label: "NO RITMO",          cls: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
+                    behind:   { label: "ATENÇÃO",            cls: "bg-amber-500/15 text-amber-500 border-amber-500/30" },
+                    critical: { label: "CRÍTICO",            cls: "bg-red-500/15 text-red-500 border-red-500/30" },
+                  } as const;
+                  const cfg = map[teamPacing.status];
+                  return (
+                    <Badge variant="outline" className={`text-[10px] font-bold border ${cfg.cls}`}>
+                      {cfg.label}
+                    </Badge>
+                  );
+                })()}
               </div>
               <span className={`text-sm font-bold ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}>
                 {teamMonthlyGoal.pct.toFixed(0)}%
               </span>
             </div>
-            <div className="h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
+            <div className="relative h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
               <motion.div
                 className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
                 initial={{ width: 0 }}
                 animate={{ width: `${teamMonthlyGoal.pct}%` }}
                 transition={{ duration: 1, ease: "easeOut" }}
               />
+              {teamPacing && teamPacing.expectedPct > 0 && teamPacing.expectedPct <= 100 && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-foreground/70"
+                  style={{ left: `${teamPacing.expectedPct}%` }}
+                  title={`Esperado: ${teamPacing.expectedPct.toFixed(1)}%`}
+                />
+              )}
             </div>
+            {teamPacing && (
+              <div className="text-[10px] text-muted-foreground mb-1">
+                Esperado para hoje: <span className="font-semibold text-foreground">{teamPacing.expectedPct.toFixed(1)}%</span>
+                {" · "}Real: <span className="font-semibold text-foreground">{teamPacing.actualPct.toFixed(1)}%</span>
+              </div>
+            )}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
                 Vendas: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
