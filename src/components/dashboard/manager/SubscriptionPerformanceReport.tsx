@@ -7,9 +7,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus } from "lucide-react";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
+
+interface UnitOption { id: string; name: string; }
+interface DataHealth {
+  totalInPeriod: number;
+  txSemUnidade: number;
+  novoSemTelefone: number;
+  novaAdesaoSemTelefone: number;
+  novaAdesaoSemIsNewClient: number;
+}
 
 interface BarberPerformance {
   barberId: string;
@@ -35,6 +45,17 @@ export default function SubscriptionPerformanceReport() {
   const [globalOpportunities, setGlobalOpportunities] = useState(0);
   const [globalNewClientAdhesions, setGlobalNewClientAdhesions] = useState(0);
   const [globalTotalAdhesions, setGlobalTotalAdhesions] = useState(0);
+  // Filtro de unidade + saúde dos dados
+  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("all"); // "all" | "no_unit" | uuid
+  const [dataHealth, setDataHealth] = useState<DataHealth>({
+    totalInPeriod: 0,
+    txSemUnidade: 0,
+    novoSemTelefone: 0,
+    novaAdesaoSemTelefone: 0,
+    novaAdesaoSemIsNewClient: 0,
+  });
+  const [healthOpen, setHealthOpen] = useState(false);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -53,9 +74,23 @@ export default function SubscriptionPerformanceReport() {
 
   const years = Array.from({ length: 3 }, (_, i) => getManausDate().getFullYear() - 1 + i);
 
+  // Carrega lista de unidades para o filtro
+  useEffect(() => {
+    if (!organizationId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+      if (data) setUnits(data);
+    })();
+  }, [organizationId]);
+
   useEffect(() => {
     if (organizationId) fetchPerformanceData();
-  }, [selectedMonth, selectedYear, organizationId]);
+  }, [selectedMonth, selectedYear, organizationId, selectedUnitId]);
 
   const fetchPerformanceData = async () => {
     if (!organizationId) return;
@@ -69,11 +104,12 @@ export default function SubscriptionPerformanceReport() {
     const endISO = `${endDate}T23:59:59-04:00`;
 
     try {
-      // Transações de barbeiros
-      const { data: transactions, error: txError } = await supabase
+      // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
+      let txQuery = supabase
         .from("sale_transactions")
         .select(`
           barber_id,
+          unit_id,
           is_new_client,
           item_type,
           subscription_action,
@@ -86,18 +122,32 @@ export default function SubscriptionPerformanceReport() {
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
 
+      if (selectedUnitId === "no_unit") {
+        txQuery = txQuery.is("unit_id", null);
+      } else if (selectedUnitId !== "all") {
+        txQuery = txQuery.eq("unit_id", selectedUnitId);
+      }
+
+      const { data: transactions, error: txError } = await txQuery;
       if (txError) throw txError;
 
       // Transações da recepção (sem barber_id)
-      const { data: receptionTx, error: recError } = await supabase
+      let recQuery = supabase
         .from("sale_transactions")
-        .select("is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
 
+      if (selectedUnitId === "no_unit") {
+        recQuery = recQuery.is("unit_id", null);
+      } else if (selectedUnitId !== "all") {
+        recQuery = recQuery.eq("unit_id", selectedUnitId);
+      }
+
+      const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
 
       // Agrupar por barbeiro
@@ -204,6 +254,32 @@ export default function SubscriptionPerformanceReport() {
       setGlobalOpportunities(globalOpportunityPhones.size);
       setGlobalNewClientAdhesions(globalNewClientAdh);
       setGlobalTotalAdhesions(globalTotalAdh);
+
+      // Saúde dos dados — calculado a partir do mesmo conjunto exibido
+      const allTx = [
+        ...(transactions ?? []).map((t: any) => ({ ...t, _hasBarber: true })),
+        ...(receptionTx ?? []).map((t: any) => ({ ...t, _hasBarber: false })),
+      ];
+      const health: DataHealth = {
+        totalInPeriod: allTx.length,
+        txSemUnidade: allTx.filter((t) => !t.unit_id).length,
+        novoSemTelefone: allTx.filter(
+          (t) => t.is_new_client === true && (!t.mobile_phone || t.mobile_phone === "")
+        ).length,
+        novaAdesaoSemTelefone: allTx.filter(
+          (t) =>
+            t.item_type === "subscription" &&
+            t.subscription_action === "new" &&
+            (!t.mobile_phone || t.mobile_phone === "")
+        ).length,
+        novaAdesaoSemIsNewClient: allTx.filter(
+          (t) =>
+            t.item_type === "subscription" &&
+            t.subscription_action === "new" &&
+            t.is_new_client !== true
+        ).length,
+      };
+      setDataHealth(health);
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
@@ -286,7 +362,7 @@ export default function SubscriptionPerformanceReport() {
           <SubscriptionScopeBanner scope="conversion" />
 
           {/* Filters */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">Mês</label>
               <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(Number(v))}>
@@ -310,7 +386,99 @@ export default function SubscriptionPerformanceReport() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="col-span-2 lg:col-span-1">
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Unidade</label>
+              <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {units.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
+                  <SelectItem value="no_unit">⚠️ Sem unidade (legado)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+
+          {/* Saúde dos dados — colapsável e discreto */}
+          {(() => {
+            const totalIssues =
+              dataHealth.txSemUnidade +
+              dataHealth.novoSemTelefone +
+              dataHealth.novaAdesaoSemTelefone +
+              dataHealth.novaAdesaoSemIsNewClient;
+            const hasIssues = totalIssues > 0;
+            return (
+              <div className="mb-6">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setHealthOpen((o) => !o)}
+                  className="w-full justify-between text-xs h-auto py-2 px-3 border border-border/50 bg-muted/30 hover:bg-muted/60"
+                >
+                  <span className="flex items-center gap-2">
+                    {hasIssues ? (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                        <span className="font-medium">
+                          Saúde dos dados — {totalIssues} {totalIssues === 1 ? "ponto de atenção" : "pontos de atenção"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-success" />
+                        <span className="font-medium">Saúde dos dados — tudo certo no período</span>
+                      </>
+                    )}
+                  </span>
+                  {healthOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </Button>
+                {healthOpen && (
+                  <div className="mt-2 rounded-md border border-border/50 bg-muted/20 p-3 space-y-2 text-xs">
+                    <p className="text-muted-foreground">
+                      Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
+                      Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Sem unidade vinculada</span>
+                        <Badge variant={dataHealth.txSemUnidade > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.txSemUnidade}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Cliente novo sem telefone</span>
+                        <Badge variant={dataHealth.novoSemTelefone > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novoSemTelefone}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Nova adesão sem telefone</span>
+                        <Badge variant={dataHealth.novaAdesaoSemTelefone > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novaAdesaoSemTelefone}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Nova adesão sem marcar "cliente novo"</span>
+                        <Badge variant={dataHealth.novaAdesaoSemIsNewClient > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novaAdesaoSemIsNewClient}
+                        </Badge>
+                      </div>
+                    </div>
+                    {hasIssues && (
+                      <p className="text-muted-foreground italic pt-1">
+                        Novos lançamentos já são bloqueados na origem. Os números acima representam
+                        registros antigos (legado) que ainda precisam ser corrigidos manualmente.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Summary Cards (4) */}
           <TooltipProvider delayDuration={150}>
