@@ -768,6 +768,43 @@ export default function LiveDashboard() {
     return { totalTarget, totalEarned, pct };
   }, [barbers, goals, monthProductions, selectedUnit]);
 
+  // Pacing da equipe (Crítico / Atenção / No Ritmo / Acima) — comparando real vs esperado
+  useEffect(() => {
+    if (!organizationId) { setTeamPacing(null); return; }
+    const todayStr = getTodayString();
+    const today = parseISO(todayStr);
+    const sel = parseISO(selectedDate);
+    const isCurrentMonth = today.getFullYear() === sel.getFullYear() && today.getMonth() === sel.getMonth();
+    if (!isCurrentMonth) { setTeamPacing(null); return; }
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("calc_expected_pacing_batch", {
+        p_organization_id: organizationId,
+        p_ref_date: todayStr,
+      });
+      if (cancelled || error || !data) return;
+      const relevantIds = new Set(
+        (selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit)).map(b => b.id)
+      );
+      const rows = (data as any[]).filter(r => relevantIds.has(r.barber_id));
+      const sumTarget = rows.reduce((s, r) => s + Number(r.target_commission || 0), 0);
+      const sumExpected = rows.reduce((s, r) => s + Number(r.expected_commission || 0), 0);
+      const sumActual = rows.reduce((s, r) => s + Number(r.comissao_acumulada || 0), 0);
+      if (sumTarget <= 0) { setTeamPacing(null); return; }
+      const expectedPct = (sumExpected / sumTarget) * 100;
+      const actualPct = (sumActual / sumTarget) * 100;
+      const diff = actualPct - expectedPct;
+      let status: "ahead" | "on-track" | "behind" | "critical";
+      if (diff >= 10) status = "ahead";
+      else if (diff >= -5) status = "on-track";
+      else if (diff >= -20) status = "behind";
+      else status = "critical";
+      setTeamPacing({ status, expectedPct, actualPct });
+    })();
+    return () => { cancelled = true; };
+  }, [organizationId, selectedDate, selectedUnit, barbers, monthProductions]);
+
   // Yesterday comparison
   const revenueComparison = useMemo(() => {
     if (yesterdayRevenue === null || yesterdayRevenue === 0) return null;
