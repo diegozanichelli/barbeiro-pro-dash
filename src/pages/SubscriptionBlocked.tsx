@@ -18,14 +18,28 @@ export default function SubscriptionBlocked() {
     });
   }, []);
 
-  // Bloquear botão "voltar" do navegador — re-empurra a rota
+  // Bloqueio agressivo de navegação: empurra várias entradas no histórico
+  // e re-empurra em qualquer popstate (back/forward).
   useEffect(() => {
-    window.history.pushState(null, "", location.pathname);
+    const path = location.pathname;
+    // Empilha múltiplas entradas para neutralizar back repetido
+    for (let i = 0; i < 5; i++) {
+      window.history.pushState({ blocked: true }, "", path);
+    }
     const onPopState = () => {
-      window.history.pushState(null, "", location.pathname);
+      window.history.pushState({ blocked: true }, "", path);
+    };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Desencoraja fechar a aba sem sair pelo botão
+      e.preventDefault();
+      e.returnValue = "";
     };
     window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
   }, [location.pathname]);
 
   // Polling silencioso a cada 60s — se admin reativar, libera automaticamente
