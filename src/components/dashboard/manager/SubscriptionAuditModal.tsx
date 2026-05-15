@@ -96,6 +96,8 @@ export default function SubscriptionAuditModal({
   const [editBarberId, setEditBarberId] = useState<string | null>(null);
   const [editPlanId, setEditPlanId] = useState<string>("");
   const [editValue, setEditValue] = useState<string>("");
+  const [editPhone, setEditPhone] = useState<string>("");
+  const [editAction, setEditAction] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && organizationId) {
