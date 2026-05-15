@@ -287,16 +287,20 @@ export default function LiveDashboard() {
         setUnits(unitsData);
       }
 
-      // Fetch yesterday's revenue for comparison
+      // Fetch yesterday's revenue for comparison (respeita filtro de unidade)
       const yesterday = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       const dayAfterYesterday = selectedDate;
-      const { data: yesterdayTxData } = await supabase
+      let ydayQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type")
+        .select("barber_id, price_sold, item_type, unit_id")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", yesterday + "T00:00:00-04:00")
         .lt("created_at", dayAfterYesterday + "T00:00:00-04:00");
+      if (selectedUnit !== "all") {
+        ydayQuery = ydayQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: yesterdayTxData } = await ydayQuery;
 
       const yRevenue = (yesterdayTxData || [])
         .filter(t => t.item_type !== 'subscription')
@@ -307,7 +311,7 @@ export default function LiveDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, selectedDate, currentMonth, currentYear]);
+  }, [organizationId, selectedDate, currentMonth, currentYear, selectedUnit]);
 
   useEffect(() => {
     fetchData();
