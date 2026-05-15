@@ -1,90 +1,94 @@
+## Blindagem de telefone obrigatório — guards no frontend
 
-## Correção do Relatório de Conversão de Assinaturas
+Os triggers de banco já bloqueiam `is_new_client=true` ou `subscription_action='new'` sem `mobile_phone`. Falta blindar o frontend para mostrar mensagem amigável **antes** do `RAISE EXCEPTION` aparecer como erro Postgres bruto.
 
-Decisões aplicadas:
-- Itens 1 e 2 → **opção C: mostrar as duas métricas** (Conversão estrita + Penetração)
-- Itens 4 (oportunidades sem telefone) e 5 (filtro de unidade) → **adiados**
-- Itens 3, 6, 7, 8 → corrigidos agora
+### Pontos de inserção/edição que disparam o trigger
 
-Arquivos afetados (somente frontend):
-- `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx`
-- `src/components/dashboard/manager/SubscriptionScopeInfo.tsx`
+Mapeei os fluxos que gravam em `sale_transactions` com `is_new_client` ou `subscription_action='new'`:
 
----
+1. **`QuickSaleModal.tsx`** — POS principal do gestor/recepção (vende serviço/produto/assinatura, marca cliente novo)
+2. **`SubscriptionWizardModal.tsx`** — wizard de nova adesão (sempre `action='new'`)
+3. **`SubscriptionAuditModal.tsx`** — edição rápida das últimas 20 assinaturas (pode editar uma adesão `new`)
+4. **`SubscriptionEditModal.tsx`** — edição completa de assinatura
+5. **`TransactionManagerModal.tsx`** — modo auditoria do gestor (substitui transações do barbeiro)
+6. **`DayReviewModal.tsx`** — *NÃO* insere `is_new_client` nem assinatura (só confirma presença e limpa source=barber). Sem risco direto, mas vou adicionar um guard defensivo se algum dia voltar a inserir.
 
-### 1. Buscar `is_new_client` e `mobile_phone` em todas as transações
+### Plano de blindagem
 
-Hoje só guardamos `mobile_phone` para clientes novos. Precisamos de `is_new_client` em **todas** as linhas (inclusive nas vendas de assinatura) para cruzar quem virou assinante sendo cliente novo. Já está no `select`, só precisa ser usado no agregador.
+#### 1. Helper compartilhado `src/lib/saleGuards.ts`
 
-### 2. Calcular **duas** métricas por barbeiro
+Centraliza a regra para evitar duplicação:
 
-Para cada barbeiro (e recepção):
-
-```text
-Oportunidades         = pessoas únicas (Set<phone>) com is_new_client=true
-Ades. Cliente Novo    = transações subscription + action='new' + is_new_client=true
-Ades. Totais          = transações subscription + action='new' (qualquer cliente)
-
-Conversão estrita (%) = Ades. Cliente Novo  ÷ Oportunidades  × 100   (≤100%)
-Penetração      (%)   = Ades. Totais        ÷ Oportunidades  × 100   (pode >100%)
-```
-
-### 3. Total geral deduplicado entre barbeiros (item 3)
-
-Construir um `Set<phone>` global unindo todas as oportunidades (barbeiros + recepção) — não somar os `.size` individuais. Mesma pessoa atendida por dois barbeiros conta como 1 no total geral.
-
-### 4. Timezone Manaus nas bordas do filtro de data (item 6)
-
-Trocar:
 ```ts
-.gte("created_at", `${startDate}T00:00:00`)
-.lte("created_at", `${endDate}T23:59:59`)
+import { isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+
+export function assertPhoneForNewClient(opts: {
+  isNewClient?: boolean;
+  subscriptionAction?: string | null;
+  mobilePhone?: string | null;
+}): { ok: true } | { ok: false; message: string };
 ```
-por:
+
+Regra: se `isNewClient === true` **ou** `subscriptionAction === 'new'`, exige `mobilePhone` válido (`isValidPhone`). Mensagens em pt-BR:
+- "Cliente novo precisa de telefone válido (11 dígitos com DDD)."
+- "Nova adesão de assinatura precisa de telefone válido."
+
+#### 2. `QuickSaleModal.tsx`
+
+- No `handleSubmit`, antes do insert, chamar `assertPhoneForNewClient` para cada item do carrinho que tenha `is_new_client=true` ou for assinatura `new`.
+- Se falhar: `toast.error(message)`, focar no campo de telefone, abortar.
+
+#### 3. `SubscriptionWizardModal.tsx`
+
+- Como toda venda do wizard é `action='new'`, validar telefone obrigatório no step de cliente (já tem campo, mas torná-lo bloqueante via `isValidPhone` antes de avançar para o step final).
+- Mensagem de erro inline + toast.
+
+#### 4. `SubscriptionAuditModal.tsx`
+
+- Adicionar campo `mobile_phone` editável (com máscara via `formatPhone`) **só quando** `tx.subscription_action === 'new'` e `tx.mobile_phone` estiver vazio (legacy).
+- No `handleSave`, se `subscription_action === 'new'` e telefone inválido → bloquear com toast amigável.
+- Mostrar badge "⚠️ sem telefone" nas linhas legacy para o gestor identificar.
+
+#### 5. `SubscriptionEditModal.tsx`
+
+- Mesma regra do AuditModal: campo telefone obrigatório quando `action='new'`.
+
+#### 6. `TransactionManagerModal.tsx`
+
+- Validar antes do insert em lote: qualquer linha com `is_new_client=true` precisa de telefone válido. Se faltar, mostrar resumo dos itens problemáticos antes de tentar gravar.
+
+#### 7. Tratamento genérico de erro do trigger
+
+Em todos os `catch` dos handlers acima, traduzir mensagens Postgres conhecidas:
+
 ```ts
-.gte("created_at", `${startDate}T00:00:00-04:00`)
-.lte("created_at", `${endDate}T23:59:59-04:00`)
+function translateSaleError(error: unknown): string {
+  const msg = String((error as any)?.message ?? "");
+  if (msg.includes("mobile_phone") && msg.includes("new client"))
+    return "Telefone obrigatório para cliente novo.";
+  if (msg.includes("mobile_phone") && msg.includes("subscription"))
+    return "Telefone obrigatório para nova adesão.";
+  return msg || "Erro ao salvar venda.";
+}
 ```
 
-### 5. Badge especial "venda sem oportunidade" (item 7)
+### Arquivos a editar
 
-Quando `oportunidades = 0` e `vendas > 0`:
-```
-⚠️ Sem oportunidade registrada (N vendas)
-```
-Substitui o atual "N/A" silencioso, sinalizando bug de cadastro (cliente novo não foi marcado).
+- **Novo:** `src/lib/saleGuards.ts`
+- `src/components/dashboard/manager/QuickSaleModal.tsx`
+- `src/components/dashboard/manager/SubscriptionWizardModal.tsx`
+- `src/components/dashboard/manager/SubscriptionAuditModal.tsx`
+- `src/components/dashboard/manager/SubscriptionEditModal.tsx`
+- `src/components/dashboard/manager/TransactionManagerModal.tsx`
 
-### 6. UI da tabela e dos cards de resumo
+### Fora deste escopo (já cobertos por DB)
 
-**Tabela** ganha duas colunas distintas:
+- Backfill de `unit_id` e `mobile_phone` (migration anterior)
+- Trigger `trg_enforce_mobile_phone_for_new_clients` (já ativo)
+- `DayReviewModal` — não insere `is_new_client`, sem mudança necessária
 
-```text
-Barbeiro | Oportunidades | Ades. Cliente Novo | Ades. Totais | Conversão Estrita | Penetração
-```
+### Validação após implementar
 
-**Cards de resumo** (3 → 4):
-
-1. 🎯 Oportunidades (pessoas únicas)
-2. 👤 Ades. de Cliente Novo
-3. 👑 Ades. Totais (incl. clientes da casa)
-4. 📉 Conversão Estrita / Penetração (lado a lado num só card, ex.: `28% / 47%`)
-
-Tooltips atualizados explicando a diferença entre as duas taxas.
-
-### 7. Atualizar `SubscriptionScopeInfo.tsx` (item 8)
-
-Corrigir o footer que afirma "o total de Novas Assinaturas da Carteira coincide com o total da Conversão" — não coincide (Carteira inclui renovações). Reescrever para deixar claro:
-
-- **Carteira**: todas as movimentações (`action ∈ {new, renew, upgrade, downgrade}`)
-- **Conversão → Ades. Totais**: apenas `action='new'`
-- **Conversão → Ades. Cliente Novo**: `action='new' AND is_new_client=true`
-- **Recepção**: subset de `action='new'` sem barber_id
-
-E o tooltip de "👑 Vendas" no `SubscriptionPerformanceReport` (que hoje diz "mesmo critério da Carteira") será reescrito para o critério real.
-
----
-
-### Próximos passos (fora deste plano)
-
-- Item 4 — desenhar como tratar oportunidades sem telefone (você pediu para repensar).
-- Item 5 — desenhar UX do filtro de unidade.
+1. Tentar criar venda com `cliente novo` sem telefone no QuickSale → deve mostrar toast amigável, não erro Postgres
+2. Tentar editar adesão legacy sem telefone no AuditModal → campo aparece, validação bloqueia
+3. Wizard de assinatura sem telefone → step bloqueia avançar
