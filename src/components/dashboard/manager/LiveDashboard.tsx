@@ -762,17 +762,21 @@ export default function LiveDashboard() {
     return prods.reduce((sum, p) => sum + (p.clients_count || 0), 0);
   }, [monthProductions, selectedUnit, barbers]);
 
-  // Unit rankings (today's revenue per unit)
+  // Unit rankings (today's revenue per unit) — agora baseado no unit_id da transação
+  // Reflete corretamente cross-unit work + recepção
   const unitRankingData = useMemo(() => {
     const unitMap = new Map<string, { name: string; revenue: number }>();
     units.forEach(u => unitMap.set(u.id, { name: u.name, revenue: 0 }));
-    barbers.forEach(b => {
-      const rev = getBarberRevenue(b.id);
-      const existing = unitMap.get(b.unit_id);
-      if (existing) existing.revenue += rev;
+    managerTransactions.forEach(t => {
+      if (t.item_type === "subscription") return;
+      if (!t.unit_id) return;
+      const existing = unitMap.get(t.unit_id);
+      if (existing) existing.revenue += Number(t.price_sold) || 0;
     });
     return Array.from(unitMap.entries())
       .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [units, managerTransactions]);
       .sort((a, b) => b.revenue - a.revenue);
   }, [units, barbers, managerTransactions, productions]);
 
