@@ -47,6 +47,7 @@ interface SubscriptionTransaction {
   is_new_client: boolean | null;
   item_name: string;
   client_name: string | null;
+  mobile_phone: string | null;
   price_sold: number;
   barbers: { name: string } | null;
   subscription_plans: { name: string } | null;
@@ -82,7 +83,7 @@ export default function SubscriptionAnalytics() {
     const [subRes, newClientsRes] = await Promise.all([
       supabase
         .from("sale_transactions")
-        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, price_sold, subscription_plan_id, barbers(name), subscription_plans(name), units(name)")
+        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, mobile_phone, price_sold, subscription_plan_id, barbers(name), subscription_plans(name), units(name)")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .eq("source", "manager") // Single source of truth: only manager-recorded subscriptions

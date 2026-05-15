@@ -48,7 +48,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
         } else if (data && typeof data === 'object' && 'goals_created' in data) {
           const result = data as { goals_created: number; month: number; year: number };
           if (result.goals_created > 0) {
-            console.log(`Metas replicadas automaticamente: ${result.goals_created} para ${result.month}/${result.year}`);
           }
         }
       } catch (err) {
@@ -70,37 +69,35 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+    <div className="min-h-screen bg-background md:pl-14">
+      <ManagerNavigation
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        hasSubscriptionModule={hasSubscriptionModule}
+      />
+
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-30">
         <div className="container mx-auto px-4 py-3">
           <div className="flex flex-row items-center justify-between gap-4">
-            {/* Left: Logo + Title */}
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 md:pl-2">
               <img
                 src={logo}
                 alt="Performance Barber"
                 className="h-10 md:h-12 w-auto"
               />
               <div className="hidden lg:block">
-                <h1 className="text-base font-bold text-foreground leading-tight">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-primary/80">
+                  Performance Barber
+                </p>
+                <h1 className="font-display text-base font-semibold leading-tight text-foreground">
                   Painel do Gestor
                 </h1>
-                <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                <p className="text-xs text-muted-foreground/80 truncate max-w-[200px]">
                   {user.email}
                 </p>
               </div>
             </div>
 
-            {/* Center/Right: Navigation */}
-            <div className="flex-1 flex justify-end">
-              <ManagerNavigation
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                hasSubscriptionModule={hasSubscriptionModule}
-              />
-            </div>
-
-            {/* Far Right: Actions */}
             <div className="flex items-center gap-2 shrink-0">
               <SendNotificationsButton />
               <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>

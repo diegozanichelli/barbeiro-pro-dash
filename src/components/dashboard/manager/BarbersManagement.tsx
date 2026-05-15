@@ -94,7 +94,6 @@ export default function BarbersManagement() {
 
         // Se houver email ou senha para atualizar, chamar a Edge Function
         if (formData.email || formData.password) {
-          console.log("Atualizando dados de autenticação...");
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData.session?.access_token;
 
@@ -111,7 +110,6 @@ export default function BarbersManagement() {
             headers: { Authorization: `Bearer ${accessToken}` },
           });
 
-          console.log("Resposta da função:", { data, error: updateAuthError });
 
           if (updateAuthError) {
             console.error("Erro da edge function:", updateAuthError);

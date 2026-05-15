@@ -127,8 +127,9 @@ export default function DailyGoalsTracking() {
 
       if (prodError) throw prodError;
 
-      // Calculate daily goals for each barber
-      const barberGoalsData: BarberDailyGoal[] = (goals || []).map((goal: GoalQueryRow) => {
+      // Calculate daily goals for each barber (with unified pacing RPC)
+      const barberGoalsData: BarberDailyGoal[] = await Promise.all(
+        (goals || []).map(async (goal: GoalQueryRow) => {
         const barberProductions = ((productions || []) as ProductionRow[]).filter(
           (p) => p.barber_id === goal.barber_id
         );
@@ -178,9 +179,13 @@ export default function DailyGoalsTracking() {
         
         const progressPercent = (totalEarnedMonth / goal.target_commission) * 100;
         
-        // Expected progress based on working days passed
-        const monthDays = new Date(currentYear, currentMonth, 0).getDate();
-        const expectedProgress = (workingDaysPassed / monthDays) * 100;
+        // Expected progress unificado via RPC (mesma fonte dos Alertas de Performance)
+        const { data: pacingRows } = await supabase.rpc('calc_expected_pacing', {
+          p_barber_id: goal.barber_id,
+          p_ref_date: todayStr,
+        });
+        const pacing = Array.isArray(pacingRows) ? pacingRows[0] : pacingRows;
+        const expectedProgress = Number(pacing?.expected_percent ?? 0);
         
         // Determine status
         let status: BarberDailyGoal["status"];
@@ -214,7 +219,7 @@ export default function DailyGoalsTracking() {
           confirmedPresenceToday,
           presenceType: todayPresenceType,
         };
-      });
+      }));
 
       // Sort by status (critical first) then by progress
       barberGoalsData.sort((a, b) => {

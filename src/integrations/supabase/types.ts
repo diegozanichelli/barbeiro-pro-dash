@@ -54,6 +54,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ai_assistant_usage_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       barber_subscription_earnings: {
@@ -103,6 +110,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "barber_subscription_earnings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
         ]
@@ -156,6 +170,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "barbers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "barbers_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
@@ -203,6 +224,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "catalog_products_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       catalog_services: {
@@ -245,6 +273,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
         ]
@@ -294,6 +329,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "client_purchase_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       clients: {
@@ -333,6 +375,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
           {
@@ -459,6 +508,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "daily_productions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       financeiro_integracao: {
@@ -508,6 +564,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financeiro_integracao_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
         ]
@@ -561,6 +624,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "monthly_goals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       organization_holidays: {
@@ -596,6 +666,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "organization_holidays_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       organizations: {
@@ -628,6 +705,42 @@ export type Database = {
           stripe_customer_id?: string | null
           subscription_status?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      performance_alert_run_logs: {
+        Row: {
+          alerts_created: number
+          alerts_updated: number
+          duration_ms: number | null
+          errors: Json
+          id: string
+          metas_processadas: number
+          other_errors: number
+          pacing_errors: number
+          ran_at: string
+        }
+        Insert: {
+          alerts_created?: number
+          alerts_updated?: number
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          metas_processadas?: number
+          other_errors?: number
+          pacing_errors?: number
+          ran_at?: string
+        }
+        Update: {
+          alerts_created?: number
+          alerts_updated?: number
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          metas_processadas?: number
+          other_errors?: number
+          pacing_errors?: number
+          ran_at?: string
         }
         Relationships: []
       }
@@ -684,6 +797,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
         ]
@@ -759,6 +879,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_subscriptions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
         ]
@@ -903,6 +1030,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "sale_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sale_transactions_subscription_plan_id_fkey"
             columns: ["subscription_plan_id"]
             isOneToOne: false
@@ -956,6 +1090,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "subscription_plan_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "subscription_plan_services_subscription_plan_id_fkey"
             columns: ["subscription_plan_id"]
             isOneToOne: false
@@ -1000,6 +1141,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "subscription_plans_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       units: {
@@ -1038,6 +1186,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "units_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       user_roles: {
@@ -1070,14 +1225,66 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "user_roles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      organizations_public: {
+        Row: {
+          championship_name: string | null
+          has_subscription_module: boolean | null
+          id: string | null
+          name: string | null
+          subscription_status: string | null
+        }
+        Insert: {
+          championship_name?: string | null
+          has_subscription_module?: boolean | null
+          id?: string | null
+          name?: string | null
+          subscription_status?: string | null
+        }
+        Update: {
+          championship_name?: string | null
+          has_subscription_module?: boolean | null
+          id?: string | null
+          name?: string | null
+          subscription_status?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       auto_replicate_goals: { Args: never; Returns: Json }
+      calc_expected_pacing: {
+        Args: { p_barber_id: string; p_ref_date?: string }
+        Returns: {
+          expected_commission: number
+          expected_percent: number
+          target_commission: number
+          working_days_passed: number
+          working_days_total: number
+        }[]
+      }
+      calc_expected_pacing_batch: {
+        Args: { p_organization_id: string; p_ref_date?: string }
+        Returns: {
+          barber_id: string
+          comissao_acumulada: number
+          expected_commission: number
+          expected_percent: number
+          target_commission: number
+          working_days_passed: number
+          working_days_total: number
+        }[]
+      }
       cleanup_old_client_names: { Args: never; Returns: undefined }
       create_sale_and_ensure_production: {
         Args: {

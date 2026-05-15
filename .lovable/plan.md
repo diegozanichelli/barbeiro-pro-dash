@@ -1,24 +1,94 @@
-## Problema
+## Blindagem de telefone obrigatório — guards no frontend
 
-No modal de Venda Rápida (`QuickSaleModal`), o destaque visual de "próximo passo" está piscando o card inteiro que **agrupa "Atribuição da Venda" + "Tipo de Cliente"** (são dois blocos dentro de um mesmo container com `divide-y`). O `ref` e as classes `animate-pulse ring-amber-500` estão no `<div>` externo (linha 1545-1552), por isso os dois piscam juntos.
+Os triggers de banco já bloqueiam `is_new_client=true` ou `subscription_action='new'` sem `mobile_phone`. Falta blindar o frontend para mostrar mensagem amigável **antes** do `RAISE EXCEPTION` aparecer como erro Postgres bruto.
 
-O esperado: piscar **apenas** o bloco "Atribuição da Venda" e fazer o scroll suave parar nele já mostrando as opções **Barbeiro / Venda Recepção** centralizadas.
+### Pontos de inserção/edição que disparam o trigger
 
-## Mudanças
+Mapeei os fluxos que gravam em `sale_transactions` com `is_new_client` ou `subscription_action='new'`:
 
-Arquivo: `src/components/dashboard/manager/QuickSaleModal.tsx`
+1. **`QuickSaleModal.tsx`** — POS principal do gestor/recepção (vende serviço/produto/assinatura, marca cliente novo)
+2. **`SubscriptionWizardModal.tsx`** — wizard de nova adesão (sempre `action='new'`)
+3. **`SubscriptionAuditModal.tsx`** — edição rápida das últimas 20 assinaturas (pode editar uma adesão `new`)
+4. **`SubscriptionEditModal.tsx`** — edição completa de assinatura
+5. **`TransactionManagerModal.tsx`** — modo auditoria do gestor (substitui transações do barbeiro)
+6. **`DayReviewModal.tsx`** — *NÃO* insere `is_new_client` nem assinatura (só confirma presença e limpa source=barber). Sem risco direto, mas vou adicionar um guard defensivo se algum dia voltar a inserir.
 
-1. **Remover** `ref={attributionCardRef}` e as classes de highlight do `<div>` externo (~linha 1545-1552). O container externo volta a ser apenas um wrapper visual neutro.
+### Plano de blindagem
 
-2. **Mover** o `ref={attributionCardRef}` e o highlight condicional (`ring-2 ring-amber-500 shadow-lg shadow-amber-500/30 animate-pulse border-amber-500 rounded-md`) para o `<div className="px-3 py-2.5 space-y-2">` da seção "Mandatory Attribution Selector" (~linha 1554), envolvendo somente o bloco da Atribuição (label + seta auxiliar + ToggleGroup Barbeiro/Recepção + seletor de unidade).
+#### 1. Helper compartilhado `src/lib/saleGuards.ts`
 
-3. **Ajustar o auto-scroll** no `useEffect` (~linha 840-855) trocando `block: "center"` por `block: "start"` com um pequeno offset visual, para garantir que ao parar o scroll o usuário já enxergue logo abaixo do label os botões Barbeiro / Venda Recepção (e, no caso da recepção, o seletor da unidade quando expandir). Manter os 3 segundos de pulse e a limpeza do timer.
+Centraliza a regra para evitar duplicação:
 
-4. **Tipo de Cliente** permanece intocado (sem anel, sem pulse, sem ref) — apenas o segundo bloco do mesmo wrapper.
+```ts
+import { isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 
-## Resultado esperado
+export function assertPhoneForNewClient(opts: {
+  isNewClient?: boolean;
+  subscriptionAction?: string | null;
+  mobilePhone?: string | null;
+}): { ok: true } | { ok: false; message: string };
+```
 
-- Quando o cliente é identificado (novo ou existente) e ainda não há atribuição, **só o bloco "Atribuição da Venda"** ganha anel laranja pulsante por 3s.
-- O scroll suave centraliza o bloco de Atribuição com os botões **Barbeiro / Venda Recepção** visíveis na hora, deixando óbvio onde clicar.
-- O bloco "Tipo de Cliente" abaixo segue estático, sem distrair.
-- Demais comportamentos (validação obrigatória, seleção de unidade da recepção, fim do pulse ao escolher) continuam iguais.
+Regra: se `isNewClient === true` **ou** `subscriptionAction === 'new'`, exige `mobilePhone` válido (`isValidPhone`). Mensagens em pt-BR:
+- "Cliente novo precisa de telefone válido (11 dígitos com DDD)."
+- "Nova adesão de assinatura precisa de telefone válido."
+
+#### 2. `QuickSaleModal.tsx`
+
+- No `handleSubmit`, antes do insert, chamar `assertPhoneForNewClient` para cada item do carrinho que tenha `is_new_client=true` ou for assinatura `new`.
+- Se falhar: `toast.error(message)`, focar no campo de telefone, abortar.
+
+#### 3. `SubscriptionWizardModal.tsx`
+
+- Como toda venda do wizard é `action='new'`, validar telefone obrigatório no step de cliente (já tem campo, mas torná-lo bloqueante via `isValidPhone` antes de avançar para o step final).
+- Mensagem de erro inline + toast.
+
+#### 4. `SubscriptionAuditModal.tsx`
+
+- Adicionar campo `mobile_phone` editável (com máscara via `formatPhone`) **só quando** `tx.subscription_action === 'new'` e `tx.mobile_phone` estiver vazio (legacy).
+- No `handleSave`, se `subscription_action === 'new'` e telefone inválido → bloquear com toast amigável.
+- Mostrar badge "⚠️ sem telefone" nas linhas legacy para o gestor identificar.
+
+#### 5. `SubscriptionEditModal.tsx`
+
+- Mesma regra do AuditModal: campo telefone obrigatório quando `action='new'`.
+
+#### 6. `TransactionManagerModal.tsx`
+
+- Validar antes do insert em lote: qualquer linha com `is_new_client=true` precisa de telefone válido. Se faltar, mostrar resumo dos itens problemáticos antes de tentar gravar.
+
+#### 7. Tratamento genérico de erro do trigger
+
+Em todos os `catch` dos handlers acima, traduzir mensagens Postgres conhecidas:
+
+```ts
+function translateSaleError(error: unknown): string {
+  const msg = String((error as any)?.message ?? "");
+  if (msg.includes("mobile_phone") && msg.includes("new client"))
+    return "Telefone obrigatório para cliente novo.";
+  if (msg.includes("mobile_phone") && msg.includes("subscription"))
+    return "Telefone obrigatório para nova adesão.";
+  return msg || "Erro ao salvar venda.";
+}
+```
+
+### Arquivos a editar
+
+- **Novo:** `src/lib/saleGuards.ts`
+- `src/components/dashboard/manager/QuickSaleModal.tsx`
+- `src/components/dashboard/manager/SubscriptionWizardModal.tsx`
+- `src/components/dashboard/manager/SubscriptionAuditModal.tsx`
+- `src/components/dashboard/manager/SubscriptionEditModal.tsx`
+- `src/components/dashboard/manager/TransactionManagerModal.tsx`
+
+### Fora deste escopo (já cobertos por DB)
+
+- Backfill de `unit_id` e `mobile_phone` (migration anterior)
+- Trigger `trg_enforce_mobile_phone_for_new_clients` (já ativo)
+- `DayReviewModal` — não insere `is_new_client`, sem mudança necessária
+
+### Validação após implementar
+
+1. Tentar criar venda com `cliente novo` sem telefone no QuickSale → deve mostrar toast amigável, não erro Postgres
+2. Tentar editar adesão legacy sem telefone no AuditModal → campo aparece, validação bloqueia
+3. Wizard de assinatura sem telefone → step bloqueia avançar

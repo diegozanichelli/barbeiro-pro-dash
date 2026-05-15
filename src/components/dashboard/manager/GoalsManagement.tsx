@@ -78,7 +78,6 @@ export default function GoalsManagement() {
       return;
     }
     
-    console.log("Barbeiros carregados:", data);
     if (data) setBarbers(data);
   }, []);
 

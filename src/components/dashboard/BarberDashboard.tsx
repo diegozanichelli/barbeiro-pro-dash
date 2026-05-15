@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { LogOut, Target, TrendingUp, TrendingDown, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, AlertTriangle, XCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
@@ -123,6 +124,8 @@ const [todayProduction, setTodayProduction] = useState<{
   const [reviewingDate, setReviewingDate] = useState<string | null>(null);
   const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
   const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
+  const [pacingStatus, setPacingStatus] = useState<"ahead" | "on-track" | "behind" | "critical" | null>(null);
+  const [expectedPercent, setExpectedPercent] = useState<number | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -407,7 +410,6 @@ const [todayProduction, setTodayProduction] = useState<{
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('Comissão atualizada pelo gerente:', payload);
           const oldBarber = payload.old as BarberData;
           const newBarber = payload.new as BarberData;
           
@@ -458,7 +460,6 @@ const [todayProduction, setTodayProduction] = useState<{
             filter: `barber_id=eq.${barber.id}`,
           },
           (payload) => {
-            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
             // Forçar recálculo IMEDIATO das estatísticas
             fetchMonthlyStats();
             fetchMonthlyGoal();
@@ -518,6 +519,37 @@ const [todayProduction, setTodayProduction] = useState<{
       calculateDailyTarget();
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
+
+  // Buscar pacing (Crítico/Atenção/No Ritmo/Acima) — mesma lógica do painel do gestor
+  useEffect(() => {
+    if (!barber || !isCurrentMonth || !monthlyGoal || !stats) {
+      setPacingStatus(null);
+      setExpectedPercent(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("calc_expected_pacing", {
+        p_barber_id: barber.id,
+        p_ref_date: getTodayString(),
+      });
+      if (cancelled || error) return;
+      const pacing = Array.isArray(data) ? data[0] : data;
+      const expected = Number(pacing?.expected_percent ?? 0);
+      const progress = monthlyGoal.target_commission > 0
+        ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
+        : 0;
+      const diff = progress - expected;
+      let status: "ahead" | "on-track" | "behind" | "critical";
+      if (diff >= 10) status = "ahead";
+      else if (diff >= -5) status = "on-track";
+      else if (diff >= -20) status = "behind";
+      else status = "critical";
+      setExpectedPercent(expected);
+      setPacingStatus(status);
+    })();
+    return () => { cancelled = true; };
+  }, [barber, isCurrentMonth, monthlyGoal, stats]);
 
   // Check localStorage for existing war plan
   useEffect(() => {
@@ -713,7 +745,7 @@ const [todayProduction, setTodayProduction] = useState<{
   if (missingLink) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+        <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -780,7 +812,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -1036,10 +1068,35 @@ const [todayProduction, setTodayProduction] = useState<{
             {/* Card de Progresso Mensal */}
             <Card className="bg-card border-border shadow-card-custom">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-success" />
-                  SEU PROGRESSO NO MÊS
-                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-success" />
+                    SEU PROGRESSO NO MÊS
+                  </CardTitle>
+                  {pacingStatus && (
+                    pacingStatus === "ahead" ? (
+                      <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                        <TrendingUp className="w-3 h-3 mr-1" />
+                        Acima da Meta
+                      </Badge>
+                    ) : pacingStatus === "on-track" ? (
+                      <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        No Ritmo
+                      </Badge>
+                    ) : pacingStatus === "behind" ? (
+                      <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        Atenção
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-red-500/20 text-red-500 border-red-500/30">
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Crítico
+                      </Badge>
+                    )
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -1052,7 +1109,10 @@ const [todayProduction, setTodayProduction] = useState<{
                   {monthlyGoal ? (
                     <>
                       <Progress value={progressPercentage} className="h-3" />
-                      <div className="flex justify-end text-sm">
+                      <div className="flex justify-between text-sm">
+                        {expectedPercent !== null ? (
+                          <span className="text-muted-foreground">Esperado: {expectedPercent.toFixed(1)}%</span>
+                        ) : <span />}
                         <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
                       </div>
                     </>

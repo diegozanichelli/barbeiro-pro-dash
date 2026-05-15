@@ -11,6 +11,8 @@ import UnitsComparison from "./UnitsComparison";
 import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
 import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
 import SubscriptionAnalytics from "./SubscriptionAnalytics";
+import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
+import { useOrganization } from "@/hooks/useOrganization";
 
 interface Barber {
   id: string;
@@ -25,9 +27,11 @@ interface MonthlyData {
 
 function BarberEvolutionChart() {
   const manausNow = useMemo(() => getManausDate(), []);
+  const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
+  const [period, setPeriod] = useState<DeepAnalysisPeriod>("current_month");
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -156,7 +160,7 @@ function BarberEvolutionChart() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
                 Selecionar Barbeiro
@@ -177,7 +181,7 @@ function BarberEvolutionChart() {
 
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Selecionar Ano
+                Selecionar Ano (gráfico anual)
               </label>
               <Select
                 value={selectedYear.toString()}
@@ -192,6 +196,25 @@ function BarberEvolutionChart() {
                       {year}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">
+                Período (análise individual)
+              </label>
+              <Select
+                value={period}
+                onValueChange={(value) => setPeriod(value as DeepAnalysisPeriod)}
+              >
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current_month">Mês atual</SelectItem>
+                  <SelectItem value="last_3_months">Últimos 3 meses</SelectItem>
+                  <SelectItem value="year">Ano selecionado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -239,6 +262,15 @@ function BarberEvolutionChart() {
           )}
         </CardContent>
       </Card>
+
+      {selectedBarberId && (
+        <BarberDeepAnalysis
+          barberId={selectedBarberId}
+          organizationId={organizationId}
+          period={period}
+          selectedYear={selectedYear}
+        />
+      )}
     </div>
   );
 }

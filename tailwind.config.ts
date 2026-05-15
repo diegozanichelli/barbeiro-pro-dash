@@ -13,6 +13,11 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Manrope', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['"Space Grotesk"', 'Manrope', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -51,14 +56,21 @@ export default {
           DEFAULT: "hsl(var(--success))",
           foreground: "hsl(var(--success-foreground))",
         },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
       },
       backgroundImage: {
         'gradient-gold': 'var(--gradient-gold)',
+        'gradient-neon': 'var(--gradient-neon)',
         'gradient-dark': 'var(--gradient-dark)',
         'gradient-card': 'var(--gradient-card)',
+        'gradient-glow': 'var(--gradient-glow)',
       },
       boxShadow: {
         'gold': 'var(--shadow-gold)',
+        'neon': 'var(--shadow-neon)',
         'card-custom': 'var(--shadow-card)',
       },
       borderRadius: {

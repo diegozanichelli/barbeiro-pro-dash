@@ -42,6 +42,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
 import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
+import { translateSaleError } from "@/lib/saleGuards";
 
 interface DayReviewModalProps {
   open: boolean;
@@ -197,7 +198,6 @@ export default function DayReviewModal({
       // [AUDITORIA] Log de itens do gestor vs barbeiro
       const totalGestor = live.reduce((s, t) => s + t.price_sold, 0);
       const totalBarbeiro = cartFromLive.reduce((s, i) => s + (i.customPrice || 0), 0);
-      console.log('[AUDITORIA] Itens Gestor vs Barbeiro:', { itensGestor: live.length, itensBarbeiro: cartFromLive.length, date });
       if (Math.abs(totalGestor - totalBarbeiro) > 0.01) {
         console.warn('[AUDITORIA] DIVERGÊNCIA detectada:', { totalGestor, totalBarbeiro, diff: totalGestor - totalBarbeiro });
       }
@@ -339,9 +339,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar status:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar status"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsSavingPresence(false);
     }
@@ -452,9 +450,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar produção:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar produção"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
     }
