@@ -884,13 +884,14 @@ export default function LiveDashboard() {
     );
   }
 
-  // KPI calculations
-  const totalClientsToday = filteredBarbers.reduce((sum, b) => {
+  // KPI calculations (inclui clientes da recepção)
+  const barberClientsToday = filteredBarbers.reduce((sum, b) => {
     const txCount = managerTransactions
       .filter(t => t.barber_id === b.id && t.item_type === "service" && t.service_category === "basic")
       .length;
     return sum + txCount;
   }, 0);
+  const totalClientsToday = barberClientsToday + receptionClientsTotal;
 
   const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
   const monthAvgTicket = monthClientsTotal > 0 ? monthRevenueTotal / monthClientsTotal : 0;
