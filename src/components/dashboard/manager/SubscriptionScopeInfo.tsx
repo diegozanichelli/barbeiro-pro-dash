@@ -47,11 +47,12 @@ export function SubscriptionScopeFooter() {
       <ul className="text-xs text-muted-foreground space-y-1 leading-relaxed">
         <li>
           <span className="font-medium text-foreground">Carteira de Assinaturas</span> — todas as
-          movimentações no mês (novas + renovações + upgrades + downgrades).
+          movimentações no mês: novas + renovações + upgrades + downgrades.
         </li>
         <li>
-          <span className="font-medium text-foreground">Conversão por Barbeiro</span> — só novas
-          adesões, distribuídas por barbeiro (+ linha Recepção).
+          <span className="font-medium text-foreground">Conversão por Barbeiro</span> — apenas
+          ação="nova". Mostra duas taxas: Conversão Estrita (cliente novo→assinou) e Penetração
+          (todas adesões÷oportunidades). Inclui linha Recepção.
         </li>
         <li>
           <span className="font-medium text-foreground">Vendas da Recepção</span> — só novas
@@ -59,8 +60,8 @@ export function SubscriptionScopeFooter() {
         </li>
       </ul>
       <p className="text-xs text-muted-foreground mt-2 italic">
-        O total de "Novas Assinaturas" da Carteira coincide com o total da Conversão (incluindo a
-        linha Recepção).
+        O total de "Ades. Totais" da Conversão é um subconjunto da Carteira (apenas a parte
+        ação="nova"). Renovações e upgrades só aparecem na Carteira.
       </p>
     </div>
   );
