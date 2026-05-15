@@ -42,6 +42,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
 import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
+import { translateSaleError } from "@/lib/saleGuards";
 
 interface DayReviewModalProps {
   open: boolean;
