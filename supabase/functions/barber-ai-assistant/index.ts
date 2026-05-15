@@ -1587,6 +1587,101 @@ IMPORTANTE:
 
       await logUsage(barberId, organizationId, 'war_plan');
 
+      // ===== CATÁLOGO DE ESTRATÉGIAS (a IA escolhe 1-2 baseada no contexto) =====
+      const STRATEGIES = [
+        {
+          id: "blitz_matinal",
+          nome: "Blitz Matinal",
+          quando: "Quando o gap diário é alto e há clientes cedo na agenda",
+          foco: "Atacar nos 3 primeiros atendimentos com combo cheio (corte + barba + sobrancelha) pra já garantir 60% da meta antes do almoço.",
+        },
+        {
+          id: "ticket_minimo_garantido",
+          nome: "Ticket Mínimo Garantido",
+          quando: "Quando o ticket médio do barbeiro está abaixo da loja",
+          foco: "Definir um piso de ticket (ex: R$ X) e NUNCA deixar cliente sair abaixo disso. Script: sempre oferecer 1 adicional barato (sobrancelha/pigmentação) que sobe R$ 10-15.",
+        },
+        {
+          id: "volume_terca_quarta",
+          nome: "Volume Inteligente (Ter/Qua)",
+          quando: "Quando hoje é terça ou quarta (dias historicamente lentos)",
+          foco: "Não é dia de ticket alto, é dia de VOLUME. Estratégia: corte básico rápido + 1 produto leve (pomada/balm R$ 25-35). Atender 1-2 clientes a mais que o normal. Mandar 5 mensagens pra inativos antes das 11h.",
+        },
+        {
+          id: "combo_express",
+          nome: "Combo Express R$ 10",
+          quando: "Ticket baixo + muitos clientes (modo fábrica)",
+          foco: "Vender APENAS um adicional de R$ 10-15 (sobrancelha na navalha, pigmentação básica, hidratação rápida). Não tenta upsell pesado — soma R$ 10 em 8 clientes = +R$ 80 no dia.",
+        },
+        {
+          id: "produto_carro_chefe",
+          nome: "Produto Carro-Chefe do Dia",
+          quando: "Quando a conversão de produto está abaixo de 30%",
+          foco: "Escolher UM produto só (o top do barbeiro) e oferecer pra 100% dos clientes. Script único, treinado. Meta: 3 vendas do mesmo produto.",
+        },
+        {
+          id: "assinatura_focada",
+          nome: "Caça à Assinatura",
+          quando: "Quando assinaturas do mês < 3 e há clientes recorrentes na agenda",
+          foco: "Identificar 2 clientes que vêm ≥2x no mês e fazer a conta pra eles: 'assinatura X paga em 2 cortes'. Meta: 1 nova adesão.",
+        },
+        {
+          id: "resgate_inativos",
+          nome: "Resgate de Inativos",
+          quando: "Quando a agenda está fraca (poucos clientes) ou é dia lento",
+          foco: "Antes de abrir cadeira, mandar mensagem personalizada pra 5-8 clientes que não voltam há 30+ dias. Oferta: 'separei horário hoje pra você'. Meta: encher 2 buracos da agenda.",
+        },
+        {
+          id: "captacao_novo_cliente",
+          nome: "Captação de Novo Cliente",
+          quando: "Quando clientes novos no mês < 5",
+          foco: "Pedir 1 indicação a cada cliente atendido. Script: 'manda meu contato pra 1 amigo seu — ganha R$ 10 de desconto na próxima'. Meta: 2 novos clientes na semana.",
+        },
+        {
+          id: "upsell_barba",
+          nome: "Operação Barba",
+          quando: "Quando a taxa de extras está baixa (<30%)",
+          foco: "Foco TOTAL em barba/acabamento. Toda vez que cortar cabelo, perguntar: 'fechamos o visual com a barba? sai por +R$ X'. Meta: barba em 50% dos cortes do dia.",
+        },
+        {
+          id: "ataque_pontos_cegos",
+          nome: "Ataque aos Pontos Cegos",
+          quando: "Quando há serviços/produtos com zero vendas no histórico",
+          foco: "Pegar UM item esquecido e oferecer pra 100% dos clientes do dia. Quebrar o tabu — 1 venda já vira hábito.",
+        },
+        {
+          id: "sprint_meta_proxima",
+          nome: "Sprint Final",
+          quando: "Quando faltam <= 5 dias no mês E meta está em 80-99%",
+          foco: "Esquece estratégia bonita. É hora de aceitar TUDO: encaixe, hora extra, atendimento rápido. Conta exata: 'faltam R$ X em Y dias = R$ Z/dia'.",
+        },
+        {
+          id: "consolidacao_fim_semana",
+          nome: "Consolidação de Fim de Semana",
+          quando: "Quando hoje é sexta ou sábado",
+          foco: "Dia de ticket alto. Foco em combo completo (corte+barba+produto) e venda de assinatura pra cliente que costuma vir todo sábado. Não desperdiça cadeira com básico.",
+        },
+        {
+          id: "recuperacao_segunda",
+          nome: "Recuperação de Segunda",
+          quando: "Quando hoje é segunda-feira",
+          foco: "Dia de organizar a semana. Atende quem chega + agenda os próximos 3 dias (Ter/Qua/Qui) com 5 ligações/mensagens. Meta: garantir 2 clientes pra terça.",
+        },
+        {
+          id: "qualidade_quinta",
+          nome: "Quinta Premium",
+          quando: "Quando hoje é quinta-feira",
+          foco: "Quinta é o ensaio do fim de semana. Foca em ticket: combo + produto. Ofereça serviços premium (pigmentação, hidratação) pra cliente que vai sair no fim de semana.",
+        },
+      ];
+
+      // Rotação leve por dia para evitar mesma cara sempre
+      const rotationSeed = parseInt(todayDate.replace(/-/g, '')) + (barberId.charCodeAt(0) || 0);
+      const shuffled = [...STRATEGIES].sort(() => 0.5 - ((rotationSeed * 9301 + 49297) % 233280) / 233280);
+      const strategiesForPrompt = shuffled.map(s =>
+        `- [${s.id}] ${s.nome} — QUANDO: ${s.quando}. FOCO: ${s.foco}`
+      ).join('\n');
+
       // Tentativa via IA (só se chave existir)
       if (LOVABLE_API_KEY) {
         const dataContext = `
