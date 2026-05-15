@@ -1,89 +1,90 @@
-## Plano de Hardening de Segurança
 
-Rodei a varredura completa de segurança no backend e encontrei **41 achados** (3 críticos, 38 avisos). Abaixo o plano priorizado para corrigir.
+## Correção do Relatório de Conversão de Assinaturas
 
----
+Decisões aplicadas:
+- Itens 1 e 2 → **opção C: mostrar as duas métricas** (Conversão estrita + Penetração)
+- Itens 4 (oportunidades sem telefone) e 5 (filtro de unidade) → **adiados**
+- Itens 3, 6, 7, 8 → corrigidos agora
 
-### 🔴 CRÍTICOS (corrigir primeiro)
-
-**1. Telefones e nomes de clientes vazando entre barbeiros**
-Hoje qualquer barbeiro autenticado consegue ler `mobile_phone` e `client_name` de **todos** os clientes da organização via `sale_transactions` e `client_purchase_history` (políticas SELECT abertas por organização). Isso é uma exposição séria de dados pessoais (LGPD).
-- **Correção:** restringir SELECT para barbeiros apenas às linhas onde `barber_id = (barbeiro do auth.uid())`. Managers e super_admin continuam vendo tudo.
-
-**2. Bypass de organização via múltiplas roles (`get_user_organization`)**
-A função usa `LIMIT 1` sem `ORDER BY`. Se um usuário tiver linhas em `user_roles` para mais de uma organização (acidental ou malicioso), retorna org arbitrária — pode ler/gravar dados da org errada.
-- **Correção:** adicionar índice/constraint UNIQUE em `user_roles(user_id)` (ou `(user_id, role)` já existe — mas falta restringir 1 org por user) e/ou adicionar `ORDER BY created_at` determinístico.
-
-**3. Realtime sem RLS em `realtime.messages`**
-Tabelas `barbers` e `daily_productions` (dados financeiros/comissão) estão publicadas no Realtime. Qualquer usuário autenticado pode assinar qualquer canal e receber atualizações ignorando o RLS das tabelas.
-- **Correção:** adicionar policies em `realtime.messages` filtrando por `auth.uid()` e organização do tópico.
+Arquivos afetados (somente frontend):
+- `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx`
+- `src/components/dashboard/manager/SubscriptionScopeInfo.tsx`
 
 ---
 
-### 🟡 AVISOS PRIORITÁRIOS
+### 1. Buscar `is_new_client` e `mobile_phone` em todas as transações
 
-**4. Proteção de senhas vazadas (HIBP) desativada**
-- **Correção:** ligar `password_hibp_enabled` no auth (chamada simples).
+Hoje só guardamos `mobile_phone` para clientes novos. Precisamos de `is_new_client` em **todas** as linhas (inclusive nas vendas de assinatura) para cruzar quem virou assinante sendo cliente novo. Já está no `select`, só precisa ser usado no agregador.
 
-**5. `stripe_customer_id` visível para barbeiros**
-A policy "Managers can view their organization" em `organizations` na verdade libera SELECT para qualquer membro da org (inclusive barbeiros), expondo o ID Stripe.
-- **Correção:** restringir a policy a `has_role('manager') OR has_role('super_admin')`. Para barbeiros, expor apenas campos públicos via view (`name`, `championship_name`).
+### 2. Calcular **duas** métricas por barbeiro
 
-**6. Chaves WebPush (`auth`, `p256dh`) legíveis por managers**
-Material criptográfico de outros usuários acessível a managers da org — sem necessidade operacional.
-- **Correção:** restringir SELECT de managers a colunas não sensíveis (via view) ou remover a policy de manager (push é manipulado server-side em edge function com service role).
+Para cada barbeiro (e recepção):
 
-**7. `subscription_plan_services` sem SELECT para barbeiros**
-Pode causar bugs silenciosos no app do barbeiro.
-- **Correção:** adicionar policy SELECT por organização (somente leitura).
+```text
+Oportunidades         = pessoas únicas (Set<phone>) com is_new_client=true
+Ades. Cliente Novo    = transações subscription + action='new' + is_new_client=true
+Ades. Totais          = transações subscription + action='new' (qualquer cliente)
 
----
-
-### 🟢 AVISOS DE LINTER (em massa, baixo risco)
-
-**8. 30 funções `SECURITY DEFINER` executáveis por anon/authenticated**
-Funções como `calc_expected_pacing`, `get_organization_rankings`, `auto_replicate_goals` etc. estão acessíveis publicamente. A maioria já valida `auth.uid()` internamente, mas convém revogar EXECUTE para `anon` e manter apenas para `authenticated`.
-- **Correção:** `REVOKE EXECUTE ... FROM anon` em todas as funções do schema public.
-
-**9. `search_path` mutável em alguma função**
-Apenas 1 ocorrência. Adicionar `SET search_path = public` no `CREATE OR REPLACE`.
-
-**10. Extensão instalada no schema `public`**
-Aviso baixo — exige mover extensão de schema (operação invasiva). Recomendo **deixar como ignorado** (custo alto, risco baixo).
-
----
-
-### Etapas de execução (ordem)
-
-```
-1. Migration SQL única corrigindo:
-   - Policies SELECT em sale_transactions, client_purchase_history (crítico #1)
-   - get_user_organization com ORDER BY + UNIQUE em user_roles (crítico #2)
-   - Policies em realtime.messages (crítico #3)
-   - Policy de organizations restrita a manager/super_admin (#5)
-   - View pública de organizations para barbeiros se necessário
-   - Policy SELECT em subscription_plan_services para barbeiros (#7)
-   - Revisão de manager policy em push_subscriptions (#6)
-   - REVOKE EXECUTE ... FROM anon nas funções SECURITY DEFINER (#8)
-   - Fix do search_path da função pendente (#9)
-
-2. configure_auth: ativar password_hibp_enabled (#4)
-
-3. Atualizar frontend (se algum componente do barbeiro consumir
-   colunas que deixarão de ser visíveis: client_name/mobile_phone
-   em sale_transactions de outros barbeiros, organizations.stripe_customer_id).
-   Provavelmente nenhuma mudança é necessária pois o app do barbeiro
-   é read-only e só usa seus próprios dados.
-
-4. Rodar security scan novamente para confirmar.
-
-5. Atualizar @security-memory documentando o que foi corrigido
-   e o que foi conscientemente ignorado (extensão em public).
+Conversão estrita (%) = Ades. Cliente Novo  ÷ Oportunidades  × 100   (≤100%)
+Penetração      (%)   = Ades. Totais        ÷ Oportunidades  × 100   (pode >100%)
 ```
 
-### Riscos / pontos de atenção
+### 3. Total geral deduplicado entre barbeiros (item 3)
 
-- A restrição de SELECT em `sale_transactions` para barbeiros pode quebrar telas que mostram histórico cruzado — preciso confirmar que o app do barbeiro só consulta `barber_id = self` (memória do projeto indica que sim: "Barber Read-only App").
-- Adicionar UNIQUE em `user_roles(user_id)` quebra o multi-org se o produto suportar isso. Confirmar com você antes.
+Construir um `Set<phone>` global unindo todas as oportunidades (barbeiros + recepção) — não somar os `.size` individuais. Mesma pessoa atendida por dois barbeiros conta como 1 no total geral.
 
-**Posso prosseguir com essa ordem? Tem alguma restrição (ex.: usuário pode ter mais de uma role/org)?**
+### 4. Timezone Manaus nas bordas do filtro de data (item 6)
+
+Trocar:
+```ts
+.gte("created_at", `${startDate}T00:00:00`)
+.lte("created_at", `${endDate}T23:59:59`)
+```
+por:
+```ts
+.gte("created_at", `${startDate}T00:00:00-04:00`)
+.lte("created_at", `${endDate}T23:59:59-04:00`)
+```
+
+### 5. Badge especial "venda sem oportunidade" (item 7)
+
+Quando `oportunidades = 0` e `vendas > 0`:
+```
+⚠️ Sem oportunidade registrada (N vendas)
+```
+Substitui o atual "N/A" silencioso, sinalizando bug de cadastro (cliente novo não foi marcado).
+
+### 6. UI da tabela e dos cards de resumo
+
+**Tabela** ganha duas colunas distintas:
+
+```text
+Barbeiro | Oportunidades | Ades. Cliente Novo | Ades. Totais | Conversão Estrita | Penetração
+```
+
+**Cards de resumo** (3 → 4):
+
+1. 🎯 Oportunidades (pessoas únicas)
+2. 👤 Ades. de Cliente Novo
+3. 👑 Ades. Totais (incl. clientes da casa)
+4. 📉 Conversão Estrita / Penetração (lado a lado num só card, ex.: `28% / 47%`)
+
+Tooltips atualizados explicando a diferença entre as duas taxas.
+
+### 7. Atualizar `SubscriptionScopeInfo.tsx` (item 8)
+
+Corrigir o footer que afirma "o total de Novas Assinaturas da Carteira coincide com o total da Conversão" — não coincide (Carteira inclui renovações). Reescrever para deixar claro:
+
+- **Carteira**: todas as movimentações (`action ∈ {new, renew, upgrade, downgrade}`)
+- **Conversão → Ades. Totais**: apenas `action='new'`
+- **Conversão → Ades. Cliente Novo**: `action='new' AND is_new_client=true`
+- **Recepção**: subset de `action='new'` sem barber_id
+
+E o tooltip de "👑 Vendas" no `SubscriptionPerformanceReport` (que hoje diz "mesmo critério da Carteira") será reescrito para o critério real.
+
+---
+
+### Próximos passos (fora deste plano)
+
+- Item 4 — desenhar como tratar oportunidades sem telefone (você pediu para repensar).
+- Item 5 — desenhar UX do filtro de unidade.
