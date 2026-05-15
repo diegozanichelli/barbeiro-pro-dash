@@ -53,6 +53,7 @@ interface ManagerTransaction {
   price_sold: number;
   item_type: string;
   service_category: string | null;
+  unit_id: string | null;
 }
 
 interface Barber {
@@ -222,13 +223,17 @@ export default function LiveDashboard() {
 
       // Fetch manager transactions directly from sale_transactions for the selected day
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
-      const { data: managerTxData } = await supabase
+      let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category")
+        .select("barber_id, price_sold, item_type, service_category, unit_id")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
         .lt("created_at", nextDay + "T00:00:00-04:00");
+      if (selectedUnit !== "all") {
+        mgrTxQuery = mgrTxQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: managerTxData } = await mgrTxQuery;
 
       setManagerTransactions(managerTxData || []);
 
@@ -282,16 +287,20 @@ export default function LiveDashboard() {
         setUnits(unitsData);
       }
 
-      // Fetch yesterday's revenue for comparison
+      // Fetch yesterday's revenue for comparison (respeita filtro de unidade)
       const yesterday = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       const dayAfterYesterday = selectedDate;
-      const { data: yesterdayTxData } = await supabase
+      let ydayQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type")
+        .select("barber_id, price_sold, item_type, unit_id")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", yesterday + "T00:00:00-04:00")
         .lt("created_at", dayAfterYesterday + "T00:00:00-04:00");
+      if (selectedUnit !== "all") {
+        ydayQuery = ydayQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: yesterdayTxData } = await ydayQuery;
 
       const yRevenue = (yesterdayTxData || [])
         .filter(t => t.item_type !== 'subscription')
@@ -302,7 +311,7 @@ export default function LiveDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, selectedDate, currentMonth, currentYear]);
+  }, [organizationId, selectedDate, currentMonth, currentYear, selectedUnit]);
 
   useEffect(() => {
     fetchData();
@@ -329,6 +338,39 @@ export default function LiveDashboard() {
   // State for manager transactions read directly from sale_transactions
   const [managerTransactions, setManagerTransactions] = useState<ManagerTransaction[]>([]);
 
+  // Reception rows: vendas com barber_id NULL agrupadas por unit_id
+  // Quando "Todas as Unidades" mostra 1 linha por unidade que teve recepção
+  // Quando filtrando uma unidade, managerTransactions já vem filtrado
+  const receptionRows = useMemo(() => {
+    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clients: number }>();
+    managerTransactions.forEach((t) => {
+      if (t.barber_id !== null) return;
+      if (!t.unit_id) return;
+      if (t.item_type === "subscription") return;
+      const unit = units.find((u) => u.id === t.unit_id);
+      if (!unit) return;
+      const existing =
+        map.get(t.unit_id) ||
+        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clients: 0 };
+      existing.revenue += Number(t.price_sold) || 0;
+      if (t.item_type === "service" && t.service_category === "basic") {
+        existing.clients += 1;
+      }
+      map.set(t.unit_id, existing);
+    });
+    return Array.from(map.values()).filter((r) => r.revenue > 0);
+  }, [managerTransactions, units]);
+
+  const receptionRevenueTotal = useMemo(
+    () => receptionRows.reduce((s, r) => s + r.revenue, 0),
+    [receptionRows]
+  );
+
+  const receptionClientsTotal = useMemo(
+    () => receptionRows.reduce((s, r) => s + r.clients, 0),
+    [receptionRows]
+  );
+
   // Calculate total revenue from managerTransactions (Ao Vivo)
   // Calculate total revenue combining confirmed barber data + unconfirmed manager transactions
   useEffect(() => {
@@ -336,16 +378,17 @@ export default function LiveDashboard() {
       ? barbers
       : barbers.filter((b) => b.unit_id === selectedUnit);
 
-    const newTotal = relevantBarbers.reduce((sum, barber) => {
+    const barbersTotal = relevantBarbers.reduce((sum, barber) => {
       return sum + getBarberRevenue(barber.id);
     }, 0);
+    const newTotal = barbersTotal + receptionRevenueTotal;
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
       setIsGlowing(true);
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [managerTransactions, productions, selectedUnit, barbers]);
+  }, [managerTransactions, productions, selectedUnit, barbers, receptionRevenueTotal]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
@@ -719,19 +762,21 @@ export default function LiveDashboard() {
     return prods.reduce((sum, p) => sum + (p.clients_count || 0), 0);
   }, [monthProductions, selectedUnit, barbers]);
 
-  // Unit rankings (today's revenue per unit)
+  // Unit rankings (today's revenue per unit) — agora baseado no unit_id da transação
+  // Reflete corretamente cross-unit work + recepção
   const unitRankingData = useMemo(() => {
     const unitMap = new Map<string, { name: string; revenue: number }>();
     units.forEach(u => unitMap.set(u.id, { name: u.name, revenue: 0 }));
-    barbers.forEach(b => {
-      const rev = getBarberRevenue(b.id);
-      const existing = unitMap.get(b.unit_id);
-      if (existing) existing.revenue += rev;
+    managerTransactions.forEach(t => {
+      if (t.item_type === "subscription") return;
+      if (!t.unit_id) return;
+      const existing = unitMap.get(t.unit_id);
+      if (existing) existing.revenue += Number(t.price_sold) || 0;
     });
     return Array.from(unitMap.entries())
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.revenue - a.revenue);
-  }, [units, barbers, managerTransactions, productions]);
+  }, [units, managerTransactions]);
 
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
@@ -839,13 +884,14 @@ export default function LiveDashboard() {
     );
   }
 
-  // KPI calculations
-  const totalClientsToday = filteredBarbers.reduce((sum, b) => {
+  // KPI calculations (inclui clientes da recepção)
+  const barberClientsToday = filteredBarbers.reduce((sum, b) => {
     const txCount = managerTransactions
       .filter(t => t.barber_id === b.id && t.item_type === "service" && t.service_category === "basic")
       .length;
     return sum + txCount;
   }, 0);
+  const totalClientsToday = barberClientsToday + receptionClientsTotal;
 
   const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
   const monthAvgTicket = monthClientsTotal > 0 ? monthRevenueTotal / monthClientsTotal : 0;
@@ -1278,6 +1324,61 @@ export default function LiveDashboard() {
                         </DropdownMenu>
                       </div>
                     </motion.div>
+                  );
+                })}
+
+                {/* Reception rows: vendas sem barbeiro (balcão) por unidade */}
+                {receptionRows.map((r) => {
+                  const ticket = r.clients > 0 ? r.revenue / r.clients : 0;
+                  return (
+                    <div
+                      key={`reception-${r.unitId}`}
+                      className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="h-9 w-9 shrink-0 border border-blue-500/40">
+                          <AvatarFallback className="bg-blue-500/20 text-blue-500 text-xs font-bold">
+                            🛎️
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">
+                            Recepção
+                          </p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {r.unitName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">—</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-primary">
+                          {r.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                        {r.clients > 0 && (
+                          <p className="text-[10px] text-muted-foreground">({r.clients} atd)</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-foreground font-medium">
+                          {ticket > 0
+                            ? ticket.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">—</span>
+                      </div>
+                      <div />
+                      <div className="flex justify-center">
+                        <Badge className="text-[10px] bg-blue-500/20 text-blue-500 border-blue-500/30 whitespace-nowrap">
+                          BALCÃO
+                        </Badge>
+                      </div>
+                      <div />
+                    </div>
                   );
                 })}
               </div>
