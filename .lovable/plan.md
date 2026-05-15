@@ -1,50 +1,89 @@
-## Objetivo
+## Plano de Hardening de Segurança
 
-Quando o Super Admin clicar em **Revogar** (gratuita → `past_due`) ou **Desativar** (active → `canceled`), o gestor/barbeiro daquela organização ainda consegue **fazer login**, mas é levado para uma tela bloqueante dizendo que a assinatura está expirada e que precisa entrar em contato com o administrador. Ele **não consegue fechar nem navegar** para nenhuma outra tela enquanto o status não for revertido.
+Rodei a varredura completa de segurança no backend e encontrei **41 achados** (3 críticos, 38 avisos). Abaixo o plano priorizado para corrigir.
 
-## O que já funciona (nada a mexer)
+---
 
-- `useSubscriptionCheck` + `ProtectedRoute` já redirecionam para `/subscription-blocked` sempre que `subscription_status` não está em `active | trial | gratuita`.
-- "Revogar" já seta `past_due` e "Desativar" já seta `canceled` → ambos disparam o redirect automaticamente.
-- O login na `/auth` continua funcionando normalmente.
+### 🔴 CRÍTICOS (corrigir primeiro)
 
-## O que muda
+**1. Telefones e nomes de clientes vazando entre barbeiros**
+Hoje qualquer barbeiro autenticado consegue ler `mobile_phone` e `client_name` de **todos** os clientes da organização via `sale_transactions` e `client_purchase_history` (políticas SELECT abertas por organização). Isso é uma exposição séria de dados pessoais (LGPD).
+- **Correção:** restringir SELECT para barbeiros apenas às linhas onde `barber_id = (barbeiro do auth.uid())`. Managers e super_admin continuam vendo tudo.
 
-### 1. Reescrever `src/pages/SubscriptionBlocked.tsx`
+**2. Bypass de organização via múltiplas roles (`get_user_organization`)**
+A função usa `LIMIT 1` sem `ORDER BY`. Se um usuário tiver linhas em `user_roles` para mais de uma organização (acidental ou malicioso), retorna org arbitrária — pode ler/gravar dados da org errada.
+- **Correção:** adicionar índice/constraint UNIQUE em `user_roles(user_id)` (ou `(user_id, role)` já existe — mas falta restringir 1 org por user) e/ou adicionar `ORDER BY created_at` determinístico.
 
-Substituir todo o conteúdo atual (que tem botões Stripe, retry, bootstrap, contato, etc.) por uma tela mínima e bloqueante:
+**3. Realtime sem RLS em `realtime.messages`**
+Tabelas `barbers` e `daily_productions` (dados financeiros/comissão) estão publicadas no Realtime. Qualquer usuário autenticado pode assinar qualquer canal e receber atualizações ignorando o RLS das tabelas.
+- **Correção:** adicionar policies em `realtime.messages` filtrando por `auth.uid()` e organização do tópico.
 
-- Ícone de alerta + título **"Assinatura Expirada"**.
-- Mensagem: *"Sua assinatura está expirada. Para reativá-la, entre em contato com o administrador."*
-- Mostrar e-mail do usuário logado (para ele saber qual conta avisar).
-- **Nenhum botão de ação que retorne ao app** (sem "Verificar novamente", sem Stripe, sem "Tentar de novo").
-- Manter apenas um botão **"Sair"** discreto no rodapé, que faz `supabase.auth.signOut()` e leva para `/auth`. Sem isso o usuário fica preso no dispositivo, e mesmo deslogando, ao logar de novo cai aqui de novo (cumprindo a regra "não consegue fechar até liberar").
-- Em background, fazer poll a cada 60s chamando `check-subscription-status`. Se voltar `has_access: true` (admin reativou), redireciona automaticamente para `/dashboard`. Sem botão manual visível.
+---
 
-### 2. Bloquear navegação para fora da tela
+### 🟡 AVISOS PRIORITÁRIOS
 
-- Adicionar `useEffect` com listener de `popstate` que re-empurra `/subscription-blocked` no histórico — usuário não consegue voltar pelo botão do navegador.
-- Bloquear `Escape`/`F5`? Não — F5 só recarrega e cai aqui de novo. Suficiente.
-- A tela é página inteira (`min-h-screen`), sem header/sidebar, sem `<Dialog>` (não há X para fechar).
+**4. Proteção de senhas vazadas (HIBP) desativada**
+- **Correção:** ligar `password_hibp_enabled` no auth (chamada simples).
 
-### 3. Garantir que o gate cobre rotas além de `/dashboard`
+**5. `stripe_customer_id` visível para barbeiros**
+A policy "Managers can view their organization" em `organizations` na verdade libera SELECT para qualquer membro da org (inclusive barbeiros), expondo o ID Stripe.
+- **Correção:** restringir a policy a `has_role('manager') OR has_role('super_admin')`. Para barbeiros, expor apenas campos públicos via view (`name`, `championship_name`).
 
-Verificar em `src/App.tsx` que toda rota autenticada está envolta em `<ProtectedRoute>`. Caso alguma rota interna (relatórios, etc.) esteja fora do guard, envolver. (Provável que já esteja, pois o redirect já funciona hoje — só confirmar.)
+**6. Chaves WebPush (`auth`, `p256dh`) legíveis por managers**
+Material criptográfico de outros usuários acessível a managers da org — sem necessidade operacional.
+- **Correção:** restringir SELECT de managers a colunas não sensíveis (via view) ou remover a policy de manager (push é manipulado server-side em edge function com service role).
 
-## O que NÃO muda
+**7. `subscription_plan_services` sem SELECT para barbeiros**
+Pode causar bugs silenciosos no app do barbeiro.
+- **Correção:** adicionar policy SELECT por organização (somente leitura).
 
-- Nada no banco / RPC / edge functions.
-- Lógica do `handleToggleAccess` e `handleRevokeAccess` no `SuperAdminDashboard` permanece igual.
-- Nomenclatura "Revogar" vs "Desativar" continua como está (já discutido na mensagem anterior).
-- `useSubscriptionCheck` permanece igual.
+---
 
-## Detalhes técnicos
+### 🟢 AVISOS DE LINTER (em massa, baixo risco)
 
-- Polling: `setInterval` de 60s dentro do `useEffect` da página, com `clearInterval` no cleanup.
-- Logout: `await supabase.auth.signOut(); navigate("/auth")`.
-- O Super Admin nunca cai nessa tela porque `check-subscription-status` retorna `has_access: true` para `super_admin` independente do status da org.
+**8. 30 funções `SECURITY DEFINER` executáveis por anon/authenticated**
+Funções como `calc_expected_pacing`, `get_organization_rankings`, `auto_replicate_goals` etc. estão acessíveis publicamente. A maioria já valida `auth.uid()` internamente, mas convém revogar EXECUTE para `anon` e manter apenas para `authenticated`.
+- **Correção:** `REVOKE EXECUTE ... FROM anon` em todas as funções do schema public.
 
-## Arquivos afetados
+**9. `search_path` mutável em alguma função**
+Apenas 1 ocorrência. Adicionar `SET search_path = public` no `CREATE OR REPLACE`.
 
-- `src/pages/SubscriptionBlocked.tsx` — reescrita completa.
-- `src/App.tsx` — só conferir cobertura do `ProtectedRoute` (talvez nada a alterar).
+**10. Extensão instalada no schema `public`**
+Aviso baixo — exige mover extensão de schema (operação invasiva). Recomendo **deixar como ignorado** (custo alto, risco baixo).
+
+---
+
+### Etapas de execução (ordem)
+
+```
+1. Migration SQL única corrigindo:
+   - Policies SELECT em sale_transactions, client_purchase_history (crítico #1)
+   - get_user_organization com ORDER BY + UNIQUE em user_roles (crítico #2)
+   - Policies em realtime.messages (crítico #3)
+   - Policy de organizations restrita a manager/super_admin (#5)
+   - View pública de organizations para barbeiros se necessário
+   - Policy SELECT em subscription_plan_services para barbeiros (#7)
+   - Revisão de manager policy em push_subscriptions (#6)
+   - REVOKE EXECUTE ... FROM anon nas funções SECURITY DEFINER (#8)
+   - Fix do search_path da função pendente (#9)
+
+2. configure_auth: ativar password_hibp_enabled (#4)
+
+3. Atualizar frontend (se algum componente do barbeiro consumir
+   colunas que deixarão de ser visíveis: client_name/mobile_phone
+   em sale_transactions de outros barbeiros, organizations.stripe_customer_id).
+   Provavelmente nenhuma mudança é necessária pois o app do barbeiro
+   é read-only e só usa seus próprios dados.
+
+4. Rodar security scan novamente para confirmar.
+
+5. Atualizar @security-memory documentando o que foi corrigido
+   e o que foi conscientemente ignorado (extensão em public).
+```
+
+### Riscos / pontos de atenção
+
+- A restrição de SELECT em `sale_transactions` para barbeiros pode quebrar telas que mostram histórico cruzado — preciso confirmar que o app do barbeiro só consulta `barber_id = self` (memória do projeto indica que sim: "Barber Read-only App").
+- Adicionar UNIQUE em `user_roles(user_id)` quebra o multi-org se o produto suportar isso. Confirmar com você antes.
+
+**Posso prosseguir com essa ordem? Tem alguma restrição (ex.: usuário pode ter mais de uma role/org)?**
