@@ -156,6 +156,11 @@ export default function LiveDashboard() {
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
+  const [teamPacing, setTeamPacing] = useState<{
+    status: "ahead" | "on-track" | "behind" | "critical";
+    expectedPct: number;
+    actualPct: number;
+  } | null>(null);
 
   // Date navigation state
   const todayManaus = getTodayString();
@@ -763,6 +768,43 @@ export default function LiveDashboard() {
     return { totalTarget, totalEarned, pct };
   }, [barbers, goals, monthProductions, selectedUnit]);
 
+  // Pacing da equipe (Crítico / Atenção / No Ritmo / Acima) — comparando real vs esperado
+  useEffect(() => {
+    if (!organizationId) { setTeamPacing(null); return; }
+    const todayStr = getTodayString();
+    const today = parseISO(todayStr);
+    const sel = parseISO(selectedDate);
+    const isCurrentMonth = today.getFullYear() === sel.getFullYear() && today.getMonth() === sel.getMonth();
+    if (!isCurrentMonth) { setTeamPacing(null); return; }
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("calc_expected_pacing_batch", {
+        p_organization_id: organizationId,
+        p_ref_date: todayStr,
+      });
+      if (cancelled || error || !data) return;
+      const relevantIds = new Set(
+        (selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit)).map(b => b.id)
+      );
+      const rows = (data as any[]).filter(r => relevantIds.has(r.barber_id));
+      const sumTarget = rows.reduce((s, r) => s + Number(r.target_commission || 0), 0);
+      const sumExpected = rows.reduce((s, r) => s + Number(r.expected_commission || 0), 0);
+      const sumActual = rows.reduce((s, r) => s + Number(r.comissao_acumulada || 0), 0);
+      if (sumTarget <= 0) { setTeamPacing(null); return; }
+      const expectedPct = (sumExpected / sumTarget) * 100;
+      const actualPct = (sumActual / sumTarget) * 100;
+      const diff = actualPct - expectedPct;
+      let status: "ahead" | "on-track" | "behind" | "critical";
+      if (diff >= 10) status = "ahead";
+      else if (diff >= -5) status = "on-track";
+      else if (diff >= -20) status = "behind";
+      else status = "critical";
+      setTeamPacing({ status, expectedPct, actualPct });
+    })();
+    return () => { cancelled = true; };
+  }, [organizationId, selectedDate, selectedUnit, barbers, monthProductions]);
+
   // Yesterday comparison
   const revenueComparison = useMemo(() => {
     if (yesterdayRevenue === null || yesterdayRevenue === 0) return null;
@@ -947,23 +989,50 @@ export default function LiveDashboard() {
       {teamMonthlyGoal.totalTarget > 0 && (
         <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
           <CardContent className="px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-primary" />
                 <span className="text-sm font-bold text-foreground">Meta Mensal da Equipe</span>
+                {teamPacing && (() => {
+                  const map = {
+                    ahead:    { label: "ACIMA DO ESPERADO", cls: "bg-green-500/15 text-green-500 border-green-500/30" },
+                    "on-track": { label: "NO RITMO",          cls: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
+                    behind:   { label: "ATENÇÃO",            cls: "bg-amber-500/15 text-amber-500 border-amber-500/30" },
+                    critical: { label: "CRÍTICO",            cls: "bg-red-500/15 text-red-500 border-red-500/30" },
+                  } as const;
+                  const cfg = map[teamPacing.status];
+                  return (
+                    <Badge variant="outline" className={`text-[10px] font-bold border ${cfg.cls}`}>
+                      {cfg.label}
+                    </Badge>
+                  );
+                })()}
               </div>
               <span className={`text-sm font-bold ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}>
                 {teamMonthlyGoal.pct.toFixed(0)}%
               </span>
             </div>
-            <div className="h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
+            <div className="relative h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
               <motion.div
                 className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
                 initial={{ width: 0 }}
                 animate={{ width: `${teamMonthlyGoal.pct}%` }}
                 transition={{ duration: 1, ease: "easeOut" }}
               />
+              {teamPacing && teamPacing.expectedPct > 0 && teamPacing.expectedPct <= 100 && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-foreground/70"
+                  style={{ left: `${teamPacing.expectedPct}%` }}
+                  title={`Esperado: ${teamPacing.expectedPct.toFixed(1)}%`}
+                />
+              )}
             </div>
+            {teamPacing && (
+              <div className="text-[10px] text-muted-foreground mb-1">
+                Esperado para hoje: <span className="font-semibold text-foreground">{teamPacing.expectedPct.toFixed(1)}%</span>
+                {" · "}Real: <span className="font-semibold text-foreground">{teamPacing.actualPct.toFixed(1)}%</span>
+              </div>
+            )}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
                 Vendas: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
