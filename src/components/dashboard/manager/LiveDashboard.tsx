@@ -1326,6 +1326,61 @@ export default function LiveDashboard() {
                     </motion.div>
                   );
                 })}
+
+                {/* Reception rows: vendas sem barbeiro (balcão) por unidade */}
+                {receptionRows.map((r) => {
+                  const ticket = r.clients > 0 ? r.revenue / r.clients : 0;
+                  return (
+                    <div
+                      key={`reception-${r.unitId}`}
+                      className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="h-9 w-9 shrink-0 border border-blue-500/40">
+                          <AvatarFallback className="bg-blue-500/20 text-blue-500 text-xs font-bold">
+                            🛎️
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">
+                            Recepção
+                          </p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {r.unitName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">—</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-primary">
+                          {r.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                        {r.clients > 0 && (
+                          <p className="text-[10px] text-muted-foreground">({r.clients} atd)</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-foreground font-medium">
+                          {ticket > 0
+                            ? ticket.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">—</span>
+                      </div>
+                      <div />
+                      <div className="flex justify-center">
+                        <Badge className="text-[10px] bg-blue-500/20 text-blue-500 border-blue-500/30 whitespace-nowrap">
+                          BALCÃO
+                        </Badge>
+                      </div>
+                      <div />
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Total Row */}
