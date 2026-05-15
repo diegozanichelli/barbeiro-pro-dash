@@ -74,9 +74,23 @@ export default function SubscriptionPerformanceReport() {
 
   const years = Array.from({ length: 3 }, (_, i) => getManausDate().getFullYear() - 1 + i);
 
+  // Carrega lista de unidades para o filtro
+  useEffect(() => {
+    if (!organizationId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+      if (data) setUnits(data);
+    })();
+  }, [organizationId]);
+
   useEffect(() => {
     if (organizationId) fetchPerformanceData();
-  }, [selectedMonth, selectedYear, organizationId]);
+  }, [selectedMonth, selectedYear, organizationId, selectedUnitId]);
 
   const fetchPerformanceData = async () => {
     if (!organizationId) return;
@@ -90,11 +104,12 @@ export default function SubscriptionPerformanceReport() {
     const endISO = `${endDate}T23:59:59-04:00`;
 
     try {
-      // Transações de barbeiros
-      const { data: transactions, error: txError } = await supabase
+      // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
+      let txQuery = supabase
         .from("sale_transactions")
         .select(`
           barber_id,
+          unit_id,
           is_new_client,
           item_type,
           subscription_action,
@@ -107,18 +122,32 @@ export default function SubscriptionPerformanceReport() {
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
 
+      if (selectedUnitId === "no_unit") {
+        txQuery = txQuery.is("unit_id", null);
+      } else if (selectedUnitId !== "all") {
+        txQuery = txQuery.eq("unit_id", selectedUnitId);
+      }
+
+      const { data: transactions, error: txError } = await txQuery;
       if (txError) throw txError;
 
       // Transações da recepção (sem barber_id)
-      const { data: receptionTx, error: recError } = await supabase
+      let recQuery = supabase
         .from("sale_transactions")
-        .select("is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
 
+      if (selectedUnitId === "no_unit") {
+        recQuery = recQuery.is("unit_id", null);
+      } else if (selectedUnitId !== "all") {
+        recQuery = recQuery.eq("unit_id", selectedUnitId);
+      }
+
+      const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
 
       // Agrupar por barbeiro
