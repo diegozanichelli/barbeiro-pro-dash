@@ -156,6 +156,11 @@ export default function LiveDashboard() {
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
+  const [teamPacing, setTeamPacing] = useState<{
+    status: "ahead" | "on-track" | "behind" | "critical";
+    expectedPct: number;
+    actualPct: number;
+  } | null>(null);
 
   // Date navigation state
   const todayManaus = getTodayString();
