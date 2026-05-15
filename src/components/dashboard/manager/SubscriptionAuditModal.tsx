@@ -50,6 +50,7 @@ interface AuditTransaction {
   subscription_plan_id: string | null;
   unit_id: string | null;
   subscription_action: string | null;
+  mobile_phone: string | null;
   barbers: { name: string } | null;
   subscription_plans: { name: string; price: number } | null;
   units: { name: string } | null;
