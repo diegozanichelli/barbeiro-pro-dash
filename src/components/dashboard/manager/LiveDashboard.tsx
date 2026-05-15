@@ -1002,17 +1002,27 @@ export default function LiveDashboard() {
                   } as const;
                   const cfg = map[teamPacing.status];
                   return (
-                    <Badge variant="outline" className={`text-[10px] font-bold border ${cfg.cls}`}>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-bold border ${cfg.cls} cursor-help`}
+                      title="Compara a Comissão Real acumulada com a Comissão Esperada para a data atual. Se Real < Esperado, a equipe está atrasada no ritmo do mês."
+                    >
                       {cfg.label}
                     </Badge>
                   );
                 })()}
               </div>
-              <span className={`text-sm font-bold ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}>
+              <span
+                className={`text-sm font-bold cursor-help ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}
+                title={`% de Vendas atingido sobre a Meta de Vendas do mês.\n\nVendas: ${teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}\nMeta: ${teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
+              >
                 {teamMonthlyGoal.pct.toFixed(0)}%
               </span>
             </div>
-            <div className="relative h-3 bg-muted/50 rounded-full overflow-hidden mb-2">
+            <div
+              className="relative h-3 bg-muted/50 rounded-full overflow-hidden mb-2"
+              title="Barra colorida = % de Vendas realizado. Linha vertical = % de Comissão Esperada para hoje (com base nos dias úteis decorridos)."
+            >
               <motion.div
                 className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
                 initial={{ width: 0 }}
@@ -1023,14 +1033,19 @@ export default function LiveDashboard() {
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-foreground/70"
                   style={{ left: `${teamPacing.expectedPct}%` }}
-                  title={`Esperado: ${teamPacing.expectedPct.toFixed(1)}%`}
+                  title={`Marcador de pacing: a equipe deveria ter ${teamPacing.expectedPct.toFixed(1)}% da comissão até hoje.`}
                 />
               )}
             </div>
             {teamPacing && (
-              <div className="text-[10px] text-muted-foreground mb-1">
-                Esperado para hoje: <span className="font-semibold text-foreground">{teamPacing.expectedPct.toFixed(1)}%</span>
-                {" · "}Real: <span className="font-semibold text-foreground">{teamPacing.actualPct.toFixed(1)}%</span>
+              <div className="text-[10px] text-muted-foreground mb-1 flex flex-wrap gap-x-2">
+                <span title="% da Meta de Comissão da equipe que JÁ DEVERIA ter sido atingida até hoje, com base nos dias úteis decorridos no mês." className="cursor-help">
+                  Esperado para hoje: <span className="font-semibold text-foreground">{teamPacing.expectedPct.toFixed(1)}%</span>
+                </span>
+                <span>·</span>
+                <span title="% da Meta de Comissão efetivamente acumulada pela equipe até agora. Considera as comissões reais de cada barbeiro (taxas diferentes por item, com assinaturas zeradas)." className="cursor-help">
+                  Real: <span className="font-semibold text-foreground">{teamPacing.actualPct.toFixed(1)}%</span>
+                </span>
               </div>
             )}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
