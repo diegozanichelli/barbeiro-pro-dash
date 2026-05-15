@@ -1273,7 +1273,7 @@ export default function QuickSaleModal({
       onSuccess();
     } catch (error: any) {
       console.error("Error registering manual sale:", error);
-      toast.error(error?.message || "Erro ao registrar venda");
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
