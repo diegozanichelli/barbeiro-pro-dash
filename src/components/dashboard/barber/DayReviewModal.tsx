@@ -42,6 +42,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
 import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
+import { translateSaleError } from "@/lib/saleGuards";
 
 interface DayReviewModalProps {
   open: boolean;
@@ -338,9 +339,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar status:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar status"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsSavingPresence(false);
     }
@@ -451,9 +450,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar produção:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar produção"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
     }
