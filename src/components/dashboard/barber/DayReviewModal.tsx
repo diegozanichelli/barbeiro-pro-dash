@@ -452,9 +452,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar produção:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar produção"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
     }
