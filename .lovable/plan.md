@@ -1,96 +1,50 @@
-## Diagnóstico
+## Objetivo
 
-Yan Dutra existe e está ativo (`db53d32a-7cda-4a23-94bf-dc61e72ac03d`, unidade Parque 10), mas o RPC `calc_expected_pacing` criado na última iteração tem **ambiguidade de nome de coluna**:
+Quando o Super Admin clicar em **Revogar** (gratuita → `past_due`) ou **Desativar** (active → `canceled`), o gestor/barbeiro daquela organização ainda consegue **fazer login**, mas é levado para uma tela bloqueante dizendo que a assinatura está expirada e que precisa entrar em contato com o administrador. Ele **não consegue fechar nem navegar** para nenhuma outra tela enquanto o status não for revertido.
 
-```
-ERROR 42702: column reference "target_commission" is ambiguous
-QUERY: SELECT COALESCE(target_commission, 0) FROM monthly_goals ...
-```
+## O que já funciona (nada a mexer)
 
-A coluna `monthly_goals.target_commission` colide com o parâmetro de saída homônimo da função. Isso faz a RPC falhar em runtime para **qualquer** barbeiro. Dentro de `check-performance-alerts`, o erro cai no `continue` do loop e **nenhum alerta é criado ou atualizado** desde o último deploy — por isso o Yan (e potencialmente outros) não aparecem.
+- `useSubscriptionCheck` + `ProtectedRoute` já redirecionam para `/subscription-blocked` sempre que `subscription_status` não está em `active | trial | gratuita`.
+- "Revogar" já seta `past_due` e "Desativar" já seta `canceled` → ambos disparam o redirect automaticamente.
+- O login na `/auth` continua funcionando normalmente.
 
-## Correção
+## O que muda
 
-### 1. Migration — recriar a função com nomes desambiguados
+### 1. Reescrever `src/pages/SubscriptionBlocked.tsx`
 
-```sql
-CREATE OR REPLACE FUNCTION public.calc_expected_pacing(
-  p_barber_id uuid,
-  p_ref_date  date DEFAULT CURRENT_DATE
-)
-RETURNS TABLE(
-  working_days_passed integer,
-  working_days_total  integer,
-  target_commission   numeric,
-  expected_commission numeric,
-  expected_percent    numeric
-)
-LANGUAGE plpgsql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_org      uuid;
-  v_month    integer := EXTRACT(MONTH FROM p_ref_date)::integer;
-  v_year     integer := EXTRACT(YEAR  FROM p_ref_date)::integer;
-  v_first    date    := make_date(v_year, v_month, 1);
-  v_last     date    := (v_first + interval '1 month - 1 day')::date;
-  v_target   numeric := 0;
-  v_passed   integer := 0;
-  v_total    integer := 0;
-BEGIN
-  SELECT b.organization_id INTO v_org FROM barbers b WHERE b.id = p_barber_id;
+Substituir todo o conteúdo atual (que tem botões Stripe, retry, bootstrap, contato, etc.) por uma tela mínima e bloqueante:
 
-  SELECT COALESCE(mg.target_commission, 0) INTO v_target
-  FROM monthly_goals mg
-  WHERE mg.barber_id = p_barber_id
-    AND mg.month     = v_month
-    AND mg.year      = v_year
-  LIMIT 1;
+- Ícone de alerta + título **"Assinatura Expirada"**.
+- Mensagem: *"Sua assinatura está expirada. Para reativá-la, entre em contato com o administrador."*
+- Mostrar e-mail do usuário logado (para ele saber qual conta avisar).
+- **Nenhum botão de ação que retorne ao app** (sem "Verificar novamente", sem Stripe, sem "Tentar de novo").
+- Manter apenas um botão **"Sair"** discreto no rodapé, que faz `supabase.auth.signOut()` e leva para `/auth`. Sem isso o usuário fica preso no dispositivo, e mesmo deslogando, ao logar de novo cai aqui de novo (cumprindo a regra "não consegue fechar até liberar").
+- Em background, fazer poll a cada 60s chamando `check-subscription-status`. Se voltar `has_access: true` (admin reativou), redireciona automaticamente para `/dashboard`. Sem botão manual visível.
 
-  SELECT COUNT(*)::int INTO v_passed
-  FROM generate_series(v_first, p_ref_date, interval '1 day') AS d(day)
-  WHERE NOT EXISTS (SELECT 1 FROM organization_holidays oh
-                    WHERE oh.organization_id = v_org AND oh.date = d.day::date)
-    AND NOT EXISTS (SELECT 1 FROM daily_productions dp
-                    WHERE dp.barber_id = p_barber_id
-                      AND dp.date = d.day::date
-                      AND dp.presence_type IN ('day_off','absence','optional_sunday'));
+### 2. Bloquear navegação para fora da tela
 
-  SELECT COUNT(*)::int INTO v_total
-  FROM generate_series(v_first, v_last, interval '1 day') AS d(day)
-  WHERE NOT EXISTS (SELECT 1 FROM organization_holidays oh
-                    WHERE oh.organization_id = v_org AND oh.date = d.day::date)
-    AND NOT EXISTS (SELECT 1 FROM daily_productions dp
-                    WHERE dp.barber_id = p_barber_id
-                      AND dp.date = d.day::date
-                      AND dp.presence_type IN ('day_off','absence','optional_sunday'));
+- Adicionar `useEffect` com listener de `popstate` que re-empurra `/subscription-blocked` no histórico — usuário não consegue voltar pelo botão do navegador.
+- Bloquear `Escape`/`F5`? Não — F5 só recarrega e cai aqui de novo. Suficiente.
+- A tela é página inteira (`min-h-screen`), sem header/sidebar, sem `<Dialog>` (não há X para fechar).
 
-  IF v_total <= 0 THEN v_total := 1; END IF;
+### 3. Garantir que o gate cobre rotas além de `/dashboard`
 
-  working_days_passed := v_passed;
-  working_days_total  := v_total;
-  target_commission   := v_target;
-  expected_commission := ROUND(v_target * v_passed::numeric / v_total::numeric, 2);
-  expected_percent    := ROUND(v_passed::numeric * 100 / v_total::numeric, 2);
-  RETURN NEXT;
-END;
-$$;
-```
+Verificar em `src/App.tsx` que toda rota autenticada está envolta em `<ProtectedRoute>`. Caso alguma rota interna (relatórios, etc.) esteja fora do guard, envolver. (Provável que já esteja, pois o redirect já funciona hoje — só confirmar.)
 
-Mudanças mínimas: alias `mg.` na coluna `monthly_goals.target_commission` e `b.` na de `barbers`. Assinatura e nomes de retorno preservados → nenhum ajuste no código TS.
+## O que NÃO muda
 
-### 2. Validação pós-migration
+- Nada no banco / RPC / edge functions.
+- Lógica do `handleToggleAccess` e `handleRevokeAccess` no `SuperAdminDashboard` permanece igual.
+- Nomenclatura "Revogar" vs "Desativar" continua como está (já discutido na mensagem anterior).
+- `useSubscriptionCheck` permanece igual.
 
-- `SELECT * FROM calc_expected_pacing('db53d32a-7cda-4a23-94bf-dc61e72ac03d', CURRENT_DATE);` → deve retornar números, não erro.
-- Conferir `SUM(commission_earned)` do Yan em maio/2026 vs `expected_commission` para confirmar se ele está abaixo ou acima do threshold de 85%.
-- Invocar `check-performance-alerts` (curl) para reclassificar todos os barbeiros.
+## Detalhes técnicos
 
-### 3. Resultado esperado
+- Polling: `setInterval` de 60s dentro do `useEffect` da página, com `clearInterval` no cleanup.
+- Logout: `await supabase.auth.signOut(); navigate("/auth")`.
+- O Super Admin nunca cai nessa tela porque `check-subscription-status` retorna `has_access: true` para `super_admin` independente do status da org.
 
-- Se Yan estiver < 85% do esperado → vai aparecer no card de alertas.
-- Se estiver ≥ 85% → corretamente fica fora (regra de negócio existente, "Tudo em dia").
+## Arquivos afetados
 
-## Fora de escopo
-- Thresholds da edge function.
-- UI de alertas e RLS.
+- `src/pages/SubscriptionBlocked.tsx` — reescrita completa.
+- `src/App.tsx` — só conferir cobertura do `ProtectedRoute` (talvez nada a alterar).

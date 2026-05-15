@@ -1,98 +1,55 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Shield, RefreshCw } from "lucide-react";
+import { Lock, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 
 export default function SubscriptionBlocked() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [retrying, setRetrying] = useState(false);
+  const location = useLocation();
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [hasStripeCustomer, setHasStripeCustomer] = useState<boolean | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
+  // Carregar e-mail do usuário
   useEffect(() => {
-    const getUserData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    supabase.auth.getUser().then(({ data: { user } }) => {
       setUserEmail(user?.email || null);
-      
-      if (user) {
-        const { data: roleData } = await supabase
-          .from("user_roles")
-          .select("organization_id, organizations(stripe_customer_id)")
-          .eq("user_id", user.id)
-          .single();
-        
-        if (roleData) {
-          const org = roleData.organizations as any;
-          setHasStripeCustomer(!!org?.stripe_customer_id);
-        }
-      }
-    };
-    getUserData();
+    });
   }, []);
 
-  const handleRetry = async () => {
-    setRetrying(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("check-subscription-status");
-      
-      if (error) {
-        toast.error("Erro ao verificar assinatura. Tente novamente.");
-        return;
-      }
+  // Bloquear botão "voltar" do navegador — re-empurra a rota
+  useEffect(() => {
+    window.history.pushState(null, "", location.pathname);
+    const onPopState = () => {
+      window.history.pushState(null, "", location.pathname);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [location.pathname]);
 
-      if (data?.has_access) {
-        toast.success("Acesso liberado!");
-        navigate("/dashboard");
-      } else {
-        toast.info("Sua assinatura ainda está pendente.");
-      }
-    } catch (error) {
-      toast.error("Erro de conexão. Tente novamente.");
-    } finally {
-      setRetrying(false);
-    }
-  };
-
-  const handleBootstrap = async () => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.functions.invoke("bootstrap-super-admin", {
-        body: { email: userEmail },
-      });
-
-      if (error) throw error;
-
-      toast.success("Acesso de Super Admin ativado!");
-      navigate("/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao ativar acesso");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMigrateOrganization = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("migrate-organization", {
-        body: { 
-          oldManagerEmail: "cassiano.diego@gmail.com",
-          newManagerEmail: "diego_zanichelli@outlook.com",
-          newManagerPassword: "barbeiro123"
+  // Polling silencioso a cada 60s — se admin reativar, libera automaticamente
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase.functions.invoke("check-subscription-status");
+        if (data?.has_access) {
+          navigate("/dashboard");
         }
-      });
+      } catch {
+        // silencioso — próxima tentativa em 60s
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [navigate]);
 
-      if (error) throw error;
-
-      toast.success("Organização transferida com sucesso!");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao transferir organização");
+  const handleSignOut = async () => {
+    setLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+      navigate("/auth");
     } finally {
-      setLoading(false);
+      setLoggingOut(false);
     }
   };
 
@@ -101,77 +58,39 @@ export default function SubscriptionBlocked() {
       <Card className="w-full max-w-md text-center">
         <CardHeader>
           <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-            <AlertCircle className="w-10 h-10 text-destructive" />
+            <Lock className="w-10 h-10 text-destructive" />
           </div>
-          <CardTitle className="text-2xl">Assinatura Pendente</CardTitle>
-          <CardDescription>
-            Sua assinatura está com pagamento pendente ou cancelada.
+          <CardTitle className="text-2xl">Assinatura Expirada</CardTitle>
+          <CardDescription className="text-base mt-2">
+            Sua assinatura está expirada.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Para continuar usando o SGP-B, regularize seu pagamento.
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Para reativá-la, entre em contato com o administrador do sistema.
+            O acesso será restabelecido automaticamente assim que a assinatura
+            for liberada.
           </p>
 
-          <Button
-            onClick={handleRetry}
-            disabled={retrying}
-            className="w-full"
-            variant="secondary"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${retrying ? "animate-spin" : ""}`} />
-            {retrying ? "Verificando..." : "Verificar Novamente"}
-          </Button>
-          
-          {userEmail === "cassiano.diego@gmail.com" && (
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={handleBootstrap}
-                disabled={loading}
-                className="w-full bg-gradient-gold"
-                variant="default"
-              >
-                <Shield className="w-4 h-4 mr-2" />
-                {loading ? "Ativando..." : "Ativar Super Admin"}
-              </Button>
-              <Button
-                onClick={handleMigrateOrganization}
-                disabled={loading}
-                className="w-full"
-                variant="secondary"
-              >
-                {loading ? "Migrando..." : "Transferir Organização"}
-              </Button>
+          {userEmail && (
+            <div className="rounded-md border border-border bg-muted/40 p-3">
+              <p className="text-xs text-muted-foreground mb-1">Conta atual</p>
+              <p className="text-sm font-medium break-all">{userEmail}</p>
             </div>
           )}
 
-          {hasStripeCustomer !== null && (
-            <Button 
-              onClick={() => {
-                if (hasStripeCustomer) {
-                  window.location.href = "https://billing.stripe.com/p/login/test_XXXXXX";
-                } else {
-                  window.open("https://buy.stripe.com/4gM9AT6nt1n7g7g1FH4Ni00", "_blank");
-                }
-              }}
-              className="w-full"
-              variant="default"
+          <div className="pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              disabled={loggingOut}
+              className="text-muted-foreground hover:text-foreground"
             >
-              {hasStripeCustomer ? "Regularizar Pagamento" : "Iniciar Assinatura Agora"}
+              <LogOut className="w-4 h-4 mr-2" />
+              {loggingOut ? "Saindo..." : "Sair"}
             </Button>
-          )}
-
-          <Button 
-            onClick={() => window.location.href = "mailto:suporte@sgpb.com.br"}
-            className="w-full"
-            variant="outline"
-          >
-            Entrar em Contato
-          </Button>
-
-          <p className="text-xs text-muted-foreground">
-            Dúvidas? Entre em contato com nosso suporte: suporte@sgpb.com.br
-          </p>
+          </div>
         </CardContent>
       </Card>
     </div>
