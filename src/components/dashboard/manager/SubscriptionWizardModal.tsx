@@ -395,7 +395,7 @@ export default function SubscriptionWizardModal({
       setStep("success");
     } catch (error: any) {
       console.error("Erro ao registrar assinatura:", error);
-      toast.error(error?.message || "Erro ao registrar assinatura");
+      toast.error(translateSaleError(error));
     } finally {
       setLoading(false);
     }
