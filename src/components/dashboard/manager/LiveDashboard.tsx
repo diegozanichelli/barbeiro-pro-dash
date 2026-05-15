@@ -338,6 +338,39 @@ export default function LiveDashboard() {
   // State for manager transactions read directly from sale_transactions
   const [managerTransactions, setManagerTransactions] = useState<ManagerTransaction[]>([]);
 
+  // Reception rows: vendas com barber_id NULL agrupadas por unit_id
+  // Quando "Todas as Unidades" mostra 1 linha por unidade que teve recepção
+  // Quando filtrando uma unidade, managerTransactions já vem filtrado
+  const receptionRows = useMemo(() => {
+    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clients: number }>();
+    managerTransactions.forEach((t) => {
+      if (t.barber_id !== null) return;
+      if (!t.unit_id) return;
+      if (t.item_type === "subscription") return;
+      const unit = units.find((u) => u.id === t.unit_id);
+      if (!unit) return;
+      const existing =
+        map.get(t.unit_id) ||
+        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clients: 0 };
+      existing.revenue += Number(t.price_sold) || 0;
+      if (t.item_type === "service" && t.service_category === "basic") {
+        existing.clients += 1;
+      }
+      map.set(t.unit_id, existing);
+    });
+    return Array.from(map.values()).filter((r) => r.revenue > 0);
+  }, [managerTransactions, units]);
+
+  const receptionRevenueTotal = useMemo(
+    () => receptionRows.reduce((s, r) => s + r.revenue, 0),
+    [receptionRows]
+  );
+
+  const receptionClientsTotal = useMemo(
+    () => receptionRows.reduce((s, r) => s + r.clients, 0),
+    [receptionRows]
+  );
+
   // Calculate total revenue from managerTransactions (Ao Vivo)
   // Calculate total revenue combining confirmed barber data + unconfirmed manager transactions
   useEffect(() => {
@@ -345,16 +378,17 @@ export default function LiveDashboard() {
       ? barbers
       : barbers.filter((b) => b.unit_id === selectedUnit);
 
-    const newTotal = relevantBarbers.reduce((sum, barber) => {
+    const barbersTotal = relevantBarbers.reduce((sum, barber) => {
       return sum + getBarberRevenue(barber.id);
     }, 0);
+    const newTotal = barbersTotal + receptionRevenueTotal;
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
       setIsGlowing(true);
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [managerTransactions, productions, selectedUnit, barbers]);
+  }, [managerTransactions, productions, selectedUnit, barbers, receptionRevenueTotal]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
