@@ -478,7 +478,14 @@ export default function SubscriptionAuditModal({
                       {format(new Date(tx.created_at), "dd/MM HH:mm")}
                     </TableCell>
                     <TableCell className="text-sm font-medium">
-                      {tx.description || "—"}
+                      <div className="flex flex-col gap-0.5">
+                        <span>{tx.description || "—"}</span>
+                        {tx.subscription_action === "new" && !tx.mobile_phone && (
+                          <Badge variant="outline" className="self-start text-[10px] font-normal bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-400">
+                            ⚠️ sem telefone
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {(() => {
