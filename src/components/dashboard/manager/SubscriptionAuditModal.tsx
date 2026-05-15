@@ -381,7 +381,20 @@ export default function SubscriptionAuditModal({
                         {format(new Date(tx.created_at), "HH:mm")}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {tx.description || "—"}
+                        <div className="space-y-1">
+                          <div>{tx.description || "—"}</div>
+                          <Input
+                            value={editPhone}
+                            onChange={(e) => setEditPhone(formatPhone(e.target.value))}
+                            placeholder="(11) 99999-9999"
+                            inputMode="tel"
+                            maxLength={15}
+                            className={`h-7 text-xs ${editAction === "new" && (!editPhone || !isValidPhone(editPhone)) ? "border-destructive" : ""}`}
+                          />
+                          {editAction === "new" && (!editPhone || !isValidPhone(editPhone)) && (
+                            <p className="text-[10px] text-destructive">Telefone obrigatório</p>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {(() => {
