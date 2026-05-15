@@ -1,94 +1,100 @@
-## Blindagem de telefone obrigatório — guards no frontend
+## Objetivo
 
-Os triggers de banco já bloqueiam `is_new_client=true` ou `subscription_action='new'` sem `mobile_phone`. Falta blindar o frontend para mostrar mensagem amigável **antes** do `RAISE EXCEPTION` aparecer como erro Postgres bruto.
+Transformar o **Plano de Guerra** (gerado no `WarPlanWizard` ao abrir o app do barbeiro) de um texto genérico baseado só em "quantos clientes na agenda + serviços confiantes" para um **briefing executivo personalizado**, lendo os dados reais daquele barbeiro: histórico de vendas, ticket médio, mix de serviços/produtos/extras, assinaturas vendidas, clientes novos, padrão por dia da semana e progresso na meta mensal.
 
-### Pontos de inserção/edição que disparam o trigger
+## O que muda hoje vs. depois
 
-Mapeei os fluxos que gravam em `sale_transactions` com `is_new_client` ou `subscription_action='new'`:
+**Hoje (`WarPlanWizard.generatePlan`):**
+- Só usa: nº clientes na agenda + serviços marcados + meta diária.
+- Gera texto fixo no frontend, sem ler nada do banco.
+- Ignora produtos, extras, assinaturas, novos clientes, histórico, ticket real.
 
-1. **`QuickSaleModal.tsx`** — POS principal do gestor/recepção (vende serviço/produto/assinatura, marca cliente novo)
-2. **`SubscriptionWizardModal.tsx`** — wizard de nova adesão (sempre `action='new'`)
-3. **`SubscriptionAuditModal.tsx`** — edição rápida das últimas 20 assinaturas (pode editar uma adesão `new`)
-4. **`SubscriptionEditModal.tsx`** — edição completa de assinatura
-5. **`TransactionManagerModal.tsx`** — modo auditoria do gestor (substitui transações do barbeiro)
-6. **`DayReviewModal.tsx`** — *NÃO* insere `is_new_client` nem assinatura (só confirma presença e limpa source=barber). Sem risco direto, mas vou adicionar um guard defensivo se algum dia voltar a inserir.
+**Depois:**
+- Backend (edge function) lê dados reais do barbeiro nos últimos 14–30 dias.
+- IA monta um plano com 5 blocos: Diagnóstico, Meta do Dia, Top Armas, Pontos Cegos, Missão Tática.
+- Frontend continua simples: usuário só informa "quantos clientes na agenda hoje" (1 input). O resto vem do banco.
 
-### Plano de blindagem
+## Blocos do novo plano
 
-#### 1. Helper compartilhado `src/lib/saleGuards.ts`
+```text
+🎯 META DO DIA
+- Falta R$ X para meta diária / Y% da meta mensal
+- Sequência atual: Z dias batendo / abaixo da meta
 
-Centraliza a regra para evitar duplicação:
+📊 SEU PERFIL (últimos 14 dias)
+- Ticket médio: R$ X (vs R$ Y da loja)
+- Conversão de produto: X% dos clientes
+- Conversão de extras: X% dos clientes
+- Assinaturas vendidas no mês: X
+- Clientes novos no mês: X
 
-```ts
-import { isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+🔥 TOP ARMAS (o que MAIS vende pra você)
+- Top 3 serviços e top 3 produtos do barbeiro nos últimos 14d
+- Receita estimada se replicar com N clientes de hoje
 
-export function assertPhoneForNewClient(opts: {
-  isNewClient?: boolean;
-  subscriptionAction?: string | null;
-  mobilePhone?: string | null;
-}): { ok: true } | { ok: false; message: string };
+⚠️ PONTOS CEGOS (oportunidades perdidas)
+- Serviços do catálogo que ele NUNCA vende
+- Produtos com 0 vendas no mês
+- Dia da semana com pior desempenho (se for hoje, alerta)
+
+⚔️ MISSÃO TÁTICA DE HOJE
+- "Para bater a meta com N clientes na agenda, você precisa
+   de ticket médio R$ X. Sua média atual é R$ Y. Estratégia:
+   oferecer [serviço top] + [produto top] em pelo menos
+   K atendimentos."
+- 1 meta de produto + 1 meta de extra + 1 meta de assinatura
 ```
 
-Regra: se `isNewClient === true` **ou** `subscriptionAction === 'new'`, exige `mobilePhone` válido (`isValidPhone`). Mensagens em pt-BR:
-- "Cliente novo precisa de telefone válido (11 dígitos com DDD)."
-- "Nova adesão de assinatura precisa de telefone válido."
+## Mudanças técnicas
 
-#### 2. `QuickSaleModal.tsx`
-
-- No `handleSubmit`, antes do insert, chamar `assertPhoneForNewClient` para cada item do carrinho que tenha `is_new_client=true` ou for assinatura `new`.
-- Se falhar: `toast.error(message)`, focar no campo de telefone, abortar.
-
-#### 3. `SubscriptionWizardModal.tsx`
-
-- Como toda venda do wizard é `action='new'`, validar telefone obrigatório no step de cliente (já tem campo, mas torná-lo bloqueante via `isValidPhone` antes de avançar para o step final).
-- Mensagem de erro inline + toast.
-
-#### 4. `SubscriptionAuditModal.tsx`
-
-- Adicionar campo `mobile_phone` editável (com máscara via `formatPhone`) **só quando** `tx.subscription_action === 'new'` e `tx.mobile_phone` estiver vazio (legacy).
-- No `handleSave`, se `subscription_action === 'new'` e telefone inválido → bloquear com toast amigável.
-- Mostrar badge "⚠️ sem telefone" nas linhas legacy para o gestor identificar.
-
-#### 5. `SubscriptionEditModal.tsx`
-
-- Mesma regra do AuditModal: campo telefone obrigatório quando `action='new'`.
-
-#### 6. `TransactionManagerModal.tsx`
-
-- Validar antes do insert em lote: qualquer linha com `is_new_client=true` precisa de telefone válido. Se faltar, mostrar resumo dos itens problemáticos antes de tentar gravar.
-
-#### 7. Tratamento genérico de erro do trigger
-
-Em todos os `catch` dos handlers acima, traduzir mensagens Postgres conhecidas:
+### 1. Edge function `barber-ai-assistant`
+Adicionar novo tipo de request `war_plan` ao lado de `daily_insight` e `sales_help`:
 
 ```ts
-function translateSaleError(error: unknown): string {
-  const msg = String((error as any)?.message ?? "");
-  if (msg.includes("mobile_phone") && msg.includes("new client"))
-    return "Telefone obrigatório para cliente novo.";
-  if (msg.includes("mobile_phone") && msg.includes("subscription"))
-    return "Telefone obrigatório para nova adesão.";
-  return msg || "Erro ao salvar venda.";
+interface WarPlanRequest {
+  type: 'war_plan';
+  barberId: string;
+  organizationId: string;
+  barberName: string;
+  monthlyGoal: number;
+  soldThisMonth: number;
+  dailyTarget: number;
+  todayRevenue: number;
+  daysRemaining: number;
+  clientsInAgenda: number;
 }
 ```
 
-### Arquivos a editar
+Handler novo `buildWarPlan()` que:
+- Reusa `fetchHistoricalStats` (já existe no arquivo, retorna top serviço/produto, conversão de produto, extras ratio, dayOfWeekSales, etc.).
+- Adiciona consulta nova:
+  - `sale_transactions` últimos 14d filtrando `barber_id = X` para top 3 serviços, top 3 produtos, contagem de `item_type = 'subscription'` no mês, contagem de `is_new_client = true` no mês.
+  - `catalog_services` e `catalog_products` da org para detectar itens com **zero vendas** do barbeiro no período (pontos cegos).
+  - Média de ticket da loja (mesma org, últimos 14d) para comparativo.
+- Monta prompt rico com TODOS esses números e chama Lovable AI Gateway (`google/gemini-2.5-flash`) para gerar o texto final no formato dos 5 blocos. Se a IA falhar, fallback determinístico monta os mesmos blocos com template (sem "achismo").
+- Salva `coach_message` em `daily_productions` do dia (mesma coluna já usada) com cache de 4h, igual ao `daily_insight`.
 
-- **Novo:** `src/lib/saleGuards.ts`
-- `src/components/dashboard/manager/QuickSaleModal.tsx`
-- `src/components/dashboard/manager/SubscriptionWizardModal.tsx`
-- `src/components/dashboard/manager/SubscriptionAuditModal.tsx`
-- `src/components/dashboard/manager/SubscriptionEditModal.tsx`
-- `src/components/dashboard/manager/TransactionManagerModal.tsx`
+### 2. `WarPlanWizard.tsx`
+Simplifica para 2 passos:
+- **Passo 1:** input "Quantos clientes na agenda hoje?" (mantém).
+- **Passo 2:** loading + chama edge function `barber-ai-assistant` com `type: 'war_plan'`. Mostra o plano retornado dentro de Card, e botão "Fechar e ver no painel".
+- Remove o passo "selecionar serviços confiantes" (a IA decide pelos dados reais).
 
-### Fora deste escopo (já cobertos por DB)
+### 3. `BarberDashboard.tsx`
+- Passa `soldThisMonth`, `dailyTarget`, `todayRevenue`, `daysRemaining`, `monthlyGoal`, `barberName`, `barberId`, `organizationId` para `WarPlanWizard` (a maioria já é calculada — só plumbing).
+- `handleWarPlanComplete` continua salvando o texto em `daily_productions.coach_message` (já é o que acontece via cache da edge function).
 
-- Backfill de `unit_id` e `mobile_phone` (migration anterior)
-- Trigger `trg_enforce_mobile_phone_for_new_clients` (já ativo)
-- `DayReviewModal` — não insere `is_new_client`, sem mudança necessária
+### 4. Nada de schema novo
+Tudo é leitura. Já temos: `sale_transactions` (com `is_new_client`, `item_type`, `subscription_plan_id`), `daily_productions`, `monthly_goals`, `catalog_services/products`. Sem migration.
 
-### Validação após implementar
+## Arquivos afetados
+- `supabase/functions/barber-ai-assistant/index.ts` (adicionar handler `war_plan`)
+- `src/components/dashboard/barber/WarPlanWizard.tsx` (simplifica wizard, chama edge function)
+- `src/components/dashboard/BarberDashboard.tsx` (passa props extras)
 
-1. Tentar criar venda com `cliente novo` sem telefone no QuickSale → deve mostrar toast amigável, não erro Postgres
-2. Tentar editar adesão legacy sem telefone no AuditModal → campo aparece, validação bloqueia
-3. Wizard de assinatura sem telefone → step bloqueia avançar
+## O que mantém
+- `WarPlanCard` (renderização) — sem mudança, só recebe texto mais rico.
+- Lógica de "balanço do dia" pós-23h — sem mudança.
+- Cache de 4h em `daily_productions.coach_message` — reusa.
+
+Confirma que sigo por aí?
