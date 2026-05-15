@@ -34,6 +34,7 @@ import {
   Crown,
   AlertCircle,
   ArrowDown,
+  Sparkles,
 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,6 +48,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { translateSaleError } from "@/lib/saleGuards";
 import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { useSubscriptionCycle } from "@/hooks/useSubscriptionCycle";
@@ -119,15 +121,24 @@ const SUBSCRIPTION_ACTION_LABELS: Record<SubscriptionAction, string> = {
 
 type CategoryTab = "services" | "products" | "subscription" | "manual";
 
-type ClientType = "new" | "without_subscription" | "with_subscription";
+/**
+ * Tipo binário de aquisição. NÃO confundir com status de assinatura
+ * (esse é derivado automaticamente do telefone via useSubscriptionCycle).
+ *  • "new"       → telefone não está na base (1ª venda registrada)
+ *  • "returning" → telefone já consta no histórico
+ */
+type ClientType = "new" | "returning";
 
+/**
+ * Determina a ação correta de assinatura quando o gestor adiciona um plano
+ * ao carrinho. Baseado no estado real do cliente, NÃO no toggle de tipo.
+ */
 function inferSubscriptionAction(
-  clientType: ClientType,
+  hasActiveSubscription: boolean,
   currentPlan: SubscriptionPlan | null,
   newPlan: SubscriptionPlan
 ): SubscriptionAction {
-  if (clientType === "new" || clientType === "without_subscription") return "new";
-  if (!currentPlan) return "new";
+  if (!hasActiveSubscription || !currentPlan) return "new";
   if (currentPlan.id === newPlan.id) return "renew";
   return newPlan.price >= currentPlan.price ? "upgrade" : "downgrade";
 }
@@ -236,10 +247,10 @@ export default function QuickSaleModal({
     }, 0);
   }, []);
 
-  // Client type tracking (for conversion metrics and assinatura status)
-  const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "without_subscription");
+  // Client type tracking — APENAS aquisição (novo vs recorrente).
+  // Status de assinatura é derivado automaticamente via `isActiveSubscriber`.
+  const [clientType, setClientType] = useState<ClientType>(initialIsNewClient ? "new" : "returning");
   const [clientName, setClientName] = useState("");
-  const [manualOverride, setManualOverride] = useState(false);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -250,9 +261,6 @@ export default function QuickSaleModal({
   // Phone state
   const [mobilePhone, setMobilePhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [selectedSubscriptionPlanId, setSelectedSubscriptionPlanId] = useState<string>("");
-  const [subscriptionPlanAutoDetected, setSubscriptionPlanAutoDetected] = useState(false);
-  const [isResolvingSubscription, setIsResolvingSubscription] = useState(false);
   const [selectedPlanIncludedServiceIds, setSelectedPlanIncludedServiceIds] = useState<string[]>([]);
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
 
@@ -400,8 +408,6 @@ export default function QuickSaleModal({
 
       if (error) {
         if (isSubscriptionPlanFieldMissing(error)) {
-          setSelectedSubscriptionPlanId("");
-          setSubscriptionPlanAutoDetected(false);
           return;
         }
         throw error;
@@ -423,15 +429,11 @@ export default function QuickSaleModal({
     setActiveTab("services");
     setAttribution(initialMode ?? (barberId ? "barber" : null));
     setPickedBarberId("");
-    setClientType(initialIsNewClient ? "new" : "without_subscription");
+    setClientType(initialIsNewClient ? "new" : "returning");
     setClientName("");
     setMobilePhone("");
     setPhoneError(null);
-    setSelectedSubscriptionPlanId("");
-    setSubscriptionPlanAutoDetected(false);
-    setIsResolvingSubscription(false);
     setSelectedPlanIncludedServiceIds([]);
-    setManualOverride(false);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
     setPendingCycleAnchorISO(null);
@@ -509,11 +511,11 @@ export default function QuickSaleModal({
           if (!res) return;
           if (res.status === "phone_found" && res.suggestedName) {
             setClientName(res.suggestedName);
-            if (!manualOverride) setClientType("without_subscription");
+            setClientType("returning");
           } else if (res.status === "name_found") {
-            if (!manualOverride) setClientType("without_subscription");
+            setClientType("returning");
           } else if (res.status === "not_found") {
-            if (!manualOverride) setClientType("new");
+            setClientType("new");
           }
         });
         // Auto-detect subscription
@@ -538,13 +540,13 @@ export default function QuickSaleModal({
 
     if (res.status === "phone_found" && res.suggestedName) {
       setClientName(res.suggestedName);
-      if (!manualOverride) setClientType("without_subscription");
+      setClientType("returning");
     } else if (res.status === "name_found") {
-      if (!manualOverride) setClientType("without_subscription");
+      setClientType("returning");
     } else if (res.status === "not_found") {
-      if (!manualOverride) setClientType("new");
+      setClientType("new");
     }
-  }, [mobilePhone, clientName, manualOverride, clientHistory]);
+  }, [mobilePhone, clientName, clientHistory]);
 
   // Name blur: re-check if phone wasn't found
   const handleNameBlur = useCallback(async () => {
@@ -552,31 +554,15 @@ export default function QuickSaleModal({
       const digits = sanitizePhone(mobilePhone);
       if (digits.length === 11 && isValidPhone(mobilePhone) && clientName.trim().length >= 3) {
         const res = await clientHistory.checkHistory(mobilePhone, clientName);
-        if (!res || manualOverride) return;
+        if (!res) return;
         if (res.status === "name_found") {
-          setClientType("without_subscription");
+          setClientType("returning");
         } else if (res.status === "not_found") {
           setClientType("new");
         }
       }
     }
-  }, [mobilePhone, clientName, manualOverride, clientHistory]);
-
-  // Handle manual override of client type
-  const handleClientTypeChange = (value: ClientType) => {
-    try {
-      console.log("[QuickSaleModal] handleClientTypeChange:", value);
-      setManualOverride(true);
-      setClientType(value);
-      if (value !== "with_subscription") {
-        setSelectedSubscriptionPlanId("");
-        setSubscriptionPlanAutoDetected(false);
-      }
-    } catch (error) {
-      console.error("[QuickSaleModal] Erro ao mudar tipo de cliente:", error);
-      toast.error("Erro ao alterar tipo de cliente.");
-    }
-  };
+  }, [mobilePhone, clientName, clientHistory]);
 
   // Cart operations (individualized with tempId)
   const handleAddToCart = (item: CatalogItem) => {
@@ -588,8 +574,11 @@ export default function QuickSaleModal({
       customPriceInput: effectivePrice.toFixed(2).replace(".", ","),
     }]);
 
-    if (effectivePrice === 0 && selectedSubscriptionPlan?.name) {
-      toast.info(`Serviço incluído na assinatura ${selectedSubscriptionPlan.name}. Valor zerado automaticamente.`);
+    if (effectivePrice === 0) {
+      const discountPlanName = subscriptionInCart?.name || cyclePlanName;
+      if (discountPlanName) {
+        toast.info(`Serviço incluído na assinatura ${discountPlanName}. Valor zerado automaticamente.`);
+      }
     }
   };
 
@@ -665,13 +654,24 @@ export default function QuickSaleModal({
     [cart]
   );
 
+  // Status de assinatura ATIVO derivado automaticamente do telefone.
+  // É a única fonte de verdade para badge "Assinante Ativo" e desconto
+  // automático nos serviços inclusos no plano. NÃO afeta `clientType`
+  // (que continua sendo apenas "new" vs "returning").
+  const isActiveSubscriber = !!cyclePlanId && !loadingCycle;
+
+  // Plano atual do cliente (já assinante) — derivado do hook de ciclo.
+  const currentClientPlan = useMemo<SubscriptionPlan | null>(
+    () => subscriptionPlans.find((p) => p.id === cyclePlanId) ?? null,
+    [subscriptionPlans, cyclePlanId]
+  );
+
   const handleAddSubscriptionToCart = (plan: SubscriptionPlan) => {
     if (subscriptionInCart) {
       toast.warning("Apenas 1 plano de assinatura por venda. Remova o plano atual para trocar.");
       return;
     }
-    const currentPlan = selectedSubscriptionPlan;
-    const action = inferSubscriptionAction(clientType, currentPlan, plan);
+    const action = inferSubscriptionAction(isActiveSubscriber, currentClientPlan, plan);
     setCart((prev) => [
       ...prev,
       {
@@ -700,9 +700,8 @@ export default function QuickSaleModal({
       return;
     }
 
-    // Resolve plan: prefer current client plan, fallback to cycle plan id
-    const resolvedPlanId = cyclePlanId || selectedSubscriptionPlanId;
-    const plan = subscriptionPlans.find((p) => p.id === resolvedPlanId);
+    // Resolve plan: usa o plano atual detectado via ciclo
+    const plan = subscriptionPlans.find((p) => p.id === cyclePlanId);
 
     if (!plan) {
       toast.error("Não consegui identificar o plano atual. Selecione manualmente na aba Assinatura.");
@@ -728,11 +727,6 @@ export default function QuickSaleModal({
       },
     ]);
 
-    // Make sure UI reflects "with subscription"
-    setManualOverride(false);
-    setClientType("with_subscription");
-    setSelectedSubscriptionPlanId(plan.id);
-
     const nextDueLabel = formatInTimeZone(nextDue, TIMEZONE, "dd/MM/yyyy");
     toast.success(`Renovação preparada — ${plan.name}`, {
       description:
@@ -740,7 +734,7 @@ export default function QuickSaleModal({
           ? `Próximo vencimento: ${nextDueLabel} (mantidos ${preservedDays} ${preservedDays === 1 ? "dia" : "dias"} do ciclo anterior)`
           : `Próximo vencimento: ${nextDueLabel}`,
     });
-  }, [cycle, subscriptionInCart, cyclePlanId, selectedSubscriptionPlanId, subscriptionPlans]);
+  }, [cycle, subscriptionInCart, cyclePlanId, subscriptionPlans]);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.customPrice, 0);
@@ -760,14 +754,10 @@ export default function QuickSaleModal({
 
   const services = catalogItems.filter((item) => item.type === "service");
   const products = catalogItems.filter((item) => item.type === "product");
-  const selectedSubscriptionPlan = useMemo(
-    () => subscriptionPlans.find((plan) => plan.id === selectedSubscriptionPlanId) || null,
-    [subscriptionPlans, selectedSubscriptionPlanId]
-  );
 
-  // The plan that drives the discount logic.
-  // Priority: plan added to cart (live conversion) > plan already linked to the client.
-  const effectivePlanIdForDiscount = subscriptionInCart?.planId || selectedSubscriptionPlanId;
+  // Plano que dirige a lógica de desconto.
+  // Prioridade: plano sendo vendido AGORA > plano atual do cliente.
+  const effectivePlanIdForDiscount = subscriptionInCart?.planId || cyclePlanId || "";
 
   useEffect(() => {
     const fetchIncludedServices = async () => {
@@ -794,31 +784,6 @@ export default function QuickSaleModal({
     void fetchIncludedServices();
   }, [organizationId, effectivePlanIdForDiscount]);
 
-
-  // Sync subscription detection from useSubscriptionCycle (single source of truth).
-  // Replaces the legacy autoDetectSubscription + resolveSubscriptionForClient
-  // duplicates that fired 2 extra `clients` queries per phone identification.
-  useEffect(() => {
-    if (manualOverride) return;
-    const digits = sanitizePhone(mobilePhone);
-    if (digits.length !== 11 || !isValidPhone(mobilePhone)) return;
-    if (loadingCycle) return;
-
-    if (cyclePlanId) {
-      setClientType("with_subscription");
-      setSelectedSubscriptionPlanId((prev) => (prev ? prev : cyclePlanId));
-      setSubscriptionPlanAutoDetected(true);
-      setIsResolvingSubscription(false);
-    }
-    // If no plan is found, we leave clientType as-is — useClientHistory
-    // already handles new vs without_subscription branching.
-  }, [cyclePlanId, loadingCycle, manualOverride, mobilePhone]);
-
-  // Mirror loading state for legacy UI bindings (placeholder text in <Select>).
-  useEffect(() => {
-    setIsResolvingSubscription(loadingCycle && clientType === "with_subscription");
-  }, [loadingCycle, clientType]);
-
   // Highlight pulsante no card de Atribuição quando o cliente acaba de ser
   // identificado (qualquer status final) e ainda não há atribuição escolhida.
   // Faz scroll suave + pulsa por 3 segundos, exatamente uma vez por identificação.
@@ -842,19 +807,66 @@ export default function QuickSaleModal({
 
     setAttributionHighlight(true);
 
-    // Scroll suave após o layout estabilizar — alinha o topo do bloco
-    // de Atribuição na área visível para que os botões Barbeiro / Recepção
-    // fiquem imediatamente à vista.
-    requestAnimationFrame(() => {
-      attributionCardRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
+    // Pré-seleção inteligente: cliente novo (não encontrado) tipicamente é
+    // venda da recepção/loja. Já marcamos "Venda Recepção" para que o seletor
+    // de unidades abra automaticamente em seguida (via useEffect abaixo),
+    // reduzindo o risco de a venda ficar sem atribuição. O gestor ainda pode
+    // trocar para "Barbeiro" se for o caso.
+    if (status === "not_found") {
+      setAttribution("reception");
+    }
 
-    const timer = setTimeout(() => setAttributionHighlight(false), 3000);
-    return () => clearTimeout(timer);
+    // Scroll programático no container scrollável do Step 1.
+    // Aguardamos um pouco para o layout estabilizar (ex.: o banner
+    // "Verificando ciclo da assinatura..." aparecer/sumir) antes de calcular
+    // a posição final, senão o scrollIntoView do Radix dentro do DialogContent
+    // não desce de forma confiável.
+    let rafId: number | null = null;
+    const scrollTimer = setTimeout(() => {
+      rafId = requestAnimationFrame(() => {
+        const card = attributionCardRef.current;
+        if (!card) return;
+        // Sobe pela árvore até achar o ancestral com overflow-y auto/scroll.
+        let scroller: HTMLElement | null = card.parentElement;
+        while (scroller && scroller !== document.body) {
+          const oy = window.getComputedStyle(scroller).overflowY;
+          if (oy === "auto" || oy === "scroll") break;
+          scroller = scroller.parentElement;
+        }
+        if (!scroller || scroller === document.body) {
+          card.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        const offset = 16; // pequena folga visual acima do card
+        const top =
+          card.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop -
+          offset;
+        scroller.scrollTo({ top, behavior: "smooth" });
+      });
+    }, 180);
+
+    const pulseTimer = setTimeout(() => setAttributionHighlight(false), 3000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(pulseTimer);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [clientHistory.status, attribution, barberId]);
+
+  // Quando o gestor escolhe "Venda Recepção" e existem múltiplas unidades,
+  // abre o seletor de unidade automaticamente — assim o usuário já vê
+  // imediatamente quais unidades pode escolher, sem precisar de mais um clique.
+  useEffect(() => {
+    if (attribution !== "reception") return;
+    if (units.length <= 1) return;
+    if (selectedUnitId) return;
+    const raf = requestAnimationFrame(() => {
+      setUnitSelectOpen(true);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [attribution, units.length, selectedUnitId]);
 
   // Reset do controle de highlight quando o modal fecha (reabrir = novo ciclo)
   useEffect(() => {
@@ -865,10 +877,9 @@ export default function QuickSaleModal({
   }, [open]);
 
   // Discount applies if either:
-  //  • client is already subscriber (clientType=with_subscription) OR
+  //  • client is already an active subscriber (detected automatically) OR
   //  • a subscription plan is being added in this same sale (live conversion)
-  const subscriptionDiscountActive =
-    clientType === "with_subscription" || !!subscriptionInCart;
+  const subscriptionDiscountActive = isActiveSubscriber || !!subscriptionInCart;
 
   const getEffectiveItemPrice = (item: CatalogItem, enteredPrice: number) => {
     if (
@@ -922,16 +933,17 @@ export default function QuickSaleModal({
     }
   };
 
+  /**
+   * Atualiza `clients.subscription_plan_id` SOMENTE quando o cliente está
+   * adquirindo/renovando/atualizando o plano nesta venda. Status pré-existente
+   * de assinatura é apenas leitura — não rebatemos no banco.
+   */
   const ensureSubscriptionAssigned = async (mobilePhoneSanitized: string) => {
-    if (clientType !== "with_subscription") return;
-
-    if (!selectedSubscriptionPlanId) {
-      throw new Error("Selecione a assinatura do cliente para continuar.");
-    }
+    if (!subscriptionInCart) return;
 
     const { error } = await (supabase
       .from("clients") as any)
-      .update({ subscription_plan_id: selectedSubscriptionPlanId })
+      .update({ subscription_plan_id: subscriptionInCart.planId })
       .eq("organization_id", organizationId)
       .eq("mobile_phone", mobilePhoneSanitized);
 
@@ -942,8 +954,6 @@ export default function QuickSaleModal({
   const phoneDigits = sanitizePhone(mobilePhone);
   const isPhoneComplete = phoneDigits.length === 11 && isValidPhone(mobilePhone);
   const hasClientName = clientName.trim().length >= 3;
-  const hasSubscriptionResolved =
-    clientType !== "with_subscription" || (!!selectedSubscriptionPlanId && !isResolvingSubscription);
   // Require client verification to have completed (not idle) when phone is complete
   const isClientVerified = !isPhoneComplete || (clientHistory.status !== "idle" && clientHistory.status !== "checking");
   const needsUnitSelection = isReceptionSale && units.length > 1;
@@ -951,7 +961,7 @@ export default function QuickSaleModal({
     (attribution === "reception" && (!needsUnitSelection || !!selectedUnitId)) ||
     (attribution === "barber" && !!effectiveBarberIdResolved);
   const canProceedStep1 =
-    attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError && hasSubscriptionResolved;
+    attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError;
 
   const handleCartCheckout = async () => {
     if (isSubmittingRef.current) return;
@@ -1131,7 +1141,7 @@ export default function QuickSaleModal({
       onSuccess();
     } catch (error: any) {
       console.error("Error registering sale:", error);
-      toast.error(error?.message || "Erro ao registrar venda");
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -1263,7 +1273,7 @@ export default function QuickSaleModal({
       onSuccess();
     } catch (error: any) {
       console.error("Error registering manual sale:", error);
-      toast.error(error?.message || "Erro ao registrar venda");
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
@@ -1315,14 +1325,18 @@ export default function QuickSaleModal({
         </Badge>
       );
     }
-    if (manualOverride) {
-      return (
-        <Badge variant="secondary" className="gap-1 text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-          Classificação alterada manualmente
-        </Badge>
-      );
-    }
     return null;
+  };
+
+  // ─── Active Subscriber Badge (derivado automaticamente — sem ação) ───
+  const renderActiveSubscriberBadge = () => {
+    if (!isActiveSubscriber) return null;
+    return (
+      <Badge className="gap-1 text-xs bg-amber-500 hover:bg-amber-500 text-amber-950 border-0 font-semibold">
+        <Sparkles className="h-3 w-3" />
+        Assinante Ativo{cyclePlanName ? `: ${cyclePlanName}` : ""}
+      </Badge>
+    );
   };
 
   // ─── STEP 1: Client Data ───
@@ -1343,11 +1357,14 @@ export default function QuickSaleModal({
   const renderStep1 = () => (
     <>
       <DialogHeader className="px-6 pt-5 pb-3">
-        <DialogTitle className="text-lg font-semibold">
-          {attribution === null
-            ? "Nova Venda"
-            : `Venda Rápida — ${isReceptionSale ? "🏢 Recepção / Loja" : effectiveBarberName}`}
-        </DialogTitle>
+        <div className="flex items-start justify-between gap-3">
+          <DialogTitle className="text-lg font-semibold">
+            {attribution === null
+              ? "Nova Venda"
+              : `Venda Rápida — ${isReceptionSale ? "🏢 Recepção / Loja" : effectiveBarberName}`}
+          </DialogTitle>
+          {renderActiveSubscriberBadge()}
+        </div>
         <DialogDescription className="text-xs">
           Preencha os dados do atendimento
         </DialogDescription>
@@ -1527,9 +1544,12 @@ export default function QuickSaleModal({
           <p className="text-xs text-muted-foreground">Buscando sugestões...</p>
         )}
 
-        {/* Client Status Badge (Recorrente / Novo / etc.) */}
-        {renderClientBadge() && (
-          <div>{renderClientBadge()}</div>
+        {/* Client Status Badge + Active Subscriber Badge */}
+        {(renderClientBadge() || renderActiveSubscriberBadge()) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {renderClientBadge()}
+            {renderActiveSubscriberBadge()}
+          </div>
         )}
 
         {/* Predictive renewal alert (cycle status) — aparece logo após identificar telefone */}
@@ -1690,14 +1710,15 @@ export default function QuickSaleModal({
             )}
           </div>
 
-          {/* Client Type Selector */}
+          {/* Client Type Selector — binário (Novo vs Da Casa). Status de
+              assinatura é derivado automaticamente e exibido como badge. */}
           <div className="px-3 py-2.5 space-y-2">
             <Label className="text-xs text-muted-foreground font-medium">Tipo de Cliente</Label>
             <ToggleGroup
               type="single"
               value={clientType}
               onValueChange={(v) => {
-                if (v) handleClientTypeChange(v as ClientType);
+                if (v === "new" || v === "returning") setClientType(v);
               }}
               className="justify-start"
             >
@@ -1711,26 +1732,17 @@ export default function QuickSaleModal({
                 Novo
               </ToggleGroupItem>
               <ToggleGroupItem
-                value="without_subscription"
-                aria-label="Cliente sem Assinatura"
+                value="returning"
+                aria-label="Cliente Da Casa"
                 className="flex-1 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
                 onPointerDown={(e) => e.preventDefault()}
               >
                 <Home className="w-3.5 h-3.5" />
                 Da Casa
               </ToggleGroupItem>
-              <ToggleGroupItem
-                value="with_subscription"
-                aria-label="Cliente com Assinatura"
-                className="flex-1 gap-1.5 text-xs data-[state=on]:bg-amber-500 data-[state=on]:text-black"
-                onPointerDown={(e) => e.preventDefault()}
-              >
-                <Crown className="w-3.5 h-3.5" />
-                Assinante
-              </ToggleGroupItem>
             </ToggleGroup>
 
-            {clientHistory.status === "not_found" && clientType === "new" && !manualOverride && (
+            {clientHistory.status === "not_found" && clientType === "new" && (
               <div className="rounded-md bg-green-500/10 border border-green-500/30 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1.5">
                 <UserPlus className="w-3 h-3 shrink-0" />
                 <span>
@@ -1739,74 +1751,9 @@ export default function QuickSaleModal({
               </div>
             )}
 
-            {clientHistory.status === "not_found" && clientType !== "new" && manualOverride && (
-              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                <AlertCircle className="w-3 h-3 shrink-0" />
-                <span>
-                  Esse telefone não está na base. Tem certeza que não é um cliente novo?
-                </span>
-              </div>
-            )}
-
-            {(clientType === "new" || clientType === "without_subscription") && (
-              <p className="text-[11px] text-muted-foreground">
-                💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
-              </p>
-            )}
-
-            {clientType === "with_subscription" && (
-              <div className="space-y-2 pt-1">
-                <Select
-                  value={selectedSubscriptionPlanId}
-                  onValueChange={(value) => {
-                    setSelectedSubscriptionPlanId(value);
-                    setSubscriptionPlanAutoDetected(false);
-                  }}
-                  disabled={isResolvingSubscription}
-                >
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue
-                      placeholder={
-                        isResolvingSubscription
-                          ? "Lendo assinatura..."
-                          : "Selecione o plano"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subscriptionPlans.length > 0 ? (
-                      subscriptionPlans.map((plan) => (
-                        <SelectItem key={plan.id} value={plan.id}>
-                          {plan.name}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        Nenhum plano cadastrado
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
-
-                {selectedSubscriptionPlan && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {subscriptionPlanAutoDetected ? "✓ Identificado automaticamente" : "✓ Selecionado"}: {selectedSubscriptionPlan.name}
-                    {(() => {
-                      const labels = services
-                        .filter((service) => selectedPlanIncludedServiceIds.includes(service.id))
-                        .map((service) => service.name);
-                      return labels.length > 0 ? ` — Serviços inclusos: ${labels.join(", ")}` : "";
-                    })()}
-                  </p>
-                )}
-
-                {!selectedSubscriptionPlanId && !isResolvingSubscription && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Selecione o plano para continuar.
-                  </p>
-                )}
-              </div>
-            )}
+            <p className="text-[11px] text-muted-foreground">
+              💡 Quer aderir um plano agora? Vá para o próximo passo e adicione a <strong>Assinatura</strong> no carrinho.
+            </p>
           </div>
         </div>
 
@@ -1867,6 +1814,7 @@ export default function QuickSaleModal({
         <h3 className="text-sm font-semibold truncate flex-1">
           Selecionar Itens
         </h3>
+        {renderActiveSubscriberBadge()}
         {cart.length > 0 && (
           <Badge className="shrink-0 text-xs">
             {cart.length} {cart.length === 1 ? "item" : "itens"} • {formatCurrency(cartTotal)}

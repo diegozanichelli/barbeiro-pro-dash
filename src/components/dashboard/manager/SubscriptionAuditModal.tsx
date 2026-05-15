@@ -30,6 +30,8 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import BarberCombobox from "./BarberCombobox";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { assertPhoneForNewClient, translateSaleError } from "@/lib/saleGuards";
 
 interface SubscriptionAuditModalProps {
   open: boolean;
@@ -48,6 +50,7 @@ interface AuditTransaction {
   subscription_plan_id: string | null;
   unit_id: string | null;
   subscription_action: string | null;
+  mobile_phone: string | null;
   barbers: { name: string } | null;
   subscription_plans: { name: string; price: number } | null;
   units: { name: string } | null;
@@ -93,6 +96,8 @@ export default function SubscriptionAuditModal({
   const [editBarberId, setEditBarberId] = useState<string | null>(null);
   const [editPlanId, setEditPlanId] = useState<string>("");
   const [editValue, setEditValue] = useState<string>("");
+  const [editPhone, setEditPhone] = useState<string>("");
+  const [editAction, setEditAction] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && organizationId) {
@@ -107,7 +112,7 @@ export default function SubscriptionAuditModal({
     try {
       const { data, error } = await supabase
         .from("sale_transactions")
-        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, subscription_action, barbers(name), subscription_plans(name, price), units(name)")
+        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, subscription_action, mobile_phone, barbers(name), subscription_plans(name, price), units(name)")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .order("created_at", { ascending: false })
@@ -172,6 +177,8 @@ export default function SubscriptionAuditModal({
     setEditBarberId(tx.barber_id);
     setEditPlanId(tx.subscription_plan_id || "");
     setEditValue(String(tx.price_sold));
+    setEditPhone(tx.mobile_phone ? formatPhone(tx.mobile_phone) : "");
+    setEditAction(tx.subscription_action);
   };
 
   const cancelEditing = () => {
@@ -179,6 +186,8 @@ export default function SubscriptionAuditModal({
     setEditBarberId(null);
     setEditPlanId("");
     setEditValue("");
+    setEditPhone("");
+    setEditAction(null);
   };
 
   const handleSave = async (txId: string) => {
@@ -189,6 +198,16 @@ export default function SubscriptionAuditModal({
 
       if (isNaN(priceValue) || priceValue < 0) {
         toast.error("Valor inválido");
+        setSaving(false);
+        return;
+      }
+
+      const guard = assertPhoneForNewClient({
+        subscriptionAction: editAction,
+        mobilePhone: editPhone,
+      });
+      if (guard.ok === false) {
+        toast.error(guard.message);
         setSaving(false);
         return;
       }
@@ -215,6 +234,11 @@ export default function SubscriptionAuditModal({
         updatePayload.item_name = `Assinatura ${selectedPlan.name}`;
       }
 
+      // Persist phone (sanitized) when present and valid; required when action='new'
+      if (editPhone && isValidPhone(editPhone)) {
+        updatePayload.mobile_phone = sanitizePhone(editPhone);
+      }
+
       const { error } = await supabase
         .from("sale_transactions")
         .update(updatePayload)
@@ -228,7 +252,7 @@ export default function SubscriptionAuditModal({
       onRefresh?.();
     } catch (error) {
       console.error("Error updating transaction:", error);
-      toast.error("Erro ao salvar alteração");
+      toast.error(translateSaleError(error));
     } finally {
       setSaving(false);
     }
@@ -357,7 +381,20 @@ export default function SubscriptionAuditModal({
                         {format(new Date(tx.created_at), "HH:mm")}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {tx.description || "—"}
+                        <div className="space-y-1">
+                          <div>{tx.description || "—"}</div>
+                          <Input
+                            value={editPhone}
+                            onChange={(e) => setEditPhone(formatPhone(e.target.value))}
+                            placeholder="(11) 99999-9999"
+                            inputMode="tel"
+                            maxLength={15}
+                            className={`h-7 text-xs ${editAction === "new" && (!editPhone || !isValidPhone(editPhone)) ? "border-destructive" : ""}`}
+                          />
+                          {editAction === "new" && (!editPhone || !isValidPhone(editPhone)) && (
+                            <p className="text-[10px] text-destructive">Telefone obrigatório</p>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -441,7 +478,14 @@ export default function SubscriptionAuditModal({
                       {format(new Date(tx.created_at), "dd/MM HH:mm")}
                     </TableCell>
                     <TableCell className="text-sm font-medium">
-                      {tx.description || "—"}
+                      <div className="flex flex-col gap-0.5">
+                        <span>{tx.description || "—"}</span>
+                        {tx.subscription_action === "new" && !tx.mobile_phone && (
+                          <Badge variant="outline" className="self-start text-[10px] font-normal bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-400">
+                            ⚠️ sem telefone
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {(() => {
