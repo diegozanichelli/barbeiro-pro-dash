@@ -818,17 +818,13 @@ const [todayProduction, setTodayProduction] = useState<{
             <div className="flex min-w-0 items-center gap-3">
               <img src={logo} alt="Performance Barber" className="h-12 w-auto sm:h-16" />
               <div className="min-w-0">
-                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-primary/80">
-                  Meu Painel Diário
-                </p>
-                <h1 className="truncate font-display text-xl font-semibold leading-tight text-foreground">
-                  Olá, {barber.name}
+                <h1 className="truncate text-xl font-bold text-foreground">
+                  Olá, {barber.name}!
                 </h1>
                 {isCurrentMonth && (
-                  <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground/80">
-                    <Calendar className="h-3.5 w-3.5 shrink-0" />
-                    Dias úteis restantes:{" "}
-                    <span className="font-mono font-semibold text-foreground">{daysLeft}</span>
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4 shrink-0" />
+                    Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
                   </p>
                 )}
               </div>

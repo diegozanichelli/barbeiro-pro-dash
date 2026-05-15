@@ -25,6 +25,13 @@ interface UnitMetrics {
   ticketMedio: number;
   metaTotal: number;
   performance: number;
+  newClientOpportunities: number;
+  existingClientOpportunities: number;
+  newClientSubscriptions: number;
+  existingClientSubscriptions: number;
+  totalNewSubscriptions: number;
+  newClientConversionRate: number;
+  existingClientConversionRate: number;
 }
 
 interface BarberLeader {
@@ -155,13 +162,30 @@ export default function UnitsComparison() {
         ticketMedio: 0,
         metaTotal: 0,
         performance: 0,
+        newClientOpportunities: 0,
+        existingClientOpportunities: 0,
+        newClientSubscriptions: 0,
+        existingClientSubscriptions: 0,
+        totalNewSubscriptions: 0,
+        newClientConversionRate: 0,
+        existingClientConversionRate: 0,
       });
     });
 
-    // Agregar receita por barbeiro (para identificar líderes por unidade)
-    const barberAgg = new Map<string, { barberId: string; barberName: string; unitId: string; basic: number; extra: number; products: number }>();
+    // Buscar transações para conversões e novos assinantes
+    const { data: transactions, error: transactionsError } = await supabase
+      .from("sale_transactions")
+      .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
+      .eq("source", "manager")
+      .gte("created_at", `${startDate}T00:00:00`)
+      .lte("created_at", `${endDate}T23:59:59`)
+      .not("barber_id", "is", null);
 
+    if (transactionsError) {
+      console.error("Erro ao buscar transações de assinatura:", transactionsError);
+    }
 
+    // Agregar produções por unidade
     productions?.forEach((prod: any) => {
       const unitId = prod.barbers?.unit_id;
       if (!unitId || !metricsMap.has(unitId)) return;
@@ -238,10 +262,62 @@ export default function UnitsComparison() {
       metrics.metaTotal += Number(goal.target_commission);
     });
 
+    // Calcular conversão de assinaturas por unidade
+    const conversionMap = new Map<string, {
+      newPhones: Set<string>;
+      existingPhones: Set<string>;
+      newSubsFromNewClients: number;
+      newSubsFromExistingClients: number;
+      totalNewSubs: number;
+    }>();
+
+    transactions?.forEach((tx: any) => {
+      const unitId = tx.barbers?.unit_id;
+      if (!unitId || !metricsMap.has(unitId)) return;
+
+      if (!conversionMap.has(unitId)) {
+        conversionMap.set(unitId, {
+          newPhones: new Set<string>(),
+          existingPhones: new Set<string>(),
+          newSubsFromNewClients: 0,
+          newSubsFromExistingClients: 0,
+          totalNewSubs: 0,
+        });
+      }
+
+      const conversion = conversionMap.get(unitId)!;
+
+      if (tx.mobile_phone) {
+        if (tx.is_new_client === true) conversion.newPhones.add(tx.mobile_phone);
+        if (tx.is_new_client === false) conversion.existingPhones.add(tx.mobile_phone);
+      }
+
+      const isNewSubscription = tx.item_type === "subscription" && tx.subscription_action === "new";
+      if (isNewSubscription) {
+        conversion.totalNewSubs += 1;
+        if (tx.is_new_client === true) conversion.newSubsFromNewClients += 1;
+        if (tx.is_new_client === false) conversion.newSubsFromExistingClients += 1;
+      }
+    });
+
     // Calcular métricas derivadas
     metricsMap.forEach(metrics => {
       metrics.ticketMedio = metrics.clientes > 0 ? metrics.receita / metrics.clientes : 0;
       metrics.performance = metrics.metaTotal > 0 ? (metrics.comissao / metrics.metaTotal) * 100 : 0;
+
+      const conversion = conversionMap.get(metrics.unitId);
+      const newOpp = conversion?.newPhones.size ?? 0;
+      const existingOpp = conversion?.existingPhones.size ?? 0;
+      const newSubsFromNew = conversion?.newSubsFromNewClients ?? 0;
+      const newSubsFromExisting = conversion?.newSubsFromExistingClients ?? 0;
+
+      metrics.newClientOpportunities = newOpp;
+      metrics.existingClientOpportunities = existingOpp;
+      metrics.newClientSubscriptions = newSubsFromNew;
+      metrics.existingClientSubscriptions = newSubsFromExisting;
+      metrics.totalNewSubscriptions = conversion?.totalNewSubs ?? 0;
+      metrics.newClientConversionRate = newOpp > 0 ? (newSubsFromNew / newOpp) * 100 : 0;
+      metrics.existingClientConversionRate = existingOpp > 0 ? (newSubsFromExisting / existingOpp) * 100 : 0;
     });
 
     // Ordenar por receita (maior primeiro)
@@ -299,6 +375,9 @@ export default function UnitsComparison() {
   const receitaLeader = getLeader('receita');
   const ticketLeader = getLeader('ticketMedio');
   const clientesLeader = getLeader('clientes');
+  const newClientConversionLeader = getLeader('newClientConversionRate');
+  const existingClientConversionLeader = getLeader('existingClientConversionRate');
+  const newSubscribersLeader = getLeader('totalNewSubscriptions');
 
   // "Melhor Performance" = unidade que melhor converte atendimentos em receita
   // (maior ticket médio), exigindo volume mínimo (>=30% dos atendimentos da líder)
@@ -440,6 +519,49 @@ export default function UnitsComparison() {
                 {conversionLeader
                   ? `R$ ${conversionLeader.ticketMedio.toFixed(2)} por cliente · ${conversionLeader.clientes} atendimentos`
                   : 'Sem dados suficientes'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {!loading && unitsMetrics.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                <p className="text-sm text-muted-foreground">Conversão Novos Clientes</p>
+              </div>
+              <p className="text-lg font-bold text-foreground">{newClientConversionLeader?.unitName}</p>
+              <p className="text-sm text-muted-foreground">
+                {newClientConversionLeader?.newClientConversionRate.toFixed(1)}% ({newClientConversionLeader?.newClientSubscriptions} / {newClientConversionLeader?.newClientOpportunities})
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border-cyan-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-5 h-5 text-cyan-500" />
+                <p className="text-sm text-muted-foreground">Conversão Clientes da Casa</p>
+              </div>
+              <p className="text-lg font-bold text-foreground">{existingClientConversionLeader?.unitName}</p>
+              <p className="text-sm text-muted-foreground">
+                {existingClientConversionLeader?.existingClientConversionRate.toFixed(1)}% ({existingClientConversionLeader?.existingClientSubscriptions} / {existingClientConversionLeader?.existingClientOpportunities})
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Medal className="w-5 h-5 text-amber-500" />
+                <p className="text-sm text-muted-foreground">Mais Novos Assinantes</p>
+              </div>
+              <p className="text-lg font-bold text-foreground">{newSubscribersLeader?.unitName}</p>
+              <p className="text-sm text-muted-foreground">
+                {newSubscribersLeader?.totalNewSubscriptions ?? 0} novas assinaturas
               </p>
             </CardContent>
           </Card>
