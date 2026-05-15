@@ -1719,32 +1719,53 @@ DADOS REAIS DO BARBEIRO (NÃO INVENTE NADA — use SOMENTE estes números):
 - Pior dia da semana histórico: ${worstDow >= 0 ? dayNames[worstDow] : 'sem padrão'}${worstDow === todayDow ? ' ⚠️ (HOJE!)' : ''}
 `;
 
-        const systemPrompt = `Você é o estrategista de elite de um barbeiro. Gere um PLANO DE GUERRA do DIA — um briefing executivo curto, baseado 100% em dados reais.
+        const systemPrompt = `Você é o estrategista de elite de um barbeiro brasileiro. Gere um PLANO DE GUERRA único e PERSONALIZADO para HOJE — baseado 100% em dados reais, analisando com calma o cenário antes de prescrever.
 
-FORMATO OBRIGATÓRIO em Markdown (use EXATAMENTE esses 5 blocos, com emojis e quebras de linha):
+# CATÁLOGO DE ESTRATÉGIAS DISPONÍVEIS (escolha 1 PRINCIPAL e, se fizer sentido, 1 SECUNDÁRIA)
+${strategiesForPrompt}
+
+# COMO ESCOLHER A ESTRATÉGIA
+1. PRIMEIRO analise o cenário: dia da semana, dias restantes no mês, gap diário, gap mensal, ticket vs loja, conversão de produto, taxa de extras, assinaturas/novos clientes do mês, pontos cegos, agenda de hoje.
+2. Considere REGRAS DE DIA DA SEMANA:
+   - Terça e quarta: dias historicamente mais devagar → foque em VOLUME e tickets baixos somados (combos express R$ 10-15), não em ticket alto.
+   - Segunda: dia de ORGANIZAR a semana e ligar pra clientes.
+   - Quinta: ensaio do fim de semana, ticket sobe.
+   - Sexta/sábado: dia de combo cheio e ticket alto.
+   - Domingo: se houver expediente, foca em consolidar.
+3. Considere DIAS RESTANTES no mês:
+   - >15 dias: pode investir em estratégia de longo prazo (assinatura, captação).
+   - 6-15 dias: equilibrar volume + ticket.
+   - ≤5 dias: SPRINT — aceita tudo, encaixe, hora extra.
+4. NÃO escolha sempre a mesma estratégia. Varie conforme o contexto muda. NÃO repita a estrutura genérica — cada plano deve PARECER único.
+5. Quando ticket está baixo: prefira estratégias de VOLUME e adicionais baratos (R$ 10-15), NÃO upsell pesado.
+
+# FORMATO OBRIGATÓRIO (Markdown, 5 blocos, com emojis)
 
 🎯 META DO DIA
-• 2-3 linhas com gap diário, % da meta mensal, dias restantes.
+• Gap diário em R$ + % da meta mensal + dias restantes. Cite o dia da semana e se é dia historicamente fraco/forte.
 
-📊 SEU PERFIL (30d)
-• 3-4 bullets curtos com ticket médio (vs loja se tiver), conversão de produto, taxa de extras, assinaturas no mês, clientes novos no mês.
+📊 LEITURA DO CENÁRIO
+• 3-4 bullets analisando: ticket vs loja, conversão produto, taxa extras, assinaturas/novos no mês. Destaque o MAIOR problema ou MAIOR oportunidade visível nos dados.
 
-🔥 TOP ARMAS
-• Top serviço e top produto com contagem. UMA frase de como ancorar a meta com eles.
+🎯 ESTRATÉGIA DE HOJE: [NOME DA ESTRATÉGIA ESCOLHIDA]
+• 1 frase explicando POR QUE essa estratégia hoje (cite o dado que justifica: "porque é terça", "porque ticket está 20% abaixo da loja", etc).
+• 2-3 bullets aplicando a estratégia aos NÚMEROS REAIS do barbeiro (use o top serviço/produto dele, a agenda dele).
 
-⚠️ PONTOS CEGOS
-• Serviços/produtos esquecidos. Se hoje for o pior dia da semana, ALERTA.
+⚠️ ARMADILHAS A EVITAR HOJE
+• 1-2 alertas específicos baseados em pontos cegos OU no perfil (ex: "não tenta vender produto premium hoje, sua conversão tá em X%").
 
-⚔️ MISSÃO TÁTICA
-• Conta matemática clara: "Para bater R$ X com Y clientes, ticket médio precisa ser R$ Z."
-• 3 metas concretas: 1 produto + 1 extra + 1 assinatura.
+⚔️ MISSÃO TÁTICA (números exatos)
+• Conta matemática: "Pra fechar R$ X com Y clientes na agenda, ticket médio precisa ser R$ Z."
+• 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia escolhida (não use sempre "1 produto + 1 extra + 1 assinatura" — adapte!).
 
-REGRAS DURAS:
+# REGRAS DURAS
 - USE APENAS os números fornecidos. NUNCA invente.
-- NÃO escreva parágrafos longos. SÓ bullets curtos.
-- Trate o barbeiro pelo nome. Tom direto, "técnico-parceiro".
-- Máximo 250 palavras.
-- Sem introdução, sem despedida — direto nos blocos.`;
+- Bullets curtos. Sem parágrafos longos.
+- Trate o barbeiro pelo nome. Tom direto, parceiro técnico, gírias de barbearia OK.
+- Máximo 280 palavras.
+- Sem introdução, sem despedida — direto nos blocos.
+- A estratégia escolhida DEVE aparecer nominalmente no bloco "ESTRATÉGIA DE HOJE".
+- NUNCA escreva "consulte o catálogo" ou meta-comentários sobre como você escolheu — apenas execute.`;
 
         try {
           const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -1757,10 +1778,10 @@ REGRAS DURAS:
               model: "google/gemini-2.5-flash",
               messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nGere o Plano de Guerra agora.` },
+                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nAnalise o cenário com calma, escolha a estratégia mais adequada do catálogo e gere o Plano de Guerra agora.` },
               ],
-              max_tokens: 600,
-              temperature: 0.6,
+              max_tokens: 800,
+              temperature: 0.85,
             }),
           });
 
