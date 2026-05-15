@@ -47,6 +47,7 @@ interface SubscriptionTransaction {
   is_new_client: boolean | null;
   item_name: string;
   client_name: string | null;
+  mobile_phone: string | null;
   price_sold: number;
   barbers: { name: string } | null;
   subscription_plans: { name: string } | null;
