@@ -223,13 +223,17 @@ export default function LiveDashboard() {
 
       // Fetch manager transactions directly from sale_transactions for the selected day
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
-      const { data: managerTxData } = await supabase
+      let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category")
+        .select("barber_id, price_sold, item_type, service_category, unit_id")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
         .lt("created_at", nextDay + "T00:00:00-04:00");
+      if (selectedUnit !== "all") {
+        mgrTxQuery = mgrTxQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: managerTxData } = await mgrTxQuery;
 
       setManagerTransactions(managerTxData || []);
 
