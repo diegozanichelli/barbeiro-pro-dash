@@ -254,6 +254,32 @@ export default function SubscriptionPerformanceReport() {
       setGlobalOpportunities(globalOpportunityPhones.size);
       setGlobalNewClientAdhesions(globalNewClientAdh);
       setGlobalTotalAdhesions(globalTotalAdh);
+
+      // Saúde dos dados — calculado a partir do mesmo conjunto exibido
+      const allTx = [
+        ...(transactions ?? []).map((t: any) => ({ ...t, _hasBarber: true })),
+        ...(receptionTx ?? []).map((t: any) => ({ ...t, _hasBarber: false })),
+      ];
+      const health: DataHealth = {
+        totalInPeriod: allTx.length,
+        txSemUnidade: allTx.filter((t) => !t.unit_id).length,
+        novoSemTelefone: allTx.filter(
+          (t) => t.is_new_client === true && (!t.mobile_phone || t.mobile_phone === "")
+        ).length,
+        novaAdesaoSemTelefone: allTx.filter(
+          (t) =>
+            t.item_type === "subscription" &&
+            t.subscription_action === "new" &&
+            (!t.mobile_phone || t.mobile_phone === "")
+        ).length,
+        novaAdesaoSemIsNewClient: allTx.filter(
+          (t) =>
+            t.item_type === "subscription" &&
+            t.subscription_action === "new" &&
+            t.is_new_client !== true
+        ).length,
+      };
+      setDataHealth(health);
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
