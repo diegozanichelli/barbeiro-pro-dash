@@ -7,9 +7,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus } from "lucide-react";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
+
+interface UnitOption { id: string; name: string; }
+interface DataHealth {
+  totalInPeriod: number;
+  txSemUnidade: number;
+  novoSemTelefone: number;
+  novaAdesaoSemTelefone: number;
+  novaAdesaoSemIsNewClient: number;
+}
 
 interface BarberPerformance {
   barberId: string;
