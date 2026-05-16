@@ -1528,7 +1528,8 @@ IMPORTANTE:
         lines.push(`🎯 BRIEFING DO DIA — ${barberName}`);
         lines.push("");
         lines.push(`📌 META`);
-        lines.push(`• Hoje: R$ ${todayRevenue.toFixed(2)} de R$ ${dailyTarget.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)})`);
+        lines.push(`• Comissão diária alvo: R$ ${dailyTargetCommission.toFixed(2)}`);
+        lines.push(`• Faturamento de hoje: R$ ${todayRevenue.toFixed(2)} de R$ ${dailyTarget.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)} em vendas)`);
         lines.push(`• Mês: ${goalPercent.toFixed(0)}% da meta — falta R$ ${monthGap.toFixed(2)} em ${daysRemaining} dia(s)`);
         lines.push("");
         lines.push(`📊 SEU PERFIL (últimos 30d)`);
