@@ -6,7 +6,7 @@ import { Trophy } from "lucide-react";
 export default function ProductSellersSlide({ data }: { data: MonthlyPresentationData }) {
   const items = (data.product_sellers_ranking ?? []).slice(0, 3);
   const colors = ["bg-gradient-to-b from-yellow-400/30 to-yellow-400/5 border-yellow-400/50", "bg-card/60 border-border", "bg-card/40 border-border/60"];
-  const heights = ["h-[520px]", "h-[440px]", "h-[380px]"];
+  const heights = ["h-[360px]", "h-[300px]", "h-[250px]"];
   const order = [items[1], items[0], items[2]];
   const orderIdx = [1, 0, 2];
   return (
