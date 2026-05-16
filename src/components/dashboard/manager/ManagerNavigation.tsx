@@ -103,12 +103,6 @@ export default function ManagerNavigation({
     { id: "daily-goals", label: "Dia a Dia", icon: CalendarDays },
   ];
 
-  if (hasSubscriptionModule) {
-    financeiroItems.push(
-      { id: "comparison", label: "Money", icon: DollarSign },
-      { id: "subscription", label: "Assinaturas", icon: Repeat }
-    );
-  }
 
   const relatoriosItems: NavItem[] = [
     { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
