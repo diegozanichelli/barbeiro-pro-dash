@@ -1,35 +1,47 @@
+# Aposentar `barber_subscription_earnings` — wizard do POS como fonte única
+
 ## Objetivo
+Eliminar a fonte paralela de assinaturas (lançamento manual mensal) que hoje não alimenta folha, ranking nem dashboard do barbeiro. O wizard de POS (`sale_transactions` com `item_type='subscription'`) passa a ser a **única** verdade.
 
-Transformar o card **Faturamento** da sidebar do Ao Vivo em uma visão de **Faturamento Total do dia**, somando o operacional (serviços + produtos) com as assinaturas vendidas hoje — mantendo intacta a lógica operacional que alimenta ranking de filiais, ranking de barbeiros, ticket médio e meta diária.
+## Escopo das mudanças
 
-## O que muda (apenas UI no `LiveDashboard.tsx`)
+### 1. UI do gestor — remover os dois pontos de entrada
+Arquivo: `src/components/dashboard/manager/ManagerNavigation.tsx`
+- Remover os itens `comparison` ("Money") e `subscription` ("Assinaturas") do grupo Financeiro (linhas 106–111). O grupo Financeiro fica só com Comissões e Dia a Dia.
 
-Card "💰 Faturamento" passa a exibir 3 linhas:
+Arquivo: `src/components/dashboard/ManagerDashboard.tsx`
+- Remover os `<TabsContent>` `subscription` e `comparison` (linhas 183–193).
+- Remover os imports de `SubscriptionEarningsForm` e `EarningsComparison`.
 
-```text
-FATURAMENTO TOTAL HOJE
-R$ 12.450,00          ← número grande (operacional + assinaturas)
+### 2. Componentes órfãos — apagar
+- `src/components/dashboard/manager/SubscriptionEarningsForm.tsx`
+- `src/components/dashboard/manager/EarningsComparison.tsx`
+- `src/components/dashboard/barber/SubscriptionEarningsCard.tsx` (já não montado em lugar nenhum, confirmar e remover)
 
-▸ Vendas (serviços + produtos)  R$ 10.200,00
-▸ Assinaturas (MRR do dia)      R$  2.250,00
-```
+### 3. Banco de dados — depreciar a tabela
+Migração:
+- `DROP TABLE public.barber_subscription_earnings CASCADE;`
 
-- Valor grande = `totalRevenue + subscriptionTotalRevenue` (ambos já existem no componente).
-- Comparativo vs ontem (a setinha verde/vermelha) continua usando **apenas o operacional**, pra não poluir a leitura de performance do dia.
-- Animação de pulso quando o número muda permanece, agora disparada pelo total.
+Justificativa: o aud it já confirmou que nenhuma folha, ranking, dashboard de barbeiro ou integração financeira consome essa tabela. A única leitura era `EarningsComparison` (informativo) e `SubscriptionEarningsCard` (órfão).
 
-## O que NÃO muda (importante)
+Dados existentes (R$ 80.474 de maio etc.) serão **descartados** — o usuário confirmou em conversa anterior que o número do wizard é o que vale para a folha.
 
-Segue a memória `subscription-operational-separation`:
+### 4. Memórias a atualizar
+- `mem://features/subscription-earnings-module` → marcar como **OBSOLETO** (módulo aposentado em 2026-05-16; wizard do POS é fonte única).
+- `mem://index.md` → atualizar o bullet "Subscription Earnings" para refletir aposentadoria.
 
-- **Ranking de Filiais**, **Top 3 Barbeiros**, **Ticket Médio**, **Meta Diária**, **Tabela de Performance** → continuam **operacionais puros** (sem assinatura). Assinatura é receita recorrente paga dia 15, misturar distorce ticket, comissão e pacing.
-- Card **👑 ASSINATURAS** continua existindo separado, com ranking de quem vendeu.
-- Nenhuma mudança em RPC, schema ou cálculos de backend.
+## Fora de escopo (não mexe)
+- Wizard do POS (`SubscriptionWizardModal`) — segue como está.
+- `subscription_commission_rate` por barbeiro — segue como está; a folha continua usando `MRR × taxa`.
+- `MonthlyPayroll`, `SubscriptionAnalytics`, `SubscriptionIntelligence`, Live Dashboard — já consomem `sale_transactions`, nada muda.
+- `subscription_plans` / `subscription_plan_services` — não afetados.
 
-## Arquivo afetado
+## Detalhes técnicos
+- A migração usa `DROP TABLE ... CASCADE` para limpar qualquer policy/index dependente. Não há foreign keys apontando para essa tabela (confirmado no schema).
+- Após a migração, `src/integrations/supabase/types.ts` é regenerado automaticamente.
+- Nenhuma edge function consome a tabela (confirmado via grep).
 
-- `src/components/dashboard/manager/LiveDashboard.tsx` — apenas o bloco do card "Faturamento" na sidebar (~linha 1475–1530).
-
-## Memória a atualizar
-
-- `mem://features/live-dashboard-sidebar-components` — registrar que o card Faturamento agora exibe Total com breakdown Operacional + Assinaturas.
+## Resultado esperado
+- Gestor não vê mais "Money" nem "Assinaturas" no Financeiro — só Comissões e Dia a Dia.
+- Nenhum fluxo permite lançar comissão de assinatura manualmente.
+- Zero ambiguidade: tudo que aparece em folha/ranking/dashboard vem do wizard.
