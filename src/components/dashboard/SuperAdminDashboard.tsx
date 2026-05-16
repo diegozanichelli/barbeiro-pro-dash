@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban, Gift, Clock, Sparkles } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
@@ -63,7 +63,19 @@ interface OrganizationStats {
   total_organizations: number;
   active_subscriptions: number;
   trial_subscriptions: number;
+  free_subscriptions: number;
   monthly_revenue: number;
+}
+
+type OrgFilter = "all" | "trial" | "gratuita";
+
+const TRIAL_DAYS = 7;
+
+function getTrialDaysLeft(createdAt: string): number {
+  const created = new Date(createdAt).getTime();
+  const expires = created + TRIAL_DAYS * 24 * 60 * 60 * 1000;
+  const diffMs = expires - Date.now();
+  return Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
 }
 
 interface Manager {
@@ -81,8 +93,10 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     total_organizations: 0,
     active_subscriptions: 0,
     trial_subscriptions: 0,
+    free_subscriptions: 0,
     monthly_revenue: 0,
   });
+  const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -157,6 +171,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
         total_organizations: data?.length || 0,
         active_subscriptions: data?.filter(org => org.subscription_status === "active").length || 0,
         trial_subscriptions: data?.filter(org => org.subscription_status === "trial").length || 0,
+        free_subscriptions: data?.filter(org => org.subscription_status === "gratuita").length || 0,
         monthly_revenue: (data?.filter(org => org.subscription_status === "active").length || 0) * 99,
       };
       setStats(stats);
@@ -668,7 +683,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
           </TabsList>
 
           <TabsContent value="organizations">
-            <div className="grid gap-4 md:grid-cols-4 mb-6">
+            <div className="grid gap-4 md:grid-cols-5 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -693,15 +708,37 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            className={`cursor-pointer transition-all border-2 ${orgFilter === "trial" ? "border-primary ring-2 ring-primary/30" : "border-primary/40 hover:border-primary"}`}
+            onClick={() => setOrgFilter(orgFilter === "trial" ? "all" : "trial")}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Em Trial
+              <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-primary" />
+                Em Trial (7 dias grátis)
               </CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-primary">{stats.trial_subscriptions}</div>
+              <p className="text-xs text-muted-foreground mt-1">Clique para filtrar</p>
+            </CardContent>
+          </Card>
+
+          <Card
+            className={`cursor-pointer transition-all border-2 ${orgFilter === "gratuita" ? "border-amber-500 ring-2 ring-amber-500/30" : "border-amber-500/40 hover:border-amber-500"}`}
+            onClick={() => setOrgFilter(orgFilter === "gratuita" ? "all" : "gratuita")}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+                <Gift className="h-4 w-4 text-amber-500" />
+                Criadas por Você
+              </CardTitle>
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-500">{stats.free_subscriptions}</div>
+              <p className="text-xs text-muted-foreground mt-1">Contas gratuitas (mentoria)</p>
             </CardContent>
           </Card>
 
@@ -717,6 +754,17 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </CardContent>
           </Card>
         </div>
+
+        {orgFilter !== "all" && (
+          <div className="mb-4 flex items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              Filtro ativo: {orgFilter === "trial" ? "Em Trial (7 dias grátis)" : "Criadas por você (Gratuitas)"}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={() => setOrgFilter("all")}>
+              Limpar filtro
+            </Button>
+          </div>
+        )}
 
         <Card>
           <CardHeader>
@@ -738,9 +786,36 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {organizations.map((org) => (
-                  <TableRow key={org.id}>
-                    <TableCell className="font-medium">{org.name}</TableCell>
+                {organizations
+                  .filter((org) => orgFilter === "all" ? true : org.subscription_status === orgFilter)
+                  .map((org) => {
+                  const isTrial = org.subscription_status === "trial";
+                  const isFree = org.subscription_status === "gratuita";
+                  const trialDaysLeft = isTrial ? getTrialDaysLeft(org.created_at) : 0;
+                  const rowClass = isTrial
+                    ? "bg-primary/5 hover:bg-primary/10"
+                    : isFree
+                    ? "bg-amber-500/5 hover:bg-amber-500/10"
+                    : "";
+                  return (
+                  <TableRow key={org.id} className={rowClass}>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col gap-1">
+                        <span>{org.name}</span>
+                        {isFree && (
+                          <Badge variant="outline" className="w-fit border-amber-500/60 text-amber-600 bg-amber-500/10 text-[10px]">
+                            <Gift className="w-3 h-3 mr-1" />
+                            Criada por você
+                          </Badge>
+                        )}
+                        {isTrial && (
+                          <Badge variant="outline" className="w-fit border-primary/60 text-primary bg-primary/10 text-[10px]">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {trialDaysLeft > 0 ? `${trialDaysLeft} ${trialDaysLeft === 1 ? "dia restante" : "dias restantes"}` : "Trial expirado"}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{getStatusBadge(org.subscription_status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -839,7 +914,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
             </CardContent>
