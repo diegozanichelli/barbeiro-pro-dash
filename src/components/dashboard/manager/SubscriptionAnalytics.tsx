@@ -1,27 +1,23 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle } from "lucide-react";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle, AlertCircle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
-
-const ACTION_COLORS: Record<string, string> = {
-  new: "#22c55e",
-  renew: "#3b82f6",
-  upgrade: "#10b981",
-  downgrade: "#ef4444",
-};
+import { toast } from "sonner";
 
 const ACTION_LABELS: Record<string, string> = {
   new: "Nova",
@@ -39,7 +35,9 @@ const ACTION_BADGE_CLASS: Record<string, string> = {
 
 const DONUT_COLORS = ["#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
-interface SubscriptionTransaction {
+interface Unit { id: string; name: string }
+
+interface IntelTransaction {
   id: string;
   created_at: string;
   subscription_action: string | null;
@@ -49,108 +47,103 @@ interface SubscriptionTransaction {
   client_name: string | null;
   mobile_phone: string | null;
   price_sold: number;
-  barbers: { name: string } | null;
-  subscription_plans: { name: string } | null;
+  previous_price: number | null;
+  source: string | null;
   subscription_plan_id: string | null;
-  units: { name: string } | null;
+  plan_name: string | null;
+  previous_plan_id: string | null;
+  previous_plan_name: string | null;
+  unit_id: string | null;
+  unit_name: string | null;
+  barber_name: string | null;
+}
+
+interface IntelPayload {
+  counts: { new: number; renew: number; upgrade: number; downgrade: number };
+  revenue: { new: number; renew: number; upgrade: number; downgrade: number };
+  mrr_delta: number;
+  downgrade_reasons: { name: string; value: number }[];
+  total_new_clients: number;
+  new_subs_to_new: number;
+  conversion_rate: number;
+  transactions: IntelTransaction[];
 }
 
 export default function SubscriptionAnalytics() {
   const { organizationId } = useOrganization();
-  const manausNow = useMemo(() => getManausDate(), []);
+  const [manausNow, setManausNow] = useState(() => getManausDate());
+
+  // Refresh manausNow if user keeps the page open across month change
+  useEffect(() => {
+    const id = setInterval(() => setManausNow(getManausDate()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth());
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
-  const [transactions, setTransactions] = useState<SubscriptionTransaction[]>([]);
-  const [totalNewClients, setTotalNewClients] = useState(0);
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<"manager" | "all">("manager");
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [data, setData] = useState<IntelPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editingTransaction, setEditingTransaction] = useState<SubscriptionTransaction | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<IntelTransaction | null>(null);
 
   const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
   const years = Array.from({ length: 3 }, (_, i) => manausNow.getFullYear() - 1 + i);
 
   useEffect(() => {
     if (!organizationId) return;
+    supabase.from("units").select("id, name").eq("status", "active").order("name").then(({ data }) => {
+      if (data) setUnits(data);
+    });
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (!organizationId) return;
     fetchData();
-  }, [selectedMonth, selectedYear, organizationId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, selectedYear, selectedUnit, sourceFilter, organizationId]);
 
   const fetchData = async () => {
-    if (!organizationId) return;
     setLoading(true);
+    // Janela Manaus em datas puras YYYY-MM-DD
     const refDate = new Date(selectedYear, selectedMonth, 1);
-    const start = startOfMonth(refDate).toISOString();
-    const end = endOfMonth(refDate).toISOString();
+    const startStr = format(startOfMonth(refDate), "yyyy-MM-dd");
+    const endStr = format(endOfMonth(refDate), "yyyy-MM-dd");
 
-    const [subRes, newClientsRes] = await Promise.all([
-      supabase
-        .from("sale_transactions")
-        .select("id, created_at, subscription_action, downgrade_reason, is_new_client, item_name, client_name, mobile_phone, price_sold, subscription_plan_id, barbers(name), subscription_plans(name), units(name)")
-        .eq("organization_id", organizationId)
-        .eq("item_type", "subscription")
-        .eq("source", "manager") // Single source of truth: only manager-recorded subscriptions
-        .gte("created_at", start)
-        .lte("created_at", end)
-        .order("created_at", { ascending: false }),
-      // Count UNIQUE new clients by phone (not by transaction count).
-      // A single new client buying haircut + product + subscription would inflate
-      // the denominator if we counted rows. Transactions without mobile_phone are
-      // dropped from this count since we cannot distinguish unique customers.
-      supabase
-        .from("sale_transactions")
-        .select("mobile_phone")
-        .eq("organization_id", organizationId)
-        .eq("is_new_client", true)
-        .eq("source", "manager")
-        .gte("created_at", start)
-        .lte("created_at", end),
-    ]);
+    const { data: rpcData, error } = await supabase.rpc("get_subscription_intelligence", {
+      p_start_date: startStr,
+      p_end_date: endStr,
+      p_unit_id: selectedUnit === "all" ? null : selectedUnit,
+      p_source_filter: sourceFilter === "all" ? null : sourceFilter,
+    });
 
-    if (!subRes.error) setTransactions((subRes.data as unknown as SubscriptionTransaction[]) || []);
-    const uniquePhones = new Set(
-      (newClientsRes.data || [])
-        .map((r: any) => r.mobile_phone)
-        .filter(Boolean)
-    );
-    setTotalNewClients(uniquePhones.size);
+    if (error) {
+      console.error("Erro ao carregar Inteligência:", error);
+      toast.error("Falha ao carregar dados da Inteligência de Assinaturas");
+      setData(null);
+    } else {
+      setData(rpcData as unknown as IntelPayload);
+    }
     setLoading(false);
   };
 
-  // Metrics
-  const { counts, revenue } = useMemo(() => {
-    const c = { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
-    const r = { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
-    transactions.forEach((t) => {
-      const action = t.subscription_action as keyof typeof c;
-      if (action && action in c) {
-        c[action]++;
-        r[action] += Number(t.price_sold) || 0;
-      }
-    });
-    return { counts: c, revenue: r };
-  }, [transactions]);
+  const counts = data?.counts ?? { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
+  const revenue = data?.revenue ?? { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
+  const downgradeData = data?.downgrade_reasons ?? [];
+  const totalNewClients = data?.total_new_clients ?? 0;
+  const newSubsToNew = data?.new_subs_to_new ?? 0;
+  const conversionRate = data?.conversion_rate ?? 0;
+  const mrrDelta = data?.mrr_delta ?? 0;
+  const transactions = data?.transactions ?? [];
 
-  // Downgrade reasons
-  const downgradeData = useMemo(() => {
-    const map: Record<string, number> = {};
-    transactions.forEach((t) => {
-      if (t.subscription_action === "downgrade" && t.downgrade_reason) {
-        map[t.downgrade_reason] = (map[t.downgrade_reason] || 0) + 1;
-      }
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [transactions]);
+  const funnelData = useMemo(() => ([
+    { name: "Clientes Novos Atendidos", value: totalNewClients },
+    { name: "Assinaturas a Novos", value: newSubsToNew },
+  ]), [totalNewClients, newSubsToNew]);
 
-  // Funnel
-  const funnelData = useMemo(() => {
-    const newSubs = transactions.filter((t) => t.subscription_action === "new" && t.is_new_client).length;
-    return [
-      { name: "Clientes Novos Atendidos", value: totalNewClients },
-      { name: "Assinaturas Vendidas", value: newSubs },
-    ];
-  }, [transactions, totalNewClients]);
-
-  const conversionRate = totalNewClients > 0
-    ? ((funnelData[1].value / totalNewClients) * 100).toFixed(1)
-    : "0";
+  // Sanity check (defesa em profundidade — backend já garante ≤100%)
+  const conversionWarning = newSubsToNew > totalNewClients;
 
   if (loading) {
     return (
@@ -175,22 +168,48 @@ export default function SubscriptionAnalytics() {
               </div>
               <div>
                 <CardTitle>Inteligência de Assinaturas</CardTitle>
-                <CardDescription>Movimentação da carteira, conversão e motivos de downgrade</CardDescription>
+                <CardDescription>Movimentação da carteira, conversão e Δ MRR — fuso Manaus</CardDescription>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(Number(v))}>
-                <SelectTrigger className="w-24 bg-secondary"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {months.map((m, i) => <SelectItem key={i} value={i.toString()}>{m}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(Number(v))}>
-                <SelectTrigger className="w-24 bg-secondary"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {years.map((y) => <SelectItem key={y} value={y.toString()}>{y}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="flex gap-2 flex-wrap">
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Mês</Label>
+                <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                  <SelectTrigger className="w-24 bg-secondary"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {months.map((m, i) => <SelectItem key={i} value={i.toString()}>{m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Ano</Label>
+                <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(Number(v))}>
+                  <SelectTrigger className="w-24 bg-secondary"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {years.map((y) => <SelectItem key={y} value={y.toString()}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Unidade</Label>
+                <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                  <SelectTrigger className="w-40 bg-secondary"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as Unidades</SelectItem>
+                    {units.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Origem</Label>
+                <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as any)}>
+                  <SelectTrigger className="w-36 bg-secondary"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manager">Apenas Gestor</SelectItem>
+                    <SelectItem value="all">Gestor + Barbeiro (legado)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -198,15 +217,62 @@ export default function SubscriptionAnalytics() {
 
       <SubscriptionScopeBanner scope="portfolio" />
 
+      {conversionWarning && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Inconsistência detectada: assinaturas a clientes novos ({newSubsToNew}) maior que oportunidades ({totalNewClients}).
+            Verifique flag <code>is_new_client</code> sem celular.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Summary Cards */}
       <TooltipProvider delayDuration={150}>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" tooltip="Inclui toda assinatura com ação = 'nova' no mês — barbeiros + recepção, clientes novos e da casa." />
-          <SummaryCard label="Renovações" count={counts.renew} amount={revenue.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" tooltip="Assinantes que renovaram o mesmo plano no período." />
-          <SummaryCard label="Upgrades" count={counts.upgrade} amount={revenue.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" tooltip="Assinantes que migraram para um plano de maior valor." />
-          <SummaryCard label="Downgrades" count={counts.downgrade} amount={revenue.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" tooltip="Assinantes que migraram para um plano de menor valor." />
+          <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" tooltip="Toda assinatura com ação='nova' — barbeiros + recepção, clientes novos e da casa." />
+          <SummaryCard label="Renovações" count={counts.renew} amount={revenue.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" tooltip="Assinantes que renovaram o mesmo plano." />
+          <SummaryCard label="Upgrades" count={counts.upgrade} amount={revenue.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" tooltip="Migração para plano de maior valor." />
+          <SummaryCard label="Downgrades" count={counts.downgrade} amount={revenue.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" tooltip="Migração para plano de menor valor." />
         </div>
       </TooltipProvider>
+
+      {/* Δ MRR e Conversão lado a lado */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className={`border-l-4 ${mrrDelta >= 0 ? "border-emerald-500/40" : "border-red-500/40"}`}>
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-1">
+                <p className="text-xs text-muted-foreground">Δ MRR de Upgrades/Downgrades</p>
+                <UITooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="Sobre Δ MRR"><HelpCircle className="w-3 h-3 text-muted-foreground opacity-60" /></button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">
+                    Soma de (preço novo − preço anterior) para upgrades e downgrades com plano anterior conhecido.
+                    Linhas antigas sem <code>previous_price</code> não entram no cálculo.
+                  </TooltipContent>
+                </UITooltip>
+              </div>
+              <p className={`text-2xl font-bold ${mrrDelta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {mrrDelta >= 0 ? "+" : ""}{mrrDelta.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </p>
+            </div>
+            {mrrDelta >= 0 ? <ArrowUpRight className="w-6 h-6 text-emerald-400" /> : <ArrowDownRight className="w-6 h-6 text-red-400" />}
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-primary/40">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Conversão (Assin. a novos ÷ Novos atendidos)</p>
+              <p className="text-2xl font-bold">{conversionRate}%</p>
+              <p className="text-[11px] text-muted-foreground">{newSubsToNew} / {totalNewClients}</p>
+            </div>
+            <Brain className="w-6 h-6 text-primary" />
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -261,6 +327,7 @@ export default function SubscriptionAnalytics() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Movimentações Recentes</CardTitle>
+          <CardDescription>Limite de 500 linhas mais recentes do período</CardDescription>
         </CardHeader>
         <CardContent>
           {transactions.length === 0 ? (
@@ -270,11 +337,12 @@ export default function SubscriptionAnalytics() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                     <TableHead>Data</TableHead>
-                     <TableHead>Unidade</TableHead>
-                     <TableHead>Cliente</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead>Cliente</TableHead>
                     <TableHead>Ação</TableHead>
                     <TableHead>Plano</TableHead>
+                    <TableHead>Δ</TableHead>
                     <TableHead>Motivo</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
@@ -283,17 +351,32 @@ export default function SubscriptionAnalytics() {
                   {transactions.map((t) => {
                     const action = t.subscription_action || "new";
                     const zonedDate = toZonedTime(new Date(t.created_at), "America/Manaus");
+                    const delta = (action === "upgrade" || action === "downgrade") && t.previous_price != null
+                      ? Number(t.price_sold) - Number(t.previous_price)
+                      : null;
                     return (
                       <TableRow key={t.id}>
                         <TableCell className="text-xs whitespace-nowrap">{format(zonedDate, "dd/MM HH:mm")}</TableCell>
-                        <TableCell className="text-sm">{t.units?.name || "—"}</TableCell>
+                        <TableCell className="text-sm">{t.unit_name || "—"}</TableCell>
                         <TableCell className="text-sm">{t.client_name || "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={ACTION_BADGE_CLASS[action] || ""}>
                             {ACTION_LABELS[action] || action}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm">{t.subscription_plans?.name || t.item_name}</TableCell>
+                        <TableCell className="text-sm">
+                          {t.previous_plan_name && (
+                            <span className="text-xs text-muted-foreground">{t.previous_plan_name} → </span>
+                          )}
+                          {t.plan_name || t.item_name}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {delta != null ? (
+                            <span className={delta >= 0 ? "text-emerald-400" : "text-red-400"}>
+                              {delta >= 0 ? "+" : ""}{delta.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          ) : "—"}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{t.downgrade_reason || "—"}</TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingTransaction(t)}>
@@ -315,7 +398,15 @@ export default function SubscriptionAnalytics() {
       <SubscriptionEditModal
         open={!!editingTransaction}
         onOpenChange={(open) => { if (!open) setEditingTransaction(null); }}
-        transaction={editingTransaction}
+        transaction={editingTransaction ? {
+          id: editingTransaction.id,
+          client_name: editingTransaction.client_name,
+          subscription_action: editingTransaction.subscription_action,
+          subscription_plan_id: editingTransaction.subscription_plan_id,
+          downgrade_reason: editingTransaction.downgrade_reason,
+          mobile_phone: editingTransaction.mobile_phone,
+          subscription_plans: editingTransaction.plan_name ? { name: editingTransaction.plan_name } : null,
+        } : null}
         onSaved={fetchData}
       />
     </div>

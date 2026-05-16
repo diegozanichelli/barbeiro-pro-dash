@@ -938,6 +938,8 @@ export type Database = {
           item_type: string
           mobile_phone: string | null
           organization_id: string
+          previous_plan_id: string | null
+          previous_price: number | null
           price_sold: number
           service_category: string | null
           source: string
@@ -962,6 +964,8 @@ export type Database = {
           item_type: string
           mobile_phone?: string | null
           organization_id: string
+          previous_plan_id?: string | null
+          previous_price?: number | null
           price_sold: number
           service_category?: string | null
           source?: string
@@ -986,6 +990,8 @@ export type Database = {
           item_type?: string
           mobile_phone?: string | null
           organization_id?: string
+          previous_plan_id?: string | null
+          previous_price?: number | null
           price_sold?: number
           service_category?: string | null
           source?: string
@@ -1396,6 +1402,15 @@ export type Database = {
           subscriptions_count: number
           unit_name: string
         }[]
+      }
+      get_subscription_intelligence: {
+        Args: {
+          p_end_date: string
+          p_source_filter?: string
+          p_start_date: string
+          p_unit_id?: string
+        }
+        Returns: Json
       }
       get_user_organization: { Args: { _user_id: string }; Returns: string }
       has_role: {
