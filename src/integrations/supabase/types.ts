@@ -1328,6 +1328,10 @@ export type Database = {
           total_revenue: number
         }[]
       }
+      get_monthly_presentation: {
+        Args: { p_month: number; p_unit_id?: string; p_year: number }
+        Returns: Json
+      }
       get_organization_rankings: {
         Args: { p_end_date: string; p_start_date: string; p_unit_id?: string }
         Returns: {
