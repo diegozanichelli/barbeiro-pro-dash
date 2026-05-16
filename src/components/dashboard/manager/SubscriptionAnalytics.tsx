@@ -232,6 +232,16 @@ export default function SubscriptionAnalytics() {
         </Alert>
       )}
 
+      {mrrUnknown > 0 && totalUpDown > 0 && (
+        <Alert className="border-amber-500/40 bg-amber-500/5">
+          <AlertCircle className="h-4 w-4 text-amber-400" />
+          <AlertDescription className="text-xs">
+            <strong>{mrrUnknown}</strong> de <strong>{totalUpDown}</strong> upgrades/downgrades estão sem plano anterior registrado e ficaram de fora do Δ MRR.
+            Use o botão de editar na tabela abaixo para corrigir, ou confirme se a ação correta não seria "Nova adesão".
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Summary Cards */}
       <TooltipProvider delayDuration={150}>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
