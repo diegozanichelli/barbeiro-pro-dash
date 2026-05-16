@@ -5,7 +5,7 @@ import { Award } from "lucide-react";
 
 function Podium({ title, items }: { title: string; items: Array<{ name: string; qty: number; total: number }> }) {
   const colors = ["bg-gradient-to-b from-yellow-400/30 to-yellow-400/5 border-yellow-400/50", "bg-card/60 border-border", "bg-card/40 border-border/60"];
-  const heights = ["h-[480px]", "h-[400px]", "h-[340px]"];
+  const heights = ["h-[360px]", "h-[300px]", "h-[250px]"];
   const order = [items[1], items[0], items[2]]; // 2º, 1º, 3º
   const orderIdx = [1, 0, 2];
   return (
