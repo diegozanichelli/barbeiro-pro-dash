@@ -786,9 +786,36 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {organizations.map((org) => (
-                  <TableRow key={org.id}>
-                    <TableCell className="font-medium">{org.name}</TableCell>
+                {organizations
+                  .filter((org) => orgFilter === "all" ? true : org.subscription_status === orgFilter)
+                  .map((org) => {
+                  const isTrial = org.subscription_status === "trial";
+                  const isFree = org.subscription_status === "gratuita";
+                  const trialDaysLeft = isTrial ? getTrialDaysLeft(org.created_at) : 0;
+                  const rowClass = isTrial
+                    ? "bg-primary/5 hover:bg-primary/10"
+                    : isFree
+                    ? "bg-amber-500/5 hover:bg-amber-500/10"
+                    : "";
+                  return (
+                  <TableRow key={org.id} className={rowClass}>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col gap-1">
+                        <span>{org.name}</span>
+                        {isFree && (
+                          <Badge variant="outline" className="w-fit border-amber-500/60 text-amber-600 bg-amber-500/10 text-[10px]">
+                            <Gift className="w-3 h-3 mr-1" />
+                            Criada por você
+                          </Badge>
+                        )}
+                        {isTrial && (
+                          <Badge variant="outline" className="w-fit border-primary/60 text-primary bg-primary/10 text-[10px]">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {trialDaysLeft > 0 ? `${trialDaysLeft} ${trialDaysLeft === 1 ? "dia restante" : "dias restantes"}` : "Trial expirado"}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{getStatusBadge(org.subscription_status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
