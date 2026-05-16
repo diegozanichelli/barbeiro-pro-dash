@@ -49,7 +49,11 @@ export function useClientAutocomplete({
       return;
     }
 
-    const normalizedNameQuery = nameQuery.trim();
+    const rawName = nameQuery.trim();
+    const normalizedNameQuery = rawName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
     const normalizedPhoneQuery = sanitizePhone(phoneQuery);
     const shouldQueryName = normalizedNameQuery.length >= 2;
     const shouldQueryPhone = normalizedPhoneQuery.length >= 3;
@@ -70,7 +74,7 @@ export function useClientAutocomplete({
                 .from("clients")
                 .select("id, name, mobile_phone")
                 .eq("organization_id", organizationId)
-                .ilike("name", `${normalizedNameQuery}%`)
+                .ilike("normalized_name", `${normalizedNameQuery}%`)
                 .limit(8)
             : Promise.resolve({ data: [], error: null }),
           shouldQueryPhone
