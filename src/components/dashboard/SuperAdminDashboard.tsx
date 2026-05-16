@@ -171,6 +171,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
         total_organizations: data?.length || 0,
         active_subscriptions: data?.filter(org => org.subscription_status === "active").length || 0,
         trial_subscriptions: data?.filter(org => org.subscription_status === "trial").length || 0,
+        free_subscriptions: data?.filter(org => org.subscription_status === "gratuita").length || 0,
         monthly_revenue: (data?.filter(org => org.subscription_status === "active").length || 0) * 99,
       };
       setStats(stats);
