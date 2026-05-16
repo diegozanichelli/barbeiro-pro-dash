@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizePhone } from "@/lib/phoneUtils";
+import { normalizeClientName } from "@/lib/clientName";
 
 let warnedMissingClientsSchema = false;
 
@@ -50,10 +51,7 @@ export function useClientAutocomplete({
     }
 
     const rawName = nameQuery.trim();
-    const normalizedNameQuery = rawName
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+    const normalizedNameQuery = normalizeClientName(rawName);
     const normalizedPhoneQuery = sanitizePhone(phoneQuery);
     const shouldQueryName = normalizedNameQuery.length >= 2;
     const shouldQueryPhone = normalizedPhoneQuery.length >= 3;
