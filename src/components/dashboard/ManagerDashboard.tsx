@@ -14,8 +14,6 @@ import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
-import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
-import EarningsComparison from "./manager/EarningsComparison";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
 import AIUsageTracking from "./manager/AIUsageTracking";
