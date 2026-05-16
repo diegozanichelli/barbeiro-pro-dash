@@ -253,15 +253,18 @@ export default function SubscriptionAnalytics() {
                   <TooltipTrigger asChild>
                     <button type="button" aria-label="Sobre Δ MRR"><HelpCircle className="w-3 h-3 text-muted-foreground opacity-60" /></button>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs text-xs">
-                    Soma de (preço novo − preço anterior) para upgrades e downgrades com plano anterior conhecido.
-                    Linhas antigas sem <code>previous_price</code> não entram no cálculo.
+                  <TooltipContent className="max-w-xs text-xs space-y-1">
+                    <p>Soma de (preço novo − preço anterior) para upgrades e downgrades com plano anterior conhecido.</p>
+                    <p><strong>Cobertura:</strong> {mrrKnown} de {totalUpDown} movimentações têm plano anterior preenchido. {mrrUnknown > 0 && <span className="text-amber-400">{mrrUnknown} ficaram de fora.</span>}</p>
                   </TooltipContent>
                 </UITooltip>
               </div>
               <p className={`text-2xl font-bold ${mrrDelta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {mrrDelta >= 0 ? "+" : ""}{mrrDelta.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </p>
+              {mrrUnknown > 0 && (
+                <p className="text-[10px] text-amber-400 mt-1">{mrrUnknown} sem plano anterior</p>
+              )}
             </div>
             {mrrDelta >= 0 ? <ArrowUpRight className="w-6 h-6 text-emerald-400" /> : <ArrowDownRight className="w-6 h-6 text-red-400" />}
           </CardContent>
