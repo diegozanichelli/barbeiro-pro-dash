@@ -914,7 +914,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
             </CardContent>
