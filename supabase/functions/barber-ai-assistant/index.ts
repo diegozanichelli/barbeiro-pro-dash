@@ -1427,6 +1427,7 @@ IMPORTANTE:
         monthlyGoal,
         soldThisMonth,
         dailyTarget,
+        dailyTargetCommission = 0,
         todayRevenue,
         daysRemaining,
         clientsInAgenda,
