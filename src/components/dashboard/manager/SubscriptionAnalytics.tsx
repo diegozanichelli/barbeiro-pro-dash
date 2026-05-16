@@ -137,6 +137,9 @@ export default function SubscriptionAnalytics() {
   const newSubsToNew = data?.new_subs_to_new ?? 0;
   const conversionRate = data?.conversion_rate ?? 0;
   const mrrDelta = data?.mrr_delta ?? 0;
+  const mrrKnown = data?.mrr_delta_known_count ?? 0;
+  const mrrUnknown = data?.mrr_delta_unknown_count ?? 0;
+  const totalUpDown = counts.upgrade + counts.downgrade;
   const transactions = data?.transactions ?? [];
 
   const funnelData = useMemo(() => ([
