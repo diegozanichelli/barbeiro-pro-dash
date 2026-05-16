@@ -344,6 +344,45 @@ export default function SubscriptionWizardModal({
 
       const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : "Downgrade";
 
+      // Resolve previous plan/price for upgrade/downgrade (so Δ MRR funciona mesmo sem histórico de vendas)
+      let previousPlanId: string | null = null;
+      let previousPrice: number | null = null;
+      if (subscriptionAction === "upgrade" || subscriptionAction === "downgrade") {
+        const { data: clientRow } = await (supabase
+          .from("clients") as any)
+          .select("subscription_plan_id")
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", registeredClient.mobilePhone)
+          .maybeSingle();
+        const currentPlanId: string | null = clientRow?.subscription_plan_id ?? null;
+        if (currentPlanId && currentPlanId !== selectedPlanId) {
+          previousPlanId = currentPlanId;
+          const prevPlan = plans.find((p) => p.id === currentPlanId);
+          if (prevPlan) previousPrice = Number(prevPlan.price);
+        }
+        if (!previousPlanId) {
+          // Fallback: query the most recent subscription transaction of this phone
+          const { data: prevTx } = await supabase
+            .from("sale_transactions")
+            .select("subscription_plan_id, price_sold")
+            .eq("organization_id", organizationId)
+            .eq("item_type", "subscription")
+            .eq("mobile_phone", registeredClient.mobilePhone)
+            .not("subscription_plan_id", "is", null)
+            .neq("subscription_plan_id", selectedPlanId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (prevTx?.subscription_plan_id) {
+            previousPlanId = prevTx.subscription_plan_id as string;
+            previousPrice = Number(prevTx.price_sold);
+          }
+        }
+        if (!previousPlanId) {
+          toast.warning("Sem assinatura anterior registrada para este celular — Δ MRR não será calculado. Confirme se a ação correta não é 'Nova adesão'.");
+        }
+      }
+
       const createdAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
@@ -367,6 +406,8 @@ export default function SubscriptionWizardModal({
         subscription_plan_id: selectedPlanId,
         subscription_action: subscriptionAction,
         downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
+        previous_plan_id: previousPlanId,
+        previous_price: previousPrice,
       } as any);
 
       if (error) throw error;

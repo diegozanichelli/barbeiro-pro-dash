@@ -62,6 +62,8 @@ interface IntelPayload {
   counts: { new: number; renew: number; upgrade: number; downgrade: number };
   revenue: { new: number; renew: number; upgrade: number; downgrade: number };
   mrr_delta: number;
+  mrr_delta_known_count?: number;
+  mrr_delta_unknown_count?: number;
   downgrade_reasons: { name: string; value: number }[];
   total_new_clients: number;
   new_subs_to_new: number;
@@ -135,6 +137,9 @@ export default function SubscriptionAnalytics() {
   const newSubsToNew = data?.new_subs_to_new ?? 0;
   const conversionRate = data?.conversion_rate ?? 0;
   const mrrDelta = data?.mrr_delta ?? 0;
+  const mrrKnown = data?.mrr_delta_known_count ?? 0;
+  const mrrUnknown = data?.mrr_delta_unknown_count ?? 0;
+  const totalUpDown = counts.upgrade + counts.downgrade;
   const transactions = data?.transactions ?? [];
 
   const funnelData = useMemo(() => ([
@@ -227,6 +232,16 @@ export default function SubscriptionAnalytics() {
         </Alert>
       )}
 
+      {mrrUnknown > 0 && totalUpDown > 0 && (
+        <Alert className="border-amber-500/40 bg-amber-500/5">
+          <AlertCircle className="h-4 w-4 text-amber-400" />
+          <AlertDescription className="text-xs">
+            <strong>{mrrUnknown}</strong> de <strong>{totalUpDown}</strong> upgrades/downgrades estão sem plano anterior registrado e ficaram de fora do Δ MRR.
+            Use o botão de editar na tabela abaixo para corrigir, ou confirme se a ação correta não seria "Nova adesão".
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Summary Cards */}
       <TooltipProvider delayDuration={150}>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -248,15 +263,18 @@ export default function SubscriptionAnalytics() {
                   <TooltipTrigger asChild>
                     <button type="button" aria-label="Sobre Δ MRR"><HelpCircle className="w-3 h-3 text-muted-foreground opacity-60" /></button>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs text-xs">
-                    Soma de (preço novo − preço anterior) para upgrades e downgrades com plano anterior conhecido.
-                    Linhas antigas sem <code>previous_price</code> não entram no cálculo.
+                  <TooltipContent className="max-w-xs text-xs space-y-1">
+                    <p>Soma de (preço novo − preço anterior) para upgrades e downgrades com plano anterior conhecido.</p>
+                    <p><strong>Cobertura:</strong> {mrrKnown} de {totalUpDown} movimentações têm plano anterior preenchido. {mrrUnknown > 0 && <span className="text-amber-400">{mrrUnknown} ficaram de fora.</span>}</p>
                   </TooltipContent>
                 </UITooltip>
               </div>
               <p className={`text-2xl font-bold ${mrrDelta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {mrrDelta >= 0 ? "+" : ""}{mrrDelta.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </p>
+              {mrrUnknown > 0 && (
+                <p className="text-[10px] text-amber-400 mt-1">{mrrUnknown} sem plano anterior</p>
+              )}
             </div>
             {mrrDelta >= 0 ? <ArrowUpRight className="w-6 h-6 text-emerald-400" /> : <ArrowDownRight className="w-6 h-6 text-red-400" />}
           </CardContent>
