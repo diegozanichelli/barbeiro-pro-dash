@@ -1682,6 +1682,97 @@ IMPORTANTE:
         `- [${s.id}] ${s.nome} — QUANDO: ${s.quando}. FOCO: ${s.foco}`
       ).join('\n');
 
+      // ===== HISTÓRICO DE EXECUÇÕES (últimos 30 dias) =====
+      const thirtyAgoDate = (() => {
+        const d = getManausDate();
+        d.setDate(d.getDate() - 30);
+        return formatManausDate(d);
+      })();
+      const yesterdayDate = (() => {
+        const d = getManausDate();
+        d.setDate(d.getDate() - 1);
+        return formatManausDate(d);
+      })();
+
+      // Recalcula resultado de ontem antes de ler histórico (mantém freshness)
+      try {
+        await supabase.rpc('recalc_war_plan_result', {
+          p_barber_id: barberId,
+          p_date: yesterdayDate,
+        });
+      } catch (e) {
+        console.error('[WAR_PLAN] recalc yesterday failed:', e);
+      }
+
+      const { data: pastExecutions } = await supabase
+        .from('war_plan_executions')
+        .select('strategy_id, strategy_name, date, result_avg_ticket, result_clients, result_extras_ratio, result_commission, result_vs_target_pct, result_calculated_at')
+        .eq('barber_id', barberId)
+        .gte('date', thirtyAgoDate)
+        .lt('date', todayDate)
+        .not('result_calculated_at', 'is', null);
+
+      const strategyAgg: Record<string, { name: string; n: number; ticket: number; vsTarget: number; extras: number }> = {};
+      for (const e of pastExecutions || []) {
+        const k = e.strategy_id as string;
+        if (!strategyAgg[k]) strategyAgg[k] = { name: e.strategy_name, n: 0, ticket: 0, vsTarget: 0, extras: 0 };
+        strategyAgg[k].n++;
+        strategyAgg[k].ticket += Number(e.result_avg_ticket || 0);
+        strategyAgg[k].vsTarget += Number(e.result_vs_target_pct || 0);
+        strategyAgg[k].extras += Number(e.result_extras_ratio || 0) * 100;
+      }
+      const aggList = Object.entries(strategyAgg).map(([id, v]) => ({
+        id,
+        name: v.name,
+        n: v.n,
+        avgTicket: v.ticket / v.n,
+        avgVsTarget: v.vsTarget / v.n,
+        avgExtras: v.extras / v.n,
+      })).sort((a, b) => b.avgVsTarget - a.avgVsTarget);
+
+      const winnerStrategy = aggList[0];
+      const loserStrategy = aggList.length >= 2 ? aggList[aggList.length - 1] : null;
+      const historyBlock = aggList.length === 0
+        ? '(sem histórico ainda — primeira execução ou sem resultados consolidados)'
+        : aggList.slice(0, 5).map(s =>
+            `- ${s.name}: usada ${s.n}x · ticket médio R$ ${s.avgTicket.toFixed(2)} · ${s.avgVsTarget.toFixed(0)}% da meta diária · extras ${s.avgExtras.toFixed(0)}%`
+          ).join('\n');
+
+      // ===== ESCOLHA DETERMINÍSTICA DA ESTRATÉGIA PRINCIPAL =====
+      const pickPrimaryStrategy = () => {
+        const find = (id: string) => STRATEGIES.find(s => s.id === id)!;
+        // 1) Sprint final
+        if (daysRemaining <= 5 && goalPercent >= 80 && goalPercent < 100) return find('sprint_meta_proxima');
+        // 2) Dia da semana — regras fortes
+        if (todayDow === 1) return find('recuperacao_segunda');
+        if (todayDow === 4) return find('qualidade_quinta');
+        if (todayDow === 5 || todayDow === 6) return find('consolidacao_fim_semana');
+        if (todayDow === 2 || todayDow === 3) return find('volume_terca_quarta');
+        // 3) Agenda fraca
+        if (clientsInAgenda > 0 && clientsInAgenda <= 3) return find('resgate_inativos');
+        // 4) Gaps específicos
+        if (subscriptionsMonth < 3) return find('assinatura_focada');
+        if (newClientsMonth < 5) return find('captacao_novo_cliente');
+        if (historicalStats.extrasRatio < 30) return find('upsell_barba');
+        if (historicalStats.productConversionRate < 30) return find('produto_carro_chefe');
+        if (storeAvgTicket > 0 && ticketDelta < -10) return find('ticket_minimo_garantido');
+        if (blindServices.length + blindProducts.length > 0) return find('ataque_pontos_cegos');
+        if (gapDaily > dailyTarget * 0.6 && clientsInAgenda >= 3) return find('blitz_matinal');
+        return find('combo_express');
+      };
+
+      let primary = pickPrimaryStrategy();
+      // Se a estratégia "campeã" do histórico bate com regra do dia E está performando bem, mantém.
+      // Se a candidata principal vem performando mal (<70% vs meta em pelo menos 3 usos), troca pela campeã.
+      if (winnerStrategy && winnerStrategy.n >= 3 && winnerStrategy.avgVsTarget >= 90) {
+        const primaryHist = strategyAgg[primary.id];
+        if (primaryHist && primaryHist.n >= 3 && (primaryHist.vsTarget / primaryHist.n) < 70) {
+          const swap = STRATEGIES.find(s => s.id === winnerStrategy.id);
+          if (swap) primary = swap;
+        }
+      }
+      const primaryStrategy = primary;
+
       // Tentativa via IA (só se chave existir)
       if (LOVABLE_API_KEY) {
         const dataContext = `
@@ -1717,27 +1808,25 @@ DADOS REAIS DO BARBEIRO (NÃO INVENTE NADA — use SOMENTE estes números):
 - Serviços nunca vendidos: ${blindServices.length > 0 ? blindServices.join(', ') : 'nenhum'}
 - Produtos parados: ${blindProducts.length > 0 ? blindProducts.join(', ') : 'nenhum'}
 - Pior dia da semana histórico: ${worstDow >= 0 ? dayNames[worstDow] : 'sem padrão'}${worstDow === todayDow ? ' ⚠️ (HOJE!)' : ''}
+
+## HISTÓRICO DE ESTRATÉGIAS (últimos 30 dias)
+${historyBlock}
+${winnerStrategy ? `→ Estratégia campeã do barbeiro: ${winnerStrategy.name} (${winnerStrategy.avgVsTarget.toFixed(0)}% da meta diária em ${winnerStrategy.n} usos).` : ''}
+${loserStrategy ? `→ Estratégia mais fraca: ${loserStrategy.name} (${loserStrategy.avgVsTarget.toFixed(0)}% em ${loserStrategy.n} usos) — evite repetir se possível.` : ''}
+
+## ESTRATÉGIA PRÉ-SELECIONADA PELO SISTEMA
+${primaryStrategy.nome} [${primaryStrategy.id}] — ${primaryStrategy.foco}
 `;
 
-        const systemPrompt = `Você é o estrategista de elite de um barbeiro brasileiro. Gere um PLANO DE GUERRA único e PERSONALIZADO para HOJE — baseado 100% em dados reais, analisando com calma o cenário antes de prescrever.
+        const systemPrompt = `Você é o estrategista de elite de um barbeiro brasileiro. Gere um PLANO DE GUERRA único e PERSONALIZADO para HOJE — baseado 100% em dados reais.
 
-# CATÁLOGO DE ESTRATÉGIAS DISPONÍVEIS (escolha 1 PRINCIPAL e, se fizer sentido, 1 SECUNDÁRIA)
+# CATÁLOGO DE ESTRATÉGIAS DISPONÍVEIS (referência)
 ${strategiesForPrompt}
 
-# COMO ESCOLHER A ESTRATÉGIA
-1. PRIMEIRO analise o cenário: dia da semana, dias restantes no mês, gap diário, gap mensal, ticket vs loja, conversão de produto, taxa de extras, assinaturas/novos clientes do mês, pontos cegos, agenda de hoje.
-2. Considere REGRAS DE DIA DA SEMANA:
-   - Terça e quarta: dias historicamente mais devagar → foque em VOLUME e tickets baixos somados (combos express R$ 10-15), não em ticket alto.
-   - Segunda: dia de ORGANIZAR a semana e ligar pra clientes.
-   - Quinta: ensaio do fim de semana, ticket sobe.
-   - Sexta/sábado: dia de combo cheio e ticket alto.
-   - Domingo: se houver expediente, foca em consolidar.
-3. Considere DIAS RESTANTES no mês:
-   - >15 dias: pode investir em estratégia de longo prazo (assinatura, captação).
-   - 6-15 dias: equilibrar volume + ticket.
-   - ≤5 dias: SPRINT — aceita tudo, encaixe, hora extra.
-4. NÃO escolha sempre a mesma estratégia. Varie conforme o contexto muda. NÃO repita a estrutura genérica — cada plano deve PARECER único.
-5. Quando ticket está baixo: prefira estratégias de VOLUME e adicionais baratos (R$ 10-15), NÃO upsell pesado.
+# REGRA DE ESCOLHA
+- Use OBRIGATORIAMENTE a "ESTRATÉGIA PRÉ-SELECIONADA PELO SISTEMA" indicada nos dados como sua estratégia principal. NÃO troque por outra.
+- O nome dessa estratégia DEVE aparecer literalmente no bloco "ESTRATÉGIA DE HOJE".
+- Se houver histórico, mencione brevemente como essa estratégia (ou similar) performou antes pra esse barbeiro.
 
 # FORMATO OBRIGATÓRIO (Markdown, 5 blocos, com emojis)
 
@@ -1747,25 +1836,22 @@ ${strategiesForPrompt}
 📊 LEITURA DO CENÁRIO
 • 3-4 bullets analisando: ticket vs loja, conversão produto, taxa extras, assinaturas/novos no mês. Destaque o MAIOR problema ou MAIOR oportunidade visível nos dados.
 
-🎯 ESTRATÉGIA DE HOJE: [NOME DA ESTRATÉGIA ESCOLHIDA]
-• 1 frase explicando POR QUE essa estratégia hoje (cite o dado que justifica: "porque é terça", "porque ticket está 20% abaixo da loja", etc).
-• 2-3 bullets aplicando a estratégia aos NÚMEROS REAIS do barbeiro (use o top serviço/produto dele, a agenda dele).
+🎯 ESTRATÉGIA DE HOJE: [NOME EXATO DA ESTRATÉGIA PRÉ-SELECIONADA]
+• 1 frase explicando POR QUE essa estratégia hoje (cite o dado que justifica).
+• Se houver histórico dessa estratégia, cite o resultado prévio em 1 frase.
+• 2-3 bullets aplicando a estratégia aos NÚMEROS REAIS (top serviço/produto, agenda dele).
 
 ⚠️ ARMADILHAS A EVITAR HOJE
-• 1-2 alertas específicos baseados em pontos cegos OU no perfil (ex: "não tenta vender produto premium hoje, sua conversão tá em X%").
+• 1-2 alertas específicos baseados em pontos cegos OU no perfil.
 
 ⚔️ MISSÃO TÁTICA (números exatos)
-• Conta matemática: "Pra fechar R$ X com Y clientes na agenda, ticket médio precisa ser R$ Z."
-• 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia escolhida (não use sempre "1 produto + 1 extra + 1 assinatura" — adapte!).
+• Conta matemática: "Pra fechar R$ X com Y clientes, ticket precisa ser R$ Z."
+• 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia.
 
 # REGRAS DURAS
 - USE APENAS os números fornecidos. NUNCA invente.
-- Bullets curtos. Sem parágrafos longos.
-- Trate o barbeiro pelo nome. Tom direto, parceiro técnico, gírias de barbearia OK.
-- Máximo 280 palavras.
-- Sem introdução, sem despedida — direto nos blocos.
-- A estratégia escolhida DEVE aparecer nominalmente no bloco "ESTRATÉGIA DE HOJE".
-- NUNCA escreva "consulte o catálogo" ou meta-comentários sobre como você escolheu — apenas execute.`;
+- Bullets curtos. Trate o barbeiro pelo nome. Tom direto, parceiro técnico.
+- Máximo 280 palavras. Sem introdução nem despedida.`;
 
         try {
           const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -1778,7 +1864,7 @@ ${strategiesForPrompt}
               model: "google/gemini-2.5-flash",
               messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nAnalise o cenário com calma, escolha a estratégia mais adequada do catálogo e gere o Plano de Guerra agora.` },
+                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nGere o Plano de Guerra agora aplicando a estratégia pré-selecionada.` },
               ],
               max_tokens: 800,
               temperature: 0.85,
@@ -1789,7 +1875,8 @@ ${strategiesForPrompt}
             const data = await response.json();
             const aiMessage = data.choices?.[0]?.message?.content;
             if (aiMessage && aiMessage.trim().length > 50) {
-              return new Response(JSON.stringify({ message: aiMessage, type: body.type, source: "ai" }), {
+              await persistExecution(aiMessage);
+              return new Response(JSON.stringify({ message: aiMessage, type: body.type, source: "ai", strategy_id: primaryStrategy.id, strategy_name: primaryStrategy.nome }), {
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             }
@@ -1801,8 +1888,30 @@ ${strategiesForPrompt}
         }
       }
 
+      // Persistência da execução escolhida (idempotente)
+      async function persistExecution(planText: string) {
+        try {
+          await supabase.from('war_plan_executions').upsert({
+            organization_id: organizationId,
+            barber_id: barberId,
+            date: todayDate,
+            strategy_id: primaryStrategy.id,
+            strategy_name: primaryStrategy.nome,
+            strategy_focus: primaryStrategy.foco,
+            clients_in_agenda: clientsInAgenda,
+            plan_text: planText,
+          }, { onConflict: 'barber_id,date' });
+          // Recalcula resultado de hoje (caso já tenham vendas registradas)
+          await supabase.rpc('recalc_war_plan_result', { p_barber_id: barberId, p_date: todayDate });
+        } catch (e) {
+          console.error('[WAR_PLAN] persist failed:', e);
+        }
+      }
+
       // Fallback determinístico
-      return new Response(JSON.stringify({ message: buildDeterministicPlan(), type: body.type, source: "rules_engine" }), {
+      const fallbackText = buildDeterministicPlan();
+      await persistExecution(fallbackText);
+      return new Response(JSON.stringify({ message: fallbackText, type: body.type, source: "rules_engine", strategy_id: primaryStrategy.id, strategy_name: primaryStrategy.nome }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
 

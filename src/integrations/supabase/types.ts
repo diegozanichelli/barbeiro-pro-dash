@@ -1234,6 +1234,75 @@ export type Database = {
           },
         ]
       }
+      war_plan_executions: {
+        Row: {
+          barber_id: string
+          clients_in_agenda: number | null
+          created_at: string
+          date: string
+          id: string
+          organization_id: string
+          plan_text: string | null
+          result_avg_ticket: number | null
+          result_calculated_at: string | null
+          result_clients: number | null
+          result_commission: number | null
+          result_extras_count: number | null
+          result_extras_ratio: number | null
+          result_products_count: number | null
+          result_revenue: number | null
+          result_vs_target_pct: number | null
+          strategy_focus: string | null
+          strategy_id: string
+          strategy_name: string
+          updated_at: string
+        }
+        Insert: {
+          barber_id: string
+          clients_in_agenda?: number | null
+          created_at?: string
+          date: string
+          id?: string
+          organization_id: string
+          plan_text?: string | null
+          result_avg_ticket?: number | null
+          result_calculated_at?: string | null
+          result_clients?: number | null
+          result_commission?: number | null
+          result_extras_count?: number | null
+          result_extras_ratio?: number | null
+          result_products_count?: number | null
+          result_revenue?: number | null
+          result_vs_target_pct?: number | null
+          strategy_focus?: string | null
+          strategy_id: string
+          strategy_name: string
+          updated_at?: string
+        }
+        Update: {
+          barber_id?: string
+          clients_in_agenda?: number | null
+          created_at?: string
+          date?: string
+          id?: string
+          organization_id?: string
+          plan_text?: string | null
+          result_avg_ticket?: number | null
+          result_calculated_at?: string | null
+          result_clients?: number | null
+          result_commission?: number | null
+          result_extras_count?: number | null
+          result_extras_ratio?: number | null
+          result_products_count?: number | null
+          result_revenue?: number | null
+          result_vs_target_pct?: number | null
+          strategy_focus?: string | null
+          strategy_id?: string
+          strategy_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       organizations_public: {
@@ -1335,6 +1404,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      recalc_war_plan_result: {
+        Args: { p_barber_id: string; p_date: string }
+        Returns: undefined
       }
     }
     Enums: {
