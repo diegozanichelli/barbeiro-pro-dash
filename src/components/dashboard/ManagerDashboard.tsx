@@ -14,8 +14,6 @@ import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
-import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
-import EarningsComparison from "./manager/EarningsComparison";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
 import AIUsageTracking from "./manager/AIUsageTracking";
@@ -180,17 +178,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             </TabsContent>
           )}
 
-          {hasSubscriptionModule && (
-            <>
-              <TabsContent value="subscription" className="mt-0">
-                <SubscriptionEarningsForm />
-              </TabsContent>
-
-              <TabsContent value="comparison" className="mt-0">
-                <EarningsComparison />
-              </TabsContent>
-            </>
-          )}
         </Tabs>
       </div>
     </div>

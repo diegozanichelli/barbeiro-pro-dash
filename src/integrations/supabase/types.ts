@@ -63,64 +63,6 @@ export type Database = {
           },
         ]
       }
-      barber_subscription_earnings: {
-        Row: {
-          amount: number
-          barber_id: string
-          created_at: string
-          id: string
-          month: number
-          organization_id: string
-          total_revenue: number
-          updated_at: string
-          year: number
-        }
-        Insert: {
-          amount?: number
-          barber_id: string
-          created_at?: string
-          id?: string
-          month: number
-          organization_id: string
-          total_revenue?: number
-          updated_at?: string
-          year: number
-        }
-        Update: {
-          amount?: number
-          barber_id?: string
-          created_at?: string
-          id?: string
-          month?: number
-          organization_id?: string
-          total_revenue?: number
-          updated_at?: string
-          year?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "barber_subscription_earnings_barber_id_fkey"
-            columns: ["barber_id"]
-            isOneToOne: false
-            referencedRelation: "barbers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "barber_subscription_earnings_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "barber_subscription_earnings_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations_public"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       barbers: {
         Row: {
           created_at: string
