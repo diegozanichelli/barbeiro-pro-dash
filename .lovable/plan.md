@@ -1,43 +1,114 @@
-# Testes de normalização de nome (busca insensível a acentos)
 
-## Objetivo
-Garantir, com testes automatizados, que "João", "Joao", "JOÃO", "joão " etc. sempre produzam a mesma chave de busca — e travar o contrato entre o frontend (autocomplete) e o banco (`clients.normalized_name`).
+# Apresentação Mensal — Reunião de Alta Performance
 
-## Estratégia
-A normalização hoje vive duplicada: o banco usa `lower(translate(btrim(name), ...))` na coluna `normalized_name`; o frontend usa `NFD + strip + lower` inline em `useClientAutocomplete.ts`. Para testar, vamos **extrair** a normalização do frontend para um util e cobri-la com testes unitários, mais um teste de paridade contra o resultado esperado do `translate` do banco.
+Botão novo na aba Relatórios que abre um seletor de mês e, em seguida, dispara um deck em tela cheia (1920×1080 escalado) com todos os números do mês, pronto para projetar na reunião do time. Os dados são puxados ao vivo do banco — nada de PowerPoint estático.
 
-## Mudanças
+## Onde fica
 
-### 1. Novo util: `src/lib/clientName.ts`
-Exporta `normalizeClientName(name: string): string` — implementação por `translate`-style (replace caractere-a-caractere usando o mesmo mapa do banco) seguida de `lower` + `btrim`. Usa o **mesmo mapa de pares** definido na migration (`ÁÀÂÃÄÅ...Çç...` → `AAAAAA...Cc...`) para garantir paridade 1:1 com a coluna gerada.
+- Novo item no grupo **Relatórios** do menu lateral: **"Apresentação Mensal"** (ícone Presentation).
+- Página dedicada com:
+  - Título + descrição do propósito
+  - Seletor de mês (padrão: mês atual)
+  - Seletor de unidade (todas / unidade específica)
+  - Card de cada slide com preview pequeno
+  - Botão grande **"▶ Iniciar Apresentação"** que entra em fullscreen
 
-### 2. Usar o util nos consumidores existentes
-- `src/hooks/useClientAutocomplete.ts`: substituir o NFD inline por `normalizeClientName(rawName)`.
-- `src/lib/clientRegistry.ts`: nada muda no fluxo (match é por telefone), mas opcionalmente expor `normalizeClientName` se o futuro precisar — fora de escopo.
+## Fluxo de uso
 
-### 3. Setup de testes (Vitest + Testing Library)
-- Adicionar devDeps: `vitest`, `@testing-library/jest-dom`, `@testing-library/react`, `jsdom`.
-- Criar `vitest.config.ts` no root.
-- Criar `src/test/setup.ts` com `@testing-library/jest-dom` e mock de `matchMedia`.
-- Adicionar `"vitest/globals"` em `tsconfig.app.json` → `compilerOptions.types`.
-- Script `"test": "vitest run"` no `package.json`.
+```text
+Relatórios → Apresentação Mensal
+        │
+        ▼
+  [Mês: Maio/2026 ▼]  [Unidade: Todas ▼]
+        │
+        ▼
+  Preview dos 14 slides
+        │
+        ▼
+  [▶ Iniciar Apresentação] → fullscreen
+        │
+        ▼
+  Setas ← → / Espaço navegam, Esc sai
+```
 
-### 4. Testes
-**`src/lib/clientName.test.ts`** — cobre o util:
-- "João", "Joao", "JOÃO", "  joão  ", "JoÃo" → todos resultam em `"joao"`.
-- Outros acentos PT: "Ágatha"/"Agatha", "André"/"Andre", "Conceição"/"Conceicao", "Müller"/"Muller", "Núñez"/"Nunez", "Ýasmin"/"Yasmin".
-- Caracteres especiais preservados (não viram acento): "Maria-José" → "maria-jose", "O'Brien" → "o'brien", "Ana & Bia" → "ana & bia".
-- Espaços extras: "  João  " e "João\t" → "joao".
-- Idempotência: `normalize(normalize(x)) === normalize(x)`.
+## Slides do deck (na ordem certa pra reunião)
 
-**`src/hooks/useClientAutocomplete.test.ts`** — confirma que o hook envia para o Supabase exatamente o valor normalizado:
-- Mock do `supabase.from(...).select(...).eq(...).ilike(...).limit(...)` para capturar o argumento de `ilike("normalized_name", ...)`.
-- Renderizar o hook (via `renderHook` de `@testing-library/react`) com `nameQuery="João"`, `"Joao"`, `"JOÃO"`, `"  joão  "` e verificar que todos chamam `ilike` com `"joao%"`.
-- Esperar o debounce de 250ms com `vi.useFakeTimers()`.
+Cada slide é uma "página" de 1920×1080 escalada pra caber no projetor, com tipografia grande, animação suave de entrada, dados ao vivo do mês escolhido.
 
-## Fora de escopo
-- Teste de integração real contra o banco (precisaria de credenciais em CI). A paridade fica garantida pelo mapa idêntico de caracteres entre util e migration; se algum dia divergir, basta atualizar o util e adicionar o caractere novo nas duas pontas.
-- Mudanças na coluna `normalized_name` — já está correta após a migração anterior.
+1. **Capa** — Logo da org + "Reunião de Resultados • Maio/2026" + data da reunião
+2. **Resumo executivo** — 4 KPIs gigantes: Faturamento, Comissão paga, Clientes atendidos, Ticket médio (com variação % vs mês anterior)
+3. **Metas batidas** — X de Y barbeiros bateram meta, barra de progresso, lista dos campeões
+4. **Ranking geral de barbeiros** — Top 10 por faturamento (com unidade e %meta)
+5. **Performance por unidade** — Card por unidade: faturamento, clientes, ticket médio, %meta consolidada
+6. **Clientes novos** — Total no mês, gráfico de barras por unidade, comparação com mês anterior
+7. **Conversão de novos em assinantes** — Funil: novos clientes → novas adesões → taxa % (com semáforo Elite/Regular/Crítico)
+8. **Assinaturas — saúde do MRR** — Novas adesões, renovações, upgrades, downgrades, delta de MRR, top motivos de downgrade
+9. **Ticket médio por unidade** — Comparativo + evolução semana a semana
+10. **Mix de receita** — Cortes básicos × extras × produtos (donut + valores)
+11. **Top 3 vendedores de extras e produtos** — Pódio com nome, qtd e R$
+12. **Dia mais forte do mês** — Data, faturamento, clientes, quem brilhou
+13. **Aprendizados & alertas** — Lista automática: barbeiros abaixo de 85% pacing, unidades com queda vs mês anterior, downgrades acima do normal
+14. **Próximos passos** — Slide editável com 3 bullets em branco que o gestor preenche antes da reunião (salvos por mês, em localStorage)
+15. **Encerramento** — "Vamos pra cima! 🚀" + KPI alvo do próximo mês (puxado das metas configuradas)
 
-## Como rodar
-`bunx vitest run` (ou via tool de testes do harness).
+## Detalhes técnicos
+
+### Novos arquivos
+
+- `src/components/dashboard/manager/presentation/MonthlyPresentation.tsx` — página com seletor + grade de previews + botão "Iniciar"
+- `src/components/dashboard/manager/presentation/PresentationDeck.tsx` — controlador fullscreen (Fullscreen API, setas, Esc, contador "3 / 15")
+- `src/components/dashboard/manager/presentation/ScaledSlide.tsx` — wrapper 1920×1080 com `transform: scale()` (mesmo padrão da skill de slides)
+- `src/components/dashboard/manager/presentation/slides/` — um arquivo por slide (`CoverSlide.tsx`, `KpiSlide.tsx`, `RankingSlide.tsx`, etc.)
+- `src/hooks/useMonthlyPresentationData.ts` — agrega tudo num único objeto consumido pelos slides
+
+### RPC nova (uma só, server-side, evita 15 round-trips)
+
+`get_monthly_presentation(p_month int, p_year int, p_unit_id uuid default null)` retornando `jsonb` com:
+- `kpis` (atual + mês anterior)
+- `goals_hit` (lista + total)
+- `barber_ranking` (top 10 com unit, revenue, % meta)
+- `units_performance` (array por unidade)
+- `new_clients` (total + por unidade + mês anterior)
+- `subscription_funnel` (reaproveita `get_subscription_intelligence`)
+- `subscription_health` (counts/revenue/MRR delta/downgrade reasons)
+- `revenue_mix` (basic/extra/products)
+- `top_extras_sellers`, `top_products_sellers`
+- `best_day` (data + métricas + barbeiro destaque)
+- `alerts` (barbeiros < 85% pacing, unidades em queda)
+- `next_month_target` (soma das metas configuradas)
+
+Tudo respeitando `get_user_organization(auth.uid())` e o filtro opcional de `p_unit_id`. `SECURITY DEFINER`, `STABLE`, `search_path = public`.
+
+### Slide notes do gestor (slide 14)
+
+Persistência em `localStorage` com chave `mtg-notes:{orgId}:{yyyy-mm}:{unitId|all}`. Sem alteração de schema. Se um dia quiser sincronizar entre dispositivos, vira tabela `meeting_notes` — fora de escopo agora.
+
+### Estilo
+
+- Reaproveita tokens do design system (`--primary`, `--accent`, `--success`, `--destructive`, `--gradient-card`)
+- Tipografia grande (escala 1.25x dentro de `.slide-content`, piso 20px)
+- Fundo escuro premium nos slides (combina com projetor em sala fechada)
+- Animação de entrada por slide (fade + slide-up suave, ~300ms)
+- Charts: Recharts já está no projeto (ver Evolution) — `BarChart`, `PieChart`, `LineChart`
+
+### Atalhos de teclado no modo apresentação
+
+- `→` / `Espaço` / `PageDown` → próximo
+- `←` / `PageUp` → anterior
+- `Home` / `End` → primeiro / último
+- `Esc` → sai do fullscreen
+- `G` → painel com grade de slides (clica e pula)
+
+### Acessibilidade & robustez
+
+- Botão "Sair" visível no canto se Fullscreen API falhar (Safari iOS)
+- Loading state enquanto a RPC roda; erro com retry
+- Indicador "M / N" e barra de progresso fina no rodapé
+- Cursor some após 3s de inatividade no modo fullscreen
+
+## Fora de escopo agora
+
+- Export para .pptx (você pode pedir depois — fica fácil porque cada slide já está isolado)
+- Anotações sincronizadas entre dispositivos
+- Compartilhar via link público
+- Comparativo trimestral / anual (só mensal por enquanto)
