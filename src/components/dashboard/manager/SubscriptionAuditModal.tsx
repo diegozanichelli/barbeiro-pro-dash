@@ -45,6 +45,7 @@ interface AuditTransaction {
   id: string;
   created_at: string;
   description: string | null;
+  client_name: string | null;
   item_name: string;
   price_sold: number;
   barber_id: string | null;
