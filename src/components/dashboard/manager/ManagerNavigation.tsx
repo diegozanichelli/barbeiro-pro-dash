@@ -16,6 +16,7 @@ import {
   Menu,
   Briefcase,
   FileText,
+  Presentation,
   DollarSign,
   Calculator,
   UserRound,
@@ -105,6 +106,7 @@ export default function ManagerNavigation({
 
 
   const relatoriosItems: NavItem[] = [
+    { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
     { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
     { id: "evolution", label: "Evolução", icon: TrendingUp },
     { id: "leaderboard", label: "Rankings", icon: Trophy },

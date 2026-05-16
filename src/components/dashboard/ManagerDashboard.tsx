@@ -25,6 +25,7 @@ import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
 import SendNotificationsButton from "./manager/SendNotificationsButton";
+import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
 
 interface ManagerDashboardProps {
   user: User;
@@ -158,6 +159,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="leaderboard" className="mt-0">
             <Leaderboard />
+          </TabsContent>
+
+          <TabsContent value="monthly-presentation" className="mt-0">
+            <MonthlyPresentation />
           </TabsContent>
 
           <TabsContent value="payroll" className="mt-0">
