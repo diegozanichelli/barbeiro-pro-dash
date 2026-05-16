@@ -1,114 +1,70 @@
+# Expansão da Apresentação Mensal — Novos Slides
 
-# Apresentação Mensal — Reunião de Alta Performance
+Adicionar 10 novos slides ao deck existente (`MonthlyPresentation`), expandindo o RPC `get_monthly_presentation` para entregar todos os dados em uma única chamada.
 
-Botão novo na aba Relatórios que abre um seletor de mês e, em seguida, dispara um deck em tela cheia (1920×1080 escalado) com todos os números do mês, pronto para projetar na reunião do time. Os dados são puxados ao vivo do banco — nada de PowerPoint estático.
+## Novos slides (ordem proposta)
 
-## Onde fica
+Inseridos entre os slides atuais para criar uma narrativa de **Visão Geral → Pessoas → Operação → Clientes → Assinaturas → Recordes**:
 
-- Novo item no grupo **Relatórios** do menu lateral: **"Apresentação Mensal"** (ícone Presentation).
-- Página dedicada com:
-  - Título + descrição do propósito
-  - Seletor de mês (padrão: mês atual)
-  - Seletor de unidade (todas / unidade específica)
-  - Card de cada slide com preview pequeno
-  - Botão grande **"▶ Iniciar Apresentação"** que entra em fullscreen
+1. **Evolução Individual** — tabela/cards comparando cada barbeiro: receita, ticket e clientes do mês vs. mês anterior, com % de variação e setas ↑↓. Destaca quem mais cresceu e quem mais caiu.
+2. **Heatmap Dia da Semana** — grid Seg–Dom mostrando receita média por dia da semana no mês, com cor proporcional. Identifica os dias mais fortes da unidade.
+3. **Comparativo M vs M-1** — 4 cards grandes (Receita, Clientes, Ticket Médio, Comissão) com valor atual, valor anterior e variação %.
+4. **Top Serviços & Produtos** — duas colunas: top 5 serviços e top 5 produtos mais vendidos (quantidade + receita).
+5. **Penetração de Extras** — % de clientes que levaram pelo menos 1 serviço extra no mês, com gauge visual + comparativo vs. mês anterior.
+6. **Ranking de Venda de Produtos** — pódio dos barbeiros que mais venderam produto (R$ + unidades).
+7. **Recepção Vendedora** — quanto a recepção (vendas sem `barber_id`) faturou, agrupado por unidade.
+8. **Clientes Novos vs. Recorrentes** — donut chart com proporção + número absoluto, comparativo M-1.
+9. **Frequência do Mês** — visitas médias por cliente ativo, total de visitas, clientes únicos atendidos.
+10. **Top Vendedores de Assinatura** — pódio dos 3 barbeiros que mais converteram novas adesões (qtd + MRR gerado).
+11. **Metas: Bateu vs. Não Bateu** — duas colunas (✅ Bateu / ❌ Não Bateu) listando barbeiros do **mês anterior** com % atingido. Reforça accountability.
+12. **Recordes do Mês** — 4 destaques: melhor dia da unidade (R$), maior ticket único, maior sequência de dias batendo meta, melhor barbeiro do mês.
 
-## Fluxo de uso
+## Mudanças técnicas
 
-```text
-Relatórios → Apresentação Mensal
-        │
-        ▼
-  [Mês: Maio/2026 ▼]  [Unidade: Todas ▼]
-        │
-        ▼
-  Preview dos 14 slides
-        │
-        ▼
-  [▶ Iniciar Apresentação] → fullscreen
-        │
-        ▼
-  Setas ← → / Espaço navegam, Esc sai
-```
+### 1. Migration — expandir RPC `get_monthly_presentation`
 
-## Slides do deck (na ordem certa pra reunião)
+Adicionar ao `jsonb` de retorno:
+- `individual_evolution[]` — `{barber_id, name, revenue_curr, revenue_prev, delta_pct, ticket_curr, ticket_prev, clients_curr, clients_prev}`
+- `weekday_heatmap[]` — 7 entradas: `{weekday (0-6), avg_revenue, total_revenue, days_count}`
+- `month_comparison` — `{revenue, clients, ticket, commission}` cada um com `{current, previous, delta_pct}`
+- `top_services[]` (5) — `{name, qty, revenue}`
+- `top_products[]` (5) — `{name, qty, revenue}`
+- `extras_penetration` — `{clients_with_extra, total_clients, pct_curr, pct_prev}`
+- `product_sellers_ranking[]` (3) — `{barber_name, qty, revenue}`
+- `reception_sales[]` — agrupado por unidade: `{unit_name, revenue, count}`
+- `clients_new_vs_returning` — `{new_curr, returning_curr, new_prev, returning_prev}` (usa flag `is_new_client` em `sale_transactions`)
+- `visit_frequency` — `{unique_clients, total_visits, avg_visits_per_client}`
+- `top_subscription_sellers[]` (3) — `{barber_name, new_subs_qty, mrr_generated}`
+- `previous_month_goals` — `{hit: [{barber, pct}], missed: [{barber, pct}]}` (mês anterior ao selecionado)
+- `monthly_records` — `{best_day: {date, revenue}, biggest_ticket: {value, barber, client}, best_streak: {barber, days}, top_barber: {name, revenue}}`
 
-Cada slide é uma "página" de 1920×1080 escalada pra caber no projetor, com tipografia grande, animação suave de entrada, dados ao vivo do mês escolhido.
+Manter `SECURITY DEFINER`, `STABLE`, `search_path = public`. Reutilizar CTEs do RPC atual quando possível.
 
-1. **Capa** — Logo da org + "Reunião de Resultados • Maio/2026" + data da reunião
-2. **Resumo executivo** — 4 KPIs gigantes: Faturamento, Comissão paga, Clientes atendidos, Ticket médio (com variação % vs mês anterior)
-3. **Metas batidas** — X de Y barbeiros bateram meta, barra de progresso, lista dos campeões
-4. **Ranking geral de barbeiros** — Top 10 por faturamento (com unidade e %meta)
-5. **Performance por unidade** — Card por unidade: faturamento, clientes, ticket médio, %meta consolidada
-6. **Clientes novos** — Total no mês, gráfico de barras por unidade, comparação com mês anterior
-7. **Conversão de novos em assinantes** — Funil: novos clientes → novas adesões → taxa % (com semáforo Elite/Regular/Crítico)
-8. **Assinaturas — saúde do MRR** — Novas adesões, renovações, upgrades, downgrades, delta de MRR, top motivos de downgrade
-9. **Ticket médio por unidade** — Comparativo + evolução semana a semana
-10. **Mix de receita** — Cortes básicos × extras × produtos (donut + valores)
-11. **Top 3 vendedores de extras e produtos** — Pódio com nome, qtd e R$
-12. **Dia mais forte do mês** — Data, faturamento, clientes, quem brilhou
-13. **Aprendizados & alertas** — Lista automática: barbeiros abaixo de 85% pacing, unidades com queda vs mês anterior, downgrades acima do normal
-14. **Próximos passos** — Slide editável com 3 bullets em branco que o gestor preenche antes da reunião (salvos por mês, em localStorage)
-15. **Encerramento** — "Vamos pra cima! 🚀" + KPI alvo do próximo mês (puxado das metas configuradas)
+### 2. Frontend — novos componentes de slide
 
-## Detalhes técnicos
+Criar em `src/components/dashboard/manager/presentation/slides/`:
+- `IndividualEvolutionSlide.tsx`
+- `WeekdayHeatmapSlide.tsx`
+- `MonthComparisonSlide.tsx`
+- `TopServicesProductsSlide.tsx`
+- `ExtrasPenetrationSlide.tsx`
+- `ProductSellersSlide.tsx`
+- `ReceptionSalesSlide.tsx`
+- `ClientsNewVsReturningSlide.tsx`
+- `VisitFrequencySlide.tsx`
+- `TopSubscriptionSellersSlide.tsx`
+- `PreviousMonthGoalsSlide.tsx`
+- `RecordsSlide.tsx`
 
-### Novos arquivos
+Cada slide usa `ScaledSlide` (1920×1080) e tokens semânticos do design system.
 
-- `src/components/dashboard/manager/presentation/MonthlyPresentation.tsx` — página com seletor + grade de previews + botão "Iniciar"
-- `src/components/dashboard/manager/presentation/PresentationDeck.tsx` — controlador fullscreen (Fullscreen API, setas, Esc, contador "3 / 15")
-- `src/components/dashboard/manager/presentation/ScaledSlide.tsx` — wrapper 1920×1080 com `transform: scale()` (mesmo padrão da skill de slides)
-- `src/components/dashboard/manager/presentation/slides/` — um arquivo por slide (`CoverSlide.tsx`, `KpiSlide.tsx`, `RankingSlide.tsx`, etc.)
-- `src/hooks/useMonthlyPresentationData.ts` — agrega tudo num único objeto consumido pelos slides
+### 3. Atualizações
 
-### RPC nova (uma só, server-side, evita 15 round-trips)
+- `useMonthlyPresentationData.ts` — estender types do retorno.
+- `MonthlyPresentation.tsx` e `PresentationDeck.tsx` — registrar os 12 novos slides na ordem definida acima (deck passa de 15 → 27 slides).
+- `types.ts` do Supabase será regenerado automaticamente após a migration.
 
-`get_monthly_presentation(p_month int, p_year int, p_unit_id uuid default null)` retornando `jsonb` com:
-- `kpis` (atual + mês anterior)
-- `goals_hit` (lista + total)
-- `barber_ranking` (top 10 com unit, revenue, % meta)
-- `units_performance` (array por unidade)
-- `new_clients` (total + por unidade + mês anterior)
-- `subscription_funnel` (reaproveita `get_subscription_intelligence`)
-- `subscription_health` (counts/revenue/MRR delta/downgrade reasons)
-- `revenue_mix` (basic/extra/products)
-- `top_extras_sellers`, `top_products_sellers`
-- `best_day` (data + métricas + barbeiro destaque)
-- `alerts` (barbeiros < 85% pacing, unidades em queda)
-- `next_month_target` (soma das metas configuradas)
-
-Tudo respeitando `get_user_organization(auth.uid())` e o filtro opcional de `p_unit_id`. `SECURITY DEFINER`, `STABLE`, `search_path = public`.
-
-### Slide notes do gestor (slide 14)
-
-Persistência em `localStorage` com chave `mtg-notes:{orgId}:{yyyy-mm}:{unitId|all}`. Sem alteração de schema. Se um dia quiser sincronizar entre dispositivos, vira tabela `meeting_notes` — fora de escopo agora.
-
-### Estilo
-
-- Reaproveita tokens do design system (`--primary`, `--accent`, `--success`, `--destructive`, `--gradient-card`)
-- Tipografia grande (escala 1.25x dentro de `.slide-content`, piso 20px)
-- Fundo escuro premium nos slides (combina com projetor em sala fechada)
-- Animação de entrada por slide (fade + slide-up suave, ~300ms)
-- Charts: Recharts já está no projeto (ver Evolution) — `BarChart`, `PieChart`, `LineChart`
-
-### Atalhos de teclado no modo apresentação
-
-- `→` / `Espaço` / `PageDown` → próximo
-- `←` / `PageUp` → anterior
-- `Home` / `End` → primeiro / último
-- `Esc` → sai do fullscreen
-- `G` → painel com grade de slides (clica e pula)
-
-### Acessibilidade & robustez
-
-- Botão "Sair" visível no canto se Fullscreen API falhar (Safari iOS)
-- Loading state enquanto a RPC roda; erro com retry
-- Indicador "M / N" e barra de progresso fina no rodapé
-- Cursor some após 3s de inatividade no modo fullscreen
-
-## Fora de escopo agora
-
-- Export para .pptx (você pode pedir depois — fica fácil porque cada slide já está isolado)
-- Anotações sincronizadas entre dispositivos
-- Compartilhar via link público
-- Comparativo trimestral / anual (só mensal por enquanto)
+## Fora de escopo
+- Exportar .pptx (já decidido em rodada anterior).
+- Slides adicionais não listados (churn, upgrades de assinatura, top clientes, pódio do campeonato, etc.) — ficam para próxima rodada se você quiser.
+- Edição visual dos slides existentes.
