@@ -1682,6 +1682,97 @@ IMPORTANTE:
         `- [${s.id}] ${s.nome} — QUANDO: ${s.quando}. FOCO: ${s.foco}`
       ).join('\n');
 
+      // ===== HISTÓRICO DE EXECUÇÕES (últimos 30 dias) =====
+      const thirtyAgoDate = (() => {
+        const d = getManausDate();
+        d.setDate(d.getDate() - 30);
+        return formatManausDate(d);
+      })();
+      const yesterdayDate = (() => {
+        const d = getManausDate();
+        d.setDate(d.getDate() - 1);
+        return formatManausDate(d);
+      })();
+
+      // Recalcula resultado de ontem antes de ler histórico (mantém freshness)
+      try {
+        await supabase.rpc('recalc_war_plan_result', {
+          p_barber_id: barberId,
+          p_date: yesterdayDate,
+        });
+      } catch (e) {
+        console.error('[WAR_PLAN] recalc yesterday failed:', e);
+      }
+
+      const { data: pastExecutions } = await supabase
+        .from('war_plan_executions')
+        .select('strategy_id, strategy_name, date, result_avg_ticket, result_clients, result_extras_ratio, result_commission, result_vs_target_pct, result_calculated_at')
+        .eq('barber_id', barberId)
+        .gte('date', thirtyAgoDate)
+        .lt('date', todayDate)
+        .not('result_calculated_at', 'is', null);
+
+      const strategyAgg: Record<string, { name: string; n: number; ticket: number; vsTarget: number; extras: number }> = {};
+      for (const e of pastExecutions || []) {
+        const k = e.strategy_id as string;
+        if (!strategyAgg[k]) strategyAgg[k] = { name: e.strategy_name, n: 0, ticket: 0, vsTarget: 0, extras: 0 };
+        strategyAgg[k].n++;
+        strategyAgg[k].ticket += Number(e.result_avg_ticket || 0);
+        strategyAgg[k].vsTarget += Number(e.result_vs_target_pct || 0);
+        strategyAgg[k].extras += Number(e.result_extras_ratio || 0) * 100;
+      }
+      const aggList = Object.entries(strategyAgg).map(([id, v]) => ({
+        id,
+        name: v.name,
+        n: v.n,
+        avgTicket: v.ticket / v.n,
+        avgVsTarget: v.vsTarget / v.n,
+        avgExtras: v.extras / v.n,
+      })).sort((a, b) => b.avgVsTarget - a.avgVsTarget);
+
+      const winnerStrategy = aggList[0];
+      const loserStrategy = aggList.length >= 2 ? aggList[aggList.length - 1] : null;
+      const historyBlock = aggList.length === 0
+        ? '(sem histórico ainda — primeira execução ou sem resultados consolidados)'
+        : aggList.slice(0, 5).map(s =>
+            `- ${s.name}: usada ${s.n}x · ticket médio R$ ${s.avgTicket.toFixed(2)} · ${s.avgVsTarget.toFixed(0)}% da meta diária · extras ${s.avgExtras.toFixed(0)}%`
+          ).join('\n');
+
+      // ===== ESCOLHA DETERMINÍSTICA DA ESTRATÉGIA PRINCIPAL =====
+      const pickPrimaryStrategy = () => {
+        const find = (id: string) => STRATEGIES.find(s => s.id === id)!;
+        // 1) Sprint final
+        if (daysRemaining <= 5 && goalPercent >= 80 && goalPercent < 100) return find('sprint_meta_proxima');
+        // 2) Dia da semana — regras fortes
+        if (todayDow === 1) return find('recuperacao_segunda');
+        if (todayDow === 4) return find('qualidade_quinta');
+        if (todayDow === 5 || todayDow === 6) return find('consolidacao_fim_semana');
+        if (todayDow === 2 || todayDow === 3) return find('volume_terca_quarta');
+        // 3) Agenda fraca
+        if (clientsInAgenda > 0 && clientsInAgenda <= 3) return find('resgate_inativos');
+        // 4) Gaps específicos
+        if (subscriptionsMonth < 3) return find('assinatura_focada');
+        if (newClientsMonth < 5) return find('captacao_novo_cliente');
+        if (historicalStats.extrasRatio < 30) return find('upsell_barba');
+        if (historicalStats.productConversionRate < 30) return find('produto_carro_chefe');
+        if (storeAvgTicket > 0 && ticketDelta < -10) return find('ticket_minimo_garantido');
+        if (blindServices.length + blindProducts.length > 0) return find('ataque_pontos_cegos');
+        if (gapDaily > dailyTarget * 0.6 && clientsInAgenda >= 3) return find('blitz_matinal');
+        return find('combo_express');
+      };
+
+      let primary = pickPrimaryStrategy();
+      // Se a estratégia "campeã" do histórico bate com regra do dia E está performando bem, mantém.
+      // Se a candidata principal vem performando mal (<70% vs meta em pelo menos 3 usos), troca pela campeã.
+      if (winnerStrategy && winnerStrategy.n >= 3 && winnerStrategy.avgVsTarget >= 90) {
+        const primaryHist = strategyAgg[primary.id];
+        if (primaryHist && primaryHist.n >= 3 && (primaryHist.vsTarget / primaryHist.n) < 70) {
+          const swap = STRATEGIES.find(s => s.id === winnerStrategy.id);
+          if (swap) primary = swap;
+        }
+      }
+      const primaryStrategy = primary;
+
       // Tentativa via IA (só se chave existir)
       if (LOVABLE_API_KEY) {
         const dataContext = `
