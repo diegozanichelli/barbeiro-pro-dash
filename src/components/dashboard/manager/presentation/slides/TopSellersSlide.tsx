@@ -5,7 +5,7 @@ import { Award } from "lucide-react";
 
 function Podium({ title, items }: { title: string; items: Array<{ name: string; qty: number; total: number }> }) {
   const colors = ["bg-gradient-to-b from-yellow-400/30 to-yellow-400/5 border-yellow-400/50", "bg-card/60 border-border", "bg-card/40 border-border/60"];
-  const heights = ["h-[480px]", "h-[400px]", "h-[340px]"];
+  const heights = ["h-[360px]", "h-[300px]", "h-[250px]"];
   const order = [items[1], items[0], items[2]]; // 2º, 1º, 3º
   const orderIdx = [1, 0, 2];
   return (
@@ -35,10 +35,10 @@ function Podium({ title, items }: { title: string; items: Array<{ name: string; 
 export default function TopSellersSlide({ data }: { data: MonthlyPresentationData }) {
   return (
     <ScaledSlide>
-      <div className="w-full h-full flex flex-col px-32 py-24">
-        <p className="text-2xl font-mono uppercase tracking-[0.3em] text-primary/80 mb-6">Pódio</p>
-        <h2 className="text-7xl font-bold mb-12">Top vendedores</h2>
-        <div className="grid grid-cols-2 gap-10 flex-1">
+      <div className="w-full h-full flex flex-col px-32 py-16">
+        <p className="text-2xl font-mono uppercase tracking-[0.3em] text-primary/80 mb-4">Pódio</p>
+        <h2 className="text-6xl font-bold mb-8">Top vendedores</h2>
+        <div className="grid grid-cols-2 gap-10 flex-1 min-h-0">
           <Podium title="Extras (escova, barba, sobrancelha…)" items={data.top_extras} />
           <Podium title="Produtos" items={data.top_products} />
         </div>
