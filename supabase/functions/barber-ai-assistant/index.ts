@@ -1427,6 +1427,7 @@ IMPORTANTE:
         monthlyGoal,
         soldThisMonth,
         dailyTarget,
+        dailyTargetCommission = 0,
         todayRevenue,
         daysRemaining,
         clientsInAgenda,
@@ -1527,7 +1528,8 @@ IMPORTANTE:
         lines.push(`🎯 BRIEFING DO DIA — ${barberName}`);
         lines.push("");
         lines.push(`📌 META`);
-        lines.push(`• Hoje: R$ ${todayRevenue.toFixed(2)} de R$ ${dailyTarget.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)})`);
+        lines.push(`• Comissão diária alvo: R$ ${dailyTargetCommission.toFixed(2)}`);
+        lines.push(`• Faturamento de hoje: R$ ${todayRevenue.toFixed(2)} de R$ ${dailyTarget.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)} em vendas)`);
         lines.push(`• Mês: ${goalPercent.toFixed(0)}% da meta — falta R$ ${monthGap.toFixed(2)} em ${daysRemaining} dia(s)`);
         lines.push("");
         lines.push(`📊 SEU PERFIL (últimos 30d)`);
@@ -1566,7 +1568,7 @@ IMPORTANTE:
         if (gapDaily <= 0) {
           lines.push(`• Meta diária já batida. Tudo que vier agora é bônus — foque em assinatura e produto.`);
         } else if (clientsInAgenda > 0) {
-          lines.push(`• Com ${clientsInAgenda} clientes na agenda, precisa de ticket médio R$ ${ticketNeeded.toFixed(2)} hoje.`);
+          lines.push(`• Com ${clientsInAgenda} clientes na agenda, precisa de ticket médio R$ ${ticketNeeded.toFixed(2)} em FATURAMENTO (não comissão) para fechar o gap de hoje.`);
           if (myAvgTicket > 0 && ticketNeeded > myAvgTicket * 1.1) {
             lines.push(`• Sua média é R$ ${myAvgTicket.toFixed(2)}. Vai precisar de upsell em pelo menos ${Math.ceil(clientsInAgenda / 2)} clientes.`);
           }
@@ -1778,16 +1780,17 @@ IMPORTANTE:
         const dataContext = `
 DADOS REAIS DO BARBEIRO (NÃO INVENTE NADA — use SOMENTE estes números):
 
-## METAS
-- Meta mensal: R$ ${monthlyGoal.toFixed(2)}
-- Vendido no mês: R$ ${soldThisMonth.toFixed(2)} (${goalPercent.toFixed(1)}%)
-- Falta no mês: R$ ${monthGap.toFixed(2)} em ${daysRemaining} dia(s)
-- Meta diária: R$ ${dailyTarget.toFixed(2)}
-- Já vendeu hoje: R$ ${todayRevenue.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)})
+## METAS (ATENÇÃO: existem DUAS metas — comissão é o que o barbeiro ganha; faturamento é o que ele precisa vender)
+- Meta MENSAL de comissão: R$ ${monthlyGoal.toFixed(2)}
+- Comissão acumulada no mês: R$ ${soldThisMonth.toFixed(2)} (${goalPercent.toFixed(1)}%)
+- Falta no mês: R$ ${monthGap.toFixed(2)} de comissão em ${daysRemaining} dia(s)
+- Meta DIÁRIA de COMISSÃO (o que ele leva pra casa): R$ ${dailyTargetCommission.toFixed(2)}
+- Meta DIÁRIA de FATURAMENTO (vendas brutas necessárias hoje): R$ ${dailyTarget.toFixed(2)}
+- Já FATUROU hoje: R$ ${todayRevenue.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)} em vendas)
 
 ## AGENDA DE HOJE
 - Clientes confirmados: ${clientsInAgenda}
-- Ticket médio necessário p/ bater meta: R$ ${ticketNeeded.toFixed(2)}
+- Ticket médio (FATURAMENTO) necessário p/ fechar a meta de hoje: R$ ${ticketNeeded.toFixed(2)}
 - Hoje é ${dayNames[todayDow]}
 
 ## PERFIL (últimos 30 dias - DADOS ITEMIZADOS REAIS)
@@ -1831,7 +1834,7 @@ ${strategiesForPrompt}
 # FORMATO OBRIGATÓRIO (Markdown, 5 blocos, com emojis)
 
 🎯 META DO DIA
-• Gap diário em R$ + % da meta mensal + dias restantes. Cite o dia da semana e se é dia historicamente fraco/forte.
+• SEMPRE mostre as DUAS metas: comissão diária (R$ que o barbeiro leva) e faturamento diário (R$ em vendas brutas). Use os números exatos do bloco METAS. Cite gap em R$, % da meta MENSAL de comissão, dias restantes, dia da semana e se é dia fraco/forte.
 
 📊 LEITURA DO CENÁRIO
 • 3-4 bullets analisando: ticket vs loja, conversão produto, taxa extras, assinaturas/novos no mês. Destaque o MAIOR problema ou MAIOR oportunidade visível nos dados.
@@ -1845,7 +1848,7 @@ ${strategiesForPrompt}
 • 1-2 alertas específicos baseados em pontos cegos OU no perfil.
 
 ⚔️ MISSÃO TÁTICA (números exatos)
-• Conta matemática: "Pra fechar R$ X com Y clientes, ticket precisa ser R$ Z."
+• Conta matemática SEMPRE em FATURAMENTO: "Pra faturar R$ X com Y clientes, ticket precisa ser R$ Z." NUNCA confunda com comissão.
 • 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia.
 
 # REGRAS DURAS
