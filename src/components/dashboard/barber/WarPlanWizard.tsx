@@ -73,6 +73,7 @@ export default function WarPlanWizard({
           monthlyGoal,
           soldThisMonth,
           dailyTarget,
+          dailyTargetCommission,
           todayRevenue,
           daysRemaining,
           clientsInAgenda: numClients,
