@@ -23,6 +23,17 @@ export function getTodayString(): string {
 }
 
 /**
+ * Formata um timestamp ISO/timestamptz no fuso de Manaus.
+ */
+export function formatManausDateTime(
+  value: string | Date,
+  pattern: string = "dd/MM HH:mm"
+): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return formatInTimeZone(date, TIMEZONE, pattern);
+}
+
+/**
  * Retorna o mês e ano atual no fuso horário de Manaus
  * @returns { month: number, year: number }
  */
