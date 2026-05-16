@@ -63,7 +63,19 @@ interface OrganizationStats {
   total_organizations: number;
   active_subscriptions: number;
   trial_subscriptions: number;
+  free_subscriptions: number;
   monthly_revenue: number;
+}
+
+type OrgFilter = "all" | "trial" | "gratuita";
+
+const TRIAL_DAYS = 7;
+
+function getTrialDaysLeft(createdAt: string): number {
+  const created = new Date(createdAt).getTime();
+  const expires = created + TRIAL_DAYS * 24 * 60 * 60 * 1000;
+  const diffMs = expires - Date.now();
+  return Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
 }
 
 interface Manager {
