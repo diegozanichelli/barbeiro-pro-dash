@@ -93,8 +93,10 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     total_organizations: 0,
     active_subscriptions: 0,
     trial_subscriptions: 0,
+    free_subscriptions: 0,
     monthly_revenue: 0,
   });
+  const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
