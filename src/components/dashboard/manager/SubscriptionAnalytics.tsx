@@ -8,12 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
-import { getManausDate } from "@/lib/dateUtils";
+import { formatManausDateTime, getManausDate } from "@/lib/dateUtils";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle, AlertCircle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
-import { toZonedTime } from "date-fns-tz";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
@@ -368,13 +367,12 @@ export default function SubscriptionAnalytics() {
                 <TableBody>
                   {transactions.map((t) => {
                     const action = t.subscription_action || "new";
-                    const zonedDate = toZonedTime(new Date(t.created_at), "America/Manaus");
                     const delta = (action === "upgrade" || action === "downgrade") && t.previous_price != null
                       ? Number(t.price_sold) - Number(t.previous_price)
                       : null;
                     return (
                       <TableRow key={t.id}>
-                        <TableCell className="text-xs whitespace-nowrap">{format(zonedDate, "dd/MM HH:mm")}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{formatManausDateTime(t.created_at, "dd/MM HH:mm")}</TableCell>
                         <TableCell className="text-sm">{t.unit_name || "—"}</TableCell>
                         <TableCell className="text-sm">{t.client_name || "—"}</TableCell>
                         <TableCell>

@@ -24,9 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pencil, Check, X, Loader2, Building2 } from "lucide-react";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatManausDateTime } from "@/lib/dateUtils";
 
-const TIMEZONE = "America/Manaus";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -380,7 +379,7 @@ export default function SubscriptionAuditModal({
                   return (
                     <TableRow key={tx.id} className="bg-muted/30">
                       <TableCell className="text-xs text-muted-foreground">
-                        {formatInTimeZone(new Date(tx.created_at), TIMEZONE, "HH:mm")}
+                        {formatManausDateTime(tx.created_at, "HH:mm")}
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="space-y-1">
@@ -477,7 +476,7 @@ export default function SubscriptionAuditModal({
                 return (
                   <TableRow key={tx.id}>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatInTimeZone(new Date(tx.created_at), TIMEZONE, "dd/MM HH:mm")}
+                      {formatManausDateTime(tx.created_at, "dd/MM HH:mm")}
                     </TableCell>
                     <TableCell className="text-sm font-medium">
                       <div className="flex flex-col gap-0.5">
