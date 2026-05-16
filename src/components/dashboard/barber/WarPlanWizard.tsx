@@ -51,7 +51,23 @@ export default function WarPlanWizard({
     }
   }, [open]);
 
+  // Validação: meta de faturamento DEVE ser maior que meta de comissão.
+  // Se vier 0 ou menor/igual à comissão, os campos foram trocados/estão errados.
+  const targetMismatch =
+    dailyTargetCommission > 0 &&
+    (dailyTarget <= 0 || dailyTarget < dailyTargetCommission);
+
   const generatePlan = async () => {
+    if (targetMismatch) {
+      setError(
+        "Meta de faturamento inválida (R$ " +
+          dailyTarget.toFixed(2) +
+          ") vs meta de comissão (R$ " +
+          dailyTargetCommission.toFixed(2) +
+          "). Peça ao gerente para revisar a meta mensal antes de gerar o plano."
+      );
+      return;
+    }
     const numClients = parseInt(clientsCount) || 0;
     setLoading(true);
     setError(null);
@@ -63,6 +79,7 @@ export default function WarPlanWizard({
         setLoading(false);
         return;
       }
+
 
       const { data, error: fnError } = await supabase.functions.invoke("barber-ai-assistant", {
         body: {
@@ -171,10 +188,20 @@ export default function WarPlanWizard({
               </div>
             )}
 
+            {targetMismatch && !error && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-400 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>
+                  Detectei inconsistência nas metas: faturamento R$ {dailyTarget.toFixed(2)} ≤ comissão R$ {dailyTargetCommission.toFixed(2)}.
+                  O gerente precisa revisar a meta mensal antes de gerar um plano confiável.
+                </span>
+              </div>
+            )}
+
             <Button
               className="w-full"
               onClick={generatePlan}
-              disabled={loading || clientsCount === ""}
+              disabled={loading || clientsCount === "" || targetMismatch}
             >
               {loading ? (
                 <>
