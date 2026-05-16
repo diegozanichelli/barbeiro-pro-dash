@@ -778,6 +778,41 @@ export default function LiveDashboard() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [units, managerTransactions]);
 
+  // Subscription sales ranking (today) — por barbeiro + recepção por unidade
+  const subscriptionRankingData = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; isReception: boolean; count: number; revenue: number }>();
+    managerTransactions.forEach((t) => {
+      if (t.item_type !== "subscription") return;
+      if (t.barber_id) {
+        const barber = barbers.find((b) => b.id === t.barber_id);
+        if (!barber) return;
+        const key = `b:${barber.id}`;
+        const existing = map.get(key) || { id: barber.id, name: barber.name, isReception: false, count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += Number(t.price_sold) || 0;
+        map.set(key, existing);
+      } else if (t.unit_id) {
+        const unit = units.find((u) => u.id === t.unit_id);
+        if (!unit) return;
+        const key = `r:${unit.id}`;
+        const existing = map.get(key) || { id: unit.id, name: `Recepção · ${unit.name}`, isReception: true, count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += Number(t.price_sold) || 0;
+        map.set(key, existing);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || b.revenue - a.revenue);
+  }, [managerTransactions, barbers, units]);
+
+  const subscriptionTotalCount = useMemo(
+    () => subscriptionRankingData.reduce((s, r) => s + r.count, 0),
+    [subscriptionRankingData]
+  );
+  const subscriptionTotalRevenue = useMemo(
+    () => subscriptionRankingData.reduce((s, r) => s + r.revenue, 0),
+    [subscriptionRankingData]
+  );
+
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
     const relevantBarbers = selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit);
