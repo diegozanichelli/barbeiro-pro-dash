@@ -406,6 +406,8 @@ export default function SubscriptionWizardModal({
         subscription_plan_id: selectedPlanId,
         subscription_action: subscriptionAction,
         downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
+        previous_plan_id: previousPlanId,
+        previous_price: previousPrice,
       } as any);
 
       if (error) throw error;
