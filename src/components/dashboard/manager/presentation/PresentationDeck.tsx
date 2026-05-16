@@ -4,16 +4,28 @@ import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Grid3x3 } from "lucide-react";
 import CoverSlide from "./slides/CoverSlide";
 import KpiSlide from "./slides/KpiSlide";
+import MonthComparisonSlide from "./slides/MonthComparisonSlide";
 import GoalsSlide from "./slides/GoalsSlide";
+import PreviousMonthGoalsSlide from "./slides/PreviousMonthGoalsSlide";
 import RankingSlide from "./slides/RankingSlide";
+import IndividualEvolutionSlide from "./slides/IndividualEvolutionSlide";
 import UnitsSlide from "./slides/UnitsSlide";
+import WeekdayHeatmapSlide from "./slides/WeekdayHeatmapSlide";
+import TopServicesProductsSlide from "./slides/TopServicesProductsSlide";
+import ExtrasPenetrationSlide from "./slides/ExtrasPenetrationSlide";
+import ProductSellersSlide from "./slides/ProductSellersSlide";
+import ReceptionSalesSlide from "./slides/ReceptionSalesSlide";
 import NewClientsSlide from "./slides/NewClientsSlide";
+import ClientsNewVsReturningSlide from "./slides/ClientsNewVsReturningSlide";
+import VisitFrequencySlide from "./slides/VisitFrequencySlide";
 import ConversionSlide from "./slides/ConversionSlide";
 import SubscriptionHealthSlide from "./slides/SubscriptionHealthSlide";
+import TopSubscriptionSellersSlide from "./slides/TopSubscriptionSellersSlide";
 import TicketByUnitSlide from "./slides/TicketByUnitSlide";
 import RevenueMixSlide from "./slides/RevenueMixSlide";
 import TopSellersSlide from "./slides/TopSellersSlide";
 import BestDaySlide from "./slides/BestDaySlide";
+import RecordsSlide from "./slides/RecordsSlide";
 import AlertsSlide from "./slides/AlertsSlide";
 import NextStepsSlide from "./slides/NextStepsSlide";
 import ClosingSlide from "./slides/ClosingSlide";
@@ -25,24 +37,40 @@ interface Props {
   onExit: () => void;
 }
 
-export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props) {
-  const slides = [
+export function buildSlides(data: MonthlyPresentationData, orgId: string, unitKey: string, editableNotes = false) {
+  return [
     { key: "cover", title: "Capa", el: <CoverSlide data={data} /> },
     { key: "kpis", title: "Resumo executivo", el: <KpiSlide data={data} /> },
+    { key: "month-comparison", title: "Mês vs Mês anterior", el: <MonthComparisonSlide data={data} /> },
     { key: "goals", title: "Metas batidas", el: <GoalsSlide data={data} /> },
+    { key: "prev-goals", title: "Bateu vs não bateu (mês anterior)", el: <PreviousMonthGoalsSlide data={data} /> },
     { key: "ranking", title: "Top 10 barbeiros", el: <RankingSlide data={data} /> },
+    { key: "evolution", title: "Evolução individual", el: <IndividualEvolutionSlide data={data} /> },
     { key: "units", title: "Por unidade", el: <UnitsSlide data={data} /> },
-    { key: "new-clients", title: "Clientes novos", el: <NewClientsSlide data={data} /> },
-    { key: "conversion", title: "Conversão", el: <ConversionSlide data={data} /> },
-    { key: "sub-health", title: "Saúde de assinaturas", el: <SubscriptionHealthSlide data={data} /> },
-    { key: "ticket", title: "Ticket médio", el: <TicketByUnitSlide data={data} /> },
+    { key: "weekday", title: "Heatmap dia da semana", el: <WeekdayHeatmapSlide data={data} /> },
+    { key: "ticket", title: "Ticket médio por unidade", el: <TicketByUnitSlide data={data} /> },
     { key: "mix", title: "Mix de receita", el: <RevenueMixSlide data={data} /> },
-    { key: "top-sellers", title: "Top vendedores", el: <TopSellersSlide data={data} /> },
+    { key: "top-services-products", title: "Top serviços & produtos", el: <TopServicesProductsSlide data={data} /> },
+    { key: "extras-penetration", title: "Penetração de extras", el: <ExtrasPenetrationSlide data={data} /> },
+    { key: "top-sellers", title: "Top vendedores (extras / produtos)", el: <TopSellersSlide data={data} /> },
+    { key: "product-sellers", title: "Ranking de venda de produtos", el: <ProductSellersSlide data={data} /> },
+    { key: "reception", title: "Recepção vendedora", el: <ReceptionSalesSlide data={data} /> },
+    { key: "new-clients", title: "Clientes novos", el: <NewClientsSlide data={data} /> },
+    { key: "new-vs-returning", title: "Novos vs Recorrentes", el: <ClientsNewVsReturningSlide data={data} /> },
+    { key: "frequency", title: "Frequência do mês", el: <VisitFrequencySlide data={data} /> },
+    { key: "conversion", title: "Conversão de novos em assinantes", el: <ConversionSlide data={data} /> },
+    { key: "sub-health", title: "Saúde de assinaturas", el: <SubscriptionHealthSlide data={data} /> },
+    { key: "top-sub-sellers", title: "Top vendedores de assinatura", el: <TopSubscriptionSellersSlide data={data} /> },
     { key: "best-day", title: "Dia mais forte", el: <BestDaySlide data={data} /> },
+    { key: "records", title: "Recordes do mês", el: <RecordsSlide data={data} /> },
     { key: "alerts", title: "Alertas", el: <AlertsSlide data={data} /> },
-    { key: "next-steps", title: "Próximos passos", el: <NextStepsSlide data={data} orgId={orgId} unitKey={unitKey} /> },
+    { key: "next-steps", title: "Próximos passos", el: <NextStepsSlide data={data} orgId={orgId} unitKey={unitKey} editable={editableNotes} /> },
     { key: "closing", title: "Encerramento", el: <ClosingSlide data={data} /> },
   ];
+}
+
+export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props) {
+  const slides = buildSlides(data, orgId, unitKey, false);
 
   const [idx, setIdx] = useState(0);
   const [showGrid, setShowGrid] = useState(false);
@@ -68,7 +96,6 @@ export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props
     return () => window.removeEventListener("keydown", onKey);
   }, [go, slides.length, onExit, showGrid]);
 
-  // Auto-hide cursor after 3s
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
     const reset = () => {
@@ -84,7 +111,6 @@ export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props
     };
   }, []);
 
-  // Try fullscreen on mount
   useEffect(() => {
     const el = document.documentElement;
     if (el.requestFullscreen) {
@@ -104,7 +130,6 @@ export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props
         {slides[idx].el}
       </div>
 
-      {/* Top controls */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2 transition-opacity" style={{ opacity: cursorVisible ? 1 : 0 }}>
         <Button variant="secondary" size="sm" onClick={() => setShowGrid(true)} title="Grade (G)">
           <Grid3x3 className="w-4 h-4 mr-2" /> Grade
@@ -114,7 +139,6 @@ export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props
         </Button>
       </div>
 
-      {/* Bottom nav */}
       <div className="absolute bottom-0 left-0 right-0 z-10">
         <div className="h-1 bg-secondary">
           <div className="h-full bg-primary transition-all" style={{ width: `${((idx + 1) / slides.length) * 100}%` }} />
@@ -132,7 +156,6 @@ export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props
         </div>
       </div>
 
-      {/* Slide grid */}
       {showGrid && (
         <div className="absolute inset-0 z-20 bg-background/95 backdrop-blur overflow-auto p-10">
           <div className="flex items-center justify-between mb-6">
