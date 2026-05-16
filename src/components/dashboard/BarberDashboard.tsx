@@ -913,18 +913,18 @@ const [todayProduction, setTodayProduction] = useState<{
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="live" className="flex items-center gap-1">
               <Radio className="w-3 h-3" />
-              Ao vivo
+              <span className="hidden sm:inline">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
+            <TabsTrigger value="strategies">Estratégias</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
             <TabsTrigger value="ai-tips" className="flex items-center gap-1">
-              <Sparkles className="w-3 h-3" />
-              <span className="hidden sm:inline">Dicas da IA</span>
-              <span className="sm:hidden">IA</span>
+              <Bot className="w-3 h-3" />
+              <span className="hidden sm:inline">IA</span>
             </TabsTrigger>
           </TabsList>
 
