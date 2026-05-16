@@ -9,22 +9,7 @@ import { useOrganization } from "@/hooks/useOrganization";
 import { useMonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
 import { getManausDate } from "@/lib/dateUtils";
 import { monthNamesPt } from "./slideHelpers";
-import PresentationDeck from "./PresentationDeck";
-import CoverSlide from "./slides/CoverSlide";
-import KpiSlide from "./slides/KpiSlide";
-import GoalsSlide from "./slides/GoalsSlide";
-import RankingSlide from "./slides/RankingSlide";
-import UnitsSlide from "./slides/UnitsSlide";
-import NewClientsSlide from "./slides/NewClientsSlide";
-import ConversionSlide from "./slides/ConversionSlide";
-import SubscriptionHealthSlide from "./slides/SubscriptionHealthSlide";
-import TicketByUnitSlide from "./slides/TicketByUnitSlide";
-import RevenueMixSlide from "./slides/RevenueMixSlide";
-import TopSellersSlide from "./slides/TopSellersSlide";
-import BestDaySlide from "./slides/BestDaySlide";
-import AlertsSlide from "./slides/AlertsSlide";
-import NextStepsSlide from "./slides/NextStepsSlide";
-import ClosingSlide from "./slides/ClosingSlide";
+import PresentationDeck, { buildSlides } from "./PresentationDeck";
 
 interface Unit { id: string; name: string; }
 
@@ -54,23 +39,7 @@ export default function MonthlyPresentation() {
 
   const previewSlides = useMemo(() => {
     if (!data) return [];
-    return [
-      { key: "cover", title: "Capa", el: <CoverSlide data={data} /> },
-      { key: "kpis", title: "Resumo executivo", el: <KpiSlide data={data} /> },
-      { key: "goals", title: "Metas batidas", el: <GoalsSlide data={data} /> },
-      { key: "ranking", title: "Top 10 barbeiros", el: <RankingSlide data={data} /> },
-      { key: "units", title: "Por unidade", el: <UnitsSlide data={data} /> },
-      { key: "new-clients", title: "Clientes novos", el: <NewClientsSlide data={data} /> },
-      { key: "conversion", title: "Conversão", el: <ConversionSlide data={data} /> },
-      { key: "sub-health", title: "Saúde de assinaturas", el: <SubscriptionHealthSlide data={data} /> },
-      { key: "ticket", title: "Ticket médio por unidade", el: <TicketByUnitSlide data={data} /> },
-      { key: "mix", title: "Mix de receita", el: <RevenueMixSlide data={data} /> },
-      { key: "top-sellers", title: "Top vendedores", el: <TopSellersSlide data={data} /> },
-      { key: "best-day", title: "Dia mais forte", el: <BestDaySlide data={data} /> },
-      { key: "alerts", title: "Alertas", el: <AlertsSlide data={data} /> },
-      { key: "next-steps", title: "Próximos passos (editável)", el: <NextStepsSlide data={data} orgId={organizationId ?? ""} unitKey={unitId} editable /> },
-      { key: "closing", title: "Encerramento", el: <ClosingSlide data={data} /> },
-    ];
+    return buildSlides(data, organizationId ?? "", unitId, true);
   }, [data, organizationId, unitId]);
 
   if (presenting && data) {
