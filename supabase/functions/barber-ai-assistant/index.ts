@@ -1568,7 +1568,7 @@ IMPORTANTE:
         if (gapDaily <= 0) {
           lines.push(`• Meta diária já batida. Tudo que vier agora é bônus — foque em assinatura e produto.`);
         } else if (clientsInAgenda > 0) {
-          lines.push(`• Com ${clientsInAgenda} clientes na agenda, precisa de ticket médio R$ ${ticketNeeded.toFixed(2)} hoje.`);
+          lines.push(`• Com ${clientsInAgenda} clientes na agenda, precisa de ticket médio R$ ${ticketNeeded.toFixed(2)} em FATURAMENTO (não comissão) para fechar o gap de hoje.`);
           if (myAvgTicket > 0 && ticketNeeded > myAvgTicket * 1.1) {
             lines.push(`• Sua média é R$ ${myAvgTicket.toFixed(2)}. Vai precisar de upsell em pelo menos ${Math.ceil(clientsInAgenda / 2)} clientes.`);
           }
