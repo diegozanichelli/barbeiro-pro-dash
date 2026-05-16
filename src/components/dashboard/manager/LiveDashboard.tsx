@@ -1538,6 +1538,9 @@ export default function LiveDashboard() {
                     </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
             {/* Ranking ASSINATURAS — prioridade máxima do negócio */}
             <Card className="overflow-hidden border-2 border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 backdrop-blur-sm shadow-[0_0_20px_hsl(38_92%_50%/0.15)]">
               <CardHeader className="pb-2 pt-4 px-4">
