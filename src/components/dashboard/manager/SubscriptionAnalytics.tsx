@@ -62,6 +62,8 @@ interface IntelPayload {
   counts: { new: number; renew: number; upgrade: number; downgrade: number };
   revenue: { new: number; renew: number; upgrade: number; downgrade: number };
   mrr_delta: number;
+  mrr_delta_known_count?: number;
+  mrr_delta_unknown_count?: number;
   downgrade_reasons: { name: string; value: number }[];
   total_new_clients: number;
   new_subs_to_new: number;
