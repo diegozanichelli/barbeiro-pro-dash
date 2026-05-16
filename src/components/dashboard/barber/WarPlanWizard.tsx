@@ -51,7 +51,23 @@ export default function WarPlanWizard({
     }
   }, [open]);
 
+  // Validação: meta de faturamento DEVE ser maior que meta de comissão.
+  // Se vier 0 ou menor/igual à comissão, os campos foram trocados/estão errados.
+  const targetMismatch =
+    dailyTargetCommission > 0 &&
+    (dailyTarget <= 0 || dailyTarget < dailyTargetCommission);
+
   const generatePlan = async () => {
+    if (targetMismatch) {
+      setError(
+        "Meta de faturamento inválida (R$ " +
+          dailyTarget.toFixed(2) +
+          ") vs meta de comissão (R$ " +
+          dailyTargetCommission.toFixed(2) +
+          "). Peça ao gerente para revisar a meta mensal antes de gerar o plano."
+      );
+      return;
+    }
     const numClients = parseInt(clientsCount) || 0;
     setLoading(true);
     setError(null);
@@ -63,6 +79,7 @@ export default function WarPlanWizard({
         setLoading(false);
         return;
       }
+
 
       const { data, error: fnError } = await supabase.functions.invoke("barber-ai-assistant", {
         body: {
