@@ -1834,7 +1834,7 @@ ${strategiesForPrompt}
 # FORMATO OBRIGATÓRIO (Markdown, 5 blocos, com emojis)
 
 🎯 META DO DIA
-• Gap diário em R$ + % da meta mensal + dias restantes. Cite o dia da semana e se é dia historicamente fraco/forte.
+• SEMPRE mostre as DUAS metas: comissão diária (R$ que o barbeiro leva) e faturamento diário (R$ em vendas brutas). Use os números exatos do bloco METAS. Cite gap em R$, % da meta MENSAL de comissão, dias restantes, dia da semana e se é dia fraco/forte.
 
 📊 LEITURA DO CENÁRIO
 • 3-4 bullets analisando: ticket vs loja, conversão produto, taxa extras, assinaturas/novos no mês. Destaque o MAIOR problema ou MAIOR oportunidade visível nos dados.
