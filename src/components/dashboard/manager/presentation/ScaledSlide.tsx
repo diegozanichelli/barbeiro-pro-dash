@@ -36,7 +36,7 @@ export default function ScaledSlide({ children, className }: ScaledSlideProps) {
     <div
       ref={containerRef}
       className={cn(
-        "slide-content absolute left-1/2 top-1/2 origin-center bg-gradient-to-br from-background via-background to-card text-foreground",
+        "slide-content absolute left-1/2 top-1/2 origin-center overflow-hidden bg-gradient-to-br from-background via-background to-card text-foreground",
         className
       )}
       style={{
