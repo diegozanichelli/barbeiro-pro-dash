@@ -1,80 +1,97 @@
 ## Objetivo
+Auditar a aba **Inteligência de Assinaturas** (`SubscriptionAnalytics.tsx`) — não corrigir ainda. Mapear inconsistências na arquitetura e no fluxo de dados, comparando com as outras 2 abas do trio (Conversão por Barbeiro, Vendas da Recepção) e com `SubscriptionsTracking`.
 
-Registrar **qual estratégia do Plano de Guerra** foi usada em cada dia por cada barbeiro, junto com o **resultado real** (ticket médio, volume de clientes, % de extras) para comparar e refinar as próximas escolhas.
+## Achados (ordenados por gravidade)
 
-## Como vai funcionar
+### 1. Janela temporal usa fuso do navegador, não Manaus  [ALTO]
+```ts
+const refDate = new Date(selectedYear, selectedMonth, 1);
+const start = startOfMonth(refDate).toISOString();
+const end   = endOfMonth(refDate).toISOString();
+```
+- `new Date(y,m,1)` cria a meia-noite no fuso **do browser**, depois `.toISOString()` converte para UTC.
+- Resultado: para usuários fora de America/Manaus (ou DST), transações da virada de mês caem na aba errada.
+- Quebra a regra Core do projeto: usar `getManausDate` + datas puras `YYYY-MM-DD`. As outras abas (`SubscriptionsTracking`, `SubscriptionPerformanceReport`) já seguem o padrão correto — esta aba é a única destoante.
 
-1. Quando o barbeiro gera o Plano de Guerra de manhã, a edge function já escolhe uma estratégia (ex: "Volume Inteligente Ter/Qua"). Hoje isso só vai pro texto. Vamos **persistir** o `strategy_id` + `strategy_name` no momento da geração.
-2. No fim do dia (ou ao abrir o dia seguinte), um job calcula o **resultado fechado** daquele dia daquela estratégia: ticket médio, nº clientes, % conversão de produto, % conversão de extra, comissão.
-3. O barbeiro vê uma nova aba/seção **"Histórico de Estratégias"** com tabela: Data · Estratégia · Clientes · Ticket · Extras % · Comissão · vs Meta. Permite filtrar por estratégia e ver qual rendeu mais pra ele.
-4. A IA, na próxima geração, lê os últimos 30d desse histórico e dá preferência às estratégias que **historicamente funcionaram** pra esse barbeiro (e evita as fracas), ainda respeitando o dia da semana.
+### 2. Filtro `source='manager'` cria divergência entre abas  [ALTO]
+- `SubscriptionAnalytics` filtra `.eq('source','manager')` nas duas queries (subs e novos clientes).
+- `SubscriptionsTracking` (aba "Assinaturas por Barbeiro") **não filtra** `source`.
+- Consequência: o total mensal de uma aba não bate com a outra. Qualquer registro legado `source='barber'` some apenas aqui.
+- Memória do projeto diz "barber-readonly-app", mas dados históricos antes do lockdown existem e ficam invisíveis somente nesta aba.
 
-## Mudanças técnicas
+### 3. Funil de Conversão pode passar de 100% / contar errado  [ALTO]
+```ts
+const newSubs = transactions.filter(t => t.subscription_action==='new' && t.is_new_client).length;
+const totalNewClients = uniquePhones.size; // só conta phones != null
+const conversionRate = newSubs / totalNewClients;
+```
+- **Numerador** inclui assinaturas `is_new_client=true` mesmo **sem `mobile_phone`** (dados legados).
+- **Denominador** descarta linhas sem `mobile_phone`.
+- → `newSubs > totalNewClients` é matematicamente possível: taxa > 100%.
+- Além disso, o conceito "cliente novo" é definido pelo flag transacional, não pela primeira ocorrência na tabela `clients`. O mesmo celular pode ser marcado `is_new_client=true` em meses diferentes (erro de operação) e inflar o denominador.
 
-### 1. Nova tabela `war_plan_executions`
+### 4. Falta filtro por unidade  [MÉDIO]
+- Todos os outros relatórios de assinatura têm seletor de unidade (`SubscriptionsTracking`, `SubscriptionPerformanceReport`, `ReceptionPerformanceReport`).
+- Esta aba mostra agregado da organização inteira sem opção de filtrar → gestor multi-unidade não consegue analisar por loja.
+- Coluna "Unidade" aparece na tabela mas não é filtrável; e fica "—" para vendas de recepção (ver achado 7).
+
+### 5. Sem agregação server-side: viola regra >1000 rows  [MÉDIO]
+- Query traz **todas as linhas** de `sale_transactions` do mês (com 3 joins) para agregar no front.
+- Regra do projeto: aggregations >1000 rows devem ir para RPC (ex.: `get_subscription_intelligence_stats`).
+- Em orgs maduras isso quebra silenciosamente no limite de 1000 do PostgREST → métricas subestimadas sem aviso.
+
+### 6. Sem registro do plano anterior em upgrade/downgrade  [MÉDIO — arquitetura]
+- `subscription_action='upgrade'|'downgrade'` é gravado, mas a tabela não tem `previous_plan_id` nem `previous_price`.
+- Impossível calcular delta real de MRR (Δ receita por migração).
+- "Motivos de Downgrade" é texto livre (`downgrade_reason`) sem dicionário/enum → gráfico de pizza vai fragmentar em variações de digitação.
+
+### 7. `unit_id` ausente para vendas de recepção  [MÉDIO]
+- Trigger `fill_sale_transaction_unit_id` popula `unit_id` a partir de `barbers.unit_id`.
+- Vendas da recepção têm `barber_id=NULL` → `unit_id` fica NULL → coluna "Unidade" mostra "—".
+- O `SubscriptionWizardModal` precisaria forçar `unit_id` explícito para recepção. Hoje a granularidade por unidade da Inteligência está incompleta.
+
+### 8. Snapshot do "mês corrente" congela ao montar  [BAIXO]
+```ts
+const manausNow = useMemo(() => getManausDate(), []);
+const [selectedMonth] = useState(manausNow.getMonth());
+```
+- Se a página fica aberta passando da virada de mês, o select continua no mês antigo.
+
+### 9. Edição via modal pode "sumir" a linha  [BAIXO — UX]
+- `SubscriptionEditModal.onSaved → fetchData`. Se o gestor mudar `source` para 'barber' ou mover de mês, a transação desaparece da tabela sem aviso.
+
+### 10. Estados de loading parciais  [BAIXO]
+- `Promise.all` de duas queries com `setLoading(false)` apenas no fim — OK. Mas erros (`subRes.error`) são silenciosamente ignorados: nada é mostrado ao usuário se a query falhar.
+
+## Mapa do fluxo atual
 
 ```text
-id                uuid pk
-organization_id   uuid not null
-barber_id         uuid not null
-date              date not null
-strategy_id       text not null     -- ex: 'volume_inteligente'
-strategy_name     text not null     -- ex: 'Volume Inteligente (Ter/Qua)'
-strategy_focus    text              -- campo 'foco' do catálogo
-clients_in_agenda int               -- o que o barbeiro digitou no wizard
-plan_text         text              -- briefing completo gerado
--- resultado (preenchido depois):
-result_clients         int
-result_revenue         numeric
-result_avg_ticket      numeric
-result_extras_count    int
-result_extras_ratio    numeric      -- 0..1
-result_products_count  int
-result_commission      numeric
-result_vs_target_pct   numeric      -- comissão do dia / meta diária
-result_calculated_at   timestamptz
-created_at        timestamptz default now()
-updated_at        timestamptz default now()
+SubscriptionAnalytics (mount)
+  └─ fetchData()
+       ├─ Q1: sale_transactions WHERE item_type='subscription' AND source='manager'
+       │       AND created_at BETWEEN [browser-TZ start] AND [browser-TZ end]
+       │       JOIN barbers, subscription_plans, units
+       │       ↳ usa: counts/revenue por action, downgradeData, tabela, numerador funil
+       │
+       └─ Q2: sale_transactions WHERE is_new_client=true AND source='manager'
+               SELECT mobile_phone
+               ↳ usa: Set(phones).size = denominador funil
 
-unique (barber_id, date)
+Divergências vs outras abas:
+  - SubscriptionsTracking → não filtra source, usa dateUtils Manaus ✅
+  - SubscriptionPerformanceReport → filtra unidade, lógica "estrita vs penetração" ✅
+  - SubscriptionAnalytics → filtra source='manager', sem unidade, TZ navegador ❌
 ```
 
-RLS: barbeiro lê o seu; manager/super_admin lê da org; insert via edge function (service role).
+## Próximos passos sugeridos (não executar agora)
 
-### 2. Edge function `barber-ai-assistant` (handler `war_plan`)
-- Após escolher a estratégia, faz `upsert` em `war_plan_executions` com `strategy_id`, `strategy_name`, `clients_in_agenda`, `plan_text`. Sem resultado ainda.
-- Antes de pedir pra IA, lê **últimos 30 dias** de `war_plan_executions` desse barbeiro com `result_calculated_at not null` e monta um bloco no prompt: *"Histórico do barbeiro: estratégia X teve ticket médio Y vs meta Z em N dias; estratégia W ficou abaixo. Priorize as que funcionaram."* Isso vira o critério de seleção.
+Em ordem de prioridade caso o usuário queira corrigir:
+1. Padronizar janela temporal com `getManausDate` + strings `YYYY-MM-DD` (achado 1).
+2. Alinhar política de `source`: ou todas as 4 abas filtram `manager`, ou nenhuma — definir e documentar (achado 2).
+3. Recalcular funil garantindo `newSubs ≤ totalNewClients` (filtrar numerador por `mobile_phone NOT NULL`, ou mudar denominador para contar adesões, não oportunidades) (achado 3).
+4. Adicionar filtro por unidade igual às outras abas (achado 4).
+5. Migrar agregações para RPC `get_subscription_intelligence` (achado 5).
+6. Avaliar adicionar colunas `previous_plan_id` / `previous_price` para upgrades/downgrades (achado 6).
+7. Forçar `unit_id` no Wizard para vendas de recepção (achado 7).
 
-### 3. Nova RPC `recalc_war_plan_result(p_barber_id uuid, p_date date)`
-Calcula a partir de `sale_transactions` + `daily_productions` do dia:
-- `clients`, `revenue`, `avg_ticket`, `extras_count`, `extras_ratio`, `products_count`, `commission`, `vs_target_pct` (usa `monthly_goals` / `work_days`).
-- Atualiza a linha em `war_plan_executions`. Idempotente.
-
-### 4. Trigger `after insert/update/delete on sale_transactions`
-Chama `recalc_war_plan_result(barber_id, date)` quando há linha em `war_plan_executions` pra esse par. Mantém resultado sempre fresco. (Alternativa simples: rodar a RPC no carregamento da tela do barbeiro do dia seguinte — menos código, mesma UX.)
-
-### 5. Frontend
-
-**`WarPlanWizard.tsx`** — sem mudança de UI. Só agora a edge function persiste a execução.
-
-**Novo componente `StrategyHistoryCard.tsx`** (em `src/components/dashboard/barber/`):
-- Tabela das últimas 30 execuções: Data · Estratégia (badge) · Clientes · Ticket · Extras% · Comissão · vs Meta (verde/vermelho).
-- Bloco resumo no topo: "Sua estratégia campeã: **X** — ticket médio R$ Y em N dias" e "Mais fraca: **Z**".
-- Filtro por estratégia.
-
-**`BarberDashboard.tsx`** — adiciona o `StrategyHistoryCard` numa nova aba "Estratégias" ou abaixo do `WarPlanCard`.
-
-## Arquivos afetados
-- `supabase/migrations/...` — nova tabela + RPC + trigger + RLS
-- `supabase/functions/barber-ai-assistant/index.ts` — persistir execução, ler histórico no prompt
-- `src/components/dashboard/barber/StrategyHistoryCard.tsx` — novo
-- `src/components/dashboard/BarberDashboard.tsx` — incluir o card
-
-## O que NÃO muda
-- Catálogo das 14 estratégias (já existe na edge).
-- `WarPlanCard`, cache de 4h em `daily_productions.coach_message`, fluxo do wizard.
-- Schema de vendas/produções.
-
-## Decisão pendente
-
-Quer que o resultado seja recalculado **automaticamente via trigger** em `sale_transactions` (mais "vivo", mais código SQL) ou **on-demand** quando o barbeiro abrir a tela no dia seguinte (mais simples, suficiente pra comparar)? Recomendo on-demand pra começar.
+Quer que eu detalhe planos de correção para algum desses itens específicos?
