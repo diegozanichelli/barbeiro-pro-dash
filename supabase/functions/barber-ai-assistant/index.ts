@@ -1780,16 +1780,17 @@ IMPORTANTE:
         const dataContext = `
 DADOS REAIS DO BARBEIRO (NÃO INVENTE NADA — use SOMENTE estes números):
 
-## METAS
-- Meta mensal: R$ ${monthlyGoal.toFixed(2)}
-- Vendido no mês: R$ ${soldThisMonth.toFixed(2)} (${goalPercent.toFixed(1)}%)
-- Falta no mês: R$ ${monthGap.toFixed(2)} em ${daysRemaining} dia(s)
-- Meta diária: R$ ${dailyTarget.toFixed(2)}
-- Já vendeu hoje: R$ ${todayRevenue.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)})
+## METAS (ATENÇÃO: existem DUAS metas — comissão é o que o barbeiro ganha; faturamento é o que ele precisa vender)
+- Meta MENSAL de comissão: R$ ${monthlyGoal.toFixed(2)}
+- Comissão acumulada no mês: R$ ${soldThisMonth.toFixed(2)} (${goalPercent.toFixed(1)}%)
+- Falta no mês: R$ ${monthGap.toFixed(2)} de comissão em ${daysRemaining} dia(s)
+- Meta DIÁRIA de COMISSÃO (o que ele leva pra casa): R$ ${dailyTargetCommission.toFixed(2)}
+- Meta DIÁRIA de FATURAMENTO (vendas brutas necessárias hoje): R$ ${dailyTarget.toFixed(2)}
+- Já FATUROU hoje: R$ ${todayRevenue.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)} em vendas)
 
 ## AGENDA DE HOJE
 - Clientes confirmados: ${clientsInAgenda}
-- Ticket médio necessário p/ bater meta: R$ ${ticketNeeded.toFixed(2)}
+- Ticket médio (FATURAMENTO) necessário p/ fechar a meta de hoje: R$ ${ticketNeeded.toFixed(2)}
 - Hoje é ${dayNames[todayDow]}
 
 ## PERFIL (últimos 30 dias - DADOS ITEMIZADOS REAIS)
