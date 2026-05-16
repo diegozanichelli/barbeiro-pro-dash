@@ -178,17 +178,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             </TabsContent>
           )}
 
-          {hasSubscriptionModule && (
-            <>
-              <TabsContent value="subscription" className="mt-0">
-                <SubscriptionEarningsForm />
-              </TabsContent>
-
-              <TabsContent value="comparison" className="mt-0">
-                <EarningsComparison />
-              </TabsContent>
-            </>
-          )}
         </Tabs>
       </div>
     </div>
