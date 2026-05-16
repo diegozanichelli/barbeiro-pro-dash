@@ -384,7 +384,7 @@ export default function SubscriptionAuditModal({
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="space-y-1">
-                          <div>{tx.description || "—"}</div>
+                          <div>{tx.client_name || tx.description || "—"}</div>
                           <Input
                             value={editPhone}
                             onChange={(e) => setEditPhone(formatPhone(e.target.value))}
