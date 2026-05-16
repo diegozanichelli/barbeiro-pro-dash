@@ -1480,28 +1480,28 @@ export default function LiveDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-3 pb-3 space-y-2">
-                {/* Hoje + Este Mês */}
+                {/* Hoje (Total) + Este Mês */}
                 <div className="grid grid-cols-2 gap-1.5">
                   <div className={`rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-2 transition-all duration-500 ${
                     isGlowing && isViewingToday ? "animate-glow shadow-[0_0_20px_hsl(38_92%_50%/0.5)]" : ""
                   }`}>
                     <div className="flex items-center gap-1 mb-0.5">
                       <span className="text-[10px]">📅</span>
-                      <p className="text-[9px] text-primary font-bold uppercase">HOJE</p>
+                      <p className="text-[9px] text-primary font-bold uppercase">TOTAL HOJE</p>
                     </div>
                     <motion.p
                       className="text-sm font-extrabold text-primary leading-tight truncate"
-                      key={totalRevenue}
+                      key={totalRevenue + subscriptionTotalRevenue}
                       initial={{ scale: 1.05, opacity: 0.7 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ type: "spring", stiffness: 300 }}
                     >
-                      {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      {(totalRevenue + subscriptionTotalRevenue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </motion.p>
                     <div className="flex items-center gap-1 mt-0.5">
                       <p className="text-[9px] text-muted-foreground">{totalClientsToday} atd</p>
                       {revenueComparison && (
-                        <span className={`text-[9px] font-bold ${revenueComparison.isUp ? "text-green-500" : "text-red-500"}`}>
+                        <span className={`text-[9px] font-bold ${revenueComparison.isUp ? "text-green-500" : "text-red-500"}`} title="Comparativo vs ontem (operacional)">
                           {revenueComparison.isUp ? "▲" : "▼"} {Math.abs(revenueComparison.pct).toFixed(0)}%
                         </span>
                       )}
@@ -1516,6 +1516,26 @@ export default function LiveDashboard() {
                       {monthRevenueTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </p>
                     <p className="text-[9px] text-muted-foreground mt-0.5">{monthClientsTotal} atd</p>
+                  </div>
+                </div>
+
+                {/* Breakdown: Vendas (operacional) + Assinaturas */}
+                <div className="rounded-lg border border-border/30 bg-muted/20 p-2 space-y-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <span className="text-foreground">▸</span> Vendas <span className="text-muted-foreground/70">(serviços + produtos)</span>
+                    </span>
+                    <span className="font-bold text-foreground tabular-nums">
+                      {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <span className="text-amber-600">▸</span> Assinaturas <span className="text-muted-foreground/70">(MRR do dia)</span>
+                    </span>
+                    <span className="font-bold text-amber-600 tabular-nums">
+                      {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
                   </div>
                 </div>
 
