@@ -1314,6 +1314,10 @@ const [todayProduction, setTodayProduction] = useState<{
             />
           </TabsContent>
 
+          <TabsContent value="strategies" className="space-y-6">
+            {barber && <StrategyHistoryCard barberId={barber.id} />}
+          </TabsContent>
+
           <TabsContent value="leaderboard">
             <Leaderboard viewerRole="barber" />
           </TabsContent>
