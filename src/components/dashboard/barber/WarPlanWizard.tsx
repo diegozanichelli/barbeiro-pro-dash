@@ -188,10 +188,20 @@ export default function WarPlanWizard({
               </div>
             )}
 
+            {targetMismatch && !error && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-400 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>
+                  Detectei inconsistência nas metas: faturamento R$ {dailyTarget.toFixed(2)} ≤ comissão R$ {dailyTargetCommission.toFixed(2)}.
+                  O gerente precisa revisar a meta mensal antes de gerar um plano confiável.
+                </span>
+              </div>
+            )}
+
             <Button
               className="w-full"
               onClick={generatePlan}
-              disabled={loading || clientsCount === ""}
+              disabled={loading || clientsCount === "" || targetMismatch}
             >
               {loading ? (
                 <>
