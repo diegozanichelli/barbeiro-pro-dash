@@ -380,7 +380,7 @@ export default function SubscriptionAuditModal({
                   return (
                     <TableRow key={tx.id} className="bg-muted/30">
                       <TableCell className="text-xs text-muted-foreground">
-                        {format(new Date(tx.created_at), "HH:mm")}
+                        {formatInTimeZone(new Date(tx.created_at), TIMEZONE, "HH:mm")}
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="space-y-1">
