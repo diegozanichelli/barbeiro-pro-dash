@@ -1848,7 +1848,7 @@ ${strategiesForPrompt}
 • 1-2 alertas específicos baseados em pontos cegos OU no perfil.
 
 ⚔️ MISSÃO TÁTICA (números exatos)
-• Conta matemática: "Pra fechar R$ X com Y clientes, ticket precisa ser R$ Z."
+• Conta matemática SEMPRE em FATURAMENTO: "Pra faturar R$ X com Y clientes, ticket precisa ser R$ Z." NUNCA confunda com comissão.
 • 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia.
 
 # REGRAS DURAS
