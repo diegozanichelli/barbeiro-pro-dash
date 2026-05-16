@@ -15,6 +15,7 @@ interface WarPlanWizardProps {
   monthlyGoal: number;
   soldThisMonth: number;
   dailyTarget: number;
+  dailyTargetCommission?: number;
   todayRevenue: number;
   daysRemaining: number;
   onComplete: (planText: string) => void;
@@ -29,6 +30,7 @@ export default function WarPlanWizard({
   monthlyGoal,
   soldThisMonth,
   dailyTarget,
+  dailyTargetCommission = 0,
   todayRevenue,
   daysRemaining,
   onComplete,
