@@ -1382,6 +1382,7 @@ const [todayProduction, setTodayProduction] = useState<{
             monthlyGoal={monthlyGoal.target_commission}
             soldThisMonth={stats?.accumulated_commission || 0}
             dailyTarget={dailyTargetServices > 0 ? dailyTargetServices : dailyTarget}
+            dailyTargetCommission={dailyTarget}
             todayRevenue={todayProduction?.total || 0}
             daysRemaining={Math.max(
               0,
