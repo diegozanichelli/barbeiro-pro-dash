@@ -1433,6 +1433,21 @@ IMPORTANTE:
         clientsInAgenda,
       } = body;
 
+      // ============================================
+      // GUARDA: validar consistência entre meta de FATURAMENTO e COMISSÃO
+      // Faturamento bruto SEMPRE precisa ser >= comissão (comissão é % do faturamento).
+      // Se vier invertido/zerado, recusar para não gerar plano com cálculos errados.
+      // ============================================
+      if (dailyTargetCommission > 0 && (!dailyTarget || dailyTarget < dailyTargetCommission)) {
+        console.warn("[war_plan] Meta inválida:", { dailyTarget, dailyTargetCommission, barberId });
+        return new Response(
+          JSON.stringify({
+            error: `Meta de faturamento (R$ ${Number(dailyTarget || 0).toFixed(2)}) está menor que a meta de comissão (R$ ${dailyTargetCommission.toFixed(2)}). Peça ao gerente para revisar a meta mensal — o faturamento bruto precisa ser maior que a comissão.`,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
       // Coleta paralela de TODOS os dados reais do barbeiro
