@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizePhone } from "@/lib/phoneUtils";
+import { normalizeClientName } from "@/lib/clientName";
 
 let warnedMissingClientsSchema = false;
 
