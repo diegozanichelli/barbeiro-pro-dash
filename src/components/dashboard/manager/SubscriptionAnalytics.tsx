@@ -398,7 +398,15 @@ export default function SubscriptionAnalytics() {
       <SubscriptionEditModal
         open={!!editingTransaction}
         onOpenChange={(open) => { if (!open) setEditingTransaction(null); }}
-        transaction={editingTransaction as any}
+        transaction={editingTransaction ? {
+          id: editingTransaction.id,
+          client_name: editingTransaction.client_name,
+          subscription_action: editingTransaction.subscription_action,
+          subscription_plan_id: editingTransaction.subscription_plan_id,
+          downgrade_reason: editingTransaction.downgrade_reason,
+          mobile_phone: editingTransaction.mobile_phone,
+          subscription_plans: editingTransaction.plan_name ? { name: editingTransaction.plan_name } : null,
+        } : null}
         onSaved={fetchData}
       />
     </div>
