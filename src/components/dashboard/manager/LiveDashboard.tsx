@@ -778,6 +778,41 @@ export default function LiveDashboard() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [units, managerTransactions]);
 
+  // Subscription sales ranking (today) — por barbeiro + recepção por unidade
+  const subscriptionRankingData = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; isReception: boolean; count: number; revenue: number }>();
+    managerTransactions.forEach((t) => {
+      if (t.item_type !== "subscription") return;
+      if (t.barber_id) {
+        const barber = barbers.find((b) => b.id === t.barber_id);
+        if (!barber) return;
+        const key = `b:${barber.id}`;
+        const existing = map.get(key) || { id: barber.id, name: barber.name, isReception: false, count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += Number(t.price_sold) || 0;
+        map.set(key, existing);
+      } else if (t.unit_id) {
+        const unit = units.find((u) => u.id === t.unit_id);
+        if (!unit) return;
+        const key = `r:${unit.id}`;
+        const existing = map.get(key) || { id: unit.id, name: `Recepção · ${unit.name}`, isReception: true, count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += Number(t.price_sold) || 0;
+        map.set(key, existing);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || b.revenue - a.revenue);
+  }, [managerTransactions, barbers, units]);
+
+  const subscriptionTotalCount = useMemo(
+    () => subscriptionRankingData.reduce((s, r) => s + r.count, 0),
+    [subscriptionRankingData]
+  );
+  const subscriptionTotalRevenue = useMemo(
+    () => subscriptionRankingData.reduce((s, r) => s + r.revenue, 0),
+    [subscriptionRankingData]
+  );
+
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
     const relevantBarbers = selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit);
@@ -1503,6 +1538,66 @@ export default function LiveDashboard() {
                     </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Ranking ASSINATURAS — prioridade máxima do negócio */}
+            <Card className="overflow-hidden border-2 border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 backdrop-blur-sm shadow-[0_0_20px_hsl(38_92%_50%/0.15)]">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    👑 ASSINATURAS
+                  </CardTitle>
+                  <Badge variant="outline" className="border-amber-500/60 text-amber-600 bg-amber-500/10 text-[9px] px-1.5 py-0">
+                    PRIORIDADE
+                  </Badge>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-medium">
+                  Hoje: <span className="text-amber-600 font-bold">{subscriptionTotalCount}</span> {subscriptionTotalCount === 1 ? "venda" : "vendas"} · {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </p>
+              </CardHeader>
+              <CardContent className="px-3 pb-3">
+                {subscriptionRankingData.length === 0 ? (
+                  <div className="text-center py-3 text-[11px] text-muted-foreground">
+                    Nenhuma assinatura vendida hoje
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {subscriptionRankingData.map((row, index) => {
+                      const medals = ["🥇", "🥈", "🥉"];
+                      return (
+                        <motion.div
+                          key={`sub-${row.id}`}
+                          className={`flex items-center justify-between px-2 py-2 rounded-lg ${
+                            index === 0 ? "bg-amber-500/15 border border-amber-500/40" : index < 3 ? "bg-card/60 border border-border/20" : ""
+                          }`}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05, duration: 0.3 }}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {index < 3 ? (
+                              <span className="text-sm shrink-0">{medals[index]}</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-muted-foreground w-4 text-center shrink-0">{index + 1}º</span>
+                            )}
+                            <span className={`text-xs truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                              {row.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`text-xs font-bold ${index === 0 ? "text-amber-600" : "text-foreground"}`}>
+                              {row.count}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground">
+                              {row.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
