@@ -342,7 +342,7 @@ export default function LiveDashboard() {
   // Quando "Todas as Unidades" mostra 1 linha por unidade que teve recepção
   // Quando filtrando uma unidade, managerTransactions já vem filtrado
   const receptionRows = useMemo(() => {
-    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clients: number }>();
+    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clientKeys: Set<string> }>();
     managerTransactions.forEach((t) => {
       if (t.barber_id !== null) return;
       if (!t.unit_id) return;
@@ -351,14 +351,16 @@ export default function LiveDashboard() {
       if (!unit) return;
       const existing =
         map.get(t.unit_id) ||
-        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clients: 0 };
+        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clientKeys: new Set<string>() };
       existing.revenue += Number(t.price_sold) || 0;
-      if (t.item_type === "service" && t.service_category === "basic") {
-        existing.clients += 1;
-      }
+      // 1 atendimento = 1 checkout de cliente distinto (telefone, ou timestamp como fallback)
+      const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+      existing.clientKeys.add(key);
       map.set(t.unit_id, existing);
     });
-    return Array.from(map.values()).filter((r) => r.revenue > 0);
+    return Array.from(map.values())
+      .filter((r) => r.revenue > 0)
+      .map((r) => ({ unitId: r.unitId, unitName: r.unitName, revenue: r.revenue, clients: r.clientKeys.size }));
   }, [managerTransactions, units]);
 
   const receptionRevenueTotal = useMemo(
