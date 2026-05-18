@@ -38,10 +38,20 @@ export default function MonthlyPresentation() {
     return ys;
   }, [today]);
 
+  const { overrides, saveOverride, resetOverride } = usePresentationOverrides(
+    organizationId ?? null, month, year, unitId
+  );
+
   const previewSlides = useMemo(() => {
     if (!data) return [];
-    return buildSlides(data, organizationId ?? "", unitId, true);
-  }, [data, organizationId, unitId]);
+    return buildSlides(data, organizationId ?? "", unitId, {
+      overrides,
+      editable: true,
+      saveOverride,
+      resetOverride,
+      editableNotes: true,
+    });
+  }, [data, organizationId, unitId, overrides, saveOverride, resetOverride]);
 
   if (presenting && data) {
     return (
