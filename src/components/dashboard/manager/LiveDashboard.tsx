@@ -54,6 +54,8 @@ interface ManagerTransaction {
   item_type: string;
   service_category: string | null;
   unit_id: string | null;
+  mobile_phone: string | null;
+  created_at: string;
 }
 
 interface Barber {
@@ -225,7 +227,7 @@ export default function LiveDashboard() {
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category, unit_id")
+        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
@@ -342,7 +344,7 @@ export default function LiveDashboard() {
   // Quando "Todas as Unidades" mostra 1 linha por unidade que teve recepção
   // Quando filtrando uma unidade, managerTransactions já vem filtrado
   const receptionRows = useMemo(() => {
-    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clients: number }>();
+    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clientKeys: Set<string> }>();
     managerTransactions.forEach((t) => {
       if (t.barber_id !== null) return;
       if (!t.unit_id) return;
@@ -351,14 +353,16 @@ export default function LiveDashboard() {
       if (!unit) return;
       const existing =
         map.get(t.unit_id) ||
-        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clients: 0 };
+        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clientKeys: new Set<string>() };
       existing.revenue += Number(t.price_sold) || 0;
-      if (t.item_type === "service" && t.service_category === "basic") {
-        existing.clients += 1;
-      }
+      // 1 atendimento = 1 checkout de cliente distinto (telefone, ou timestamp como fallback)
+      const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+      existing.clientKeys.add(key);
       map.set(t.unit_id, existing);
     });
-    return Array.from(map.values()).filter((r) => r.revenue > 0);
+    return Array.from(map.values())
+      .filter((r) => r.revenue > 0)
+      .map((r) => ({ unitId: r.unitId, unitName: r.unitName, revenue: r.revenue, clients: r.clientKeys.size }));
   }, [managerTransactions, units]);
 
   const receptionRevenueTotal = useMemo(
@@ -1168,9 +1172,16 @@ export default function LiveDashboard() {
                   const cutsRemaining = getCutsRemaining(barber.id, barber);
                   const progressColor = getProgressColor(percentage);
 
-                  // Calculate today's ticket for this barber
+                  // 1 atendimento = 1 checkout de cliente distinto (telefone, ou timestamp como fallback).
+                  // Ignora assinaturas (já contabilizadas à parte).
                   const barberTxToday = managerTransactions.filter(t => t.barber_id === barber.id);
-                  const barberClientsToday = barberTxToday.filter(t => t.item_type === "service" && t.service_category === "basic").length;
+                  const barberClientKeys = new Set<string>();
+                  barberTxToday.forEach((t) => {
+                    if (t.item_type === "subscription") return;
+                    const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+                    barberClientKeys.add(key);
+                  });
+                  const barberClientsToday = barberClientKeys.size;
                   const barberTicketToday = barberClientsToday > 0 ? revenue / barberClientsToday : 0;
 
                   const remaining = Math.max(0, target - revenue);
