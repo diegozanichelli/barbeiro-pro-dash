@@ -32,8 +32,8 @@ export function usePresentationOverrides(
       .eq("year", year)
       .eq("unit_key", unitKey || "all");
     const map: SlideOverridesMap = {};
-    (data ?? []).forEach((row: { slide_key: string; payload: SlideOverridePayload }) => {
-      map[row.slide_key] = row.payload || {};
+    (data ?? []).forEach((row) => {
+      map[row.slide_key] = (row.payload as SlideOverridePayload) || {};
     });
     setOverrides(map);
     setLoading(false);
@@ -48,15 +48,15 @@ export function usePresentationOverrides(
       const { error } = await supabase
         .from("presentation_slide_overrides")
         .upsert(
-          {
+          [{
             organization_id: organizationId,
             month,
             year,
             unit_key: unitKey || "all",
             slide_key: slideKey,
-            payload,
+            payload: payload as never,
             updated_by: userData?.user?.id ?? null,
-          },
+          }],
           { onConflict: "organization_id,month,year,unit_key,slide_key" }
         );
       if (error) throw error;
