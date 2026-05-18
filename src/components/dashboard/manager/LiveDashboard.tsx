@@ -1172,9 +1172,16 @@ export default function LiveDashboard() {
                   const cutsRemaining = getCutsRemaining(barber.id, barber);
                   const progressColor = getProgressColor(percentage);
 
-                  // Calculate today's ticket for this barber
+                  // 1 atendimento = 1 checkout de cliente distinto (telefone, ou timestamp como fallback).
+                  // Ignora assinaturas (já contabilizadas à parte).
                   const barberTxToday = managerTransactions.filter(t => t.barber_id === barber.id);
-                  const barberClientsToday = barberTxToday.filter(t => t.item_type === "service" && t.service_category === "basic").length;
+                  const barberClientKeys = new Set<string>();
+                  barberTxToday.forEach((t) => {
+                    if (t.item_type === "subscription") return;
+                    const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+                    barberClientKeys.add(key);
+                  });
+                  const barberClientsToday = barberClientKeys.size;
                   const barberTicketToday = barberClientsToday > 0 ? revenue / barberClientsToday : 0;
 
                   const remaining = Math.max(0, target - revenue);
