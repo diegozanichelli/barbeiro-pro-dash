@@ -127,6 +127,9 @@ export default function MonthlyPresentation() {
             Atalhos: <kbd className="px-1.5 py-0.5 rounded bg-muted">←</kbd> <kbd className="px-1.5 py-0.5 rounded bg-muted">→</kbd> navegar •{" "}
             <kbd className="px-1.5 py-0.5 rounded bg-muted">G</kbd> grade • <kbd className="px-1.5 py-0.5 rounded bg-muted">Esc</kbd> sair
           </p>
+          <p className="text-xs text-muted-foreground">
+            ✏️ Na apresentação, os slides de <strong>Capa</strong> e <strong>Encerramento</strong> têm um botão <em>Editar</em> no canto superior direito para personalizar textos e a meta do próximo mês.
+          </p>
         </CardContent>
       </Card>
 
