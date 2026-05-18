@@ -7,6 +7,7 @@ import { Play, Presentation, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useMonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
+import { usePresentationOverrides } from "@/hooks/usePresentationOverrides";
 import { getManausDate } from "@/lib/dateUtils";
 import { monthNamesPt } from "./slideHelpers";
 import PresentationDeck, { buildSlides } from "./PresentationDeck";
