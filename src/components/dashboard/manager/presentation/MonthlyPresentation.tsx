@@ -156,7 +156,7 @@ export default function MonthlyPresentation() {
               {previewSlides.map((s, i) => (
                 <div key={s.key} className="rounded-xl border border-border overflow-hidden bg-card hover:border-primary transition-colors">
                   <div className="aspect-video bg-background relative overflow-hidden">
-                    <div className="pointer-events-none">{s.el}</div>
+                    <div className="[&_*]:pointer-events-none [&_button]:pointer-events-auto">{s.el}</div>
                   </div>
                   <div className="p-3 border-t border-border">
                     <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Slide {i + 1}</p>
