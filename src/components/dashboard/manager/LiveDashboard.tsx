@@ -54,6 +54,8 @@ interface ManagerTransaction {
   item_type: string;
   service_category: string | null;
   unit_id: string | null;
+  mobile_phone: string | null;
+  created_at: string;
 }
 
 interface Barber {
