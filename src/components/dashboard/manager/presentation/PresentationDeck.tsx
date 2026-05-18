@@ -69,7 +69,7 @@ export function buildSlides(
           data={data}
           override={overrides["cover"]}
           editable={editable}
-          onSave={saveOverride ? (p) => saveOverride("cover", p) : undefined}
+          onSave={saveOverride ? (p) => saveOverride("cover", p as Record<string, unknown>) : undefined}
           onReset={resetOverride ? () => resetOverride("cover") : undefined}
         />
       ),
@@ -106,7 +106,7 @@ export function buildSlides(
           data={data}
           override={overrides["closing"]}
           editable={editable}
-          onSave={saveOverride ? (p) => saveOverride("closing", p) : undefined}
+          onSave={saveOverride ? (p) => saveOverride("closing", p as Record<string, unknown>) : undefined}
           onReset={resetOverride ? () => resetOverride("closing") : undefined}
         />
       ),
