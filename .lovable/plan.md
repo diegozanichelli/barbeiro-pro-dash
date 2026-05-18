@@ -1,35 +1,38 @@
-## Problema
+## Diagnóstico
 
-No Ao Vivo, a coluna **"(N atd)"** e o **Ticket Médio** estão errados. Hoje conta-se "atendimento" apenas quando há `item_type='service' AND service_category='basic'` (corte).
+O botão **Editar** aparece nos slides de Capa e Encerramento, mas o clique não funciona por dois motivos distintos, dependendo de onde o usuário tenta clicar:
 
-Exemplo real do Cesar hoje:
-- 7 clientes distintos (telefones diferentes), R$ 578,50
-- Apenas 1 venda tinha "Corte Adulto" → mostra **(1 atd)** e ticket R$ 578,50
-- Os outros 6 clientes pagaram só extras (Barboterapia, Depilação, Relaxamento) ou produto → não contados
+### 1. Pré-visualização (grade de miniaturas em `MonthlyPresentation`)
+Os slides são renderizados dentro de:
+```tsx
+<div className="pointer-events-none">{s.el}</div>
+```
+Esse `pointer-events-none` desativa **todos** os cliques no slide — inclusive o botão Editar. Foi colocado para que as miniaturas não fossem interativas, mas bloqueou também o único controle que precisava continuar clicável.
 
-## Definição correta de "Atendimento"
+### 2. Modo apresentação (tela cheia em `PresentationDeck`)
+O contêiner da apresentação usa `z-[100]`:
+```tsx
+<div className="fixed inset-0 z-[100] ...">
+```
+Já o `Dialog` do shadcn (`DialogOverlay` e `DialogContent`) usa `z-50` por padrão. Resultado: ao clicar em Editar dentro da apresentação o dialog até abre (no portal, fora da árvore), mas fica **atrás** do deck — invisível e sem receber clique.
 
-**1 atendimento = 1 checkout de cliente distinto** (independente de o item ser corte, extra ou produto). Proxy confiável nos dados: agrupar por `mobile_phone` quando existe, ou por `created_at` (mesmo segundo + mesmo barbeiro) quando não há telefone.
+## Correções
 
-Regras:
-- Assinatura (`item_type='subscription'`) **não conta** como atendimento (já é tratada à parte).
-- Recepção (sem `barber_id`) usa a mesma regra, agrupada por unidade.
-- Se uma transação só tem produto avulso sem cliente associado, conta 1 atendimento por grupo de timestamp.
+### A. `src/components/dashboard/manager/presentation/MonthlyPresentation.tsx`
+- Remover `pointer-events-none` do wrapper das miniaturas e, para manter o card todo clicável como atalho de edição visual sem regressões, deixar a área do slide com `pointer-events-auto` apenas no botão de Editar. Implementação concreta: trocar o wrapper por `<div className="[&_*]:pointer-events-none [&_button]:pointer-events-auto">` — assim só botões (Editar) recebem clique, mantendo o comportamento de "miniatura não interativa" para o restante do conteúdo.
 
-## Mudanças (apenas frontend)
+### B. `src/components/dashboard/manager/presentation/SlideEditDialog.tsx`
+- Elevar o z-index do `DialogContent` acima do deck:
+  - Adicionar `z-[200]` à className do `DialogContent`.
+- Garantir que o overlay também fique acima do deck. Como o `DialogOverlay` é renderizado internamente pelo `DialogContent` do shadcn e fixa `z-50`, adicionar um estilo inline / classe via wrapper não é trivial. Solução: importar `DialogOverlay` e `DialogPortal` diretamente do componente shadcn e montar manualmente o conteúdo do dialog no `SlideEditDialog`, passando `z-[200]` tanto no overlay quanto no content. Isso é local ao arquivo e não altera o componente compartilhado.
 
-Arquivo: `src/components/dashboard/manager/LiveDashboard.tsx`
+Alternativa mais leve (preferida): manter `<Dialog><DialogContent className="z-[200] ...">`, e em paralelo adicionar uma regra global pequena no `index.css` para o overlay quando o deck está ativo — porém isso vaza estilo. Vamos com a primeira opção (montagem manual com `DialogPortal` + `DialogOverlay` + `DialogPrimitive.Content`) restrita ao `SlideEditDialog`.
 
-1. Criar helper `countAttendances(transactions)` que retorna o número de checkouts únicos: `new Set(t.mobile_phone || t.created_at).size`, ignorando subscriptions.
-2. Substituir no cálculo por barbeiro (linha 1173):
-   ```
-   const barberClientsToday = countAttendances(barberTxToday)
-   ```
-3. Substituir no `receptionRows` (linha 356) para usar o mesmo helper agrupado por unidade.
-4. Atualizar o cálculo do "Ticket" por barbeiro (linha 1174) — já usa `revenue / barberClientsToday`, então passa a ficar correto automaticamente.
-5. Revisar `totalClientsToday` (linha 929) e o ticket médio do header (linha 931) — passarão a refletir a nova contagem corretamente via `receptionClientsTotal` + soma por barbeiro.
+### C. Verificação
+- Após implementar, validar via browser:
+  1. Na pré-visualização da aba Relatórios → Apresentação Mensal, clicar em "Editar" nas miniaturas de Capa e Encerramento → dialog abre e salva.
+  2. Em "Iniciar Apresentação", navegar até Capa/Encerramento, clicar em "Editar" → dialog aparece **na frente** do deck e é interativo (digitar, salvar, restaurar).
 
 ## Fora de escopo
-
-- `monthClientsTotal` (linha 755) lê `daily_productions.clients_count`, que vem de outra fonte (manager confirmação do dia). Não mexer agora — é o número oficial do mês fechado. Se você quiser, posso revisar depois.
-- RPC `get_monthly_presentation` e demais relatórios continuam usando suas próprias regras.
+- Não alterar regras de negócio, RPC, ou outros slides.
+- Não trocar o componente Dialog compartilhado do projeto.
