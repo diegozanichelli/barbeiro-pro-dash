@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
+import { usePresentationOverrides, SlideOverridesMap } from "@/hooks/usePresentationOverrides";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Grid3x3 } from "lucide-react";
 import CoverSlide from "./slides/CoverSlide";
@@ -37,9 +38,42 @@ interface Props {
   onExit: () => void;
 }
 
-export function buildSlides(data: MonthlyPresentationData, orgId: string, unitKey: string, editableNotes = false) {
+interface BuildOpts {
+  overrides?: SlideOverridesMap;
+  editable?: boolean;
+  saveOverride?: (slideKey: string, payload: Record<string, unknown>) => Promise<void>;
+  resetOverride?: (slideKey: string) => Promise<void>;
+  editableNotes?: boolean;
+}
+
+export function buildSlides(
+  data: MonthlyPresentationData,
+  orgId: string,
+  unitKey: string,
+  editableNotesOrOpts: boolean | BuildOpts = false
+) {
+  const opts: BuildOpts =
+    typeof editableNotesOrOpts === "boolean"
+      ? { editableNotes: editableNotesOrOpts }
+      : editableNotesOrOpts;
+  const overrides = opts.overrides ?? {};
+  const editable = opts.editable ?? false;
+  const saveOverride = opts.saveOverride;
+  const resetOverride = opts.resetOverride;
+
   return [
-    { key: "cover", title: "Capa", el: <CoverSlide data={data} /> },
+    {
+      key: "cover", title: "Capa",
+      el: (
+        <CoverSlide
+          data={data}
+          override={overrides["cover"]}
+          editable={editable}
+          onSave={saveOverride ? (p) => saveOverride("cover", p) : undefined}
+          onReset={resetOverride ? () => resetOverride("cover") : undefined}
+        />
+      ),
+    },
     { key: "kpis", title: "Resumo executivo", el: <KpiSlide data={data} /> },
     { key: "month-comparison", title: "Mês vs Mês anterior", el: <MonthComparisonSlide data={data} /> },
     { key: "goals", title: "Metas batidas", el: <GoalsSlide data={data} /> },
@@ -64,13 +98,33 @@ export function buildSlides(data: MonthlyPresentationData, orgId: string, unitKe
     { key: "best-day", title: "Dia mais forte", el: <BestDaySlide data={data} /> },
     { key: "records", title: "Recordes do mês", el: <RecordsSlide data={data} /> },
     { key: "alerts", title: "Alertas", el: <AlertsSlide data={data} /> },
-    { key: "next-steps", title: "Próximos passos", el: <NextStepsSlide data={data} orgId={orgId} unitKey={unitKey} editable={editableNotes} /> },
-    { key: "closing", title: "Encerramento", el: <ClosingSlide data={data} /> },
+    { key: "next-steps", title: "Próximos passos", el: <NextStepsSlide data={data} orgId={orgId} unitKey={unitKey} editable={opts.editableNotes ?? false} /> },
+    {
+      key: "closing", title: "Encerramento",
+      el: (
+        <ClosingSlide
+          data={data}
+          override={overrides["closing"]}
+          editable={editable}
+          onSave={saveOverride ? (p) => saveOverride("closing", p) : undefined}
+          onReset={resetOverride ? () => resetOverride("closing") : undefined}
+        />
+      ),
+    },
   ];
 }
 
 export default function PresentationDeck({ data, orgId, unitKey, onExit }: Props) {
-  const slides = buildSlides(data, orgId, unitKey, false);
+  const { overrides, saveOverride, resetOverride } = usePresentationOverrides(
+    orgId || null, data.month, data.year, unitKey
+  );
+  const slides = buildSlides(data, orgId, unitKey, {
+    overrides,
+    editable: true,
+    saveOverride,
+    resetOverride,
+    editableNotes: true,
+  });
 
   const [idx, setIdx] = useState(0);
   const [showGrid, setShowGrid] = useState(false);
