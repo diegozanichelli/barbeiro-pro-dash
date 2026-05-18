@@ -7,6 +7,7 @@ import { Play, Presentation, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useMonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
+import { usePresentationOverrides } from "@/hooks/usePresentationOverrides";
 import { getManausDate } from "@/lib/dateUtils";
 import { monthNamesPt } from "./slideHelpers";
 import PresentationDeck, { buildSlides } from "./PresentationDeck";
@@ -37,10 +38,20 @@ export default function MonthlyPresentation() {
     return ys;
   }, [today]);
 
+  const { overrides, saveOverride, resetOverride } = usePresentationOverrides(
+    organizationId ?? null, month, year, unitId
+  );
+
   const previewSlides = useMemo(() => {
     if (!data) return [];
-    return buildSlides(data, organizationId ?? "", unitId, true);
-  }, [data, organizationId, unitId]);
+    return buildSlides(data, organizationId ?? "", unitId, {
+      overrides,
+      editable: true,
+      saveOverride,
+      resetOverride,
+      editableNotes: true,
+    });
+  }, [data, organizationId, unitId, overrides, saveOverride, resetOverride]);
 
   if (presenting && data) {
     return (
@@ -115,6 +126,9 @@ export default function MonthlyPresentation() {
           <p className="text-xs text-muted-foreground">
             Atalhos: <kbd className="px-1.5 py-0.5 rounded bg-muted">←</kbd> <kbd className="px-1.5 py-0.5 rounded bg-muted">→</kbd> navegar •{" "}
             <kbd className="px-1.5 py-0.5 rounded bg-muted">G</kbd> grade • <kbd className="px-1.5 py-0.5 rounded bg-muted">Esc</kbd> sair
+          </p>
+          <p className="text-xs text-muted-foreground">
+            ✏️ Na apresentação, os slides de <strong>Capa</strong> e <strong>Encerramento</strong> têm um botão <em>Editar</em> no canto superior direito para personalizar textos e a meta do próximo mês.
           </p>
         </CardContent>
       </Card>

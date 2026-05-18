@@ -750,6 +750,45 @@ export type Database = {
           },
         ]
       }
+      presentation_slide_overrides: {
+        Row: {
+          created_at: string
+          id: string
+          month: number
+          organization_id: string
+          payload: Json
+          slide_key: string
+          unit_key: string
+          updated_at: string
+          updated_by: string | null
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          month: number
+          organization_id: string
+          payload?: Json
+          slide_key: string
+          unit_key?: string
+          updated_at?: string
+          updated_by?: string | null
+          year: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          month?: number
+          organization_id?: string
+          payload?: Json
+          slide_key?: string
+          unit_key?: string
+          updated_at?: string
+          updated_by?: string | null
+          year?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
