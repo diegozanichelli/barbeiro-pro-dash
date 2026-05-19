@@ -757,6 +757,8 @@ export type Database = {
           month: number
           organization_id: string
           payload: Json
+          period_end: string | null
+          period_start: string | null
           slide_key: string
           unit_key: string
           updated_at: string
@@ -769,6 +771,8 @@ export type Database = {
           month: number
           organization_id: string
           payload?: Json
+          period_end?: string | null
+          period_start?: string | null
           slide_key: string
           unit_key?: string
           updated_at?: string
@@ -781,6 +785,8 @@ export type Database = {
           month?: number
           organization_id?: string
           payload?: Json
+          period_end?: string | null
+          period_start?: string | null
           slide_key?: string
           unit_key?: string
           updated_at?: string
@@ -1387,6 +1393,17 @@ export type Database = {
           subscriptions_count: number
           unit_name: string
         }[]
+      }
+      get_presentation_data_range: {
+        Args: {
+          p_compare_end: string
+          p_compare_start: string
+          p_period_end: string
+          p_period_start: string
+          p_target_ratio?: number
+          p_unit_id?: string
+        }
+        Returns: Json
       }
       get_subscription_intelligence: {
         Args: {
