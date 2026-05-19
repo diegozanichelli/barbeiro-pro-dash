@@ -1,38 +1,86 @@
-## Diagnóstico
+## Objetivo
 
-O botão **Editar** aparece nos slides de Capa e Encerramento, mas o clique não funciona por dois motivos distintos, dependendo de onde o usuário tenta clicar:
+Permitir que o gestor rode a Apresentação Mensal em **qualquer recorte de período** (semanal, quinzenal, MTD, mês fechado ou intervalo livre), com **metas proporcionais por dias úteis** e comparativo contra o mesmo intervalo do mês anterior.
 
-### 1. Pré-visualização (grade de miniaturas em `MonthlyPresentation`)
-Os slides são renderizados dentro de:
-```tsx
-<div className="pointer-events-none">{s.el}</div>
+## 1. Seletor de período (UI)
+
+Substituir o seletor atual (Mês + Ano) por um seletor de modo:
+
+- **Mês fechado** (padrão atual — comportamento idêntico ao de hoje)
+- **Mês até hoje (MTD)** — dia 1 do mês atual até hoje
+- **Quinzenal** — escolher mês + 1ª quinzena (1-15) ou 2ª quinzena (16-fim)
+- **Período personalizado** — date range picker livre (semana, 10 dias, etc.)
+
+Cada modo resolve para um par `period_start` / `period_end` (datas puras `YYYY-MM-DD` em Manaus). O título da capa e rodapés mostram o intervalo escolhido ("01–19 de Maio/2026 · 19 dias").
+
+## 2. Comparativo (período anterior)
+
+Regra única: **mesmo nº de dias imediatamente anteriores** ao `period_start`.
+
+- Mês fechado de Maio → comparado com Abril inteiro (mantém comportamento).
+- MTD 01–19/05 → comparado com 01–19/04.
+- 2ª quinzena de Maio (16–31) → comparado com 16–30/04.
+- Custom 05–11/05 (7 dias) → comparado com 28/04–04/05.
+
+## 3. Meta proporcional (dias úteis)
+
+Para qualquer recorte ≠ mês fechado:
+
+```text
+meta_periodo = meta_mensal × (dias_úteis_no_período ÷ dias_úteis_totais_do_mês)
 ```
-Esse `pointer-events-none` desativa **todos** os cliques no slide — inclusive o botão Editar. Foi colocado para que as miniaturas não fossem interativas, mas bloqueou também o único controle que precisava continuar clicável.
 
-### 2. Modo apresentação (tela cheia em `PresentationDeck`)
-O contêiner da apresentação usa `z-[100]`:
-```tsx
-<div className="fixed inset-0 z-[100] ...">
+- `dias_úteis` exclui feriados de `organization_holidays` (já existe a infra).
+- Aplicado a meta de comissão por barbeiro, meta de unidade e meta agregada.
+- KPIs de "% da meta", "ranking vs meta", "bateu meta vs não bateu", "alertas de pacing" e closing slide usam essa meta proporcional.
+- Banner discreto no slide de Metas explicando: "Meta proporcional a X dias úteis do período (Y% do mês)".
+
+## 4. Backend — RPC
+
+Substituir/estender `get_monthly_presentation(p_month, p_year, p_unit_id)` por nova assinatura:
+
+```sql
+get_presentation_data(
+  p_period_start date,
+  p_period_end   date,
+  p_unit_id      uuid,
+  p_compare_start date,  -- calculado no front
+  p_compare_end   date,
+  p_target_ratio  numeric -- dias_úteis_periodo / dias_úteis_mes
+)
 ```
-Já o `Dialog` do shadcn (`DialogOverlay` e `DialogContent`) usa `z-50` por padrão. Resultado: ao clicar em Editar dentro da apresentação o dialog até abre (no portal, fora da árvore), mas fica **atrás** do deck — invisível e sem receber clique.
 
-## Correções
+- Todas as agregações (KPIs, ranking, evolução individual, mix, top serviços/produtos, recepção, assinaturas, recordes, heatmap, frequência, new vs returning) passam a filtrar por `created_at` no range em vez de `month/year`.
+- Heatmap de dia da semana e "recorde do mês" continuam funcionando (são agregações por data).
+- `previous_month_goals` vira `previous_period_goals` usando a mesma lógica de meta proporcional aplicada ao período anterior.
+- Manter a RPC antiga como wrapper para não quebrar nada (chama a nova com mês fechado).
 
-### A. `src/components/dashboard/manager/presentation/MonthlyPresentation.tsx`
-- Remover `pointer-events-none` do wrapper das miniaturas e, para manter o card todo clicável como atalho de edição visual sem regressões, deixar a área do slide com `pointer-events-auto` apenas no botão de Editar. Implementação concreta: trocar o wrapper por `<div className="[&_*]:pointer-events-none [&_button]:pointer-events-auto">` — assim só botões (Editar) recebem clique, mantendo o comportamento de "miniatura não interativa" para o restante do conteúdo.
+## 5. Frontend — alterações
 
-### B. `src/components/dashboard/manager/presentation/SlideEditDialog.tsx`
-- Elevar o z-index do `DialogContent` acima do deck:
-  - Adicionar `z-[200]` à className do `DialogContent`.
-- Garantir que o overlay também fique acima do deck. Como o `DialogOverlay` é renderizado internamente pelo `DialogContent` do shadcn e fixa `z-50`, adicionar um estilo inline / classe via wrapper não é trivial. Solução: importar `DialogOverlay` e `DialogPortal` diretamente do componente shadcn e montar manualmente o conteúdo do dialog no `SlideEditDialog`, passando `z-[200]` tanto no overlay quanto no content. Isso é local ao arquivo e não altera o componente compartilhado.
+- `MonthlyPresentation.tsx`: novo seletor com modos (Tabs) + DatePicker para custom + lógica que resolve `{period_start, period_end, compare_start, compare_end, target_ratio}`.
+- `useMonthlyPresentationData`: aceita o novo input e chama a nova RPC.
+- `slideHelpers.ts`: utilidade `formatPeriodLabel(start, end)` para títulos/rodapés ("Semana 12–18 Mai", "1ª Quinzena de Maio", "Mês de Maio", etc.).
+- `CoverSlide`, `ClosingSlide`, `GoalsSlide`, `MonthComparisonSlide`, `PreviousMonthGoalsSlide`: usar o label do período em vez de "Maio/2026" fixo.
+- Overrides (`presentation_slide_overrides`): chave passa a incluir `period_start`+`period_end`+`unit_key` (migração leve — campo `slide_key` continua, adicionamos colunas opcionais `period_start` / `period_end`; registros antigos por mês continuam acessíveis quando o modo for "mês fechado").
 
-Alternativa mais leve (preferida): manter `<Dialog><DialogContent className="z-[200] ...">`, e em paralelo adicionar uma regra global pequena no `index.css` para o overlay quando o deck está ativo — porém isso vaza estilo. Vamos com a primeira opção (montagem manual com `DialogPortal` + `DialogOverlay` + `DialogPrimitive.Content`) restrita ao `SlideEditDialog`.
+## 6. Slides afetados
 
-### C. Verificação
-- Após implementar, validar via browser:
-  1. Na pré-visualização da aba Relatórios → Apresentação Mensal, clicar em "Editar" nas miniaturas de Capa e Encerramento → dialog abre e salva.
-  2. Em "Iniciar Apresentação", navegar até Capa/Encerramento, clicar em "Editar" → dialog aparece **na frente** do deck e é interativo (digitar, salvar, restaurar).
+Todos continuam existindo. Mudanças de texto/contexto:
 
-## Fora de escopo
-- Não alterar regras de negócio, RPC, ou outros slides.
-- Não trocar o componente Dialog compartilhado do projeto.
+- **Capa**: subtítulo dinâmico ("Reunião quinzenal · 01–15 Mai/2026 · 13 dias úteis").
+- **KPIs / Ranking / Unidades / Metas / Closing**: meta proporcional + chip "Período: X dias úteis (Y% do mês)".
+- **Comparativo M vs M-1**: vira "Período atual vs período anterior equivalente".
+- **Recordes / Heatmap**: rodapé deixa claro o intervalo coberto.
+
+## Detalhes técnicos
+
+- Cálculo de dias úteis reaproveita `calculateRemainingWorkDays` (generalizar para aceitar range arbitrário e lista de feriados).
+- Datas sempre tratadas como `date` puro em Manaus para evitar bugs de rollover (regra Core já existente).
+- Migração SQL: nova função `get_presentation_data` + 2 colunas em `presentation_slide_overrides` (`period_start date null`, `period_end date null`) + índice composto.
+- Compatibilidade: se gestor abrir um override antigo salvo por "mês fechado", continua resolvendo.
+
+## Fora do escopo
+
+- Salvar "tipos de reunião favoritos" do gestor.
+- Reuniões recorrentes agendadas.
+- Comparativos contra "mesma semana do ano passado".
