@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ScaledSlide from "../ScaledSlide";
-import { monthNamesPt } from "../slideHelpers";
+import { formatPeriodLabel } from "../slideHelpers";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
 import { Button } from "@/components/ui/button";
 import { Pencil } from "lucide-react";
@@ -23,7 +23,10 @@ interface Props {
 
 export default function CoverSlide({ data, override, editable, onSave, onReset }: Props) {
   const [open, setOpen] = useState(false);
-  const defaultTitle = `${monthNamesPt[data.month - 1]} / ${data.year}`;
+  const periodLabel = data.period_start && data.period_end
+    ? formatPeriodLabel(new Date(data.period_start), new Date(data.period_end))
+    : `${data.month}/${data.year}`;
+  const defaultTitle = periodLabel;
   const eyebrow = override?.eyebrow ?? "Reunião de Resultados";
   const title = override?.title ?? defaultTitle;
   const subtitle = override?.subtitle ?? data.org_name;
