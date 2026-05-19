@@ -1,12 +1,14 @@
 import ScaledSlide from "../ScaledSlide";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
-import { monthNamesPt } from "../slideHelpers";
+import { formatPeriodShort } from "../slideHelpers";
 import { CheckCircle2, XCircle } from "lucide-react";
 
 export default function PreviousMonthGoalsSlide({ data }: { data: MonthlyPresentationData }) {
   const hit = data.previous_month_goals?.hit ?? [];
   const missed = data.previous_month_goals?.missed ?? [];
-  const prevMonth = data.month === 1 ? 12 : data.month - 1;
+  const prevLabel = data.compare_start && data.compare_end
+    ? formatPeriodShort(new Date(data.compare_start), new Date(data.compare_end))
+    : "Período anterior";
 
   const renderCol = (
     items: typeof hit,
@@ -49,8 +51,8 @@ export default function PreviousMonthGoalsSlide({ data }: { data: MonthlyPresent
     <ScaledSlide>
       <div className="w-full h-full flex flex-col px-24 py-16">
         <p className="text-2xl font-mono uppercase tracking-[0.3em] text-primary/80 mb-3">Accountability</p>
-        <h2 className="text-6xl font-bold mb-2">Metas de {monthNamesPt[prevMonth - 1]}</h2>
-        <p className="text-xl text-muted-foreground mb-6">Quem bateu e quem não bateu — o ponto de partida deste mês.</p>
+        <h2 className="text-6xl font-bold mb-2">Metas — {prevLabel}</h2>
+        <p className="text-xl text-muted-foreground mb-6">Quem bateu e quem não bateu — o ponto de partida deste período.</p>
         <div className="grid grid-cols-2 gap-6 flex-1 min-h-0">
           {renderCol(hit, "success", CheckCircle2, "Bateram meta")}
           {renderCol(missed, "destructive", XCircle, "Não bateram")}

@@ -5,11 +5,19 @@ import { Trophy } from "lucide-react";
 export default function GoalsSlide({ data }: { data: MonthlyPresentationData }) {
   const { hit_count, total_barbers, champions } = data.goals;
   const pct = total_barbers > 0 ? (hit_count / total_barbers) * 100 : 0;
+  const ratio = data.target_ratio ?? 1;
+  const isProportional = ratio < 0.999;
   return (
     <ScaledSlide>
       <div className="w-full h-full flex flex-col px-32 py-24">
         <p className="text-2xl font-mono uppercase tracking-[0.3em] text-primary/80 mb-6">Metas batidas</p>
-        <h2 className="text-7xl font-bold mb-12">Quem bateu a meta?</h2>
+        <h2 className="text-7xl font-bold mb-4">Quem bateu a meta?</h2>
+        {isProportional && (
+          <p className="text-xl text-muted-foreground mb-8">
+            Meta proporcional ao período: <strong className="text-primary">{Math.round(ratio * 100)}%</strong> da meta mensal.
+          </p>
+        )}
+        {!isProportional && <div className="mb-8" />}
         <div className="grid grid-cols-[1fr_2fr] gap-16 items-start">
           <div className="rounded-3xl border border-border bg-card/60 p-12">
             <div className="flex items-baseline gap-4 mb-6">

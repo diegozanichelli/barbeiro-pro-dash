@@ -7,6 +7,9 @@ export interface MonthlyPresentationData {
   year: number;
   period_start: string;
   period_end: string;
+  compare_start?: string;
+  compare_end?: string;
+  target_ratio?: number;
   kpis: { revenue: number; commission: number; clients: number; avg_ticket: number };
   kpis_previous: { revenue: number; commission: number; clients: number; avg_ticket: number };
   goals: {
@@ -29,8 +32,6 @@ export interface MonthlyPresentationData {
   best_day: { date: string | null; revenue: number; clients: number; star_barber: string | null; star_commission: number };
   alerts: Array<{ name: string; unit_name: string | null; earned: number; target_commission: number; percent: number }>;
   next_month_target: number;
-
-  // Novos blocos
   individual_evolution: Array<{
     barber_id: string; name: string;
     revenue_curr: number; revenue_prev: number; delta_pct: number | null;
@@ -64,7 +65,17 @@ export interface MonthlyPresentationData {
   };
 }
 
-export function useMonthlyPresentationData(month: number, year: number, unitId: string | null) {
+interface RangeParams {
+  periodStart: string;
+  periodEnd: string;
+  compareStart: string;
+  compareEnd: string;
+  targetRatio: number;
+  unitId: string | null;
+}
+
+export function useMonthlyPresentationData(params: RangeParams) {
+  const { periodStart, periodEnd, compareStart, compareEnd, targetRatio, unitId } = params;
   const [data, setData] = useState<MonthlyPresentationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,24 +83,25 @@ export function useMonthlyPresentationData(month: number, year: number, unitId: 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_monthly_presentation", {
-      p_month: month,
-      p_year: year,
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_presentation_data_range" as never, {
+      p_period_start: periodStart,
+      p_period_end: periodEnd,
+      p_compare_start: compareStart,
+      p_compare_end: compareEnd,
       p_unit_id: unitId,
-    });
+      p_target_ratio: targetRatio,
+    } as never);
     if (rpcError) {
-      console.error("get_monthly_presentation error", rpcError);
+      console.error("get_presentation_data_range error", rpcError);
       setError(rpcError.message);
       setData(null);
     } else {
       setData(rpcData as unknown as MonthlyPresentationData);
     }
     setLoading(false);
-  }, [month, year, unitId]);
+  }, [periodStart, periodEnd, compareStart, compareEnd, targetRatio, unitId]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   return { data, loading, error, refetch: fetchData };
 }

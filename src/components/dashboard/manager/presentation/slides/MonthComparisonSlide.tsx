@@ -1,10 +1,13 @@
 import ScaledSlide from "../ScaledSlide";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
-import { fmtBRL, fmtInt, fmtPct } from "../slideHelpers";
+import { fmtBRL, fmtInt, fmtPct, formatPeriodShort } from "../slideHelpers";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 export default function MonthComparisonSlide({ data }: { data: MonthlyPresentationData }) {
   const c = data.month_comparison;
+  const prevLabel = data.compare_start && data.compare_end
+    ? formatPeriodShort(new Date(data.compare_start), new Date(data.compare_end))
+    : "Período anterior";
   const cards = [
     { label: "Faturamento", curr: fmtBRL(c.revenue.current), prev: fmtBRL(c.revenue.previous), delta: c.revenue.delta_pct },
     { label: "Clientes", curr: fmtInt(c.clients.current), prev: fmtInt(c.clients.previous), delta: c.clients.delta_pct },
@@ -14,7 +17,7 @@ export default function MonthComparisonSlide({ data }: { data: MonthlyPresentati
   return (
     <ScaledSlide>
       <div className="w-full h-full flex flex-col px-32 py-20">
-        <p className="text-2xl font-mono uppercase tracking-[0.3em] text-primary/80 mb-4">Mês vs Mês anterior</p>
+        <p className="text-2xl font-mono uppercase tracking-[0.3em] text-primary/80 mb-4">Período atual vs anterior</p>
         <h2 className="text-7xl font-bold mb-10">A evolução em 4 cards</h2>
         <div className="grid grid-cols-2 gap-8 flex-1">
           {cards.map((card) => {
@@ -24,7 +27,7 @@ export default function MonthComparisonSlide({ data }: { data: MonthlyPresentati
               <div key={card.label} className="rounded-3xl border border-border bg-card/60 p-10 flex flex-col">
                 <p className="text-3xl text-muted-foreground mb-4">{card.label}</p>
                 <p className="text-7xl font-bold text-primary mb-2">{card.curr}</p>
-                <p className="text-2xl text-muted-foreground mb-6">Mês anterior: {card.prev}</p>
+                <p className="text-2xl text-muted-foreground mb-6">{prevLabel}: {card.prev}</p>
                 <div className={`mt-auto flex items-center gap-3 ${color}`}>
                   <Icon className="w-12 h-12" />
                   <span className="text-5xl font-bold">{fmtPct(card.delta)}</span>
