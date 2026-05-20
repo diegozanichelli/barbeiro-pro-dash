@@ -127,6 +127,9 @@ export default function SubscriptionWizardModal({
   const [units, setUnits] = useState<Unit[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
 
+  // Retroactive payment date (optional). Defaults to undefined (= today via getTodayString or selectedDate prop)
+  const [paymentDate, setPaymentDate] = useState<Date | undefined>(undefined);
+
   // Client history
   const clientHistory = useClientHistory(organizationId);
   const { nameSuggestions, phoneSuggestions, loading: loadingClientSuggestions } = useClientAutocomplete({
