@@ -909,6 +909,7 @@ export type Database = {
       }
       sale_transactions: {
         Row: {
+          attribution_source: string | null
           barber_id: string | null
           catalog_product_id: string | null
           catalog_service_id: string | null
@@ -935,6 +936,7 @@ export type Database = {
           unit_id: string | null
         }
         Insert: {
+          attribution_source?: string | null
           barber_id?: string | null
           catalog_product_id?: string | null
           catalog_service_id?: string | null
@@ -961,6 +963,7 @@ export type Database = {
           unit_id?: string | null
         }
         Update: {
+          attribution_source?: string | null
           barber_id?: string | null
           catalog_product_id?: string | null
           catalog_service_id?: string | null

@@ -37,6 +37,7 @@ import {
   Smartphone,
   CalendarIcon,
   AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +121,7 @@ export default function SubscriptionWizardModal({
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   // Step 2 - Attribution
-  const [attributionType, setAttributionType] = useState<"reception" | "barber" | null>(null);
+  const [attributionType, setAttributionType] = useState<"reception" | "barber" | "manager_rescue" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [selectedBarberUnitName, setSelectedBarberUnitName] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -272,6 +273,7 @@ export default function SubscriptionWizardModal({
     if (step === "attribution") {
       if (attributionType === "reception") return !!selectedUnitId;
       if (attributionType === "barber") return !!selectedBarberId;
+      if (attributionType === "manager_rescue") return !!selectedUnitId;
       return false;
     }
     if (step === "details") {
@@ -444,6 +446,7 @@ export default function SubscriptionWizardModal({
         downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
         previous_plan_id: previousPlanId,
         previous_price: previousPrice,
+        attribution_source: attributionType,
       } as any);
 
       if (error) throw error;
@@ -463,10 +466,17 @@ export default function SubscriptionWizardModal({
         ],
       });
 
-      const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
-      toast.success(`Assinatura registrada!`, {
-        description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
-      });
+      if (attributionType === "manager_rescue") {
+        toast.success("Assinatura registrada como recuperação do gestor", {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
+        });
+      } else {
+        const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
+        toast.success(`Assinatura registrada!`, {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
+        });
+      }
+
 
       onComplete();
       setStep("success");
@@ -783,7 +793,7 @@ export default function SubscriptionWizardModal({
               <p className="text-sm text-muted-foreground">
                 O profissional selecionado receberá +10 pontos no Campeonato.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Button
                   type="button"
                   variant={attributionType === "reception" ? "default" : "outline"}
@@ -813,11 +823,32 @@ export default function SubscriptionWizardModal({
                   <span className="font-medium">Barbeiro</span>
                   <span className="text-xs text-muted-foreground">Indicou/vendeu</span>
                 </Button>
+                <Button
+                  type="button"
+                  variant={attributionType === "manager_rescue" ? "destructive" : "outline"}
+                  className={cn(
+                    "h-auto py-4 flex flex-col items-center gap-2",
+                    attributionType === "manager_rescue" && "ring-2 ring-destructive ring-offset-2"
+                  )}
+                  onClick={() => {
+                    setAttributionType("manager_rescue");
+                    setSelectedBarberId(null);
+                  }}
+                >
+                  <ShieldAlert className="w-6 h-6" />
+                  <span className="font-medium">Gestor</span>
+                  <span className="text-xs text-muted-foreground">Recuperação / falha</span>
+                </Button>
               </div>
 
-              {attributionType === "reception" && (
+              {(attributionType === "reception" || attributionType === "manager_rescue") && (
                 <div className="space-y-2 pt-2">
-                  <Label>Selecione a unidade: <span className="text-destructive">*</span></Label>
+                  <Label>
+                    {attributionType === "manager_rescue"
+                      ? "Unidade onde houve a falha:"
+                      : "Selecione a unidade:"}{" "}
+                    <span className="text-destructive">*</span>
+                  </Label>
                   <select
                     value={selectedUnitId || ""}
                     onChange={(e) => setSelectedUnitId(e.target.value || null)}
@@ -828,6 +859,16 @@ export default function SubscriptionWizardModal({
                       <option key={unit.id} value={unit.id}>{unit.name}</option>
                     ))}
                   </select>
+                  {attributionType === "manager_rescue" && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2 mt-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Esta venda será marcada como <strong>Recuperação do Gestor</strong>.
+                        Nenhum ponto será distribuído à recepção ou barbeiro, e a unidade
+                        aparecerá no relatório <strong>Recuperações do Gestor</strong> como falha operacional.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -881,7 +922,13 @@ export default function SubscriptionWizardModal({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Pontos para:</span>
-                    <span className="font-medium">{selectedBarberId ? "💈 Barbeiro" : "🏢 Recepção"}</span>
+                    <span className="font-medium">
+                      {attributionType === "manager_rescue"
+                        ? "⚠️ Nenhum (Recuperação do Gestor)"
+                        : selectedBarberId
+                        ? "💈 Barbeiro"
+                        : "🏢 Recepção"}
+                    </span>
                   </div>
                   {subscriptionAction === "downgrade" && downgradeReason && (
                     <div className="flex justify-between">
