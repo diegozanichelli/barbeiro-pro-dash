@@ -273,6 +273,7 @@ export default function SubscriptionWizardModal({
     if (step === "attribution") {
       if (attributionType === "reception") return !!selectedUnitId;
       if (attributionType === "barber") return !!selectedBarberId;
+      if (attributionType === "manager_rescue") return !!selectedUnitId;
       return false;
     }
     if (step === "details") {
