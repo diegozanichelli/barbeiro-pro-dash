@@ -174,26 +174,40 @@ export function PerformanceAlerts() {
                           <span className="font-semibold truncate">{alert.barber?.name ?? 'Barbeiro Removido'}</span>
                         </div>
                         
-                        <div className="grid grid-cols-3 gap-2 text-sm">
-                          <div>
-                            <p className="text-muted-foreground text-xs">Deficit</p>
-                            <p className="font-medium text-destructive">
-                              R$ {alert.valor_deficit_r$.toFixed(2)}
+                        {alert.alerta_tipo === 'Folgas em Excesso' ? (
+                          <div className="space-y-2 text-sm">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-muted-foreground text-xs">Folgas no mês:</span>
+                              <span className="font-bold text-destructive text-base">
+                                {alert.dias_restantes} dias
+                              </span>
+                            </div>
+                            <p className="text-sm text-foreground bg-destructive/10 border border-destructive/20 rounded p-2">
+                              Você está folgando demais. Sem horas disponíveis suficientes para trabalhar, você não vai conseguir bater sua meta.
                             </p>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground text-xs">% Atingido</p>
-                            <p className="font-medium">
-                              {alert.percentual_atingido.toFixed(1)}%
-                            </p>
+                        ) : (
+                          <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div>
+                              <p className="text-muted-foreground text-xs">Deficit</p>
+                              <p className="font-medium text-destructive">
+                                R$ {alert.valor_deficit_r$.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground text-xs">% Atingido</p>
+                              <p className="font-medium">
+                                {alert.percentual_atingido.toFixed(1)}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground text-xs">Dias Restantes</p>
+                              <p className="font-medium">
+                                {alert.dias_restantes}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground text-xs">Dias Restantes</p>
-                            <p className="font-medium">
-                              {alert.dias_restantes}
-                            </p>
-                          </div>
-                        </div>
+                        )}
                       </div>
 
                       <div className="flex gap-2 flex-shrink-0">
