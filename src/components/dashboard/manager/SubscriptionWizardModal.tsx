@@ -891,6 +891,61 @@ export default function SubscriptionWizardModal({
                   )}
                 </div>
               </div>
+
+              {/* Data do pagamento (retroativa) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Data do pagamento <span className="text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !paymentDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {paymentDate
+                        ? format(paymentDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                        : "Hoje (padrão)"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={paymentDate}
+                      onSelect={setPaymentDate}
+                      disabled={(d) => d > new Date() || d < subDays(new Date(), 90)}
+                      initialFocus
+                      locale={ptBR}
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+                {paymentDate && (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      Lançamento retroativo: será gravado em{" "}
+                      <strong>{format(paymentDate, "dd/MM/yyyy", { locale: ptBR })}</strong>.
+                      Confira antes de salvar.
+                    </span>
+                  </div>
+                )}
+                {paymentDate && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentDate(undefined)}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    Limpar e usar hoje
+                  </button>
+                )}
+              </div>
+
               {renderClientBadge() && (
                 <div>{renderClientBadge()}</div>
               )}
