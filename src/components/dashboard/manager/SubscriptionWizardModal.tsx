@@ -70,6 +70,12 @@ interface SubscriptionWizardModalProps {
   onComplete: () => void;
   onBridgeToService?: (barberId: string | null, barberName: string) => void;
   selectedDate?: string;
+  prefillPhone?: string;
+  prefillName?: string;
+  prefillAction?: "new" | "renew" | "upgrade" | "downgrade";
+  prefillPlanId?: string | null;
+  prefillIsNewClient?: boolean;
+  startStep?: "client_type" | "attribution";
 }
 
 interface Unit {
@@ -93,6 +99,12 @@ export default function SubscriptionWizardModal({
   onComplete,
   onBridgeToService,
   selectedDate,
+  prefillPhone,
+  prefillName,
+  prefillAction,
+  prefillPlanId,
+  prefillIsNewClient,
+  startStep,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
