@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import TransactionManagerModal from "./TransactionManagerModal";
+import ManagerRescueReport from "./ManagerRescueReport";
 import { useOrganization } from "@/hooks/useOrganization";
 
 interface DailyProduction {
