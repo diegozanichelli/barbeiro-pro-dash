@@ -793,7 +793,7 @@ export default function SubscriptionWizardModal({
               <p className="text-sm text-muted-foreground">
                 O profissional selecionado receberá +10 pontos no Campeonato.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Button
                   type="button"
                   variant={attributionType === "reception" ? "default" : "outline"}
@@ -823,11 +823,32 @@ export default function SubscriptionWizardModal({
                   <span className="font-medium">Barbeiro</span>
                   <span className="text-xs text-muted-foreground">Indicou/vendeu</span>
                 </Button>
+                <Button
+                  type="button"
+                  variant={attributionType === "manager_rescue" ? "destructive" : "outline"}
+                  className={cn(
+                    "h-auto py-4 flex flex-col items-center gap-2",
+                    attributionType === "manager_rescue" && "ring-2 ring-destructive ring-offset-2"
+                  )}
+                  onClick={() => {
+                    setAttributionType("manager_rescue");
+                    setSelectedBarberId(null);
+                  }}
+                >
+                  <ShieldAlert className="w-6 h-6" />
+                  <span className="font-medium">Gestor</span>
+                  <span className="text-xs text-muted-foreground">Recuperação / falha</span>
+                </Button>
               </div>
 
-              {attributionType === "reception" && (
+              {(attributionType === "reception" || attributionType === "manager_rescue") && (
                 <div className="space-y-2 pt-2">
-                  <Label>Selecione a unidade: <span className="text-destructive">*</span></Label>
+                  <Label>
+                    {attributionType === "manager_rescue"
+                      ? "Unidade onde houve a falha:"
+                      : "Selecione a unidade:"}{" "}
+                    <span className="text-destructive">*</span>
+                  </Label>
                   <select
                     value={selectedUnitId || ""}
                     onChange={(e) => setSelectedUnitId(e.target.value || null)}
@@ -838,6 +859,16 @@ export default function SubscriptionWizardModal({
                       <option key={unit.id} value={unit.id}>{unit.name}</option>
                     ))}
                   </select>
+                  {attributionType === "manager_rescue" && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2 mt-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Esta venda será marcada como <strong>Recuperação do Gestor</strong>.
+                        Nenhum ponto será distribuído à recepção ou barbeiro, e a unidade
+                        aparecerá no relatório <strong>Recuperações do Gestor</strong> como falha operacional.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
