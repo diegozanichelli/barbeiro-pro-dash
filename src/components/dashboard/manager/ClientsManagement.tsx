@@ -174,13 +174,17 @@ export default function ClientsManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients, lastSubByPhone]);
 
+  const hasSearch = search.trim().length > 0;
+
   const filtered = clients.filter((c) => {
-    if (filter === "no_phone" && !isNoPhone(c.mobile_phone)) return false;
-    if (filter === "incomplete_name" && !isIncompleteName(c.name)) return false;
-    if (filter === "overdue" && !isOverdue(c)) return false;
+    if (!hasSearch) {
+      if (filter === "no_phone" && !isNoPhone(c.mobile_phone)) return false;
+      if (filter === "incomplete_name" && !isIncompleteName(c.name)) return false;
+      if (filter === "overdue" && !isOverdue(c)) return false;
+      return true;
+    }
 
     const q = search.trim();
-    if (!q) return true;
     const qNorm = normalize(q);
     const nameMatch = normalize(c.name || "").includes(qNorm);
     const digitsOnly = q.replace(/\D/g, "");
