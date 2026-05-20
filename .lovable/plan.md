@@ -1,87 +1,47 @@
-## Problema
+## Objetivo
 
-Hoje, ao "Regularizar" uma assinatura na aba **Clientes**, o `SubscriptionWizardModal` força a venda a ser atribuída a **Recepção** ou **Barbeiro**. Quando o gestor está corrigindo justamente uma falha (recepção esqueceu de lançar, barbeiro não anotou, pagamento veio só pelo extrato), não existe a opção de marcar que **quem teve que entrar para resolver foi o próprio gestor**. Isso distorce os relatórios — pontos, conversão e atribuição vão parar em alguém que de fato não vendeu.
+Disparar automaticamente um alerta para o gestor quando um barbeiro registrar **mais de 4 folgas (`presence_type = 'day_off'`) no mês corrente**, com a mensagem:
 
-O gestor precisa de uma 3ª opção, **"Gestor (recuperação)"**, e os relatórios precisam mostrar quantas regularizações o gestor teve que assumir, separado por unidade, para evidenciar onde a operação está falhando.
+> "Você está folgando demais. Sem horas disponíveis suficientes para trabalhar, você não vai conseguir bater sua meta."
 
-## Solução em uma frase
+O alerta aparece no mesmo card **Alertas de Performance** (`PerformanceAlerts.tsx`) que já é exibido na Visão Geral do gestor, reaproveitando toda a UI existente (badge vermelho, botões Resolver/Ignorar, filtro por mês de referência).
 
-Adicionar a opção **"Gestor"** no passo de atribuição, gravar essa marcação na transação, e adicionar um relatório dedicado **"Recuperações do Gestor"** que mostra quantas assinaturas (e qual valor) foram salvas pelo gestor por unidade/período, com o detalhe de cada uma.
+## Como vai funcionar
 
----
+1. **Detecção**: roda dentro da edge function diária já existente `check-performance-alerts` (a mesma que faz o pacing check às 01:00 AM).
+2. **Cálculo por barbeiro ativo** da organização, para o mês corrente em Manaus:
+   - Conta linhas em `daily_productions` onde `barber_id = X`, `date` dentro do mês e `presence_type = 'day_off'`.
+   - Se `count > 4` → upsert de alerta com:
+     - `alerta_tipo = 'Folgas em Excesso'`
+     - `valor_deficit_r$ = 0`
+     - `percentual_atingido = 0`
+     - `dias_restantes = nº de folgas no mês` (reaproveita o campo para mostrar a quantidade)
+     - `status = 'ativo'`, `mes_referencia = primeiro dia do mês`
+   - Se `count <= 4` e existe alerta ativo desse tipo → marca como `resolvido` (auto-reset, igual ao pacing).
+3. **Reaproveita** a unique constraint `(barber_id, mes_referencia, alerta_tipo)` já usada pelos outros tipos para fazer upsert sem duplicar.
 
-## Mudanças
+## UI
 
-### 1. Banco de dados (migração)
+Em `PerformanceAlerts.tsx`:
+- Adicionar `'Folgas em Excesso'` em `getAlertColor` (cor `default`/amarelo) e em `getAlertIcon` (ícone `CalendarX` do lucide).
+- Renderização condicional do bloco de métricas: quando `alerta_tipo === 'Folgas em Excesso'`, substituir os 3 contadores atuais (Deficit / % Atingido / Dias Restantes) por:
+  - **Folgas no mês**: `{dias_restantes}` dias
+  - **Mensagem fixa**: "Você está folgando demais. Sem horas disponíveis suficientes para trabalhar, você não vai conseguir bater sua meta."
+- Botões **Resolver** e **Ignorar** continuam funcionando sem mudança.
 
-Adicionar coluna em `sale_transactions` para marcar a origem da atribuição:
+## Detalhes técnicos
 
-```sql
-ALTER TABLE public.sale_transactions
-  ADD COLUMN attribution_source text;
--- valores esperados: 'barber' | 'reception' | 'manager_rescue' | NULL (legado)
+- **Threshold configurável** via constante `DAY_OFF_THRESHOLD = 4` no topo da edge function (acima de 4 dispara, ou seja, a partir do 5º dia de folga).
+- **Critério da folga**: somente `presence_type = 'day_off'`. **Não** conta `absence`, `optional_sunday` nem `holiday` (faltas e domingos opcionais têm tratamento próprio e feriado não é folga voluntária).
+- **Sem migração de schema**: a tabela `performance_alerts` já aceita `alerta_tipo` como `text` livre e os campos numéricos comportam zeros.
+- **Sem mudanças no cron**: o agendamento atual em `0 4 * * *` continua chamando a mesma função, que agora além do pacing-check também roda o day-off-check.
+- **Log de execução** (`performance_alert_run_logs`): incrementa `alerts_created` / `alerts_updated` igual ao bloco de pacing, para manter telemetria consistente.
+
+## Arquivos afetados
+
+```text
+supabase/functions/check-performance-alerts/index.ts   (+ bloco day-off)
+src/components/dashboard/manager/PerformanceAlerts.tsx (+ render condicional)
 ```
 
-Índice parcial para acelerar o relatório de recuperações:
-
-```sql
-CREATE INDEX idx_sale_transactions_manager_rescue
-  ON public.sale_transactions (organization_id, created_at)
-  WHERE attribution_source = 'manager_rescue';
-```
-
-Sem nova tabela. Não há mudança em RLS — herda as policies existentes de `sale_transactions`. Não precisa de trigger novo.
-
-### 2. Wizard de assinatura (`SubscriptionWizardModal.tsx`)
-
-- Estender o tipo: `attributionType: "reception" | "barber" | "manager_rescue" | null`.
-- Adicionar um **3º botão** no Step 2 ("Quem realizou essa venda?"):
-  - Label: **"Gestor (recuperação)"**
-  - Sub-texto: *"Recepção/barbeiro falharam em lançar"*
-  - Ícone: `ShieldAlert` (lucide).
-- Quando `manager_rescue` for selecionado:
-  - Continua exigindo **unidade** (qual recepção/loja falhou), mesma UI do fluxo "reception".
-  - **Não atribui pontos** a barbeiro nem à recepção.
-  - Toast final: *"Assinatura registrada como recuperação do gestor — nenhum ponto distribuído."*
-- Ao gravar em `sale_transactions`:
-  - `barber_id = NULL`
-  - `unit_id = selectedUnitId` (obrigatório)
-  - `daily_production_id = NULL`
-  - `attribution_source = 'manager_rescue'`
-  - Demais campos (`source='manager'`, plano, ação, etc.) iguais ao fluxo atual.
-- Nos fluxos atuais (reception / barber), também passar `attribution_source` correspondente para manter os dados consistentes daqui pra frente.
-
-### 3. Relatório
-
-Local: dentro de **Relatórios → Assinaturas** (`SubscriptionPerformanceReport.tsx`), adicionar um **novo card/seção no topo** chamada **"Recuperações do Gestor"**, visível só se houver pelo menos 1 registro no período.
-
-Conteúdo:
-- KPIs grandes: nº de recuperações, MRR salvo (soma de `price_sold`), % sobre o total de adesões do período.
-- Tabela por **unidade**: unidade, nº de recuperações, MRR salvo, última recuperação.
-- Linha de aviso vermelha/âmbar quando uma unidade ultrapassar X recuperações no período (ex: ≥5) — indicador de falha operacional.
-- Botão "Ver detalhes" → modal listando cada transação (cliente, telefone, plano, data, ação new/renew).
-
-Filtros: usa o mesmo filtro de período e unidade já existentes na aba de relatórios.
-
-Implementação: query direta `sale_transactions` com `attribution_source = 'manager_rescue'` + join em `units` pelo `unit_id`. Sem RPC nova nesta primeira versão (volume baixo).
-
-### 4. Apresentação mensal (opcional, escopo pequeno)
-
-Adicionar 1 slide novo `ManagerRescueSlide` na apresentação mensal mostrando o total de recuperações no período e ranking de unidades com mais falhas. Pode ser incluído junto, já que a infra do deck e o RPC `get_presentation_data_range` ficam num arquivo só — adiciono ali a métrica `manager_rescue_count` e `manager_rescue_mrr` por unidade.
-
-> Se preferir deixar pra um próximo passo, basta dizer e eu corto este item.
-
----
-
-## Fora de escopo
-
-- Não vou alterar a lógica de pontos/comissão do campeonato (já que `manager_rescue` simplesmente não atribui pontos, é só não chamar a rotina).
-- Não vou criar nova tabela — uma coluna em `sale_transactions` é suficiente e mantém o histórico unificado.
-- Não vou retroagir dados antigos: registros anteriores ficam com `attribution_source = NULL` e continuam aparecendo nos relatórios atuais como sempre.
-- Não mexo no fluxo do PDV ao vivo nem nas vendas de serviço/produto — só assinaturas via wizard.
-
----
-
-## Dúvida rápida antes de aplicar
-
-Quer o slide novo na apresentação mensal já nessa leva, ou só o relatório por enquanto?
+Nenhuma alteração de banco, RLS, navegação ou rotas.
