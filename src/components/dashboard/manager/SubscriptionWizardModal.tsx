@@ -299,7 +299,8 @@ export default function SubscriptionWizardModal({
   const handleSubmit = async () => {
     if (!selectedPlanId || !clientName.trim()) return;
     setLoading(true);
-    const dateStr = selectedDate || getTodayString();
+    const effectiveDate = paymentDate ? format(paymentDate, "yyyy-MM-dd") : (selectedDate || getTodayString());
+    const dateStr = effectiveDate;
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
