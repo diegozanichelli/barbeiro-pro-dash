@@ -4,12 +4,33 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, Users, Crown, Phone, AlertTriangle, PhoneOff, UserX } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Loader2,
+  Search,
+  Users,
+  Crown,
+  Phone,
+  AlertTriangle,
+  PhoneOff,
+  UserX,
+  RefreshCw,
+  CreditCard,
+  ArrowUpDown,
+} from "lucide-react";
 import { formatPhone, isValidPhone } from "@/lib/phoneUtils";
 import { format, differenceInCalendarDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
 import ClientDetailModal from "./ClientDetailModal";
+import SubscriptionWizardModal from "./SubscriptionWizardModal";
 
 interface Client {
   id: string;
@@ -43,6 +64,13 @@ export default function ClientsManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardPrefill, setWizardPrefill] = useState<{
+    phone: string;
+    name: string;
+    action: "new" | "renew" | "upgrade" | "downgrade";
+    planId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (organizationId) fetchData();
@@ -280,7 +308,7 @@ export default function ClientsManagement() {
                 className="cursor-pointer hover:bg-accent/50 transition-colors"
                 onClick={() => handleClientClick(client)}
               >
-                <CardContent className="p-4 flex items-center justify-between">
+                <CardContent className="p-4 flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm truncate">{client.name || "—"}</span>
@@ -315,6 +343,75 @@ export default function ClientsManagement() {
                       </span>
                     </div>
                   </div>
+
+                  {!noPhone && (
+                    <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={isOverdue(client) ? "destructive" : "outline"}
+                            className="gap-1.5 h-8"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">
+                              {isOverdue(client) ? "Regularizar" : "Pagamento"}
+                            </span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 bg-popover z-50">
+                          <DropdownMenuLabel className="text-xs">Registrar pagamento</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {plan ? (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setWizardPrefill({
+                                  phone: client.mobile_phone,
+                                  name: client.name,
+                                  action: "renew",
+                                  planId: client.subscription_plan_id,
+                                });
+                                setWizardOpen(true);
+                              }}
+                            >
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Renovar plano atual
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setWizardPrefill({
+                                  phone: client.mobile_phone,
+                                  name: client.name,
+                                  action: "new",
+                                  planId: null,
+                                });
+                                setWizardOpen(true);
+                              }}
+                            >
+                              <Crown className="w-4 h-4 mr-2" />
+                              Reativar assinatura
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setWizardPrefill({
+                                phone: client.mobile_phone,
+                                name: client.name,
+                                action: "upgrade",
+                                planId: null,
+                              });
+                              setWizardOpen(true);
+                            }}
+                          >
+                            <ArrowUpDown className="w-4 h-4 mr-2" />
+                            Trocar de plano
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -358,6 +455,24 @@ export default function ClientsManagement() {
         client={selectedClient}
         organizationId={organizationId || ""}
         onUpdated={fetchData}
+      />
+
+      <SubscriptionWizardModal
+        open={wizardOpen}
+        onOpenChange={(o) => {
+          setWizardOpen(o);
+          if (!o) setWizardPrefill(null);
+        }}
+        organizationId={organizationId || ""}
+        onComplete={() => {
+          fetchData();
+        }}
+        prefillPhone={wizardPrefill?.phone}
+        prefillName={wizardPrefill?.name}
+        prefillAction={wizardPrefill?.action}
+        prefillPlanId={wizardPrefill?.planId ?? undefined}
+        prefillIsNewClient={false}
+        startStep={wizardPrefill?.planId ? "attribution" : "client_type"}
       />
     </div>
   );

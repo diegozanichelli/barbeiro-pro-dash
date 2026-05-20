@@ -35,6 +35,8 @@ import {
   ArrowDownCircle,
   Phone,
   Smartphone,
+  CalendarIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +48,10 @@ import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
@@ -64,6 +70,12 @@ interface SubscriptionWizardModalProps {
   onComplete: () => void;
   onBridgeToService?: (barberId: string | null, barberName: string) => void;
   selectedDate?: string;
+  prefillPhone?: string;
+  prefillName?: string;
+  prefillAction?: "new" | "renew" | "upgrade" | "downgrade";
+  prefillPlanId?: string | null;
+  prefillIsNewClient?: boolean;
+  startStep?: "client_type" | "attribution";
 }
 
 interface Unit {
@@ -87,6 +99,12 @@ export default function SubscriptionWizardModal({
   onComplete,
   onBridgeToService,
   selectedDate,
+  prefillPhone,
+  prefillName,
+  prefillAction,
+  prefillPlanId,
+  prefillIsNewClient,
+  startStep,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
@@ -108,6 +126,9 @@ export default function SubscriptionWizardModal({
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+
+  // Retroactive payment date (optional). Defaults to undefined (= today via getTodayString or selectedDate prop)
+  const [paymentDate, setPaymentDate] = useState<Date | undefined>(undefined);
 
   // Client history
   const clientHistory = useClientHistory(organizationId);
@@ -145,8 +166,21 @@ export default function SubscriptionWizardModal({
       setSelectedBarberId(null);
       setSelectedBarberUnitName(null);
       setSelectedUnitId(null);
+      setPaymentDate(undefined);
       clientHistory.reset();
+      return;
     }
+
+    // Apply prefills when opening (only if provided)
+    if (prefillPhone) setMobilePhone(formatPhone(prefillPhone));
+    if (prefillName) setClientName(prefillName);
+    if (typeof prefillIsNewClient === "boolean") {
+      setIsNewClient(prefillIsNewClient);
+      setManualOverride(true);
+    }
+    if (prefillAction) setSubscriptionAction(prefillAction);
+    if (prefillPlanId) setSelectedPlanId(prefillPlanId);
+    if (startStep) setStep(startStep);
   }, [open]);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
@@ -265,7 +299,8 @@ export default function SubscriptionWizardModal({
   const handleSubmit = async () => {
     if (!selectedPlanId || !clientName.trim()) return;
     setLoading(true);
-    const dateStr = selectedDate || getTodayString();
+    const effectiveDate = paymentDate ? format(paymentDate, "yyyy-MM-dd") : (selectedDate || getTodayString());
+    const dateStr = effectiveDate;
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
@@ -383,7 +418,8 @@ export default function SubscriptionWizardModal({
         }
       }
 
-      const createdAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
+      const isRetro = !!paymentDate || !!selectedDate;
+      const createdAt = isRetro ? `${effectiveDate}T12:00:00-04:00` : new Date().toISOString();
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
         organization_id: organizationId,
@@ -855,6 +891,61 @@ export default function SubscriptionWizardModal({
                   )}
                 </div>
               </div>
+
+              {/* Data do pagamento (retroativa) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Data do pagamento <span className="text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !paymentDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {paymentDate
+                        ? format(paymentDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                        : "Hoje (padrão)"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={paymentDate}
+                      onSelect={setPaymentDate}
+                      disabled={(d) => d > new Date() || d < subDays(new Date(), 90)}
+                      initialFocus
+                      locale={ptBR}
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+                {paymentDate && (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      Lançamento retroativo: será gravado em{" "}
+                      <strong>{format(paymentDate, "dd/MM/yyyy", { locale: ptBR })}</strong>.
+                      Confira antes de salvar.
+                    </span>
+                  </div>
+                )}
+                {paymentDate && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentDate(undefined)}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    Limpar e usar hoje
+                  </button>
+                )}
+              </div>
+
               {renderClientBadge() && (
                 <div>{renderClientBadge()}</div>
               )}
