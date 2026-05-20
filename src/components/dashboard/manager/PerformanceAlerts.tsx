@@ -88,6 +88,8 @@ export function PerformanceAlerts() {
         return 'default';
       case 'Risco Moderado':
         return 'secondary';
+      case 'Folgas em Excesso':
+        return 'destructive';
       default:
         return 'default';
     }
@@ -101,6 +103,8 @@ export function PerformanceAlerts() {
         return <TrendingDown className="h-4 w-4" />;
       case 'Risco Moderado':
         return <AlertTriangle className="h-4 w-4" />;
+      case 'Folgas em Excesso':
+        return <CalendarX className="h-4 w-4" />;
       default:
         return <AlertTriangle className="h-4 w-4" />;
     }
