@@ -35,6 +35,8 @@ import {
   ArrowDownCircle,
   Phone,
   Smartphone,
+  CalendarIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +48,10 @@ import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
