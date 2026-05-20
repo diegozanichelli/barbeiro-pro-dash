@@ -308,7 +308,7 @@ export default function ClientsManagement() {
                 className="cursor-pointer hover:bg-accent/50 transition-colors"
                 onClick={() => handleClientClick(client)}
               >
-                <CardContent className="p-4 flex items-center justify-between">
+                <CardContent className="p-4 flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm truncate">{client.name || "—"}</span>
@@ -343,6 +343,75 @@ export default function ClientsManagement() {
                       </span>
                     </div>
                   </div>
+
+                  {!noPhone && (
+                    <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={isOverdue(client) ? "destructive" : "outline"}
+                            className="gap-1.5 h-8"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">
+                              {isOverdue(client) ? "Regularizar" : "Pagamento"}
+                            </span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 bg-popover z-50">
+                          <DropdownMenuLabel className="text-xs">Registrar pagamento</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {plan ? (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setWizardPrefill({
+                                  phone: client.mobile_phone,
+                                  name: client.name,
+                                  action: "renew",
+                                  planId: client.subscription_plan_id,
+                                });
+                                setWizardOpen(true);
+                              }}
+                            >
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Renovar plano atual
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setWizardPrefill({
+                                  phone: client.mobile_phone,
+                                  name: client.name,
+                                  action: "new",
+                                  planId: null,
+                                });
+                                setWizardOpen(true);
+                              }}
+                            >
+                              <Crown className="w-4 h-4 mr-2" />
+                              Reativar assinatura
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setWizardPrefill({
+                                phone: client.mobile_phone,
+                                name: client.name,
+                                action: "upgrade",
+                                planId: null,
+                              });
+                              setWizardOpen(true);
+                            }}
+                          >
+                            <ArrowUpDown className="w-4 h-4 mr-2" />
+                            Trocar de plano
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
