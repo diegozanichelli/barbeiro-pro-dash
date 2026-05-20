@@ -418,7 +418,8 @@ export default function SubscriptionWizardModal({
         }
       }
 
-      const createdAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
+      const isRetro = !!paymentDate || !!selectedDate;
+      const createdAt = isRetro ? `${effectiveDate}T12:00:00-04:00` : new Date().toISOString();
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
         organization_id: organizationId,
