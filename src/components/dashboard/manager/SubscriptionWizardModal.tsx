@@ -166,8 +166,21 @@ export default function SubscriptionWizardModal({
       setSelectedBarberId(null);
       setSelectedBarberUnitName(null);
       setSelectedUnitId(null);
+      setPaymentDate(undefined);
       clientHistory.reset();
+      return;
     }
+
+    // Apply prefills when opening (only if provided)
+    if (prefillPhone) setMobilePhone(formatPhone(prefillPhone));
+    if (prefillName) setClientName(prefillName);
+    if (typeof prefillIsNewClient === "boolean") {
+      setIsNewClient(prefillIsNewClient);
+      setManualOverride(true);
+    }
+    if (prefillAction) setSubscriptionAction(prefillAction);
+    if (prefillPlanId) setSelectedPlanId(prefillPlanId);
+    if (startStep) setStep(startStep);
   }, [open]);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
