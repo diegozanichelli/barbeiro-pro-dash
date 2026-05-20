@@ -451,6 +451,14 @@ export default function ManagerReports() {
         </Card>
       </div>
 
+      {organizationId && dateRange?.from && dateRange?.to && (
+        <ManagerRescueReport
+          organizationId={organizationId}
+          from={dateRange.from}
+          to={dateRange.to}
+        />
+      )}
+
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
           <CardTitle>Metas Batidas</CardTitle>
