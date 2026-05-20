@@ -922,7 +922,13 @@ export default function SubscriptionWizardModal({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Pontos para:</span>
-                    <span className="font-medium">{selectedBarberId ? "💈 Barbeiro" : "🏢 Recepção"}</span>
+                    <span className="font-medium">
+                      {attributionType === "manager_rescue"
+                        ? "⚠️ Nenhum (Recuperação do Gestor)"
+                        : selectedBarberId
+                        ? "💈 Barbeiro"
+                        : "🏢 Recepção"}
+                    </span>
                   </div>
                   {subscriptionAction === "downgrade" && downgradeReason && (
                     <div className="flex justify-between">
