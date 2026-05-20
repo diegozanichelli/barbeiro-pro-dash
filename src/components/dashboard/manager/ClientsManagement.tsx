@@ -279,6 +279,24 @@ export default function ClientsManagement() {
         })}
       </div>
 
+      {hasSearch && filter !== "all" && (
+        <div className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-center justify-between gap-2">
+          <span>
+            Busca ativa — mostrando resultados em <strong>todos os clientes</strong>, ignorando o filtro{" "}
+            <strong>{filterButtons.find((b) => b.key === filter)?.label}</strong>.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs shrink-0"
+            onClick={() => setSearch("")}
+          >
+            Limpar busca
+          </Button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -288,10 +306,10 @@ export default function ClientsManagement() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Users className="w-10 h-10 mb-3 opacity-50" />
             <p className="text-sm">
-              {filter !== "all"
+              {hasSearch
+                ? `Nenhum cliente encontrado para "${search.trim()}"`
+                : filter !== "all"
                 ? "Nenhum cliente neste filtro"
-                : search
-                ? "Nenhum cliente encontrado"
                 : "Nenhum cliente cadastrado ainda"}
             </p>
           </CardContent>
