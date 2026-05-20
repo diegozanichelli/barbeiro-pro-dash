@@ -64,6 +64,13 @@ export default function ClientsManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardPrefill, setWizardPrefill] = useState<{
+    phone: string;
+    name: string;
+    action: "new" | "renew" | "upgrade" | "downgrade";
+    planId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (organizationId) fetchData();
