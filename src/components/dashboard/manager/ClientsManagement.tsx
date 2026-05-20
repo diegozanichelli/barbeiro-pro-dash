@@ -4,12 +4,33 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, Users, Crown, Phone, AlertTriangle, PhoneOff, UserX } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Loader2,
+  Search,
+  Users,
+  Crown,
+  Phone,
+  AlertTriangle,
+  PhoneOff,
+  UserX,
+  RefreshCw,
+  CreditCard,
+  ArrowUpDown,
+} from "lucide-react";
 import { formatPhone, isValidPhone } from "@/lib/phoneUtils";
 import { format, differenceInCalendarDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
 import ClientDetailModal from "./ClientDetailModal";
+import SubscriptionWizardModal from "./SubscriptionWizardModal";
 
 interface Client {
   id: string;
