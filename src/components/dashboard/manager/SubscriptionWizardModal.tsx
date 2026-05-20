@@ -446,6 +446,7 @@ export default function SubscriptionWizardModal({
         downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
         previous_plan_id: previousPlanId,
         previous_price: previousPrice,
+        attribution_source: attributionType,
       } as any);
 
       if (error) throw error;
@@ -465,10 +466,17 @@ export default function SubscriptionWizardModal({
         ],
       });
 
-      const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
-      toast.success(`Assinatura registrada!`, {
-        description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
-      });
+      if (attributionType === "manager_rescue") {
+        toast.success("Assinatura registrada como recuperação do gestor", {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
+        });
+      } else {
+        const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
+        toast.success(`Assinatura registrada!`, {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
+        });
+      }
+
 
       onComplete();
       setStep("success");
