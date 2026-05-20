@@ -456,6 +456,24 @@ export default function ClientsManagement() {
         organizationId={organizationId || ""}
         onUpdated={fetchData}
       />
+
+      <SubscriptionWizardModal
+        open={wizardOpen}
+        onOpenChange={(o) => {
+          setWizardOpen(o);
+          if (!o) setWizardPrefill(null);
+        }}
+        organizationId={organizationId || ""}
+        onComplete={() => {
+          fetchData();
+        }}
+        prefillPhone={wizardPrefill?.phone}
+        prefillName={wizardPrefill?.name}
+        prefillAction={wizardPrefill?.action}
+        prefillPlanId={wizardPrefill?.planId ?? undefined}
+        prefillIsNewClient={false}
+        startStep={wizardPrefill?.planId ? "attribution" : "client_type"}
+      />
     </div>
   );
 }
