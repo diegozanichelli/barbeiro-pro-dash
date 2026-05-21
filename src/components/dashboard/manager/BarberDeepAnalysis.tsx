@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
@@ -18,7 +19,19 @@ import {
   PolarRadiusAxis,
   Radar,
 } from "recharts";
-import { Users, Receipt, Repeat, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  Users,
+  Receipt,
+  Repeat,
+  TrendingDown,
+  TrendingUp,
+  Sparkles,
+  BadgeDollarSign,
+  UserCheck,
+  Phone,
+  ShoppingBag,
+  Activity,
+} from "lucide-react";
 
 export type DeepAnalysisPeriod = "current_month" | "last_3_months" | "year";
 
@@ -64,12 +77,75 @@ interface ServiceTxRow {
   created_at: string;
   mobile_phone: string | null;
   daily_production_id: string | null;
+  item_type: string | null;
+  is_new_client: boolean | null;
+  price_sold: number | null;
 }
 
 interface ClientMetrics {
   atendimentos: number; // distinct created_at (definição "Ao Vivo")
   servicos: number; // total de linhas item_type='service'
   unicos: number; // telefones distintos
+}
+
+interface VitalMetrics {
+  uniqueClients: number;
+  ticketMedio: number;
+  recurringPct: number; // 0-100 (apenas considerando linhas com flag is_new_client preenchida)
+  newCount: number;
+  returningCount: number;
+  subscriptionCount: number;
+  subscriptionRevenue: number;
+  // médias da casa por barbeiro ativo
+  houseUniqueClientsAvg: number;
+  houseTicketMedioAvg: number;
+  houseSubscriptionCountAvg: number;
+  hasItemizedData: boolean;
+}
+
+interface PortfolioQuality {
+  phoneCoveragePct: number;
+  visitsPerClient: number;
+  productPenetrationPct: number;
+}
+
+type Semaphore = "success" | "warning" | "destructive";
+
+function getSemaphore(
+  value: number,
+  reference: number,
+  thresholds: { greenRatio: number; yellowRatio: number } = { greenRatio: 1.1, yellowRatio: 0.8 }
+): Semaphore {
+  if (reference <= 0) return value > 0 ? "success" : "warning";
+  const ratio = value / reference;
+  if (ratio >= thresholds.greenRatio) return "success";
+  if (ratio >= thresholds.yellowRatio) return "warning";
+  return "destructive";
+}
+
+function semaphoreClasses(s: Semaphore) {
+  if (s === "success") {
+    return {
+      border: "border-l-[hsl(var(--success))]",
+      text: "text-[hsl(var(--success))]",
+      bar: "bg-[hsl(var(--success))]",
+      label: "Acima da média",
+    };
+  }
+  if (s === "warning") {
+    return {
+      border: "border-l-amber-500",
+      text: "text-amber-500",
+      bar: "bg-amber-500",
+      label: "Próximo da média",
+    };
+  }
+  return {
+    border: "border-l-destructive",
+    text: "text-destructive",
+    bar: "bg-destructive",
+    label: "Abaixo do esperado",
+  };
 }
 
 const PAGE_SIZE = 1000;
@@ -218,6 +294,24 @@ export default function BarberDeepAnalysis({
       dailyGoal: number;
     }>
   >([]);
+  const [vitalMetrics, setVitalMetrics] = useState<VitalMetrics>({
+    uniqueClients: 0,
+    ticketMedio: 0,
+    recurringPct: 0,
+    newCount: 0,
+    returningCount: 0,
+    subscriptionCount: 0,
+    subscriptionRevenue: 0,
+    houseUniqueClientsAvg: 0,
+    houseTicketMedioAvg: 0,
+    houseSubscriptionCountAvg: 0,
+    hasItemizedData: false,
+  });
+  const [portfolioQuality, setPortfolioQuality] = useState<PortfolioQuality>({
+    phoneCoveragePct: 0,
+    visitsPerClient: 0,
+    productPenetrationPct: 0,
+  });
 
   const { start, end } = useMemo(
     () => getDateRange(period, selectedYear),
@@ -330,26 +424,30 @@ export default function BarberDeepAnalysis({
         total: Math.max(selected.total, ...others.map((v) => v.total), 1),
       });
 
-      // 2) Buscar SERVIÇOS itemizados de toda a organização no período
-      // (uma única query — usada para clientes/atendimentos do barbeiro,
-      // média da casa, retenção e histórico recente)
+      // 2) Buscar TODAS as transações itemizadas da organização no período
+      // (uma única query — usada para atendimentos, métricas vitais,
+      // qualidade de carteira, retenção e histórico recente)
       const serviceTx = await fetchPaginated<ServiceTxRow>((f, t) =>
         supabase
           .from("sale_transactions")
-          .select("barber_id, created_at, mobile_phone, daily_production_id")
+          .select(
+            "barber_id, created_at, mobile_phone, daily_production_id, item_type, is_new_client, price_sold"
+          )
           .eq("organization_id", organizationId!)
-          .eq("item_type", "service")
           .gte("created_at", start.toISOString())
           .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
           .range(f, t)
       );
 
-      // Agregação de clientes por barbeiro
+      // Subconjunto só de serviços (mantém compat com lógicas legadas)
+      const serviceOnly = serviceTx.filter((t) => t.item_type === "service");
+
+      // Agregação "clientes" por barbeiro — baseada em SERVIÇOS (manter ticket histórico)
       const perBarberClients = new Map<
         string,
         { atendimentos: Set<string>; servicos: number; phones: Set<string> }
       >();
-      for (const t of serviceTx) {
+      for (const t of serviceOnly) {
         if (!t.barber_id) continue;
         const cur =
           perBarberClients.get(t.barber_id) ??
@@ -415,7 +513,7 @@ export default function BarberDeepAnalysis({
         string,
         { atendimentos: Set<string>; servicos: number }
       >();
-      for (const t of serviceTx) {
+      for (const t of serviceOnly) {
         if (t.barber_id !== barberId) continue;
         // chave do dia em America/Manaus (offset -04:00)
         const d = new Date(t.created_at);
@@ -500,6 +598,138 @@ export default function BarberDeepAnalysis({
         });
         setRetention((recurrentes / phonesPeriod.size) * 100);
       }
+
+      // 5) Métricas Vitais + Qualidade de Carteira (toda org → médias da casa)
+      type Agg = {
+        phones: Set<string>;
+        atendimentos: Set<string>; // distinct created_at across all item types
+        atendimentosComProduto: Set<string>;
+        atendimentosComTelefone: number;
+        atendimentosTotal: number; // total de linhas distinct(created_at) (= atendimentos.size)
+        newCount: number;
+        returningCount: number;
+        subscriptionCount: number;
+        subscriptionRevenue: number;
+        revenue: number; // soma de price_sold
+      };
+      const newAgg = (): Agg => ({
+        phones: new Set(),
+        atendimentos: new Set(),
+        atendimentosComProduto: new Set(),
+        atendimentosComTelefone: 0,
+        atendimentosTotal: 0,
+        newCount: 0,
+        returningCount: 0,
+        subscriptionCount: 0,
+        subscriptionRevenue: 0,
+        revenue: 0,
+      });
+      const perBarberVitals = new Map<string, Agg>();
+      // marcar atendimentos com telefone usando set de created_at
+      const phoneByAtend = new Map<string, Map<string, boolean>>();
+      // tracking newClient por atendimento (1 vez por created_at, primeira flag truthy "ganha")
+      const newFlagByAtend = new Map<string, Map<string, boolean | null>>();
+
+      for (const t of serviceTx) {
+        if (!t.barber_id) continue;
+        const cur = perBarberVitals.get(t.barber_id) ?? newAgg();
+        cur.atendimentos.add(t.created_at);
+        const phone = (t.mobile_phone || "").replace(/\D/g, "");
+        if (phone.length >= 8) cur.phones.add(phone);
+        if (t.item_type === "product") cur.atendimentosComProduto.add(t.created_at);
+        if (t.item_type === "subscription") {
+          cur.subscriptionCount += 1;
+          cur.subscriptionRevenue += Number(t.price_sold) || 0;
+        }
+        cur.revenue += Number(t.price_sold) || 0;
+
+        // telefone por atendimento (qualquer linha do mesmo created_at com phone marca true)
+        let pmap = phoneByAtend.get(t.barber_id);
+        if (!pmap) { pmap = new Map(); phoneByAtend.set(t.barber_id, pmap); }
+        if (!pmap.get(t.created_at)) pmap.set(t.created_at, phone.length >= 8);
+
+        // is_new_client por atendimento
+        let nmap = newFlagByAtend.get(t.barber_id);
+        if (!nmap) { nmap = new Map(); newFlagByAtend.set(t.barber_id, nmap); }
+        if (!nmap.has(t.created_at)) nmap.set(t.created_at, t.is_new_client);
+        else if (nmap.get(t.created_at) == null && t.is_new_client != null) {
+          nmap.set(t.created_at, t.is_new_client);
+        }
+
+        perBarberVitals.set(t.barber_id, cur);
+      }
+      // consolidar contagens por atendimento
+      perBarberVitals.forEach((agg, bid) => {
+        agg.atendimentosTotal = agg.atendimentos.size;
+        const pmap = phoneByAtend.get(bid);
+        if (pmap) {
+          let withPhone = 0;
+          pmap.forEach((v) => { if (v) withPhone++; });
+          agg.atendimentosComTelefone = withPhone;
+        }
+        const nmap = newFlagByAtend.get(bid);
+        if (nmap) {
+          nmap.forEach((v) => {
+            if (v === true) agg.newCount++;
+            else if (v === false) agg.returningCount++;
+          });
+        }
+      });
+
+      const selfVitals = perBarberVitals.get(barberId) ?? newAgg();
+      const othersVitals = Array.from(perBarberVitals.entries())
+        .filter(([bid, a]) => bid !== barberId && a.atendimentosTotal > 0)
+        .map(([, a]) => a);
+
+      const houseUniqueAvg = othersVitals.length
+        ? othersVitals.reduce((s, a) => s + a.phones.size, 0) / othersVitals.length
+        : 0;
+      const houseTicketAvg = (() => {
+        const tickets = othersVitals
+          .map((a) => (a.atendimentosTotal > 0 ? a.revenue / a.atendimentosTotal : 0))
+          .filter((v) => v > 0);
+        return tickets.length ? tickets.reduce((s, v) => s + v, 0) / tickets.length : 0;
+      })();
+      const houseSubsAvg = othersVitals.length
+        ? othersVitals.reduce((s, a) => s + a.subscriptionCount, 0) / othersVitals.length
+        : 0;
+
+      const selfTicket =
+        selfVitals.atendimentosTotal > 0
+          ? selfVitals.revenue / selfVitals.atendimentosTotal
+          : 0;
+      const newPlusReturn = selfVitals.newCount + selfVitals.returningCount;
+      const recurringPct =
+        newPlusReturn > 0 ? (selfVitals.returningCount / newPlusReturn) * 100 : 0;
+
+      setVitalMetrics({
+        uniqueClients: selfVitals.phones.size,
+        ticketMedio: selfTicket,
+        recurringPct,
+        newCount: selfVitals.newCount,
+        returningCount: selfVitals.returningCount,
+        subscriptionCount: selfVitals.subscriptionCount,
+        subscriptionRevenue: selfVitals.subscriptionRevenue,
+        houseUniqueClientsAvg: houseUniqueAvg,
+        houseTicketMedioAvg: houseTicketAvg,
+        houseSubscriptionCountAvg: houseSubsAvg,
+        hasItemizedData: selfVitals.atendimentosTotal > 0,
+      });
+
+      setPortfolioQuality({
+        phoneCoveragePct:
+          selfVitals.atendimentosTotal > 0
+            ? (selfVitals.atendimentosComTelefone / selfVitals.atendimentosTotal) * 100
+            : 0,
+        visitsPerClient:
+          selfVitals.phones.size > 0
+            ? selfVitals.atendimentosTotal / selfVitals.phones.size
+            : 0,
+        productPenetrationPct:
+          selfVitals.atendimentosTotal > 0
+            ? (selfVitals.atendimentosComProduto.size / selfVitals.atendimentosTotal) * 100
+            : 0,
+      });
     } catch (err) {
       console.error("[BarberDeepAnalysis] erro geral:", err);
     } finally {
@@ -565,8 +795,159 @@ export default function BarberDeepAnalysis({
     );
   }
 
+  // ===== Semáforos das Métricas Vitais =====
+  const volumeSem = getSemaphore(
+    vitalMetrics.uniqueClients,
+    vitalMetrics.houseUniqueClientsAvg
+  );
+  const ticketSem = getSemaphore(
+    vitalMetrics.ticketMedio,
+    vitalMetrics.houseTicketMedioAvg
+  );
+  const retentionSem: Semaphore =
+    vitalMetrics.recurringPct >= 60
+      ? "success"
+      : vitalMetrics.recurringPct >= 40
+        ? "warning"
+        : "destructive";
+  const subsSem = getSemaphore(
+    vitalMetrics.subscriptionCount,
+    vitalMetrics.houseSubscriptionCountAvg,
+    { greenRatio: 1, yellowRatio: 0.5 }
+  );
+
   return (
     <div className="space-y-6">
+      {/* ===== MÉTRICAS VITAIS ===== */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Activity className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Métricas Vitais
+          </h3>
+          {!vitalMetrics.hasItemizedData && (
+            <Badge variant="outline" className="text-[10px]">
+              sem dados itemizados
+            </Badge>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <VitalCard
+            icon={<Users className="w-5 h-5" />}
+            label="Volume"
+            value={vitalMetrics.uniqueClients.toString()}
+            subtitle={`Clientes únicos · média casa ${vitalMetrics.houseUniqueClientsAvg.toFixed(0)}`}
+            sem={volumeSem}
+            progress={Math.min(
+              100,
+              vitalMetrics.houseUniqueClientsAvg > 0
+                ? (vitalMetrics.uniqueClients / (vitalMetrics.houseUniqueClientsAvg * 1.5)) * 100
+                : vitalMetrics.uniqueClients > 0
+                  ? 100
+                  : 0
+            )}
+          />
+          <VitalCard
+            icon={<Receipt className="w-5 h-5" />}
+            label="Ticket Médio"
+            value={formatBRL(vitalMetrics.ticketMedio)}
+            subtitle={`Média casa ${formatBRL(vitalMetrics.houseTicketMedioAvg)}`}
+            sem={ticketSem}
+            progress={Math.min(
+              100,
+              vitalMetrics.houseTicketMedioAvg > 0
+                ? (vitalMetrics.ticketMedio / (vitalMetrics.houseTicketMedioAvg * 1.5)) * 100
+                : vitalMetrics.ticketMedio > 0
+                  ? 100
+                  : 0
+            )}
+          />
+          <VitalCard
+            icon={<UserCheck className="w-5 h-5" />}
+            label="Recorrência"
+            value={`${vitalMetrics.recurringPct.toFixed(0)}%`}
+            subtitle={`${vitalMetrics.returningCount} recorrentes · ${vitalMetrics.newCount} novos`}
+            sem={retentionSem}
+            progress={vitalMetrics.recurringPct}
+          />
+          <VitalCard
+            icon={<BadgeDollarSign className="w-5 h-5" />}
+            label="Assinaturas"
+            value={vitalMetrics.subscriptionCount.toString()}
+            subtitle={
+              vitalMetrics.subscriptionRevenue > 0
+                ? `${formatBRL(vitalMetrics.subscriptionRevenue)} · média casa ${vitalMetrics.houseSubscriptionCountAvg.toFixed(1)}`
+                : `Média casa ${vitalMetrics.houseSubscriptionCountAvg.toFixed(1)}`
+            }
+            sem={subsSem}
+            progress={Math.min(
+              100,
+              vitalMetrics.houseSubscriptionCountAvg > 0
+                ? (vitalMetrics.subscriptionCount / Math.max(vitalMetrics.houseSubscriptionCountAvg * 1.5, 1)) * 100
+                : vitalMetrics.subscriptionCount > 0
+                  ? 100
+                  : 0
+            )}
+          />
+        </div>
+      </div>
+
+      {/* ===== QUALIDADE DE CARTEIRA ===== */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Qualidade de Carteira
+          </h3>
+        </div>
+        <Card>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6">
+            <QualityItem
+              icon={<Phone className="w-4 h-4" />}
+              label="Cobertura de telefone"
+              value={`${portfolioQuality.phoneCoveragePct.toFixed(0)}%`}
+              progress={portfolioQuality.phoneCoveragePct}
+              sem={
+                portfolioQuality.phoneCoveragePct >= 80
+                  ? "success"
+                  : portfolioQuality.phoneCoveragePct >= 50
+                    ? "warning"
+                    : "destructive"
+              }
+              hint="Atendimentos com celular cadastrado"
+            />
+            <QualityItem
+              icon={<Repeat className="w-4 h-4" />}
+              label="Visitas / cliente"
+              value={portfolioQuality.visitsPerClient.toFixed(2)}
+              progress={Math.min(100, portfolioQuality.visitsPerClient * 33)}
+              sem={
+                portfolioQuality.visitsPerClient >= 2
+                  ? "success"
+                  : portfolioQuality.visitsPerClient >= 1.3
+                    ? "warning"
+                    : "destructive"
+              }
+              hint="Frequência média no período"
+            />
+            <QualityItem
+              icon={<ShoppingBag className="w-4 h-4" />}
+              label="Penetração de produto"
+              value={`${portfolioQuality.productPenetrationPct.toFixed(0)}%`}
+              progress={portfolioQuality.productPenetrationPct}
+              sem={
+                portfolioQuality.productPenetrationPct >= 30
+                  ? "success"
+                  : portfolioQuality.productPenetrationPct >= 15
+                    ? "warning"
+                    : "destructive"
+              }
+              hint="Atendimentos que incluíram produto"
+            />
+          </CardContent>
+        </Card>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
@@ -779,6 +1160,77 @@ export default function BarberDeepAnalysis({
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function VitalCard({
+  icon,
+  label,
+  value,
+  subtitle,
+  sem,
+  progress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  subtitle: string;
+  sem: Semaphore;
+  progress: number;
+}) {
+  const cls = semaphoreClasses(sem);
+  return (
+    <Card className={`border-l-4 ${cls.border}`}>
+      <CardContent className="pt-4 pb-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wide">
+            <span className={cls.text}>{icon}</span>
+            {label}
+          </div>
+          <Badge variant="outline" className={`text-[10px] ${cls.text} border-current`}>
+            {cls.label}
+          </Badge>
+        </div>
+        <div className="text-2xl font-bold leading-tight">{value}</div>
+        <div className="text-[11px] text-muted-foreground">{subtitle}</div>
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+          <div className={`h-full ${cls.bar} transition-all`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function QualityItem({
+  icon,
+  label,
+  value,
+  progress,
+  sem,
+  hint,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  progress: number;
+  sem: Semaphore;
+  hint?: string;
+}) {
+  const cls = semaphoreClasses(sem);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className={cls.text}>{icon}</span>
+          {label}
+        </div>
+        <span className={`text-sm font-bold ${cls.text}`}>{value}</span>
+      </div>
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+        <div className={`h-full ${cls.bar} transition-all`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+      </div>
+      {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
 }
