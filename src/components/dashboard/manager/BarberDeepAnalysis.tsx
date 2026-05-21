@@ -1194,9 +1194,9 @@ function VitalCard({
         </div>
         <div className="text-2xl font-bold leading-tight">{value}</div>
         <div className="text-[11px] text-muted-foreground">{subtitle}</div>
-        <Progress value={Math.max(0, Math.min(100, progress))} className="h-1.5">
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-secondary">
           <div className={`h-full ${cls.bar} transition-all`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
-        </Progress>
+        </div>
       </CardContent>
     </Card>
   );
