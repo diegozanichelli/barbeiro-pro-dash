@@ -424,26 +424,30 @@ export default function BarberDeepAnalysis({
         total: Math.max(selected.total, ...others.map((v) => v.total), 1),
       });
 
-      // 2) Buscar SERVIÇOS itemizados de toda a organização no período
-      // (uma única query — usada para clientes/atendimentos do barbeiro,
-      // média da casa, retenção e histórico recente)
+      // 2) Buscar TODAS as transações itemizadas da organização no período
+      // (uma única query — usada para atendimentos, métricas vitais,
+      // qualidade de carteira, retenção e histórico recente)
       const serviceTx = await fetchPaginated<ServiceTxRow>((f, t) =>
         supabase
           .from("sale_transactions")
-          .select("barber_id, created_at, mobile_phone, daily_production_id")
+          .select(
+            "barber_id, created_at, mobile_phone, daily_production_id, item_type, is_new_client, price_sold"
+          )
           .eq("organization_id", organizationId!)
-          .eq("item_type", "service")
           .gte("created_at", start.toISOString())
           .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
           .range(f, t)
       );
 
-      // Agregação de clientes por barbeiro
+      // Subconjunto só de serviços (mantém compat com lógicas legadas)
+      const serviceOnly = serviceTx.filter((t) => t.item_type === "service");
+
+      // Agregação "clientes" por barbeiro — baseada em SERVIÇOS (manter ticket histórico)
       const perBarberClients = new Map<
         string,
         { atendimentos: Set<string>; servicos: number; phones: Set<string> }
       >();
-      for (const t of serviceTx) {
+      for (const t of serviceOnly) {
         if (!t.barber_id) continue;
         const cur =
           perBarberClients.get(t.barber_id) ??
