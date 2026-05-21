@@ -598,6 +598,138 @@ export default function BarberDeepAnalysis({
         });
         setRetention((recurrentes / phonesPeriod.size) * 100);
       }
+
+      // 5) Métricas Vitais + Qualidade de Carteira (toda org → médias da casa)
+      type Agg = {
+        phones: Set<string>;
+        atendimentos: Set<string>; // distinct created_at across all item types
+        atendimentosComProduto: Set<string>;
+        atendimentosComTelefone: number;
+        atendimentosTotal: number; // total de linhas distinct(created_at) (= atendimentos.size)
+        newCount: number;
+        returningCount: number;
+        subscriptionCount: number;
+        subscriptionRevenue: number;
+        revenue: number; // soma de price_sold
+      };
+      const newAgg = (): Agg => ({
+        phones: new Set(),
+        atendimentos: new Set(),
+        atendimentosComProduto: new Set(),
+        atendimentosComTelefone: 0,
+        atendimentosTotal: 0,
+        newCount: 0,
+        returningCount: 0,
+        subscriptionCount: 0,
+        subscriptionRevenue: 0,
+        revenue: 0,
+      });
+      const perBarberVitals = new Map<string, Agg>();
+      // marcar atendimentos com telefone usando set de created_at
+      const phoneByAtend = new Map<string, Map<string, boolean>>();
+      // tracking newClient por atendimento (1 vez por created_at, primeira flag truthy "ganha")
+      const newFlagByAtend = new Map<string, Map<string, boolean | null>>();
+
+      for (const t of serviceTx) {
+        if (!t.barber_id) continue;
+        const cur = perBarberVitals.get(t.barber_id) ?? newAgg();
+        cur.atendimentos.add(t.created_at);
+        const phone = (t.mobile_phone || "").replace(/\D/g, "");
+        if (phone.length >= 8) cur.phones.add(phone);
+        if (t.item_type === "product") cur.atendimentosComProduto.add(t.created_at);
+        if (t.item_type === "subscription") {
+          cur.subscriptionCount += 1;
+          cur.subscriptionRevenue += Number(t.price_sold) || 0;
+        }
+        cur.revenue += Number(t.price_sold) || 0;
+
+        // telefone por atendimento (qualquer linha do mesmo created_at com phone marca true)
+        let pmap = phoneByAtend.get(t.barber_id);
+        if (!pmap) { pmap = new Map(); phoneByAtend.set(t.barber_id, pmap); }
+        if (!pmap.get(t.created_at)) pmap.set(t.created_at, phone.length >= 8);
+
+        // is_new_client por atendimento
+        let nmap = newFlagByAtend.get(t.barber_id);
+        if (!nmap) { nmap = new Map(); newFlagByAtend.set(t.barber_id, nmap); }
+        if (!nmap.has(t.created_at)) nmap.set(t.created_at, t.is_new_client);
+        else if (nmap.get(t.created_at) == null && t.is_new_client != null) {
+          nmap.set(t.created_at, t.is_new_client);
+        }
+
+        perBarberVitals.set(t.barber_id, cur);
+      }
+      // consolidar contagens por atendimento
+      perBarberVitals.forEach((agg, bid) => {
+        agg.atendimentosTotal = agg.atendimentos.size;
+        const pmap = phoneByAtend.get(bid);
+        if (pmap) {
+          let withPhone = 0;
+          pmap.forEach((v) => { if (v) withPhone++; });
+          agg.atendimentosComTelefone = withPhone;
+        }
+        const nmap = newFlagByAtend.get(bid);
+        if (nmap) {
+          nmap.forEach((v) => {
+            if (v === true) agg.newCount++;
+            else if (v === false) agg.returningCount++;
+          });
+        }
+      });
+
+      const selfVitals = perBarberVitals.get(barberId) ?? newAgg();
+      const othersVitals = Array.from(perBarberVitals.entries())
+        .filter(([bid, a]) => bid !== barberId && a.atendimentosTotal > 0)
+        .map(([, a]) => a);
+
+      const houseUniqueAvg = othersVitals.length
+        ? othersVitals.reduce((s, a) => s + a.phones.size, 0) / othersVitals.length
+        : 0;
+      const houseTicketAvg = (() => {
+        const tickets = othersVitals
+          .map((a) => (a.atendimentosTotal > 0 ? a.revenue / a.atendimentosTotal : 0))
+          .filter((v) => v > 0);
+        return tickets.length ? tickets.reduce((s, v) => s + v, 0) / tickets.length : 0;
+      })();
+      const houseSubsAvg = othersVitals.length
+        ? othersVitals.reduce((s, a) => s + a.subscriptionCount, 0) / othersVitals.length
+        : 0;
+
+      const selfTicket =
+        selfVitals.atendimentosTotal > 0
+          ? selfVitals.revenue / selfVitals.atendimentosTotal
+          : 0;
+      const newPlusReturn = selfVitals.newCount + selfVitals.returningCount;
+      const recurringPct =
+        newPlusReturn > 0 ? (selfVitals.returningCount / newPlusReturn) * 100 : 0;
+
+      setVitalMetrics({
+        uniqueClients: selfVitals.phones.size,
+        ticketMedio: selfTicket,
+        recurringPct,
+        newCount: selfVitals.newCount,
+        returningCount: selfVitals.returningCount,
+        subscriptionCount: selfVitals.subscriptionCount,
+        subscriptionRevenue: selfVitals.subscriptionRevenue,
+        houseUniqueClientsAvg: houseUniqueAvg,
+        houseTicketMedioAvg: houseTicketAvg,
+        houseSubscriptionCountAvg: houseSubsAvg,
+        hasItemizedData: selfVitals.atendimentosTotal > 0,
+      });
+
+      setPortfolioQuality({
+        phoneCoveragePct:
+          selfVitals.atendimentosTotal > 0
+            ? (selfVitals.atendimentosComTelefone / selfVitals.atendimentosTotal) * 100
+            : 0,
+        visitsPerClient:
+          selfVitals.phones.size > 0
+            ? selfVitals.atendimentosTotal / selfVitals.phones.size
+            : 0,
+        productPenetrationPct:
+          selfVitals.atendimentosTotal > 0
+            ? (selfVitals.atendimentosComProduto.size / selfVitals.atendimentosTotal) * 100
+            : 0,
+      });
     } catch (err) {
       console.error("[BarberDeepAnalysis] erro geral:", err);
     } finally {
