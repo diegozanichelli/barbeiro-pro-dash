@@ -513,7 +513,7 @@ export default function BarberDeepAnalysis({
         string,
         { atendimentos: Set<string>; servicos: number }
       >();
-      for (const t of serviceTx) {
+      for (const t of serviceOnly) {
         if (t.barber_id !== barberId) continue;
         // chave do dia em America/Manaus (offset -04:00)
         const d = new Date(t.created_at);
