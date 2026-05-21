@@ -77,12 +77,75 @@ interface ServiceTxRow {
   created_at: string;
   mobile_phone: string | null;
   daily_production_id: string | null;
+  item_type: string | null;
+  is_new_client: boolean | null;
+  price_sold: number | null;
 }
 
 interface ClientMetrics {
   atendimentos: number; // distinct created_at (definição "Ao Vivo")
   servicos: number; // total de linhas item_type='service'
   unicos: number; // telefones distintos
+}
+
+interface VitalMetrics {
+  uniqueClients: number;
+  ticketMedio: number;
+  recurringPct: number; // 0-100 (apenas considerando linhas com flag is_new_client preenchida)
+  newCount: number;
+  returningCount: number;
+  subscriptionCount: number;
+  subscriptionRevenue: number;
+  // médias da casa por barbeiro ativo
+  houseUniqueClientsAvg: number;
+  houseTicketMedioAvg: number;
+  houseSubscriptionCountAvg: number;
+  hasItemizedData: boolean;
+}
+
+interface PortfolioQuality {
+  phoneCoveragePct: number;
+  visitsPerClient: number;
+  productPenetrationPct: number;
+}
+
+type Semaphore = "success" | "warning" | "destructive";
+
+function getSemaphore(
+  value: number,
+  reference: number,
+  thresholds: { greenRatio: number; yellowRatio: number } = { greenRatio: 1.1, yellowRatio: 0.8 }
+): Semaphore {
+  if (reference <= 0) return value > 0 ? "success" : "warning";
+  const ratio = value / reference;
+  if (ratio >= thresholds.greenRatio) return "success";
+  if (ratio >= thresholds.yellowRatio) return "warning";
+  return "destructive";
+}
+
+function semaphoreClasses(s: Semaphore) {
+  if (s === "success") {
+    return {
+      border: "border-l-[hsl(var(--success))]",
+      text: "text-[hsl(var(--success))]",
+      bar: "bg-[hsl(var(--success))]",
+      label: "Acima da média",
+    };
+  }
+  if (s === "warning") {
+    return {
+      border: "border-l-amber-500",
+      text: "text-amber-500",
+      bar: "bg-amber-500",
+      label: "Próximo da média",
+    };
+  }
+  return {
+    border: "border-l-destructive",
+    text: "text-destructive",
+    bar: "bg-destructive",
+    label: "Abaixo do esperado",
+  };
 }
 
 const PAGE_SIZE = 1000;
