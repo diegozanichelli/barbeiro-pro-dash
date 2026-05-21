@@ -294,6 +294,24 @@ export default function BarberDeepAnalysis({
       dailyGoal: number;
     }>
   >([]);
+  const [vitalMetrics, setVitalMetrics] = useState<VitalMetrics>({
+    uniqueClients: 0,
+    ticketMedio: 0,
+    recurringPct: 0,
+    newCount: 0,
+    returningCount: 0,
+    subscriptionCount: 0,
+    subscriptionRevenue: 0,
+    houseUniqueClientsAvg: 0,
+    houseTicketMedioAvg: 0,
+    houseSubscriptionCountAvg: 0,
+    hasItemizedData: false,
+  });
+  const [portfolioQuality, setPortfolioQuality] = useState<PortfolioQuality>({
+    phoneCoveragePct: 0,
+    visitsPerClient: 0,
+    productPenetrationPct: 0,
+  });
 
   const { start, end } = useMemo(
     () => getDateRange(period, selectedYear),
