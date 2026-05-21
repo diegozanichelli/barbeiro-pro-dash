@@ -795,8 +795,159 @@ export default function BarberDeepAnalysis({
     );
   }
 
+  // ===== Semáforos das Métricas Vitais =====
+  const volumeSem = getSemaphore(
+    vitalMetrics.uniqueClients,
+    vitalMetrics.houseUniqueClientsAvg
+  );
+  const ticketSem = getSemaphore(
+    vitalMetrics.ticketMedio,
+    vitalMetrics.houseTicketMedioAvg
+  );
+  const retentionSem: Semaphore =
+    vitalMetrics.recurringPct >= 60
+      ? "success"
+      : vitalMetrics.recurringPct >= 40
+        ? "warning"
+        : "destructive";
+  const subsSem = getSemaphore(
+    vitalMetrics.subscriptionCount,
+    vitalMetrics.houseSubscriptionCountAvg,
+    { greenRatio: 1, yellowRatio: 0.5 }
+  );
+
   return (
     <div className="space-y-6">
+      {/* ===== MÉTRICAS VITAIS ===== */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Activity className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Métricas Vitais
+          </h3>
+          {!vitalMetrics.hasItemizedData && (
+            <Badge variant="outline" className="text-[10px]">
+              sem dados itemizados
+            </Badge>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <VitalCard
+            icon={<Users className="w-5 h-5" />}
+            label="Volume"
+            value={vitalMetrics.uniqueClients.toString()}
+            subtitle={`Clientes únicos · média casa ${vitalMetrics.houseUniqueClientsAvg.toFixed(0)}`}
+            sem={volumeSem}
+            progress={Math.min(
+              100,
+              vitalMetrics.houseUniqueClientsAvg > 0
+                ? (vitalMetrics.uniqueClients / (vitalMetrics.houseUniqueClientsAvg * 1.5)) * 100
+                : vitalMetrics.uniqueClients > 0
+                  ? 100
+                  : 0
+            )}
+          />
+          <VitalCard
+            icon={<Receipt className="w-5 h-5" />}
+            label="Ticket Médio"
+            value={formatBRL(vitalMetrics.ticketMedio)}
+            subtitle={`Média casa ${formatBRL(vitalMetrics.houseTicketMedioAvg)}`}
+            sem={ticketSem}
+            progress={Math.min(
+              100,
+              vitalMetrics.houseTicketMedioAvg > 0
+                ? (vitalMetrics.ticketMedio / (vitalMetrics.houseTicketMedioAvg * 1.5)) * 100
+                : vitalMetrics.ticketMedio > 0
+                  ? 100
+                  : 0
+            )}
+          />
+          <VitalCard
+            icon={<UserCheck className="w-5 h-5" />}
+            label="Recorrência"
+            value={`${vitalMetrics.recurringPct.toFixed(0)}%`}
+            subtitle={`${vitalMetrics.returningCount} recorrentes · ${vitalMetrics.newCount} novos`}
+            sem={retentionSem}
+            progress={vitalMetrics.recurringPct}
+          />
+          <VitalCard
+            icon={<BadgeDollarSign className="w-5 h-5" />}
+            label="Assinaturas"
+            value={vitalMetrics.subscriptionCount.toString()}
+            subtitle={
+              vitalMetrics.subscriptionRevenue > 0
+                ? `${formatBRL(vitalMetrics.subscriptionRevenue)} · média casa ${vitalMetrics.houseSubscriptionCountAvg.toFixed(1)}`
+                : `Média casa ${vitalMetrics.houseSubscriptionCountAvg.toFixed(1)}`
+            }
+            sem={subsSem}
+            progress={Math.min(
+              100,
+              vitalMetrics.houseSubscriptionCountAvg > 0
+                ? (vitalMetrics.subscriptionCount / Math.max(vitalMetrics.houseSubscriptionCountAvg * 1.5, 1)) * 100
+                : vitalMetrics.subscriptionCount > 0
+                  ? 100
+                  : 0
+            )}
+          />
+        </div>
+      </div>
+
+      {/* ===== QUALIDADE DE CARTEIRA ===== */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Qualidade de Carteira
+          </h3>
+        </div>
+        <Card>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6">
+            <QualityItem
+              icon={<Phone className="w-4 h-4" />}
+              label="Cobertura de telefone"
+              value={`${portfolioQuality.phoneCoveragePct.toFixed(0)}%`}
+              progress={portfolioQuality.phoneCoveragePct}
+              sem={
+                portfolioQuality.phoneCoveragePct >= 80
+                  ? "success"
+                  : portfolioQuality.phoneCoveragePct >= 50
+                    ? "warning"
+                    : "destructive"
+              }
+              hint="Atendimentos com celular cadastrado"
+            />
+            <QualityItem
+              icon={<Repeat className="w-4 h-4" />}
+              label="Visitas / cliente"
+              value={portfolioQuality.visitsPerClient.toFixed(2)}
+              progress={Math.min(100, portfolioQuality.visitsPerClient * 33)}
+              sem={
+                portfolioQuality.visitsPerClient >= 2
+                  ? "success"
+                  : portfolioQuality.visitsPerClient >= 1.3
+                    ? "warning"
+                    : "destructive"
+              }
+              hint="Frequência média no período"
+            />
+            <QualityItem
+              icon={<ShoppingBag className="w-4 h-4" />}
+              label="Penetração de produto"
+              value={`${portfolioQuality.productPenetrationPct.toFixed(0)}%`}
+              progress={portfolioQuality.productPenetrationPct}
+              sem={
+                portfolioQuality.productPenetrationPct >= 30
+                  ? "success"
+                  : portfolioQuality.productPenetrationPct >= 15
+                    ? "warning"
+                    : "destructive"
+              }
+              hint="Atendimentos que incluíram produto"
+            />
+          </CardContent>
+        </Card>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
