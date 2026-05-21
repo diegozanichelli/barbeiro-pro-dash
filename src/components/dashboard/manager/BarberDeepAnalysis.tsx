@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
@@ -18,7 +19,19 @@ import {
   PolarRadiusAxis,
   Radar,
 } from "recharts";
-import { Users, Receipt, Repeat, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  Users,
+  Receipt,
+  Repeat,
+  TrendingDown,
+  TrendingUp,
+  Sparkles,
+  BadgeDollarSign,
+  UserCheck,
+  Phone,
+  ShoppingBag,
+  Activity,
+} from "lucide-react";
 
 export type DeepAnalysisPeriod = "current_month" | "last_3_months" | "year";
 
