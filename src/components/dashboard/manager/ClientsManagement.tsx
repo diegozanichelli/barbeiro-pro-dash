@@ -495,12 +495,6 @@ export default function ClientsManagement() {
                           Migrado
                         </Badge>
                       )}
-                      {client.migrated_from_legacy && (
-                        <Badge variant="outline" className="gap-1 text-xs shrink-0 border-blue-500/40 text-blue-600 dark:text-blue-400">
-                          <Database className="w-3 h-3" />
-                          Migrado
-                        </Badge>
-                      )}
                       {noOrigin ? (
                         suggestion ? (
                           <Badge variant="outline" className="gap-1 text-xs shrink-0 border-amber-500/50 text-amber-700 dark:text-amber-300">
