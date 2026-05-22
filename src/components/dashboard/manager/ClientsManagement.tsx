@@ -77,6 +77,9 @@ export default function ClientsManagement() {
   const { organizationId } = useOrganization();
   const [clients, setClients] = useState<Client[]>([]);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [units, setUnits] = useState<UnitInfo[]>([]);
+  const [originSuggestions, setOriginSuggestions] = useState<Map<string, OriginSuggestion>>(new Map());
+  const [applyingAutoOrigin, setApplyingAutoOrigin] = useState(false);
   const [lastSubByPhone, setLastSubByPhone] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
