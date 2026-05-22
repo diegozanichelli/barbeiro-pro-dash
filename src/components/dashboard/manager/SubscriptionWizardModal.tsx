@@ -962,6 +962,8 @@ export default function SubscriptionWizardModal({
                     <span className="font-medium">
                       {attributionType === "manager_rescue"
                         ? "⚠️ Nenhum (Recuperação do Gestor)"
+                        : attributionType === "auto_recurring"
+                        ? "💳 Nenhum (Cobrança automática)"
                         : selectedBarberId
                         ? "💈 Barbeiro"
                         : "🏢 Recepção"}
