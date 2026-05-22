@@ -36,6 +36,7 @@ import { useOrganization } from "@/hooks/useOrganization";
 import ClientDetailModal from "./ClientDetailModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import MigratedClientModal from "./MigratedClientModal";
+import { toast } from "sonner";
 
 interface Client {
   id: string;
