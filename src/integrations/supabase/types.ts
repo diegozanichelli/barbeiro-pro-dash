@@ -284,31 +284,40 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          migrated_from_legacy: boolean
           mobile_phone: string
           name: string
           normalized_name: string | null
           organization_id: string
           subscription_plan_id: string | null
+          subscription_started_at: string | null
+          subscription_unit_id: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
+          migrated_from_legacy?: boolean
           mobile_phone: string
           name: string
           normalized_name?: string | null
           organization_id: string
           subscription_plan_id?: string | null
+          subscription_started_at?: string | null
+          subscription_unit_id?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
+          migrated_from_legacy?: boolean
           mobile_phone?: string
           name?: string
           normalized_name?: string | null
           organization_id?: string
           subscription_plan_id?: string | null
+          subscription_started_at?: string | null
+          subscription_unit_id?: string | null
           updated_at?: string
         }
         Relationships: [

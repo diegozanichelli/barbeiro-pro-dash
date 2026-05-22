@@ -1,50 +1,72 @@
+## Objetivo
 
-## Contexto
+Permitir cadastrar (ou atualizar) um cliente já assinante vindo do sistema antigo, vinculando o plano com uma **data de início real** e uma **unidade de origem**, **sem criar `sale_transaction`** — para não inflar faturamento/comissão/ranking nem assumir que a venda foi hoje.
 
-Hoje o wizard de assinatura tem 3 atribuições: **Recepção**, **Barbeiro** e **Gestor (recuperação)**. Faltou uma situação real: renovações que o cliente paga **automaticamente** via cobrança recorrente no cartão (sistema paralelo). Isso **não é mérito de ninguém** — nem do barbeiro, nem do caixa, nem é falha operacional do gestor. Hoje, o gestor é obrigado a marcar como "Recuperação", o que infla incorretamente o relatório de falhas operacionais.
+## Mudanças de schema (migration)
 
-## Solução
+Adicionar à tabela `clients`:
 
-Criar uma nova atribuição **"Cobrança automática"** (`auto_recurring`) com semântica neutra:
-- Não pontua barbeiro nem recepção (zero pontos no Campeonato).
-- **Não conta como falha operacional** (fica fora do relatório "Recuperações do Gestor").
-- Aparece em um bloco próprio "Renovações automáticas (recorrência cartão)" nos relatórios, apenas como MRR sustentado pelo sistema.
-- Disponível só para ações `renew` ou `upgrade` (não faz sentido para `new`, já que toda nova adesão exige toque humano).
+- `subscription_started_at` — `date` nullable — data em que o plano passou a vigorar (vinda do sistema antigo).
+- `subscription_unit_id` — `uuid` nullable — unidade onde o cliente é atendido.
+- `migrated_from_legacy` — `boolean default false` — marca que o vínculo veio de migração manual (não de uma venda).
 
-## Mudanças
+Sem mudanças nas RLS existentes (gestor já controla `clients`).
 
-### 1. Banco
-- Migração: adicionar índice parcial `idx_sale_transactions_auto_recurring` em `sale_transactions (organization_id, created_at) WHERE attribution_source = 'auto_recurring'`.
-- Sem CHECK constraint nova (o campo já é `text` livre); validação fica no frontend.
+## Lógica de inadimplência (ajuste necessário)
 
-### 2. Wizard (`SubscriptionWizardModal.tsx`)
-- Estender o tipo `attributionType` para incluir `"auto_recurring"`.
-- Mudar o grid de atribuição de 3 colunas para **2x2** (4 botões):
-  - Recepção · Barbeiro · Gestor (recuperação) · **Cobrança automática** (novo, ícone `CreditCard`/`Repeat`, cor neutra)
-- Quando `auto_recurring` selecionado:
-  - Exigir seleção de **unidade** (mesma UI da recepção/gestor).
-  - Banner azul informativo: "Renovação cobrada automaticamente pelo gateway de cartão. Nenhum ponto será atribuído e não conta como falha operacional."
-  - Esconder/desabilitar o botão se `subscriptionAction === "new"` (com tooltip explicando).
-- No resumo (step 3): "Pontos para: 💳 Cobrança automática (sem pontuação)".
+Hoje `ClientsManagement.isOverdue` olha só `sale_transactions`. Após migração, esses clientes não teriam pagamento e cairiam direto em "Inadimplentes >30d". Ajuste:
 
-### 3. Relatórios
-- **`ManagerRescueReport.tsx`**: já filtra por `attribution_source = 'manager_rescue'`, então nada vaza para lá. Confirmado.
-- Criar **`AutoRecurringReport.tsx`** análogo, mas com tom neutro/positivo (sem badge "falha operacional"):
-  - KPIs: nº de cobranças automáticas, MRR sustentado, % do total de renovações.
-  - Tabela por unidade.
-  - Modal "Ver detalhes" com lista de transações.
-- Plugar no `ManagerReports.tsx` ao lado do `ManagerRescueReport`.
+- Considerar o **maior valor** entre (a) último `sale_transactions` pago e (b) `clients.subscription_started_at`.
+- Inadimplente quando esse "último pagamento conhecido" > 30 dias.
+- Quando o gestor regularizar via "Renovar plano" (wizard normal), o sale_transaction passa a ser a fonte e o campo `subscription_started_at` deixa de importar para inadimplência.
 
-### 4. Memória
-- Atualizar `mem://features/manager-rescue-attribution` para refletir as **4 atribuições** e a regra "auto_recurring ≠ falha operacional".
+## UI
+
+Botão fixo no topo da aba **Clientes** (ao lado do search): `+ Cadastrar cliente migrado`.
+
+Abre um modal novo `MigratedClientModal.tsx` com:
+
+- Telefone (obrigatório, validado com `isValidPhone`)
+- Nome (obrigatório, completo — bloqueio igual ao filtro "Nome incompleto")
+- Plano (select de `subscription_plans` ativos)
+- Unidade (select de `units`)
+- Data de início do plano (date picker, default hoje, máx hoje)
+- Aviso visível: *"Esse cadastro não gera venda nem comissão. Use somente para clientes vindos do sistema antigo."*
+
+Comportamento:
+
+- Se já existe cliente com mesmo telefone na org → **atualiza** (`name`, `subscription_plan_id`, `subscription_started_at`, `subscription_unit_id`, `migrated_from_legacy=true`) e mostra toast *"Cliente existente atualizado"*.
+- Se não existe → `INSERT` em `clients` com os campos acima.
+- Em nenhum caso insere em `sale_transactions`, `client_purchase_history` ou pontuação.
+- Ao concluir, fecha modal e refaz `fetchData()`.
+
+## Onde os dados aparecem
+
+- Card do cliente: badge sutil "Migrado" quando `migrated_from_legacy=true` e sem pagamento ainda no app.
+- Filtro "Inadimplentes >30d" passa a respeitar `subscription_started_at` (ajuste explicado acima).
+- Quando o gestor depois fizer a primeira renovação pelo fluxo normal (Wizard → atribuição), tudo segue como hoje.
 
 ## Detalhes técnicos
 
-- `attributionType` type union: `"reception" | "barber" | "manager_rescue" | "auto_recurring" | null`.
-- Submit (`handleSubmit`): quando `auto_recurring`, enviar `attribution_source: 'auto_recurring'`, `barber_id: null`, `unit_id: selectedUnitId`, sem chamada de pontuação no Campeonato (mesmo fluxo do `manager_rescue`).
-- Validação `canProceed` no step de atribuição: `auto_recurring` exige `selectedUnitId` (igual rescue).
-- Guarda no step de ação: se selecionar `auto_recurring`, forçar `subscriptionAction` a `renew` por padrão e bloquear `new`.
+```text
+clients
+├── subscription_started_at  date         (migrado: data real do antigo; null: cadastro normal)
+├── subscription_unit_id     uuid → units (unidade de origem; opcional para clientes históricos)
+└── migrated_from_legacy     bool default false
+```
+
+Arquivos tocados:
+
+- `supabase/migrations/*_add_legacy_client_fields.sql` (3 colunas + index opcional em `subscription_unit_id`)
+- `src/components/dashboard/manager/ClientsManagement.tsx`
+  - Botão "Cadastrar cliente migrado" no header
+  - `lastSubByPhone` passa a considerar `subscription_started_at` na função `isOverdue`
+  - Badge "Migrado" nos cards
+- `src/components/dashboard/manager/MigratedClientModal.tsx` (novo)
+  - Validação Zod, upsert por `(organization_id, mobile_phone)`
+- `src/integrations/supabase/types.ts` — regenera automaticamente após migration
 
 ## Fora de escopo
 
-- Integração automática com o gateway externo de recorrência (importação de webhooks). Por ora, o gestor lança manualmente quando vê o pagamento entrar no sistema paralelo.
+- Importação em lote via CSV (pode virar fluxo separado depois).
+- Histórico retroativo de pagamentos antigos do sistema legado (este fluxo só registra o **estado atual** do cliente).
