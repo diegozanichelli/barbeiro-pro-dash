@@ -56,7 +56,18 @@ interface PlanInfo {
   price: number;
 }
 
-type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue";
+interface UnitInfo {
+  id: string;
+  name: string;
+}
+
+interface OriginSuggestion {
+  suggested_unit_id: string;
+  suggested_unit_name: string;
+  basis: string;
+}
+
+type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue" | "no_origin";
 
 const OVERDUE_DAYS = 30;
 const SUB_PAID_ACTIONS = new Set(["new", "renew", "upgrade", "downgrade"]);
