@@ -324,7 +324,9 @@ export default function ClientsManagement() {
 
       setImportIssues(issues);
       toast.success("Importação concluída", { description: `${created} criados, ${updated} atualizados, ${skipped} ignorados.` });
-      await fetchData();
+      // Não bloquear o término do estado de importação com recarga pesada da tela
+      // (evita sensação de "carregando infinito" em CSVs grandes).
+      void fetchData();
     } catch (err: any) {
       toast.error("Erro ao importar CSV", { description: err?.message || "Falha inesperada" });
     } finally {
