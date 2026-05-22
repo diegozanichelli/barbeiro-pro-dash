@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import { isValidPhone, normalizePhone } from "@/lib/phoneUtils";
+import { isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 
 interface MigratedClientModalProps {
   open: boolean;
