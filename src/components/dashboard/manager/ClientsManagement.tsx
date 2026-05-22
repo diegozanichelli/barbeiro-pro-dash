@@ -24,13 +24,15 @@ import {
   RefreshCw,
   CreditCard,
   ArrowUpDown,
+  Database,
 } from "lucide-react";
 import { formatPhone, isValidPhone } from "@/lib/phoneUtils";
-import { format, differenceInCalendarDays } from "date-fns";
+import { format, differenceInCalendarDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
 import ClientDetailModal from "./ClientDetailModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
+import MigratedClientModal from "./MigratedClientModal";
 
 interface Client {
   id: string;
