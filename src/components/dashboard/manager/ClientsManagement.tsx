@@ -178,6 +178,8 @@ export default function ClientsManagement() {
 
       setClients(allClients as Client[]);
       setPlans(plansData || []);
+      setUnits((unitsData as UnitInfo[]) || []);
+      setOriginSuggestions(suggMap);
       setLastSubByPhone(subMap);
     } catch (err) {
       console.error("Erro ao carregar clientes:", err);
@@ -187,6 +189,45 @@ export default function ClientsManagement() {
   };
 
   const planMap = new Map(plans.map((p) => [p.id, p]));
+  const unitMap = new Map(units.map((u) => [u.id, u]));
+
+  const hasNoOrigin = (c: Client) => !c.subscription_unit_id;
+
+  const updateClientUnit = async (clientId: string, unitId: string | null) => {
+    const { error } = await supabase
+      .from("clients")
+      .update({ subscription_unit_id: unitId })
+      .eq("id", clientId);
+    if (error) {
+      toast.error("Erro ao atualizar origem", { description: error.message });
+      return;
+    }
+    setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, subscription_unit_id: unitId } : c)));
+    toast.success(unitId ? "Origem atualizada" : "Origem removida");
+  };
+
+  const applyAutoOrigins = async () => {
+    if (!organizationId) return;
+    setApplyingAutoOrigin(true);
+    try {
+      const { data, error } = await supabase.rpc("apply_auto_origin_units", {
+        p_organization_id: organizationId,
+      });
+      if (error) throw error;
+      const result = (data || {}) as { updated_count?: number; skipped_count?: number };
+      toast.success(`${result.updated_count ?? 0} clientes atualizados`, {
+        description: result.skipped_count
+          ? `${result.skipped_count} sem sugestão (sem histórico).`
+          : undefined,
+      });
+      await fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao atribuir origens", { description: err.message });
+    } finally {
+      setApplyingAutoOrigin(false);
+    }
+  };
+
 
   const normalize = (str: string) =>
     str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
