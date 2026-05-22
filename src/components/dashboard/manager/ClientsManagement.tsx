@@ -326,6 +326,7 @@ export default function ClientsManagement() {
     { key: "no_phone", label: "Sem telefone", count: counts.noPhone, icon: PhoneOff },
     { key: "incomplete_name", label: "Nome incompleto", count: counts.incomplete, icon: UserX },
     { key: "overdue", label: `Inadimplentes >${OVERDUE_DAYS}d`, count: counts.overdue, icon: AlertTriangle, alert: true },
+    { key: "no_origin", label: "Sem origem", count: counts.noOrigin, icon: MapPinOff },
   ];
 
   const renderOverdueBadge = (c: Client) => {
