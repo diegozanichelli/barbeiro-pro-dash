@@ -1,89 +1,50 @@
-## Objetivo
 
-Transformar o componente `BarberDeepAnalysis.tsx` (renderizado dentro de `BarberEvolution.tsx` na aba Evolução do Gerente) em um Dashboard de Mentoria 1-on-1, mantendo Mix de Receita (Pizza), Radar e o gráfico de evolução já existentes, e adicionando duas novas grades superiores: **Métricas Vitais** e **Qualidade de Carteira**, com semáforos visuais Verde/Amarelo/Vermelho.
+## Contexto
 
-## O que muda na UI
+Hoje o wizard de assinatura tem 3 atribuições: **Recepção**, **Barbeiro** e **Gestor (recuperação)**. Faltou uma situação real: renovações que o cliente paga **automaticamente** via cobrança recorrente no cartão (sistema paralelo). Isso **não é mérito de ninguém** — nem do barbeiro, nem do caixa, nem é falha operacional do gestor. Hoje, o gestor é obrigado a marcar como "Recuperação", o que infla incorretamente o relatório de falhas operacionais.
 
-Nova hierarquia visual do componente, de cima para baixo:
+## Solução
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ MÉTRICAS VITAIS  (4 cards executivos)                       │
-│ [Volume] [Ticket Médio] [Retenção/Mix] [Assinaturas]        │
-├─────────────────────────────────────────────────────────────┤
-│ QUALIDADE DE CARTEIRA  (faixa horizontal)                   │
-│  ● Novos vs Recorrentes  ● Cobertura de telefone            │
-│  ● Frequência média      ● Semáforo geral                   │
-├─────────────────────────────────────────────────────────────┤
-│ KPIs originais (Ticket / Clientes / Retenção legados)       │
-│ Mix de Receita (Pizza)   |   Radar de Habilidades           │
-│ Histórico Recente (tabela 5 dias)                           │
-└─────────────────────────────────────────────────────────────┘
-```
+Criar uma nova atribuição **"Cobrança automática"** (`auto_recurring`) com semântica neutra:
+- Não pontua barbeiro nem recepção (zero pontos no Campeonato).
+- **Não conta como falha operacional** (fica fora do relatório "Recuperações do Gestor").
+- Aparece em um bloco próprio "Renovações automáticas (recorrência cartão)" nos relatórios, apenas como MRR sustentado pelo sistema.
+- Disponível só para ações `renew` ou `upgrade` (não faz sentido para `new`, já que toda nova adesão exige toque humano).
 
-Cada card vital recebe uma faixa lateral colorida + Progress bar com a cor do semáforo, para leitura rápida durante o feedback do gerente.
+## Mudanças
 
-## Métricas Vitais (cards superiores)
+### 1. Banco
+- Migração: adicionar índice parcial `idx_sale_transactions_auto_recurring` em `sale_transactions (organization_id, created_at) WHERE attribution_source = 'auto_recurring'`.
+- Sem CHECK constraint nova (o campo já é `text` livre); validação fica no frontend.
 
-1. **Volume — Clientes únicos**
-   - Conta `mobile_phone` distintos do barbeiro em `sale_transactions` (qualquer `item_type`) no período.
-   - Já temos a estrutura parcial via `selectedClients.phones` (hoje só serviços). Vamos ampliar a query para incluir produtos e assinaturas.
-   - Semáforo por comparação com a média da casa: ≥110% verde, 80–110% amarelo, <80% vermelho.
+### 2. Wizard (`SubscriptionWizardModal.tsx`)
+- Estender o tipo `attributionType` para incluir `"auto_recurring"`.
+- Mudar o grid de atribuição de 3 colunas para **2x2** (4 botões):
+  - Recepção · Barbeiro · Gestor (recuperação) · **Cobrança automática** (novo, ícone `CreditCard`/`Repeat`, cor neutra)
+- Quando `auto_recurring` selecionado:
+  - Exigir seleção de **unidade** (mesma UI da recepção/gestor).
+  - Banner azul informativo: "Renovação cobrada automaticamente pelo gateway de cartão. Nenhum ponto será atribuído e não conta como falha operacional."
+  - Esconder/desabilitar o botão se `subscriptionAction === "new"` (com tooltip explicando).
+- No resumo (step 3): "Pontos para: 💳 Cobrança automática (sem pontuação)".
 
-2. **Ticket Médio**
-   - `faturamento_total / atendimentos_distintos` (mantém definição atual: `created_at` distintos).
-   - Comparado com média da casa do mesmo período. Mesmas faixas de semáforo.
+### 3. Relatórios
+- **`ManagerRescueReport.tsx`**: já filtra por `attribution_source = 'manager_rescue'`, então nada vaza para lá. Confirmado.
+- Criar **`AutoRecurringReport.tsx`** análogo, mas com tom neutro/positivo (sem badge "falha operacional"):
+  - KPIs: nº de cobranças automáticas, MRR sustentado, % do total de renovações.
+  - Tabela por unidade.
+  - Modal "Ver detalhes" com lista de transações.
+- Plugar no `ManagerReports.tsx` ao lado do `ManagerRescueReport`.
 
-3. **Retenção / Mix de Público (Novo vs Recorrente)**
-   - Calcula % de atendimentos do barbeiro com `is_new_client = false` vs `true` na tabela `sale_transactions`.
-   - Card mostra duas barras empilhadas (Recorrente x Novo) + percentual de recorrentes em destaque.
-   - Semáforo: ≥60% recorrente verde, 40–60% amarelo, <40% vermelho.
+### 4. Memória
+- Atualizar `mem://features/manager-rescue-attribution` para refletir as **4 atribuições** e a regra "auto_recurring ≠ falha operacional".
 
-4. **Assinaturas vendidas**
-   - `COUNT(*)` em `sale_transactions` com `item_type = 'subscription'` e `barber_id` no período.
-   - Mostra também receita total destas assinaturas (price_sold).
-   - Semáforo: ≥média da casa verde, 50–100% amarelo, <50% vermelho.
+## Detalhes técnicos
 
-## Qualidade de Carteira (faixa abaixo)
-
-Mini-cards horizontais com indicadores acessórios derivados dos mesmos dados (zero queries extras):
-
-- **Cobertura de telefone**: % de atendimentos com `mobile_phone` preenchido (reflete higiene de cadastro).
-- **Atend./Cliente único**: média de visitas por cliente único no período (frequência).
-- **Penetração de produto**: % de atendimentos que incluíram pelo menos um item `product`.
-
-## Mudanças técnicas
-
-Arquivo único alterado: `src/components/dashboard/manager/BarberDeepAnalysis.tsx`.
-
-1. **Expandir a query de `sale_transactions`** (hoje filtrada por `item_type='service'`):
-   - Remover o filtro `item_type` e passar a buscar todos os tipos no período, selecionando também `item_type`, `is_new_client`, `price_sold`.
-   - Continuar paginando via `fetchPaginated`.
-
-2. **Novos agregados no `fetchAll`** calculados em uma única passada sobre o array:
-   - `uniqueClients` (Set de telefones)
-   - `newCount` / `returningCount` (por `is_new_client`)
-   - `subscriptionCount` e `subscriptionRevenue` (filtrando `item_type==='subscription'`)
-   - `productAttendCount` (set de `created_at` que contém produto)
-   - `phoneCoverage` (atendimentos com telefone ÷ total)
-   - Médias da casa equivalentes (somatório por outros barbeiros, dividido pelo nº de ativos)
-
-3. **Novo estado** `vitalMetrics` e `portfolioQuality` para alimentar os cards.
-
-4. **Helpers**:
-   - `getSemaphore(value, houseAvg, thresholds)` → retorna `{ color: 'success'|'warning'|'destructive', label }`.
-   - Componente local `<VitalCard>` reaproveitável (ícone, valor, subtítulo, Progress colorida).
-
-5. **UI**:
-   - Importar `Progress` de `@/components/ui/progress`.
-   - Importar ícones `Sparkles`, `BadgeDollarSign`, `UserCheck`, `Phone` de `lucide-react`.
-   - Usar tokens semânticos (`hsl(var(--success))`, `--warning`, `--destructive`) — sem cores hardcoded.
-
-6. **Fallbacks legados**:
-   - Se `sale_transactions` retornar 0 linhas para o barbeiro, manter os fallbacks existentes (`daily_productions.clients_count`) para Volume e Ticket; demais cards mostram `—` com tooltip "sem dados itemizados no período".
+- `attributionType` type union: `"reception" | "barber" | "manager_rescue" | "auto_recurring" | null`.
+- Submit (`handleSubmit`): quando `auto_recurring`, enviar `attribution_source: 'auto_recurring'`, `barber_id: null`, `unit_id: selectedUnitId`, sem chamada de pontuação no Campeonato (mesmo fluxo do `manager_rescue`).
+- Validação `canProceed` no step de atribuição: `auto_recurring` exige `selectedUnitId` (igual rescue).
+- Guarda no step de ação: se selecionar `auto_recurring`, forçar `subscriptionAction` a `renew` por padrão e bloquear `new`.
 
 ## Fora de escopo
 
-- Nenhuma mudança em RPC, schema ou outras telas.
-- Não mexer no gráfico de evolução mensal em `BarberEvolution.tsx` (faturamento já existente).
-- Não alterar a lógica de Retenção legada (telefones já atendidos antes); o novo card "Mix de Público" é complementar, não substitui.
+- Integração automática com o gateway externo de recorrência (importação de webhooks). Por ora, o gestor lança manualmente quando vê o pagamento entrar no sistema paralelo.

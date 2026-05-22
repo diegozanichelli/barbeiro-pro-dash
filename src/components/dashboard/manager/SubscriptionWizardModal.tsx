@@ -38,6 +38,7 @@ import {
   CalendarIcon,
   AlertTriangle,
   ShieldAlert,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -121,7 +122,7 @@ export default function SubscriptionWizardModal({
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   // Step 2 - Attribution
-  const [attributionType, setAttributionType] = useState<"reception" | "barber" | "manager_rescue" | null>(null);
+  const [attributionType, setAttributionType] = useState<"reception" | "barber" | "manager_rescue" | "auto_recurring" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [selectedBarberUnitName, setSelectedBarberUnitName] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -274,6 +275,7 @@ export default function SubscriptionWizardModal({
       if (attributionType === "reception") return !!selectedUnitId;
       if (attributionType === "barber") return !!selectedBarberId;
       if (attributionType === "manager_rescue") return !!selectedUnitId;
+      if (attributionType === "auto_recurring") return !!selectedUnitId;
       return false;
     }
     if (step === "details") {
@@ -469,6 +471,10 @@ export default function SubscriptionWizardModal({
       if (attributionType === "manager_rescue") {
         toast.success("Assinatura registrada como recuperação do gestor", {
           description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
+        });
+      } else if (attributionType === "auto_recurring") {
+        toast.success("Renovação automática registrada", {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Cobrança automática no cartão (sem pontuação) 💳`,
         });
       } else {
         const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
@@ -793,7 +799,7 @@ export default function SubscriptionWizardModal({
               <p className="text-sm text-muted-foreground">
                 O profissional selecionado receberá +10 pontos no Campeonato.
               </p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Button
                   type="button"
                   variant={attributionType === "reception" ? "default" : "outline"}
@@ -839,13 +845,33 @@ export default function SubscriptionWizardModal({
                   <span className="font-medium">Gestor</span>
                   <span className="text-xs text-muted-foreground">Recuperação / falha</span>
                 </Button>
+                <Button
+                  type="button"
+                  variant={attributionType === "auto_recurring" ? "default" : "outline"}
+                  disabled={subscriptionAction === "new"}
+                  title={subscriptionAction === "new" ? "Cobrança automática só se aplica a renovações/upgrades" : undefined}
+                  className={cn(
+                    "h-auto py-4 flex flex-col items-center gap-2",
+                    attributionType === "auto_recurring" && "ring-2 ring-primary ring-offset-2 bg-blue-600 hover:bg-blue-700 text-white"
+                  )}
+                  onClick={() => {
+                    setAttributionType("auto_recurring");
+                    setSelectedBarberId(null);
+                  }}
+                >
+                  <CreditCard className="w-6 h-6" />
+                  <span className="font-medium">Cobrança automática</span>
+                  <span className="text-xs text-muted-foreground">Recorrência no cartão</span>
+                </Button>
               </div>
 
-              {(attributionType === "reception" || attributionType === "manager_rescue") && (
+              {(attributionType === "reception" || attributionType === "manager_rescue" || attributionType === "auto_recurring") && (
                 <div className="space-y-2 pt-2">
                   <Label>
                     {attributionType === "manager_rescue"
                       ? "Unidade onde houve a falha:"
+                      : attributionType === "auto_recurring"
+                      ? "Unidade do cliente:"
                       : "Selecione a unidade:"}{" "}
                     <span className="text-destructive">*</span>
                   </Label>
@@ -866,6 +892,17 @@ export default function SubscriptionWizardModal({
                         Esta venda será marcada como <strong>Recuperação do Gestor</strong>.
                         Nenhum ponto será distribuído à recepção ou barbeiro, e a unidade
                         aparecerá no relatório <strong>Recuperações do Gestor</strong> como falha operacional.
+                      </span>
+                    </div>
+                  )}
+                  {attributionType === "auto_recurring" && (
+                    <div className="rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2 mt-2">
+                      <CreditCard className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Renovação cobrada <strong>automaticamente pelo gateway de cartão</strong>.
+                        Nenhum ponto será distribuído (não é mérito de barbeiro nem recepção) e
+                        <strong> não conta como falha operacional</strong>. Aparece no relatório
+                        de <strong>Renovações Automáticas</strong>.
                       </span>
                     </div>
                   )}
@@ -925,6 +962,8 @@ export default function SubscriptionWizardModal({
                     <span className="font-medium">
                       {attributionType === "manager_rescue"
                         ? "⚠️ Nenhum (Recuperação do Gestor)"
+                        : attributionType === "auto_recurring"
+                        ? "💳 Nenhum (Cobrança automática)"
                         : selectedBarberId
                         ? "💈 Barbeiro"
                         : "🏢 Recepção"}

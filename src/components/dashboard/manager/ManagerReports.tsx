@@ -14,6 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import TransactionManagerModal from "./TransactionManagerModal";
 import ManagerRescueReport from "./ManagerRescueReport";
+import AutoRecurringReport from "./AutoRecurringReport";
 import { useOrganization } from "@/hooks/useOrganization";
 
 interface DailyProduction {
@@ -452,11 +453,18 @@ export default function ManagerReports() {
       </div>
 
       {organizationId && dateRange?.from && dateRange?.to && (
-        <ManagerRescueReport
-          organizationId={organizationId}
-          from={dateRange.from}
-          to={dateRange.to}
-        />
+        <>
+          <ManagerRescueReport
+            organizationId={organizationId}
+            from={dateRange.from}
+            to={dateRange.to}
+          />
+          <AutoRecurringReport
+            organizationId={organizationId}
+            from={dateRange.from}
+            to={dateRange.to}
+          />
+        </>
       )}
 
       <Card className="bg-card border-border shadow-card-custom">
