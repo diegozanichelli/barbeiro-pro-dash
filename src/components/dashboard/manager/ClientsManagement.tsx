@@ -24,19 +24,24 @@ import {
   RefreshCw,
   CreditCard,
   ArrowUpDown,
+  Database,
 } from "lucide-react";
 import { formatPhone, isValidPhone } from "@/lib/phoneUtils";
-import { format, differenceInCalendarDays } from "date-fns";
+import { format, differenceInCalendarDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
 import ClientDetailModal from "./ClientDetailModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
+import MigratedClientModal from "./MigratedClientModal";
 
 interface Client {
   id: string;
   name: string;
   mobile_phone: string;
   subscription_plan_id: string | null;
+  subscription_started_at: string | null;
+  subscription_unit_id: string | null;
+  migrated_from_legacy: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +76,7 @@ export default function ClientsManagement() {
     action: "new" | "renew" | "upgrade" | "downgrade";
     planId: string | null;
   } | null>(null);
+  const [migratedModalOpen, setMigratedModalOpen] = useState(false);
 
   useEffect(() => {
     if (organizationId) fetchData();
@@ -89,7 +95,7 @@ export default function ClientsManagement() {
       while (hasMore) {
         const { data, error } = await supabase
           .from("clients")
-          .select("id, name, mobile_phone, subscription_plan_id, created_at, updated_at")
+          .select("id, name, mobile_phone, subscription_plan_id, subscription_started_at, subscription_unit_id, migrated_from_legacy, created_at, updated_at")
           .eq("organization_id", organizationId)
           .order("name")
           .range(from, from + PAGE_SIZE - 1);
@@ -153,11 +159,22 @@ export default function ClientsManagement() {
 
   const isNoPhone = (phone: string) => !phone || !isValidPhone(phone);
 
+  /** Returns the most recent "last paid" date: max(last sale_transaction, subscription_started_at) */
+  const getLastPaidDate = (c: Client): Date | null => {
+    const txDate = c.mobile_phone ? lastSubByPhone.get(c.mobile_phone) : undefined;
+    const migratedDate = c.subscription_started_at || null;
+    const candidates: Date[] = [];
+    if (txDate) candidates.push(new Date(txDate));
+    if (migratedDate) candidates.push(parseISO(migratedDate));
+    if (candidates.length === 0) return null;
+    return new Date(Math.max(...candidates.map((d) => d.getTime())));
+  };
+
   const isOverdue = (c: Client): boolean => {
     if (!c.subscription_plan_id) return false;
-    const last = c.mobile_phone ? lastSubByPhone.get(c.mobile_phone) : undefined;
+    const last = getLastPaidDate(c);
     if (!last) return true;
-    const days = differenceInCalendarDays(new Date(), new Date(last));
+    const days = differenceInCalendarDays(new Date(), last);
     return days > OVERDUE_DAYS;
   };
 
@@ -222,8 +239,8 @@ export default function ClientsManagement() {
 
   const renderOverdueBadge = (c: Client) => {
     if (!isOverdue(c)) return null;
-    const last = c.mobile_phone ? lastSubByPhone.get(c.mobile_phone) : undefined;
-    const days = last ? differenceInCalendarDays(new Date(), new Date(last)) : null;
+    const last = getLastPaidDate(c);
+    const days = last ? differenceInCalendarDays(new Date(), last) : null;
     return (
       <Badge variant="destructive" className="gap-1 text-xs shrink-0">
         <AlertTriangle className="w-3 h-3" />
@@ -241,14 +258,26 @@ export default function ClientsManagement() {
             {clients.length} clientes • {subscribedCount} assinantes
           </p>
         </div>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome ou telefone..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-9 shrink-0"
+            onClick={() => setMigratedModalOpen(true)}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Cliente migrado</span>
+          </Button>
+          <div className="relative flex-1 sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome ou telefone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
       </div>
 
@@ -344,6 +373,12 @@ export default function ClientsManagement() {
                         <Badge variant="secondary" className="gap-1 text-xs shrink-0">
                           <Crown className="w-3 h-3" />
                           {plan.name}
+                        </Badge>
+                      )}
+                      {client.migrated_from_legacy && (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0 border-blue-500/40 text-blue-600 dark:text-blue-400">
+                          <Database className="w-3 h-3" />
+                          Migrado
                         </Badge>
                       )}
                       {renderOverdueBadge(client)}
@@ -495,6 +530,13 @@ export default function ClientsManagement() {
         prefillPlanId={wizardPrefill?.planId ?? undefined}
         prefillIsNewClient={false}
         startStep={wizardPrefill?.planId ? "attribution" : "client_type"}
+      />
+
+      <MigratedClientModal
+        open={migratedModalOpen}
+        onOpenChange={setMigratedModalOpen}
+        organizationId={organizationId || ""}
+        onComplete={fetchData}
       />
     </div>
   );
