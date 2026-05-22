@@ -375,6 +375,12 @@ export default function ClientsManagement() {
                           {plan.name}
                         </Badge>
                       )}
+                      {client.migrated_from_legacy && (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0 border-blue-500/40 text-blue-600 dark:text-blue-400">
+                          <Database className="w-3 h-3" />
+                          Migrado
+                        </Badge>
+                      )}
                       {renderOverdueBadge(client)}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
