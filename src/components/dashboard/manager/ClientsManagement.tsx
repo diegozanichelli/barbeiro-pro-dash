@@ -495,6 +495,30 @@ export default function ClientsManagement() {
                           Migrado
                         </Badge>
                       )}
+                      {client.migrated_from_legacy && (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0 border-blue-500/40 text-blue-600 dark:text-blue-400">
+                          <Database className="w-3 h-3" />
+                          Migrado
+                        </Badge>
+                      )}
+                      {noOrigin ? (
+                        suggestion ? (
+                          <Badge variant="outline" className="gap-1 text-xs shrink-0 border-amber-500/50 text-amber-700 dark:text-amber-300">
+                            <MapPinOff className="w-3 h-3" />
+                            Sem origem → sugerido: {suggestion.suggested_unit_name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1 text-xs shrink-0 text-muted-foreground">
+                            <MapPinOff className="w-3 h-3" />
+                            Sem origem
+                          </Badge>
+                        )
+                      ) : currentUnitName ? (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0">
+                          <MapPin className="w-3 h-3" />
+                          {currentUnitName}
+                        </Badge>
+                      ) : null}
                       {renderOverdueBadge(client)}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
