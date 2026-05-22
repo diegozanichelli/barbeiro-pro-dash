@@ -115,7 +115,7 @@ export default function MigratedClientModal({
     if (!canSubmit || !organizationId) return;
     setSaving(true);
     try {
-      const normalizedPhone = normalizePhone(phone);
+      const normalizedPhone = sanitizePhone(phone);
       const startedDate = format(startedAt, "yyyy-MM-dd");
 
       // Check if client already exists by phone
