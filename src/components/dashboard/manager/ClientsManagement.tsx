@@ -25,6 +25,9 @@ import {
   CreditCard,
   ArrowUpDown,
   Database,
+  MapPinOff,
+  MapPin,
+  Wand2,
 } from "lucide-react";
 import { formatPhone, isValidPhone } from "@/lib/phoneUtils";
 import { format, differenceInCalendarDays, parseISO } from "date-fns";
@@ -33,6 +36,7 @@ import { useOrganization } from "@/hooks/useOrganization";
 import ClientDetailModal from "./ClientDetailModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import MigratedClientModal from "./MigratedClientModal";
+import { toast } from "sonner";
 
 interface Client {
   id: string;
@@ -52,7 +56,18 @@ interface PlanInfo {
   price: number;
 }
 
-type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue";
+interface UnitInfo {
+  id: string;
+  name: string;
+}
+
+interface OriginSuggestion {
+  suggested_unit_id: string;
+  suggested_unit_name: string;
+  basis: string;
+}
+
+type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue" | "no_origin";
 
 const OVERDUE_DAYS = 30;
 const SUB_PAID_ACTIONS = new Set(["new", "renew", "upgrade", "downgrade"]);
@@ -62,6 +77,9 @@ export default function ClientsManagement() {
   const { organizationId } = useOrganization();
   const [clients, setClients] = useState<Client[]>([]);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [units, setUnits] = useState<UnitInfo[]>([]);
+  const [originSuggestions, setOriginSuggestions] = useState<Map<string, OriginSuggestion>>(new Map());
+  const [applyingAutoOrigin, setApplyingAutoOrigin] = useState(false);
   const [lastSubByPhone, setLastSubByPhone] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -112,6 +130,27 @@ export default function ClientsManagement() {
         .eq("organization_id", organizationId)
         .eq("active", true);
 
+      const { data: unitsData } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+
+      const { data: suggData, error: suggErr } = await supabase
+        .rpc("suggest_client_origin_units", { p_organization_id: organizationId });
+      if (suggErr) console.warn("suggest_client_origin_units:", suggErr.message);
+      const suggMap = new Map<string, OriginSuggestion>();
+      for (const row of (suggData as any[]) || []) {
+        if (row.client_id && row.suggested_unit_id) {
+          suggMap.set(row.client_id, {
+            suggested_unit_id: row.suggested_unit_id,
+            suggested_unit_name: row.suggested_unit_name,
+            basis: row.basis,
+          });
+        }
+      }
+
       // Fetch latest subscription payments per phone (paginated, desc by created_at)
       const subMap = new Map<string, string>();
       let subFrom = 0;
@@ -139,6 +178,8 @@ export default function ClientsManagement() {
 
       setClients(allClients as Client[]);
       setPlans(plansData || []);
+      setUnits((unitsData as UnitInfo[]) || []);
+      setOriginSuggestions(suggMap);
       setLastSubByPhone(subMap);
     } catch (err) {
       console.error("Erro ao carregar clientes:", err);
@@ -148,6 +189,45 @@ export default function ClientsManagement() {
   };
 
   const planMap = new Map(plans.map((p) => [p.id, p]));
+  const unitMap = new Map(units.map((u) => [u.id, u]));
+
+  const hasNoOrigin = (c: Client) => !c.subscription_unit_id;
+
+  const updateClientUnit = async (clientId: string, unitId: string | null) => {
+    const { error } = await supabase
+      .from("clients")
+      .update({ subscription_unit_id: unitId })
+      .eq("id", clientId);
+    if (error) {
+      toast.error("Erro ao atualizar origem", { description: error.message });
+      return;
+    }
+    setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, subscription_unit_id: unitId } : c)));
+    toast.success(unitId ? "Origem atualizada" : "Origem removida");
+  };
+
+  const applyAutoOrigins = async () => {
+    if (!organizationId) return;
+    setApplyingAutoOrigin(true);
+    try {
+      const { data, error } = await supabase.rpc("apply_auto_origin_units", {
+        p_organization_id: organizationId,
+      });
+      if (error) throw error;
+      const result = (data || {}) as { updated_count?: number; skipped_count?: number };
+      toast.success(`${result.updated_count ?? 0} clientes atualizados`, {
+        description: result.skipped_count
+          ? `${result.skipped_count} sem sugestão (sem histórico).`
+          : undefined,
+      });
+      await fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao atribuir origens", { description: err.message });
+    } finally {
+      setApplyingAutoOrigin(false);
+    }
+  };
+
 
   const normalize = (str: string) =>
     str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -182,14 +262,24 @@ export default function ClientsManagement() {
     let noPhone = 0;
     let incomplete = 0;
     let overdue = 0;
+    let noOrigin = 0;
     for (const c of clients) {
       if (isNoPhone(c.mobile_phone)) noPhone++;
       if (isIncompleteName(c.name)) incomplete++;
       if (isOverdue(c)) overdue++;
+      if (hasNoOrigin(c)) noOrigin++;
     }
-    return { noPhone, incomplete, overdue };
+    return { noPhone, incomplete, overdue, noOrigin };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients, lastSubByPhone]);
+
+  const suggestedNoOriginCount = useMemo(() => {
+    let n = 0;
+    for (const c of clients) {
+      if (hasNoOrigin(c) && originSuggestions.has(c.id)) n++;
+    }
+    return n;
+  }, [clients, originSuggestions]);
 
   const hasSearch = search.trim().length > 0;
 
@@ -198,6 +288,7 @@ export default function ClientsManagement() {
       if (filter === "no_phone" && !isNoPhone(c.mobile_phone)) return false;
       if (filter === "incomplete_name" && !isIncompleteName(c.name)) return false;
       if (filter === "overdue" && !isOverdue(c)) return false;
+      if (filter === "no_origin" && !hasNoOrigin(c)) return false;
       return true;
     }
 
@@ -235,6 +326,7 @@ export default function ClientsManagement() {
     { key: "no_phone", label: "Sem telefone", count: counts.noPhone, icon: PhoneOff },
     { key: "incomplete_name", label: "Nome incompleto", count: counts.incomplete, icon: UserX },
     { key: "overdue", label: `Inadimplentes >${OVERDUE_DAYS}d`, count: counts.overdue, icon: AlertTriangle, alert: true },
+    { key: "no_origin", label: "Sem origem", count: counts.noOrigin, icon: MapPinOff },
   ];
 
   const renderOverdueBadge = (c: Client) => {
@@ -326,6 +418,25 @@ export default function ClientsManagement() {
         </div>
       )}
 
+      {!hasSearch && filter === "no_origin" && counts.noOrigin > 0 && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="text-xs text-amber-800 dark:text-amber-200">
+            <strong>{counts.noOrigin}</strong> cliente(s) sem origem ·{" "}
+            <strong>{suggestedNoOriginCount}</strong> com sugestão automática (unidade do barbeiro mais frequente).
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5 h-8 shrink-0"
+            disabled={applyingAutoOrigin || suggestedNoOriginCount === 0}
+            onClick={applyAutoOrigins}
+          >
+            {applyingAutoOrigin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+            Atribuir origens automaticamente
+          </Button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -352,6 +463,9 @@ export default function ClientsManagement() {
               : null;
             const noPhone = isNoPhone(client.mobile_phone);
             const incompleteName = isIncompleteName(client.name);
+            const noOrigin = hasNoOrigin(client);
+            const suggestion = originSuggestions.get(client.id);
+            const currentUnitName = client.subscription_unit_id ? unitMap.get(client.subscription_unit_id)?.name : null;
 
             return (
               <Card
@@ -381,6 +495,24 @@ export default function ClientsManagement() {
                           Migrado
                         </Badge>
                       )}
+                      {noOrigin ? (
+                        suggestion ? (
+                          <Badge variant="outline" className="gap-1 text-xs shrink-0 border-amber-500/50 text-amber-700 dark:text-amber-300">
+                            <MapPinOff className="w-3 h-3" />
+                            Sem origem → sugerido: {suggestion.suggested_unit_name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1 text-xs shrink-0 text-muted-foreground">
+                            <MapPinOff className="w-3 h-3" />
+                            Sem origem
+                          </Badge>
+                        )
+                      ) : currentUnitName ? (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0">
+                          <MapPin className="w-3 h-3" />
+                          {currentUnitName}
+                        </Badge>
+                      ) : null}
                       {renderOverdueBadge(client)}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
@@ -401,8 +533,47 @@ export default function ClientsManagement() {
                     </div>
                   </div>
 
+                  <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" size="sm" variant="ghost" className="gap-1.5 h-8">
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Origem</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56 bg-popover z-50">
+                        <DropdownMenuLabel className="text-xs">Unidade de origem</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {suggestion && noOrigin && (
+                          <>
+                            <DropdownMenuItem onClick={() => updateClientUnit(client.id, suggestion.suggested_unit_id)}>
+                              <Wand2 className="w-3.5 h-3.5 mr-2" />
+                              Usar sugestão: {suggestion.suggested_unit_name}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
+                        {units.map((u) => (
+                          <DropdownMenuItem
+                            key={u.id}
+                            onClick={() => updateClientUnit(client.id, u.id)}
+                            className={client.subscription_unit_id === u.id ? "bg-accent" : ""}
+                          >
+                            {u.name}
+                          </DropdownMenuItem>
+                        ))}
+                        {client.subscription_unit_id && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => updateClientUnit(client.id, null)} className="text-muted-foreground">
+                              Remover origem
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   {!noPhone && (
-                    <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                    <div className="shrink-0">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -469,6 +640,7 @@ export default function ClientsManagement() {
                       </DropdownMenu>
                     </div>
                   )}
+                  </div>
                 </CardContent>
               </Card>
             );
