@@ -76,6 +76,7 @@ export default function ClientsManagement() {
     action: "new" | "renew" | "upgrade" | "downgrade";
     planId: string | null;
   } | null>(null);
+  const [migratedModalOpen, setMigratedModalOpen] = useState(false);
 
   useEffect(() => {
     if (organizationId) fetchData();
