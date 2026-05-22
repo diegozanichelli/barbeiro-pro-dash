@@ -130,6 +130,27 @@ export default function ClientsManagement() {
         .eq("organization_id", organizationId)
         .eq("active", true);
 
+      const { data: unitsData } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+
+      const { data: suggData, error: suggErr } = await supabase
+        .rpc("suggest_client_origin_units", { p_organization_id: organizationId });
+      if (suggErr) console.warn("suggest_client_origin_units:", suggErr.message);
+      const suggMap = new Map<string, OriginSuggestion>();
+      for (const row of (suggData as any[]) || []) {
+        if (row.client_id && row.suggested_unit_id) {
+          suggMap.set(row.client_id, {
+            suggested_unit_id: row.suggested_unit_id,
+            suggested_unit_name: row.suggested_unit_name,
+            basis: row.basis,
+          });
+        }
+      }
+
       // Fetch latest subscription payments per phone (paginated, desc by created_at)
       const subMap = new Map<string, string>();
       let subFrom = 0;
