@@ -531,6 +531,13 @@ export default function ClientsManagement() {
         prefillIsNewClient={false}
         startStep={wizardPrefill?.planId ? "attribution" : "client_type"}
       />
+
+      <MigratedClientModal
+        open={migratedModalOpen}
+        onOpenChange={setMigratedModalOpen}
+        organizationId={organizationId || ""}
+        onComplete={fetchData}
+      />
     </div>
   );
 }
