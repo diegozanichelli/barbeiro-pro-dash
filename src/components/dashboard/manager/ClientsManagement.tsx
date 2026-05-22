@@ -640,6 +640,7 @@ export default function ClientsManagement() {
                       </DropdownMenu>
                     </div>
                   )}
+                  </div>
                 </CardContent>
               </Card>
             );
