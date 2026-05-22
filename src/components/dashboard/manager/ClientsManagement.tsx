@@ -463,6 +463,9 @@ export default function ClientsManagement() {
               : null;
             const noPhone = isNoPhone(client.mobile_phone);
             const incompleteName = isIncompleteName(client.name);
+            const noOrigin = hasNoOrigin(client);
+            const suggestion = originSuggestions.get(client.id);
+            const currentUnitName = client.subscription_unit_id ? unitMap.get(client.subscription_unit_id)?.name : null;
 
             return (
               <Card
