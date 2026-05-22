@@ -34,6 +34,7 @@ interface ClientDetailModalProps {
     name: string;
     mobile_phone: string;
     subscription_plan_id: string | null;
+    subscription_started_at?: string | null;
     created_at: string;
   } | null;
   organizationId: string;
@@ -72,6 +73,7 @@ export default function ClientDetailModal({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [planId, setPlanId] = useState<string>("none");
+  const [subscriptionStartedAt, setSubscriptionStartedAt] = useState<string>("");
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
@@ -83,6 +85,7 @@ export default function ClientDetailModal({
       setName(client.name);
       setPhone(formatPhone(client.mobile_phone));
       setPlanId(client.subscription_plan_id || "none");
+      setSubscriptionStartedAt(client.subscription_started_at || "");
       fetchData();
     }
   }, [open, client]);
@@ -166,6 +169,11 @@ export default function ClientDetailModal({
       return;
     }
 
+    if (planId !== "none" && !subscriptionStartedAt) {
+      toast.error("Selecione a data de início do plano");
+      return;
+    }
+
     setSaving(true);
     try {
       const oldPhone = sanitizePhone(client.mobile_phone || "");
@@ -176,6 +184,7 @@ export default function ClientDetailModal({
           name: name.trim(),
           mobile_phone: phoneDigits,
           subscription_plan_id: planId === "none" ? null : planId,
+          subscription_started_at: planId === "none" ? null : subscriptionStartedAt,
         } as any)
         .eq("id", client.id);
 
@@ -293,11 +302,24 @@ export default function ClientDetailModal({
               )}
             </div>
 
+            {planId !== "none" && (
+              <div className="space-y-2">
+                <Label htmlFor="subscription-started-at">Data de início do plano</Label>
+                <Input
+                  id="subscription-started-at"
+                  type="date"
+                  value={subscriptionStartedAt}
+                  max={format(new Date(), "yyyy-MM-dd")}
+                  onChange={(e) => setSubscriptionStartedAt(e.target.value)}
+                />
+              </div>
+            )}
+
             <div className="text-xs text-muted-foreground">
               Cliente desde {format(new Date(client.created_at), "dd/MM/yyyy", { locale: ptBR })}
             </div>
 
-            <Button onClick={handleSave} disabled={saving || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone)} className="w-full gap-2">
+            <Button onClick={handleSave} disabled={saving || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone) || (planId !== "none" && !subscriptionStartedAt)} className="w-full gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Salvar Alterações
             </Button>
