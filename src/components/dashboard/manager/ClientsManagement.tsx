@@ -39,6 +39,9 @@ interface Client {
   name: string;
   mobile_phone: string;
   subscription_plan_id: string | null;
+  subscription_started_at: string | null;
+  subscription_unit_id: string | null;
+  migrated_from_legacy: boolean | null;
   created_at: string;
   updated_at: string;
 }
