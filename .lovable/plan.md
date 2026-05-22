@@ -1,72 +1,51 @@
 ## Objetivo
+Adicionar 5ª flag **"Sem origem"** na aba Clientes (clientes com `subscription_unit_id` nulo), com inferência automática da unidade baseada no barbeiro mais frequente nas vendas do cliente e opção do gestor sobrescrever.
 
-Permitir cadastrar (ou atualizar) um cliente já assinante vindo do sistema antigo, vinculando o plano com uma **data de início real** e uma **unidade de origem**, **sem criar `sale_transaction`** — para não inflar faturamento/comissão/ranking nem assumir que a venda foi hoje.
+## 1. Backend (RPC)
 
-## Mudanças de schema (migration)
+Criar RPC `suggest_client_origin_units(p_organization_id uuid)`:
+- Para cada cliente da org sem `subscription_unit_id`, varre `sale_transactions` filtrando por `mobile_phone` do cliente.
+- Agrupa por `barber_id` → conta ocorrências → pega o barbeiro mais frequente → retorna `barbers.unit_id` correspondente.
+- Fallback: se cliente não tem nenhuma venda com barbeiro, usa `unit_id` da venda mais recente (qualquer fonte). Se nem isso existir, retorna `null` (não sugere).
+- Retorna `TABLE(client_id uuid, suggested_unit_id uuid, suggested_unit_name text, confidence_count int, basis text)` onde `basis` é `'barber_frequency'` ou `'last_sale'`.
 
-Adicionar à tabela `clients`:
+Criar RPC `apply_auto_origin_units(p_organization_id uuid)`:
+- Chama a anterior internamente e faz `UPDATE clients SET subscription_unit_id = suggested_unit_id` apenas onde `subscription_unit_id IS NULL` e `suggested_unit_id IS NOT NULL`.
+- Retorna `{ updated_count int, skipped_count int }`.
+- Marcada `SECURITY DEFINER` com check `has_role(auth.uid(), 'manager')` + isolamento por `organization_id`.
 
-- `subscription_started_at` — `date` nullable — data em que o plano passou a vigorar (vinda do sistema antigo).
-- `subscription_unit_id` — `uuid` nullable — unidade onde o cliente é atendido.
-- `migrated_from_legacy` — `boolean default false` — marca que o vínculo veio de migração manual (não de uma venda).
+## 2. Frontend — `ClientsManagement.tsx`
 
-Sem mudanças nas RLS existentes (gestor já controla `clients`).
+### Novo filtro
+- Adicionar `"no_origin"` ao tipo `FilterKey`.
+- Função `hasNoOrigin(c) = !c.subscription_unit_id`.
+- Contador no `counts` + botão na barra de filtros com ícone `MapPinOff` (cor neutra, sem `alert`).
+- Incluir `subscription_unit_id` já está no select (`select`). OK.
 
-## Lógica de inadimplência (ajuste necessário)
+### Sugestão por card
+- Ao montar lista (uma vez por carga), chamar `suggest_client_origin_units` e guardar `Map<client_id, {unit_id, unit_name, basis}>`.
+- No card do cliente, quando `hasNoOrigin(c)` e existe sugestão: badge amarelo "Sem origem → sugerido: **{unidade}**" + botão pequeno **"Aplicar"** (chama update single).
+- Quando não há sugestão: badge cinza "Sem origem".
 
-Hoje `ClientsManagement.isOverdue` olha só `sale_transactions`. Após migração, esses clientes não teriam pagamento e cairiam direto em "Inadimplentes >30d". Ajuste:
+### Edição manual (sempre disponível)
+- Dropdown novo no card `"Origem ▾"` listando todas as unidades ativas da org + opção "Limpar". Salva direto em `clients.subscription_unit_id`. Aparece para **qualquer** cliente (não só sem-origem), para gestor poder trocar.
 
-- Considerar o **maior valor** entre (a) último `sale_transactions` pago e (b) `clients.subscription_started_at`.
-- Inadimplente quando esse "último pagamento conhecido" > 30 dias.
-- Quando o gestor regularizar via "Renovar plano" (wizard normal), o sale_transaction passa a ser a fonte e o campo `subscription_started_at` deixa de importar para inadimplência.
+### Ação em lote
+- Quando filtro `"no_origin"` está ativo, mostrar banner no topo com:
+  - "X clientes sem origem · Y com sugestão automática"
+  - Botão **"Atribuir origens automaticamente"** → chama `apply_auto_origin_units` → toast com resumo `{updated, skipped}` → `fetchData()`.
 
-## UI
+## 3. Detalhes técnicos
+- Tipos: adicionar `subscription_unit_id`, `subscription_unit_name?` ao `Client` (já tem `subscription_unit_id`).
+- Buscar `units` ativos (id, name) no `fetchData` (similar a `plans`).
+- Performance: RPC roda no Postgres em uma query (CTE com `ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY count DESC)`).
+- Reaproveitar o componente `ClientDetailModal` para também ter o seletor de unidade lá (opcional — versão inicial só no card).
+- Nada de migração de dados em massa silenciosa: lote é sempre disparado por clique do gestor.
 
-Botão fixo no topo da aba **Clientes** (ao lado do search): `+ Cadastrar cliente migrado`.
-
-Abre um modal novo `MigratedClientModal.tsx` com:
-
-- Telefone (obrigatório, validado com `isValidPhone`)
-- Nome (obrigatório, completo — bloqueio igual ao filtro "Nome incompleto")
-- Plano (select de `subscription_plans` ativos)
-- Unidade (select de `units`)
-- Data de início do plano (date picker, default hoje, máx hoje)
-- Aviso visível: *"Esse cadastro não gera venda nem comissão. Use somente para clientes vindos do sistema antigo."*
-
-Comportamento:
-
-- Se já existe cliente com mesmo telefone na org → **atualiza** (`name`, `subscription_plan_id`, `subscription_started_at`, `subscription_unit_id`, `migrated_from_legacy=true`) e mostra toast *"Cliente existente atualizado"*.
-- Se não existe → `INSERT` em `clients` com os campos acima.
-- Em nenhum caso insere em `sale_transactions`, `client_purchase_history` ou pontuação.
-- Ao concluir, fecha modal e refaz `fetchData()`.
-
-## Onde os dados aparecem
-
-- Card do cliente: badge sutil "Migrado" quando `migrated_from_legacy=true` e sem pagamento ainda no app.
-- Filtro "Inadimplentes >30d" passa a respeitar `subscription_started_at` (ajuste explicado acima).
-- Quando o gestor depois fizer a primeira renovação pelo fluxo normal (Wizard → atribuição), tudo segue como hoje.
-
-## Detalhes técnicos
-
-```text
-clients
-├── subscription_started_at  date         (migrado: data real do antigo; null: cadastro normal)
-├── subscription_unit_id     uuid → units (unidade de origem; opcional para clientes históricos)
-└── migrated_from_legacy     bool default false
-```
-
-Arquivos tocados:
-
-- `supabase/migrations/*_add_legacy_client_fields.sql` (3 colunas + index opcional em `subscription_unit_id`)
-- `src/components/dashboard/manager/ClientsManagement.tsx`
-  - Botão "Cadastrar cliente migrado" no header
-  - `lastSubByPhone` passa a considerar `subscription_started_at` na função `isOverdue`
-  - Badge "Migrado" nos cards
-- `src/components/dashboard/manager/MigratedClientModal.tsx` (novo)
-  - Validação Zod, upsert por `(organization_id, mobile_phone)`
-- `src/integrations/supabase/types.ts` — regenera automaticamente após migration
+## 4. Memória
+Atualizar `mem://index.md` com referência a `mem://features/client-origin-attribution` documentando: campo `subscription_unit_id`, fonte de inferência (barbeiro mais frequente → unit do barbeiro, fallback última venda), e que a aplicação automática é sempre acionada manualmente pelo gestor.
 
 ## Fora de escopo
-
-- Importação em lote via CSV (pode virar fluxo separado depois).
-- Histórico retroativo de pagamentos antigos do sistema legado (este fluxo só registra o **estado atual** do cliente).
+- Não toca em `barbers.unit_id` nem em vendas históricas.
+- Não cria nova tabela — usa coluna existente `clients.subscription_unit_id`.
+- Não muda o wizard de assinatura.

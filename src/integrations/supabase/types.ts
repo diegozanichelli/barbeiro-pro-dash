@@ -1336,6 +1336,10 @@ export type Database = {
       }
     }
     Functions: {
+      apply_auto_origin_units: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
       auto_replicate_goals: { Args: never; Returns: Json }
       calc_expected_pacing: {
         Args: { p_barber_id: string; p_ref_date?: string }
@@ -1437,6 +1441,16 @@ export type Database = {
       recalc_war_plan_result: {
         Args: { p_barber_id: string; p_date: string }
         Returns: undefined
+      }
+      suggest_client_origin_units: {
+        Args: { p_organization_id: string }
+        Returns: {
+          basis: string
+          client_id: string
+          confidence_count: number
+          suggested_unit_id: string
+          suggested_unit_name: string
+        }[]
       }
     }
     Enums: {
