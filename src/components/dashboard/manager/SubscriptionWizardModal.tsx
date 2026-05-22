@@ -275,6 +275,7 @@ export default function SubscriptionWizardModal({
       if (attributionType === "reception") return !!selectedUnitId;
       if (attributionType === "barber") return !!selectedBarberId;
       if (attributionType === "manager_rescue") return !!selectedUnitId;
+      if (attributionType === "auto_recurring") return !!selectedUnitId;
       return false;
     }
     if (step === "details") {
