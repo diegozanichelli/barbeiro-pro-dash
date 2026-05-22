@@ -533,8 +533,47 @@ export default function ClientsManagement() {
                     </div>
                   </div>
 
+                  <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" size="sm" variant="ghost" className="gap-1.5 h-8">
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Origem</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56 bg-popover z-50">
+                        <DropdownMenuLabel className="text-xs">Unidade de origem</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {suggestion && noOrigin && (
+                          <>
+                            <DropdownMenuItem onClick={() => updateClientUnit(client.id, suggestion.suggested_unit_id)}>
+                              <Wand2 className="w-3.5 h-3.5 mr-2" />
+                              Usar sugestão: {suggestion.suggested_unit_name}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
+                        {units.map((u) => (
+                          <DropdownMenuItem
+                            key={u.id}
+                            onClick={() => updateClientUnit(client.id, u.id)}
+                            className={client.subscription_unit_id === u.id ? "bg-accent" : ""}
+                          >
+                            {u.name}
+                          </DropdownMenuItem>
+                        ))}
+                        {client.subscription_unit_id && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => updateClientUnit(client.id, null)} className="text-muted-foreground">
+                              Remover origem
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   {!noPhone && (
-                    <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                    <div className="shrink-0">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
