@@ -472,6 +472,10 @@ export default function SubscriptionWizardModal({
         toast.success("Assinatura registrada como recuperação do gestor", {
           description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
         });
+      } else if (attributionType === "auto_recurring") {
+        toast.success("Renovação automática registrada", {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Cobrança automática no cartão (sem pontuação) 💳`,
+        });
       } else {
         const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
         toast.success(`Assinatura registrada!`, {
