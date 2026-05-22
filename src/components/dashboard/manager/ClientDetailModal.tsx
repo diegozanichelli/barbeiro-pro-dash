@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, Save, ShoppingBag, CalendarDays, Crown, Phone, User } from "lucide-react";
-import { formatPhone } from "@/lib/phoneUtils";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -159,17 +159,43 @@ export default function ClientDetailModal({
 
   const handleSave = async () => {
     if (!client) return;
+
+    const phoneDigits = sanitizePhone(phone);
+    if (phoneDigits.length !== 11 || !isValidPhone(phone)) {
+      toast.error("Informe um celular válido com DDD (11 dígitos)");
+      return;
+    }
+
     setSaving(true);
     try {
+      const oldPhone = sanitizePhone(client.mobile_phone || "");
+
       const { error } = await supabase
         .from("clients")
         .update({
           name: name.trim(),
+          mobile_phone: phoneDigits,
           subscription_plan_id: planId === "none" ? null : planId,
         } as any)
         .eq("id", client.id);
 
       if (error) throw error;
+
+      if (oldPhone && oldPhone !== phoneDigits) {
+        await Promise.allSettled([
+          supabase
+            .from("sale_transactions")
+            .update({ mobile_phone: phoneDigits })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", oldPhone),
+          supabase
+            .from("client_purchase_history")
+            .update({ mobile_phone: phoneDigits })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", oldPhone),
+        ]);
+      }
+
       toast.success("Cliente atualizado com sucesso");
       onUpdated();
       onOpenChange(false);
@@ -229,10 +255,16 @@ export default function ClientDetailModal({
             </div>
 
             <div className="space-y-2">
-              <Label>Celular</Label>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-md px-3 py-2">
-                <Phone className="w-4 h-4" />
-                {phone}
+              <Label htmlFor="client-phone">Celular</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  id="client-phone"
+                  value={phone}
+                  onChange={(e) => setPhone(formatPhone(e.target.value))}
+                  placeholder="(92) 99999-9999"
+                  className="pl-9"
+                />
               </div>
             </div>
 
@@ -265,7 +297,7 @@ export default function ClientDetailModal({
               Cliente desde {format(new Date(client.created_at), "dd/MM/yyyy", { locale: ptBR })}
             </div>
 
-            <Button onClick={handleSave} disabled={saving || !name.trim()} className="w-full gap-2">
+            <Button onClick={handleSave} disabled={saving || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone)} className="w-full gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Salvar Alterações
             </Button>
