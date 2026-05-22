@@ -428,7 +428,7 @@ export default function ClientsManagement() {
             type="button"
             size="sm"
             className="gap-1.5 h-8 shrink-0"
-            disabled={applyingAutoOrigin || suggestedNoOriginCount === 0}
+            disabled={applyingAutoOrigin || counts.noOrigin === 0}
             onClick={applyAutoOrigins}
           >
             {applyingAutoOrigin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
