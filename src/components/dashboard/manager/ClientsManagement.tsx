@@ -94,7 +94,7 @@ export default function ClientsManagement() {
       while (hasMore) {
         const { data, error } = await supabase
           .from("clients")
-          .select("id, name, mobile_phone, subscription_plan_id, created_at, updated_at")
+          .select("id, name, mobile_phone, subscription_plan_id, subscription_started_at, subscription_unit_id, migrated_from_legacy, created_at, updated_at")
           .eq("organization_id", organizationId)
           .order("name")
           .range(from, from + PAGE_SIZE - 1);
