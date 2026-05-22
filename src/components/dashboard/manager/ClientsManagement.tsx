@@ -158,11 +158,22 @@ export default function ClientsManagement() {
 
   const isNoPhone = (phone: string) => !phone || !isValidPhone(phone);
 
+  /** Returns the most recent "last paid" date: max(last sale_transaction, subscription_started_at) */
+  const getLastPaidDate = (c: Client): Date | null => {
+    const txDate = c.mobile_phone ? lastSubByPhone.get(c.mobile_phone) : undefined;
+    const migratedDate = c.subscription_started_at || null;
+    const candidates: Date[] = [];
+    if (txDate) candidates.push(new Date(txDate));
+    if (migratedDate) candidates.push(parseISO(migratedDate));
+    if (candidates.length === 0) return null;
+    return new Date(Math.max(...candidates.map((d) => d.getTime())));
+  };
+
   const isOverdue = (c: Client): boolean => {
     if (!c.subscription_plan_id) return false;
-    const last = c.mobile_phone ? lastSubByPhone.get(c.mobile_phone) : undefined;
+    const last = getLastPaidDate(c);
     if (!last) return true;
-    const days = differenceInCalendarDays(new Date(), new Date(last));
+    const days = differenceInCalendarDays(new Date(), last);
     return days > OVERDUE_DAYS;
   };
 
