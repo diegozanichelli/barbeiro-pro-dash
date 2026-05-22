@@ -122,7 +122,7 @@ export default function SubscriptionWizardModal({
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   // Step 2 - Attribution
-  const [attributionType, setAttributionType] = useState<"reception" | "barber" | "manager_rescue" | null>(null);
+  const [attributionType, setAttributionType] = useState<"reception" | "barber" | "manager_rescue" | "auto_recurring" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [selectedBarberUnitName, setSelectedBarberUnitName] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
