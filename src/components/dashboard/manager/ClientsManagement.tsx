@@ -238,8 +238,8 @@ export default function ClientsManagement() {
 
   const renderOverdueBadge = (c: Client) => {
     if (!isOverdue(c)) return null;
-    const last = c.mobile_phone ? lastSubByPhone.get(c.mobile_phone) : undefined;
-    const days = last ? differenceInCalendarDays(new Date(), new Date(last)) : null;
+    const last = getLastPaidDate(c);
+    const days = last ? differenceInCalendarDays(new Date(), last) : null;
     return (
       <Badge variant="destructive" className="gap-1 text-xs shrink-0">
         <AlertTriangle className="w-3 h-3" />
