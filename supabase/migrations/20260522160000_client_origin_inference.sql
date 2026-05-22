@@ -54,7 +54,7 @@ BEGIN
     SELECT 1 FROM user_roles ur
     WHERE ur.user_id = auth.uid()
       AND ur.organization_id = p_organization_id
-      AND ur.role IN ('admin','manager','owner')
+      AND ur.role IN ('manager','super_admin')
   ) THEN
     RAISE EXCEPTION 'Not authorized';
   END IF;
