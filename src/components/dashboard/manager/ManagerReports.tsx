@@ -14,6 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import TransactionManagerModal from "./TransactionManagerModal";
 import ManagerRescueReport from "./ManagerRescueReport";
+import AutoRecurringReport from "./AutoRecurringReport";
 import { useOrganization } from "@/hooks/useOrganization";
 
 interface DailyProduction {
