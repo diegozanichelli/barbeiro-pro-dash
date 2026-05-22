@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,8 +28,9 @@ import {
   MapPinOff,
   MapPin,
   Wand2,
+  Upload,
 } from "lucide-react";
-import { formatPhone, isValidPhone } from "@/lib/phoneUtils";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { format, differenceInCalendarDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -59,6 +60,12 @@ interface PlanInfo {
 interface UnitInfo {
   id: string;
   name: string;
+}
+
+interface ImportIssue {
+  line: number;
+  phone: string;
+  reason: string;
 }
 
 interface OriginSuggestion {
@@ -95,6 +102,9 @@ export default function ClientsManagement() {
     planId: string | null;
   } | null>(null);
   const [migratedModalOpen, setMigratedModalOpen] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [importIssues, setImportIssues] = useState<ImportIssue[]>([]);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (organizationId) fetchData();
@@ -229,6 +239,98 @@ export default function ClientsManagement() {
   };
 
 
+
+  const normalizePlanName = (name: string) => name.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+  const parseDateBRorISO = (raw: string): string | null => {
+    const v = raw.trim();
+    if (!v) return null;
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (iso) return v;
+    const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);
+    if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+    return null;
+  };
+
+  const handleImportCsvFile = async (file: File) => {
+    if (!organizationId) return;
+    setImportingCsv(true);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length <= 1) {
+        toast.error("CSV vazio ou sem dados");
+        return;
+      }
+
+      const planByNormalized = new Map(plans.map((p) => [normalizePlanName(p.name), p.id]));
+
+      let created = 0, updated = 0, skipped = 0;
+      const issues: ImportIssue[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        const [nameRaw = "", phoneRaw = "", planRaw = "", dueRaw = ""] = cols;
+
+        const phoneDigits = sanitizePhone(phoneRaw);
+        if (!nameRaw || phoneDigits.length !== 11) { skipped++; issues.push({ line: i + 1, phone: phoneRaw, reason: "nome/telefone inválido" }); continue; }
+
+        const planId = planByNormalized.get(normalizePlanName(planRaw)) || null;
+        const startedAt = parseDateBRorISO(dueRaw);
+
+        const { data: existing, error: qErr } = await supabase
+          .from("clients")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", phoneDigits)
+          .maybeSingle();
+        if (qErr) { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao buscar telefone na base" }); continue; }
+
+        const payload: any = {
+          organization_id: organizationId,
+          name: nameRaw.trim(),
+          mobile_phone: phoneDigits,
+          subscription_plan_id: planId,
+          migrated_from_legacy: true,
+        };
+        if (planId && startedAt) payload.subscription_started_at = startedAt;
+
+        if (existing?.id) {
+          const { data: current, error: currErr } = await supabase
+            .from("clients")
+            .select("name, subscription_plan_id, subscription_started_at")
+            .eq("id", existing.id)
+            .maybeSingle();
+          if (currErr || !current) {
+            skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "não foi possível validar dados atuais" });
+            continue;
+          }
+
+          const nameDiff = (current.name || "").trim() !== nameRaw.trim();
+          const planDiff = (current.subscription_plan_id || null) !== (planId || null);
+          const dateDiff = (current.subscription_started_at || null) !== (startedAt || null);
+
+          if (nameDiff || planDiff || dateDiff) {
+            const { error } = await supabase.from("clients").update(payload).eq("id", existing.id);
+            if (!error) updated++; else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao atualizar cadastro" }); }
+          } else {
+            // already consistent, proceed silently
+          }
+        } else {
+          const { error } = await supabase.from("clients").insert(payload);
+          if (!error) created++; else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao criar cadastro" }); }
+        }
+      }
+
+      setImportIssues(issues);
+      toast.success("Importação concluída", { description: `${created} criados, ${updated} atualizados, ${skipped} ignorados.` });
+      await fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao importar CSV", { description: err?.message || "Falha inesperada" });
+    } finally {
+      setImportingCsv(false);
+    }
+  };
   const normalize = (str: string) =>
     str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
@@ -361,6 +463,27 @@ export default function ClientsManagement() {
             <Database className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Cliente migrado</span>
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => csvInputRef.current?.click()}
+            disabled={importingCsv}
+          >
+            {importingCsv ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Importar CSV</span>
+          </Button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleImportCsvFile(file);
+              e.currentTarget.value = "";
+            }}
+          />
           <div className="relative flex-1 sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -415,6 +538,24 @@ export default function ClientsManagement() {
           >
             Limpar busca
           </Button>
+        </div>
+      )}
+
+      {importIssues.length > 0 && (
+        <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+          <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+            Importação com pendências: {importIssues.length} cliente(s) para revisão manual.
+          </p>
+          <div className="mt-1 space-y-1 max-h-28 overflow-auto">
+            {importIssues.slice(0, 10).map((i, idx) => (
+              <p key={`${i.line}-${idx}`} className="text-[11px] text-red-700 dark:text-red-300">
+                Linha {i.line} • Tel: {i.phone || "-"} • {i.reason}
+              </p>
+            ))}
+            {importIssues.length > 10 && (
+              <p className="text-[11px] text-red-700 dark:text-red-300">...e mais {importIssues.length - 10} pendência(s).</p>
+            )}
+          </div>
         </div>
       )}
 
