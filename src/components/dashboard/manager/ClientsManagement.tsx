@@ -262,14 +262,24 @@ export default function ClientsManagement() {
     let noPhone = 0;
     let incomplete = 0;
     let overdue = 0;
+    let noOrigin = 0;
     for (const c of clients) {
       if (isNoPhone(c.mobile_phone)) noPhone++;
       if (isIncompleteName(c.name)) incomplete++;
       if (isOverdue(c)) overdue++;
+      if (hasNoOrigin(c)) noOrigin++;
     }
-    return { noPhone, incomplete, overdue };
+    return { noPhone, incomplete, overdue, noOrigin };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients, lastSubByPhone]);
+
+  const suggestedNoOriginCount = useMemo(() => {
+    let n = 0;
+    for (const c of clients) {
+      if (hasNoOrigin(c) && originSuggestions.has(c.id)) n++;
+    }
+    return n;
+  }, [clients, originSuggestions]);
 
   const hasSearch = search.trim().length > 0;
 
@@ -278,6 +288,7 @@ export default function ClientsManagement() {
       if (filter === "no_phone" && !isNoPhone(c.mobile_phone)) return false;
       if (filter === "incomplete_name" && !isIncompleteName(c.name)) return false;
       if (filter === "overdue" && !isOverdue(c)) return false;
+      if (filter === "no_origin" && !hasNoOrigin(c)) return false;
       return true;
     }
 
