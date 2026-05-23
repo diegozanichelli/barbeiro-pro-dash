@@ -1,51 +1,71 @@
-## Objetivo
-Adicionar 5ª flag **"Sem origem"** na aba Clientes (clientes com `subscription_unit_id` nulo), com inferência automática da unidade baseada no barbeiro mais frequente nas vendas do cliente e opção do gestor sobrescrever.
+# Origem de cliente: regra "últimos 3 atendimentos" + reanálise diária
 
-## 1. Backend (RPC)
+## Contexto
+Hoje já existe `suggest_client_origin_units` / `apply_auto_origin_units` (botão "Atribuir origens automaticamente" na aba Clientes), mas a lógica usa **frequência geral por barbeiro** (todo o histórico) e só roda quando o gestor clica. Com a importação CSV de clientes novos, queremos a regra **dinâmica baseada nos últimos 3 atendimentos**, recomputada **toda madrugada**.
 
-Criar RPC `suggest_client_origin_units(p_organization_id uuid)`:
-- Para cada cliente da org sem `subscription_unit_id`, varre `sale_transactions` filtrando por `mobile_phone` do cliente.
-- Agrupa por `barber_id` → conta ocorrências → pega o barbeiro mais frequente → retorna `barbers.unit_id` correspondente.
-- Fallback: se cliente não tem nenhuma venda com barbeiro, usa `unit_id` da venda mais recente (qualquer fonte). Se nem isso existir, retorna `null` (não sugere).
-- Retorna `TABLE(client_id uuid, suggested_unit_id uuid, suggested_unit_name text, confidence_count int, basis text)` onde `basis` é `'barber_frequency'` ou `'last_sale'`.
+## Regra de negócio (árvore de decisão)
 
-Criar RPC `apply_auto_origin_units(p_organization_id uuid)`:
-- Chama a anterior internamente e faz `UPDATE clients SET subscription_unit_id = suggested_unit_id` apenas onde `subscription_unit_id IS NULL` e `suggested_unit_id IS NOT NULL`.
-- Retorna `{ updated_count int, skipped_count int }`.
-- Marcada `SECURITY DEFINER` com check `has_role(auth.uid(), 'manager')` + isolamento por `organization_id`.
+Para cada cliente, buscar os **últimos 3 atendimentos** (transações `item_type='service'` com `barber_id IS NOT NULL`), ordenados por `created_at DESC`:
 
-## 2. Frontend — `ClientsManagement.tsx`
+1. **3+ atendimentos** → barbeiro majoritário (2 ou 3 ocorrências nas últimas 3). Empate triplo (A,B,C) → desempate pelo mais recente.
+2. **2 atendimentos** → mesmo barbeiro nas duas vezes vence; diferentes → desempate pelo mais recente.
+3. **1 atendimento** → esse barbeiro.
+4. **0 atendimentos** (importado via CSV) → não mexer; manter origem importada (ou `NULL`).
 
-### Novo filtro
-- Adicionar `"no_origin"` ao tipo `FilterKey`.
-- Função `hasNoOrigin(c) = !c.subscription_unit_id`.
-- Contador no `counts` + botão na barra de filtros com ícone `MapPinOff` (cor neutra, sem `alert`).
-- Incluir `subscription_unit_id` já está no select (`select`). OK.
+Origem = `barbers.unit_id` do barbeiro escolhido. (Opcional: usar `sale_transactions.unit_id` do atendimento — ver "Decisão pendente".)
 
-### Sugestão por card
-- Ao montar lista (uma vez por carga), chamar `suggest_client_origin_units` e guardar `Map<client_id, {unit_id, unit_name, basis}>`.
-- No card do cliente, quando `hasNoOrigin(c)` e existe sugestão: badge amarelo "Sem origem → sugerido: **{unidade}**" + botão pequeno **"Aplicar"** (chama update single).
-- Quando não há sugestão: badge cinza "Sem origem".
+A regra **sobrescreve** a origem atual sempre que o cálculo mudar (cliente migrou de barbeiro → migra de unidade), exceto quando não há nenhum atendimento.
 
-### Edição manual (sempre disponível)
-- Dropdown novo no card `"Origem ▾"` listando todas as unidades ativas da org + opção "Limpar". Salva direto em `clients.subscription_unit_id`. Aparece para **qualquer** cliente (não só sem-origem), para gestor poder trocar.
+## Mudanças
 
-### Ação em lote
-- Quando filtro `"no_origin"` está ativo, mostrar banner no topo com:
-  - "X clientes sem origem · Y com sugestão automática"
-  - Botão **"Atribuir origens automaticamente"** → chama `apply_auto_origin_units` → toast com resumo `{updated, skipped}` → `fetchData()`.
+### 1. Banco
 
-## 3. Detalhes técnicos
-- Tipos: adicionar `subscription_unit_id`, `subscription_unit_name?` ao `Client` (já tem `subscription_unit_id`).
-- Buscar `units` ativos (id, name) no `fetchData` (similar a `plans`).
-- Performance: RPC roda no Postgres em uma query (CTE com `ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY count DESC)`).
-- Reaproveitar o componente `ClientDetailModal` para também ter o seletor de unidade lá (opcional — versão inicial só no card).
-- Nada de migração de dados em massa silenciosa: lote é sempre disparado por clique do gestor.
+- **Substituir** `suggest_client_origin_units(p_organization_id)` por nova versão com a árvore acima. Implementação em SQL puro com CTE:
+  - `last3` = `ROW_NUMBER() OVER (PARTITION BY mobile_phone ORDER BY created_at DESC)` ≤ 3, filtrando `item_type='service'`, `barber_id NOT NULL`, `organization_id`.
+  - `counts` = agrupa por `(client_id, barber_id)` com `count(*)` e `max(created_at)` dentro do top 3.
+  - Vencedor por cliente = `ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY count DESC, max_created_at DESC)` = 1.
+  - Resolve `unit_id` via `barbers`.
+  - Retorna `client_id, suggested_unit_id, suggested_unit_name, suggested_barber_id, suggested_barber_name, basis ('last3_majority'|'last3_tiebreak_recent'|'single_visit'), recent_visits int`.
 
-## 4. Memória
-Atualizar `mem://index.md` com referência a `mem://features/client-origin-attribution` documentando: campo `subscription_unit_id`, fonte de inferência (barbeiro mais frequente → unit do barbeiro, fallback última venda), e que a aplicação automática é sempre acionada manualmente pelo gestor.
+- **Nova RPC** `recompute_all_client_origins(p_organization_id uuid)` (SECURITY DEFINER):
+  - Para cada cliente da org, calcula vencedor (mesma CTE), faz `UPDATE clients SET subscription_unit_id = winner_unit_id WHERE subscription_unit_id IS DISTINCT FROM winner_unit_id`.
+  - **Importante:** só atualiza quando há vencedor (≥1 atendimento). Não toca em clientes 0-atendimentos.
+  - Retorna `{ scanned, updated, unchanged, no_history }`.
+
+- **Manter** `apply_auto_origin_units` como wrapper que chama a nova lógica (compatibilidade com o botão atual). Pode internamente delegar para `recompute_all_client_origins` mas restrito a quem está `NULL` se quisermos preservar o comportamento manual antigo — **decisão**: redirecionar para a regra nova (sobrescreve), já que essa é a intenção.
+
+### 2. Cron diário
+
+Habilitar `pg_cron` + `pg_net` (se ainda não estiverem) e criar job que roda às **04:00 Manaus (08:00 UTC)** chamando uma nova Edge Function `recompute-client-origins`:
+
+- A função itera todas as organizações ativas e chama `recompute_all_client_origins(org_id)` via service role.
+- Loga sumário em uma nova tabela `client_origin_recompute_logs` (`ran_at, organization_id, scanned, updated, unchanged, no_history, duration_ms, errors jsonb`).
+- `verify_jwt = false`, autorizada por header secreto + service role.
+
+Alternativa mais simples (preferida): cron chama diretamente a RPC para cada org via `net.http_post` para PostgREST. Mas como precisamos iterar orgs, **Edge Function é mais limpa**.
+
+### 3. Frontend (`ClientsManagement.tsx`)
+
+- Trocar o texto do botão/banner "Atribuir origens automaticamente" para refletir a nova regra: **"Recalcular origens (últimos 3 atendimentos)"**.
+- Pequeno texto auxiliar: "Roda automaticamente toda madrugada. Use aqui para forçar agora."
+- Card do cliente: ao mostrar badge de origem sugerida, exibir `basis` em tooltip (ex: "Maioria nos últimos 3 cortes", "Único atendimento", "Empate — último corte").
+- Filtro "Sem origem" continua igual (clientes com `subscription_unit_id IS NULL` E sem histórico).
+
+### 4. Memória
+
+Atualizar `mem://features/client-origin-attribution` com:
+- Regra dos últimos 3 atendimentos + desempate por recência.
+- Cron diário 04:00 Manaus via Edge Function `recompute-client-origins`.
+- Sobrescreve origem manual quando histórico mudar (clientes 0-atendimentos preservados).
+
+## Decisões pendentes (preciso confirmar)
+
+1. **Origem = unidade atual do barbeiro** (`barbers.unit_id`) **ou unidade do atendimento** (`sale_transactions.unit_id`)? Sua mensagem cita as duas opções. Recomendo `barbers.unit_id` por consistência (barbeiro itinerante mantém a casa-base), mas confirme.
+2. **Sobrescrever origem manual?** Se um gestor editou manualmente a unidade de um cliente, o cron deve respeitar essa escolha ou sobrescrever conforme o histórico? Recomendo **sobrescrever** (regra dinâmica é a fonte da verdade), mas posso adicionar um flag `clients.origin_locked boolean` para travar casos especiais — diga se quer.
+3. **Cron diário**: 04:00 Manaus está OK?
 
 ## Fora de escopo
-- Não toca em `barbers.unit_id` nem em vendas históricas.
-- Não cria nova tabela — usa coluna existente `clients.subscription_unit_id`.
+
 - Não muda o wizard de assinatura.
+- Não toca em `barbers.unit_id`.
+- Não cria UI nova para visualizar logs do cron (pode vir depois se precisar).
