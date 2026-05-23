@@ -228,7 +228,7 @@ export default function LiveDashboard() {
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at")
+        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at, subscription_action")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
