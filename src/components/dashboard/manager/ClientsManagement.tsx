@@ -266,6 +266,7 @@ export default function ClientsManagement() {
       const planByNormalized = new Map(plans.map((p) => [normalizePlanName(p.name), p.id]));
 
       let created = 0, updated = 0, skipped = 0;
+      let importedCount = 0, nameUpdatedCount = 0, planAdaptedCount = 0;
       const issues: ImportIssue[] = [];
 
       for (let i = 1; i < lines.length; i++) {
@@ -312,18 +313,28 @@ export default function ClientsManagement() {
 
           if (nameDiff || planDiff || dateDiff) {
             const { error } = await supabase.from("clients").update(payload).eq("id", existing.id);
-            if (!error) updated++; else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao atualizar cadastro" }); }
+            if (!error) {
+              updated++;
+              importedCount++;
+              if (nameDiff) nameUpdatedCount++;
+              if (planDiff || dateDiff) planAdaptedCount++;
+            } else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao atualizar cadastro" }); }
           } else {
             // already consistent, proceed silently
           }
         } else {
           const { error } = await supabase.from("clients").insert(payload);
-          if (!error) created++; else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao criar cadastro" }); }
+          if (!error) {
+            created++;
+            importedCount++;
+          } else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao criar cadastro" }); }
         }
       }
 
       setImportIssues(issues);
-      toast.success("Importação concluída", { description: `${created} criados, ${updated} atualizados, ${skipped} ignorados.` });
+      toast.success("Importação concluída", {
+        description: `${importedCount} importados (${created} novos, ${updated} atualizados) · ${nameUpdatedCount} troca(s) de nome · ${planAdaptedCount} adaptação(ões) de plano/data · ${skipped} ignorados.`,
+      });
       // Não bloquear o término do estado de importação com recarga pesada da tela
       // (evita sensação de "carregando infinito" em CSVs grandes).
       void fetchData();
@@ -561,7 +572,7 @@ export default function ClientsManagement() {
         </div>
       )}
 
-      {!hasSearch && filter === "no_origin" && (
+      {!hasSearch && filter === "no_origin" && counts.noOrigin > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
             <strong>{counts.noOrigin}</strong> cliente(s) sem origem.{" "}
@@ -573,7 +584,7 @@ export default function ClientsManagement() {
             type="button"
             size="sm"
             className="gap-1.5 h-8 shrink-0"
-            disabled={applyingAutoOrigin}
+            disabled={applyingAutoOrigin || counts.noOrigin === 0}
             onClick={applyAutoOrigins}
           >
             {applyingAutoOrigin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
