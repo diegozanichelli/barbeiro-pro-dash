@@ -38,8 +38,8 @@ interface UseSubscriptionCycleResult {
  * Estratégia em duas camadas:
  *  1) Tenta a última `sale_transaction` de assinatura (`new`/`renew`/`upgrade`) — fonte ideal.
  *  2) Se não houver transação, mas o cliente estiver vinculado a um plano em `clients`,
- *     retorna um ciclo neutro (`sem_historico`) para que o banner ainda apareça
- *     e a primeira renovação ancore o ciclo definitivamente.
+ *     tenta ancorar o ciclo por `subscription_started_at` (migrados);
+ *     se não houver data, retorna ciclo neutro (`sem_historico`).
  *
  * Degrada graciosamente: se ambas as buscas falharem, retorna cycle=null.
  */
@@ -114,7 +114,7 @@ export function useSubscriptionCycle({
 
         const { data: clientData, error: clientError } = await (supabase
           .from("clients") as any)
-          .select("subscription_plan_id, subscription_plans(name)")
+          .select("subscription_plan_id, subscription_started_at, subscription_plans(name)")
           .eq("organization_id", organizationId)
           .eq("mobile_phone", digits)
           .maybeSingle();
@@ -122,7 +122,12 @@ export function useSubscriptionCycle({
         if (cancelled) return;
 
         if (!clientError && clientData?.subscription_plan_id) {
-          setCycle(buildLegacyCycle());
+          const startedAt = clientData.subscription_started_at
+            ? new Date(`${clientData.subscription_started_at}T12:00:00`)
+            : null;
+
+          const hasStartedAt = !!startedAt && !Number.isNaN(startedAt.getTime());
+          setCycle(hasStartedAt ? computeCycleStatus(startedAt) : buildLegacyCycle());
           setPlanId(clientData.subscription_plan_id);
           setPlanName(clientData.subscription_plans?.name ?? null);
           setLastTransactionId(null);
