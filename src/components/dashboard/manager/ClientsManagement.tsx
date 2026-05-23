@@ -74,36 +74,38 @@ interface OriginSuggestion {
   basis: string;
 }
 
+interface DuplicatePair {
+  leftId: string;
+  rightId: string;
+  reason: "prefix" | "distance";
+}
+
 type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue" | "no_origin" | "duplicate_candidates";
 
 const OVERDUE_DAYS = 30;
 const SUB_PAID_ACTIONS = new Set(["new", "renew", "upgrade", "downgrade"]);
 
-const arePhonesClose = (a: string, b: string) => {
+const phonesSimilarityReason = (a: string, b: string): "prefix" | "distance" | null => {
   const da = sanitizePhone(a || "");
   const db = sanitizePhone(b || "");
-  if (!da || !db) return false;
-  if (da === db) return false;
+  if (!da || !db) return null;
+  if (da === db) return null;
 
-  if (da.slice(0, 10) === db.slice(0, 10)) return true;
+  if (da.length >= 10 && db.length >= 10 && da.slice(0, 10) === db.slice(0, 10)) return "prefix";
 
-  if (Math.abs(da.length - db.length) > 1) return false;
+  if (Math.abs(da.length - db.length) > 1) return null;
 
   const prev = Array.from({ length: db.length + 1 }, (_, i) => i);
   for (let i = 1; i <= da.length; i++) {
-    let current = [i];
+    const current = [i];
     for (let j = 1; j <= db.length; j++) {
       const cost = da[i - 1] === db[j - 1] ? 0 : 1;
-      current[j] = Math.min(
-        prev[j] + 1,
-        current[j - 1] + 1,
-        prev[j - 1] + cost,
-      );
+      current[j] = Math.min(prev[j] + 1, current[j - 1] + 1, prev[j - 1] + cost);
     }
     for (let j = 0; j < current.length; j++) prev[j] = current[j];
   }
 
-  return prev[db.length] <= 2;
+  return prev[db.length] <= 2 ? "distance" : null;
 };
 
 export default function ClientsManagement() {
@@ -392,7 +394,7 @@ export default function ClientsManagement() {
     return new Date(Math.max(...candidates.map((d) => d.getTime())));
   };
 
-  const duplicateCandidateIds = useMemo(() => {
+  const duplicateAnalysis = useMemo(() => {
     const byName = new Map<string, Client[]>();
 
     for (const client of clients) {
@@ -403,21 +405,29 @@ export default function ClientsManagement() {
     }
 
     const ids = new Set<string>();
+    const pairMap = new Map<string, DuplicatePair>();
 
     for (const group of byName.values()) {
       if (group.length < 2) continue;
       for (let i = 0; i < group.length; i++) {
         for (let j = i + 1; j < group.length; j++) {
-          if (arePhonesClose(group[i].mobile_phone, group[j].mobile_phone)) {
-            ids.add(group[i].id);
-            ids.add(group[j].id);
-          }
+          const reason = phonesSimilarityReason(group[i].mobile_phone, group[j].mobile_phone);
+          if (!reason) continue;
+          ids.add(group[i].id);
+          ids.add(group[j].id);
+          const key = `${group[i].id}::${group[j].id}`;
+          pairMap.set(key, { leftId: group[i].id, rightId: group[j].id, reason });
         }
       }
     }
 
-    return ids;
+    return {
+      candidateIds: ids,
+      pairs: Array.from(pairMap.values()),
+    };
   }, [clients]);
+
+  const duplicateCandidateIds = duplicateAnalysis.candidateIds;
 
   const isOverdue = (c: Client): boolean => {
     if (!c.subscription_plan_id) return false;
@@ -451,6 +461,15 @@ export default function ClientsManagement() {
     }
     return n;
   }, [clients, originSuggestions]);
+
+  const duplicatePreview = useMemo(() => {
+    const byId = new Map(clients.map((c) => [c.id, c]));
+    return duplicateAnalysis.pairs.slice(0, 6).map((pair) => ({
+      left: byId.get(pair.leftId),
+      right: byId.get(pair.rightId),
+      reason: pair.reason,
+    })).filter((row) => row.left && row.right);
+  }, [clients, duplicateAnalysis.pairs]);
 
   const hasSearch = search.trim().length > 0;
 
@@ -633,7 +652,21 @@ export default function ClientsManagement() {
       {!hasSearch && filter === "duplicate_candidates" && counts.duplicateCandidates > 0 && (
         <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-xs text-orange-800 dark:text-orange-200 leading-relaxed">
           Mostrando clientes com <strong>mesmo nome</strong> e telefone <strong>muito parecido</strong> (mesmo prefixo ou até 2 dígitos de diferença).
-          Use essa aba para revisar conflitos de importação como o caso do Abraão.
+          Mapeamento automático de possíveis erros de digitação para revisão manual.
+        </div>
+      )}
+
+      {!hasSearch && filter === "duplicate_candidates" && duplicatePreview.length > 0 && (
+        <div className="rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-2 text-xs space-y-1">
+          {duplicatePreview.map((row, idx) => (
+            <p key={`${row.left.id}-${row.right.id}-${idx}`} className="text-orange-900 dark:text-orange-200">
+              <strong>{row.left.name}</strong>: {formatPhone(row.left.mobile_phone)} ↔ {formatPhone(row.right.mobile_phone)}
+              {" "}({row.reason === "prefix" ? "mesmo prefixo" : "até 2 dígitos diferentes"})
+            </p>
+          ))}
+          {duplicateAnalysis.pairs.length > duplicatePreview.length && (
+            <p className="text-orange-800/80 dark:text-orange-300/80">...e mais {duplicateAnalysis.pairs.length - duplicatePreview.length} combinação(ões).</p>
+          )}
         </div>
       )}
 
