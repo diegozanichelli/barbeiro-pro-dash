@@ -78,6 +78,7 @@ export default function ClientDetailModal({
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -216,6 +217,59 @@ export default function ClientDetailModal({
     }
   };
 
+
+  const handleDeleteClient = async () => {
+    if (!client) return;
+
+    const phoneDigits = sanitizePhone(client.mobile_phone || "");
+
+    try {
+      setDeleting(true);
+
+      const [{ count: txCount, error: txErr }, { count: phCount, error: phErr }] = await Promise.all([
+        supabase
+          .from("sale_transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", phoneDigits),
+        supabase
+          .from("client_purchase_history")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", phoneDigits),
+      ]);
+
+      if (txErr) throw txErr;
+      if (phErr) throw phErr;
+
+      const hasHistory = (txCount || 0) > 0 || (phCount || 0) > 0;
+
+      const baseConfirm = window.confirm("Tem certeza que deseja excluir permanentemente este cliente?");
+      if (!baseConfirm) return;
+
+      if (hasHistory) {
+        const historyConfirm = window.confirm(
+          `Este cliente já possui histórico de uso (${(txCount || 0) + (phCount || 0)} registro(s)). Deseja realmente excluir?`,
+        );
+        if (!historyConfirm) return;
+      }
+
+      const { error } = await supabase
+        .from("clients")
+        .delete()
+        .eq("id", client.id)
+        .eq("organization_id", organizationId);
+      if (error) throw error;
+
+      toast.success("Cliente excluído permanentemente");
+      onUpdated();
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao excluir cliente");
+    } finally {
+      setDeleting(false);
+    }
+  };
   const selectedPlan = plans.find((p) => p.id === planId);
 
   const formatCurrency = (v: number) =>
@@ -319,10 +373,17 @@ export default function ClientDetailModal({
               Cliente desde {format(new Date(client.created_at), "dd/MM/yyyy", { locale: ptBR })}
             </div>
 
-            <Button onClick={handleSave} disabled={saving || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone) || (planId !== "none" && !subscriptionStartedAt)} className="w-full gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Salvar Alterações
-            </Button>
+            <div className="space-y-2">
+              <Button onClick={handleSave} disabled={saving || deleting || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone) || (planId !== "none" && !subscriptionStartedAt)} className="w-full gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar Alterações
+              </Button>
+
+              <Button type="button" variant="destructive" onClick={handleDeleteClient} disabled={saving || deleting} className="w-full gap-2">
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Excluir cliente permanentemente
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="purchases" className="mt-4">
