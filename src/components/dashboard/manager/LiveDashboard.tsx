@@ -1569,6 +1569,28 @@ export default function LiveDashboard() {
                       {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </span>
                   </div>
+                  {(subscriptionBreakdown.newCount + subscriptionBreakdown.recCount) > 0 && (
+                    <div className="pl-3 space-y-0.5 border-l border-amber-600/30 ml-1">
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground">
+                          <span className="text-emerald-600">•</span> Novas adesões
+                          <span className="text-muted-foreground/70"> ({subscriptionBreakdown.newCount})</span>
+                        </span>
+                        <span className="font-semibold text-emerald-600 tabular-nums">
+                          {subscriptionBreakdown.newRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground">
+                          <span className="text-blue-500">•</span> Recorrentes
+                          <span className="text-muted-foreground/70"> (renov/upg/down · {subscriptionBreakdown.recCount})</span>
+                        </span>
+                        <span className="font-semibold text-blue-500 tabular-nums">
+                          {subscriptionBreakdown.recRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Ticket Médio */}
