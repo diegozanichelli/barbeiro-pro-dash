@@ -74,10 +74,37 @@ interface OriginSuggestion {
   basis: string;
 }
 
-type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue" | "no_origin";
+type FilterKey = "all" | "no_phone" | "incomplete_name" | "overdue" | "no_origin" | "duplicate_candidates";
 
 const OVERDUE_DAYS = 30;
 const SUB_PAID_ACTIONS = new Set(["new", "renew", "upgrade", "downgrade"]);
+
+const arePhonesClose = (a: string, b: string) => {
+  const da = sanitizePhone(a || "");
+  const db = sanitizePhone(b || "");
+  if (!da || !db) return false;
+  if (da === db) return false;
+
+  if (da.slice(0, 10) === db.slice(0, 10)) return true;
+
+  if (Math.abs(da.length - db.length) > 1) return false;
+
+  const prev = Array.from({ length: db.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= da.length; i++) {
+    let current = [i];
+    for (let j = 1; j <= db.length; j++) {
+      const cost = da[i - 1] === db[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        prev[j] + 1,
+        current[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j < current.length; j++) prev[j] = current[j];
+  }
+
+  return prev[db.length] <= 2;
+};
 
 export default function ClientsManagement() {
   const CLIENTS_PER_PAGE = 30;
@@ -365,6 +392,33 @@ export default function ClientsManagement() {
     return new Date(Math.max(...candidates.map((d) => d.getTime())));
   };
 
+  const duplicateCandidateIds = useMemo(() => {
+    const byName = new Map<string, Client[]>();
+
+    for (const client of clients) {
+      const key = normalize(client.name || "").trim();
+      if (!key) continue;
+      if (!byName.has(key)) byName.set(key, []);
+      byName.get(key)?.push(client);
+    }
+
+    const ids = new Set<string>();
+
+    for (const group of byName.values()) {
+      if (group.length < 2) continue;
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          if (arePhonesClose(group[i].mobile_phone, group[j].mobile_phone)) {
+            ids.add(group[i].id);
+            ids.add(group[j].id);
+          }
+        }
+      }
+    }
+
+    return ids;
+  }, [clients]);
+
   const isOverdue = (c: Client): boolean => {
     if (!c.subscription_plan_id) return false;
     const last = getLastPaidDate(c);
@@ -378,15 +432,17 @@ export default function ClientsManagement() {
     let incomplete = 0;
     let overdue = 0;
     let noOrigin = 0;
+    let duplicateCandidates = 0;
     for (const c of clients) {
       if (isNoPhone(c.mobile_phone)) noPhone++;
       if (isIncompleteName(c.name)) incomplete++;
       if (isOverdue(c)) overdue++;
       if (hasNoOrigin(c)) noOrigin++;
+      if (duplicateCandidateIds.has(c.id)) duplicateCandidates++;
     }
-    return { noPhone, incomplete, overdue, noOrigin };
+    return { noPhone, incomplete, overdue, noOrigin, duplicateCandidates };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, lastSubByPhone]);
+  }, [clients, duplicateCandidateIds, lastSubByPhone]);
 
   const suggestedNoOriginCount = useMemo(() => {
     let n = 0;
@@ -404,6 +460,7 @@ export default function ClientsManagement() {
       if (filter === "incomplete_name" && !isIncompleteName(c.name)) return false;
       if (filter === "overdue" && !isOverdue(c)) return false;
       if (filter === "no_origin" && !hasNoOrigin(c)) return false;
+      if (filter === "duplicate_candidates" && !duplicateCandidateIds.has(c.id)) return false;
       return true;
     }
 
@@ -442,6 +499,7 @@ export default function ClientsManagement() {
     { key: "incomplete_name", label: "Nome incompleto", count: counts.incomplete, icon: UserX },
     { key: "overdue", label: `Inadimplentes >${OVERDUE_DAYS}d`, count: counts.overdue, icon: AlertTriangle, alert: true },
     { key: "no_origin", label: "Sem origem", count: counts.noOrigin, icon: MapPinOff },
+    { key: "duplicate_candidates", label: "Possíveis duplicados", count: counts.duplicateCandidates, icon: AlertTriangle, alert: true },
   ];
 
   const renderOverdueBadge = (c: Client) => {
@@ -572,6 +630,13 @@ export default function ClientsManagement() {
         </div>
       )}
 
+      {!hasSearch && filter === "duplicate_candidates" && counts.duplicateCandidates > 0 && (
+        <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-xs text-orange-800 dark:text-orange-200 leading-relaxed">
+          Mostrando clientes com <strong>mesmo nome</strong> e telefone <strong>muito parecido</strong> (mesmo prefixo ou até 2 dígitos de diferença).
+          Use essa aba para revisar conflitos de importação como o caso do Abraão.
+        </div>
+      )}
+
       {!hasSearch && filter === "no_origin" && counts.noOrigin > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
@@ -669,6 +734,12 @@ export default function ClientsManagement() {
                           {currentUnitName}
                         </Badge>
                       ) : null}
+                      {duplicateCandidateIds.has(client.id) && (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0 border-orange-500/50 text-orange-700 dark:text-orange-300">
+                          <AlertTriangle className="w-3 h-3" />
+                          Possível duplicado
+                        </Badge>
+                      )}
                       {renderOverdueBadge(client)}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
