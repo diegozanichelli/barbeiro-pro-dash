@@ -56,6 +56,7 @@ interface ManagerTransaction {
   unit_id: string | null;
   mobile_phone: string | null;
   created_at: string;
+  subscription_action?: string | null;
 }
 
 interface Barber {
