@@ -379,10 +379,6 @@ export default function ClientDetailModal({
                 Salvar Alterações
               </Button>
 
-              <Button type="button" variant="destructive" onClick={handleDeleteClient} disabled={saving || deleting} className="w-full gap-2">
-                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Excluir cliente permanentemente
-              </Button>
             </div>
           </TabsContent>
 
@@ -455,6 +451,13 @@ export default function ClientDetailModal({
             </ScrollArea>
           </TabsContent>
         </Tabs>
+
+        <div className="pt-2 border-t">
+          <Button type="button" variant="destructive" onClick={handleDeleteClient} disabled={saving || deleting} className="w-full gap-2">
+            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Excluir cliente permanentemente
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
