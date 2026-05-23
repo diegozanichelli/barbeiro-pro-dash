@@ -817,6 +817,26 @@ export default function LiveDashboard() {
     [subscriptionRankingData]
   );
 
+  // Breakdown novas adesões vs recorrentes (renew/upgrade/downgrade)
+  const subscriptionBreakdown = useMemo(() => {
+    let newCount = 0, newRevenue = 0;
+    let recCount = 0, recRevenue = 0;
+    managerTransactions.forEach((t) => {
+      if (t.item_type !== "subscription") return;
+      const price = Number(t.price_sold) || 0;
+      if (t.subscription_action === "new") {
+        newCount += 1;
+        newRevenue += price;
+      } else {
+        // renew, upgrade, downgrade, ou sem ação definida → trata como recorrente
+        recCount += 1;
+        recRevenue += price;
+      }
+    });
+    return { newCount, newRevenue, recCount, recRevenue };
+  }, [managerTransactions]);
+
+
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
     const relevantBarbers = selectedUnit === "all" ? barbers : barbers.filter(b => b.unit_id === selectedUnit);
