@@ -117,6 +117,7 @@ export default function ClientsManagement() {
   const [originSuggestions, setOriginSuggestions] = useState<Map<string, OriginSuggestion>>(new Map());
   const [applyingAutoOrigin, setApplyingAutoOrigin] = useState(false);
   const [lastSubByPhone, setLastSubByPhone] = useState<Map<string, string>>(new Map());
+  const [phonesWithVisitHistory, setPhonesWithVisitHistory] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -215,11 +216,33 @@ export default function ClientsManagement() {
         subFrom += PAGE_SIZE;
       }
 
+      // Fetch phones that already have visit history (sale transactions)
+      const historyPhones = new Set<string>();
+      let histFrom = 0;
+      let histHasMore = true;
+      while (histHasMore) {
+        const { data: visitTx, error: visitErr } = await supabase
+          .from("sale_transactions")
+          .select("mobile_phone")
+          .eq("organization_id", organizationId)
+          .not("mobile_phone", "is", null)
+          .range(histFrom, histFrom + PAGE_SIZE - 1);
+        if (visitErr) throw visitErr;
+
+        for (const tx of visitTx || []) {
+          if (tx.mobile_phone) historyPhones.add(tx.mobile_phone);
+        }
+
+        histHasMore = (visitTx?.length || 0) === PAGE_SIZE;
+        histFrom += PAGE_SIZE;
+      }
+
       setClients(allClients as Client[]);
       setPlans(plansData || []);
       setUnits((unitsData as UnitInfo[]) || []);
       setOriginSuggestions(suggMap);
       setLastSubByPhone(subMap);
+      setPhonesWithVisitHistory(historyPhones);
     } catch (err) {
       console.error("Erro ao carregar clientes:", err);
     } finally {
@@ -731,6 +754,15 @@ export default function ClientsManagement() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm truncate">{client.name || "—"}</span>
+                      {phonesWithVisitHistory.has(client.mobile_phone) ? (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0 border-emerald-500/40 text-emerald-700 dark:text-emerald-300">
+                          Histórico de visitas
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="gap-1 text-xs shrink-0 text-muted-foreground">
+                          Sem histórico
+                        </Badge>
+                      )}
                       {incompleteName && (
                         <Badge variant="outline" className="gap-1 text-xs shrink-0 border-amber-500/50 text-amber-600 dark:text-amber-400">
                           <UserX className="w-3 h-3" />
