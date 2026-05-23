@@ -56,6 +56,7 @@ interface ManagerTransaction {
   unit_id: string | null;
   mobile_phone: string | null;
   created_at: string;
+  subscription_action?: string | null;
 }
 
 interface Barber {
@@ -227,7 +228,7 @@ export default function LiveDashboard() {
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at")
+        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at, subscription_action")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
@@ -816,6 +817,26 @@ export default function LiveDashboard() {
     () => subscriptionRankingData.reduce((s, r) => s + r.revenue, 0),
     [subscriptionRankingData]
   );
+
+  // Breakdown novas adesões vs recorrentes (renew/upgrade/downgrade)
+  const subscriptionBreakdown = useMemo(() => {
+    let newCount = 0, newRevenue = 0;
+    let recCount = 0, recRevenue = 0;
+    managerTransactions.forEach((t) => {
+      if (t.item_type !== "subscription") return;
+      const price = Number(t.price_sold) || 0;
+      if (t.subscription_action === "new") {
+        newCount += 1;
+        newRevenue += price;
+      } else {
+        // renew, upgrade, downgrade, ou sem ação definida → trata como recorrente
+        recCount += 1;
+        recRevenue += price;
+      }
+    });
+    return { newCount, newRevenue, recCount, recRevenue };
+  }, [managerTransactions]);
+
 
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
@@ -1548,6 +1569,28 @@ export default function LiveDashboard() {
                       {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </span>
                   </div>
+                  {(subscriptionBreakdown.newCount + subscriptionBreakdown.recCount) > 0 && (
+                    <div className="pl-3 space-y-0.5 border-l border-amber-600/30 ml-1">
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground">
+                          <span className="text-emerald-600">•</span> Novas adesões
+                          <span className="text-muted-foreground/70"> ({subscriptionBreakdown.newCount})</span>
+                        </span>
+                        <span className="font-semibold text-emerald-600 tabular-nums">
+                          {subscriptionBreakdown.newRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground">
+                          <span className="text-blue-500">•</span> Recorrentes
+                          <span className="text-muted-foreground/70"> (renov/upg/down · {subscriptionBreakdown.recCount})</span>
+                        </span>
+                        <span className="font-semibold text-blue-500 tabular-nums">
+                          {subscriptionBreakdown.recRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Ticket Médio */}
