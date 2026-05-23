@@ -574,9 +574,11 @@ export default function ClientsManagement() {
 
       {!hasSearch && filter === "no_origin" && counts.noOrigin > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="text-xs text-amber-800 dark:text-amber-200">
-            <strong>{counts.noOrigin}</strong> cliente(s) sem origem ·{" "}
-            <strong>{suggestedNoOriginCount}</strong> com sugestão automática (unidade do barbeiro mais frequente).
+          <div className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+            <strong>{counts.noOrigin}</strong> cliente(s) sem origem.{" "}
+            A origem é recalculada automaticamente toda madrugada com base nos{" "}
+            <strong>últimos 3 atendimentos</strong> (barbeiro majoritário, desempate pelo mais recente).
+            Clique para forçar agora.
           </div>
           <Button
             type="button"
@@ -586,7 +588,7 @@ export default function ClientsManagement() {
             onClick={applyAutoOrigins}
           >
             {applyingAutoOrigin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-            Atribuir origens automaticamente
+            Recalcular origens agora
           </Button>
         </div>
       )}

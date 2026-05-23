@@ -226,6 +226,42 @@ export type Database = {
           },
         ]
       }
+      client_origin_recompute_logs: {
+        Row: {
+          duration_ms: number | null
+          errors: Json
+          id: string
+          no_history: number
+          organization_id: string | null
+          ran_at: string
+          scanned: number
+          unchanged: number
+          updated: number
+        }
+        Insert: {
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          no_history?: number
+          organization_id?: string | null
+          ran_at?: string
+          scanned?: number
+          unchanged?: number
+          updated?: number
+        }
+        Update: {
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          no_history?: number
+          organization_id?: string | null
+          ran_at?: string
+          scanned?: number
+          unchanged?: number
+          updated?: number
+        }
+        Relationships: []
+      }
       client_purchase_history: {
         Row: {
           amount: number
@@ -1442,12 +1478,18 @@ export type Database = {
         Args: { p_barber_id: string; p_date: string }
         Returns: undefined
       }
+      recompute_all_client_origins: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
       suggest_client_origin_units: {
         Args: { p_organization_id: string }
         Returns: {
           basis: string
           client_id: string
-          confidence_count: number
+          recent_visits: number
+          suggested_barber_id: string
+          suggested_barber_name: string
           suggested_unit_id: string
           suggested_unit_name: string
         }[]
