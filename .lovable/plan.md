@@ -1,71 +1,96 @@
-# Origem de cliente: regra "últimos 3 atendimentos" + reanálise diária
+## Diagnóstico (validado no banco)
 
-## Contexto
-Hoje já existe `suggest_client_origin_units` / `apply_auto_origin_units` (botão "Atribuir origens automaticamente" na aba Clientes), mas a lógica usa **frequência geral por barbeiro** (todo o histórico) e só roda quando o gestor clica. Com a importação CSV de clientes novos, queremos a regra **dinâmica baseada nos últimos 3 atendimentos**, recomputada **toda madrugada**.
+Conferi os dados reais do **Abraão Colares — maio/2026**:
 
-## Regra de negócio (árvore de decisão)
+| Métrica | Tela | Banco | Status |
+|---|---|---|---|
+| Serviços vendidos | 102 | 80 linhas `item_type='service'` | ❌ Diverge — fallback usa `clients_count` |
+| Clientes atendidos | 44 | 55 `DISTINCT(created_at)` | ❌ Definição frágil |
+| Únicos | 35 | 48 (serviços) / 35 (todos itens) | ❌ Dois cards, definições diferentes |
+| Retenção | "muito baixa" | — | ❌ Ignora clientes migrados / da rede |
 
-Para cada cliente, buscar os **últimos 3 atendimentos** (transações `item_type='service'` com `barber_id IS NOT NULL`), ordenados por `created_at DESC`:
+Raiz do problema: `BarberDeepAnalysis.tsx` mistura **três fontes** (`daily_productions`, `sale_transactions` só serviço, `sale_transactions` todos os itens) com **definições diferentes em cada card** e fallbacks que distorcem os números.
 
-1. **3+ atendimentos** → barbeiro majoritário (2 ou 3 ocorrências nas últimas 3). Empate triplo (A,B,C) → desempate pelo mais recente.
-2. **2 atendimentos** → mesmo barbeiro nas duas vezes vence; diferentes → desempate pelo mais recente.
-3. **1 atendimento** → esse barbeiro.
-4. **0 atendimentos** (importado via CSV) → não mexer; manter origem importada (ou `NULL`).
+---
 
-Origem = `barbers.unit_id` do barbeiro escolhido. (Opcional: usar `sale_transactions.unit_id` do atendimento — ver "Decisão pendente".)
+## Inconsistências confirmadas
 
-A regra **sobrescreve** a origem atual sempre que o cálculo mudar (cliente migrou de barbeiro → migra de unidade), exceto quando não há nenhum atendimento.
+### 1. "Clientes atendidos" usa `DISTINCT(created_at)` — frágil
+2 clientes no mesmo segundo = 1 atendimento. **Correção:** `DISTINCT (mobile_phone, dia)` + atendimentos anônimos contam 1 cada.
 
-## Mudanças
+### 2. "Únicos" tem 2 definições convivendo
+Card "Clientes únicos" filtra `item_type='service'` (48); card "Volume" usa todos os itens (35). **Correção:** definição única = telefones distintos no período (todos os itens).
 
-### 1. Banco
+### 3. "Serviços vendidos" com fallback incorreto
+`finalServicos = selected.clients` quando faltam transações itemizadas. **Correção:** fallback = `services_count` da `daily_productions`, nunca `clients_count`.
 
-- **Substituir** `suggest_client_origin_units(p_organization_id)` por nova versão com a árvore acima. Implementação em SQL puro com CTE:
-  - `last3` = `ROW_NUMBER() OVER (PARTITION BY mobile_phone ORDER BY created_at DESC)` ≤ 3, filtrando `item_type='service'`, `barber_id NOT NULL`, `organization_id`.
-  - `counts` = agrupa por `(client_id, barber_id)` com `count(*)` e `max(created_at)` dentro do top 3.
-  - Vencedor por cliente = `ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY count DESC, max_created_at DESC)` = 1.
-  - Resolve `unit_id` via `barbers`.
-  - Retorna `client_id, suggested_unit_id, suggested_unit_name, suggested_barber_id, suggested_barber_name, basis ('last3_majority'|'last3_tiebreak_recent'|'single_visit'), recent_visits int`.
+### 4. Retenção não enxerga clientes migrados nem da rede
+Clientes importados via CSV (`migrated_from_legacy`) não geram transação → aparecem como "novos". E não há distinção entre **fidelidade ao barbeiro** vs **fidelidade à rede**.
 
-- **Nova RPC** `recompute_all_client_origins(p_organization_id uuid)` (SECURITY DEFINER):
-  - Para cada cliente da org, calcula vencedor (mesma CTE), faz `UPDATE clients SET subscription_unit_id = winner_unit_id WHERE subscription_unit_id IS DISTINCT FROM winner_unit_id`.
-  - **Importante:** só atualiza quando há vencedor (≥1 atendimento). Não toca em clientes 0-atendimentos.
-  - Retorna `{ scanned, updated, unchanged, no_history }`.
+### 5. Ticket Médio mistura serviço/produto com MRR de assinatura
+Assinaturas (R$ 100+ uma vez) distorcem o ticket operacional do barbeiro.
 
-- **Manter** `apply_auto_origin_units` como wrapper que chama a nova lógica (compatibilidade com o botão atual). Pode internamente delegar para `recompute_all_client_origins` mas restrito a quem está `NULL` se quisermos preservar o comportamento manual antigo — **decisão**: redirecionar para a regra nova (sobrescreve), já que essa é a intenção.
+### 6. "Recorrência" usa `is_new_client` como verdade
+Coluna tem default `false`, então transações antigas/manuais inflam recorrência. **Correção:** derivar recorrência via histórico real de transações.
 
-### 2. Cron diário
+### 7. Média da casa inconsistente
+Radar inclui o próprio barbeiro (linha 402); semáforos Vitais excluem (linha 681). **Correção:** sempre excluir o próprio.
 
-Habilitar `pg_cron` + `pg_net` (se ainda não estiverem) e criar job que roda às **04:00 Manaus (08:00 UTC)** chamando uma nova Edge Function `recompute-client-origins`:
+---
 
-- A função itera todas as organizações ativas e chama `recompute_all_client_origins(org_id)` via service role.
-- Loga sumário em uma nova tabela `client_origin_recompute_logs` (`ran_at, organization_id, scanned, updated, unchanged, no_history, duration_ms, errors jsonb`).
-- `verify_jwt = false`, autorizada por header secreto + service role.
+## Decisões confirmadas pelo usuário
 
-Alternativa mais simples (preferida): cron chama diretamente a RPC para cada org via `net.http_post` para PostgREST. Mas como precisamos iterar orgs, **Edge Function é mais limpa**.
+### ✅ Ticket Médio — separar em 2 cards
+- **Ticket Operacional** = (faturamento de **serviços + produtos**) ÷ atendimentos do período
+- **Ticket de Assinatura** = MRR de novas assinaturas ÷ nº de assinaturas vendidas
 
-### 3. Frontend (`ClientsManagement.tsx`)
+### ✅ Retenção — separar em 2 cards
+- **Retenção da Rede** — cliente do mês já era cliente da organização antes do período (qualquer barbeiro OU `clients.created_at` anterior OU `subscription_started_at` anterior). Mede se o salão fideliza.
+- **Retenção do Barbeiro** — cliente do mês já tinha sido atendido por **este barbeiro** antes do período. Mede preferência pessoal.
 
-- Trocar o texto do botão/banner "Atribuir origens automaticamente" para refletir a nova regra: **"Recalcular origens (últimos 3 atendimentos)"**.
-- Pequeno texto auxiliar: "Roda automaticamente toda madrugada. Use aqui para forçar agora."
-- Card do cliente: ao mostrar badge de origem sugerida, exibir `basis` em tooltip (ex: "Maioria nos últimos 3 cortes", "Único atendimento", "Empate — último corte").
-- Filtro "Sem origem" continua igual (clientes com `subscription_unit_id IS NULL` E sem histórico).
+Diferença entre as duas = clientes "da rede" que migraram para outro barbeiro (sinal de relação pessoal fraca).
 
-### 4. Memória
+---
 
-Atualizar `mem://features/client-origin-attribution` com:
-- Regra dos últimos 3 atendimentos + desempate por recência.
-- Cron diário 04:00 Manaus via Edge Function `recompute-client-origins`.
-- Sobrescreve origem manual quando histórico mudar (clientes 0-atendimentos preservados).
+## Plano de correção
 
-## Decisões pendentes (preciso confirmar)
+### Fase 1 — RPC `get_barber_deep_analysis`
+Mover toda a agregação para o banco com **uma única definição por métrica**. Retorna JSON:
 
-1. **Origem = unidade atual do barbeiro** (`barbers.unit_id`) **ou unidade do atendimento** (`sale_transactions.unit_id`)? Sua mensagem cita as duas opções. Recomendo `barbers.unit_id` por consistência (barbeiro itinerante mantém a casa-base), mas confirme.
-2. **Sobrescrever origem manual?** Se um gestor editou manualmente a unidade de um cliente, o cron deve respeitar essa escolha ou sobrescrever conforme o histórico? Recomendo **sobrescrever** (regra dinâmica é a fonte da verdade), mas posso adicionar um flag `clients.origin_locked boolean` para travar casos especiais — diga se quer.
-3. **Cron diário**: 04:00 Manaus está OK?
+```text
+{
+  volume: { atendimentos, unique_clients, anonymous_visits },
+  services: { lines, revenue },
+  products: { lines, revenue },
+  subscriptions: { count, mrr },
+  ticket_operacional,         // (services.revenue + products.revenue) / atendimentos
+  ticket_assinatura,          // subscriptions.mrr / subscriptions.count
+  retention: {
+    network_pct,              // % clientes do mês que já existiam na org antes
+    barber_pct,               // % clientes do mês já atendidos por este barbeiro antes
+    network_count, barber_count, total
+  },
+  recurrence_by_history_pct,  // derivado de transações, não da flag is_new_client
+  portfolio: { phone_coverage_pct, visits_per_client, product_penetration_pct },
+  house: { avg, max },        // sempre EXCLUINDO o próprio barbeiro
+  daily_breakdown: [...]      // últimos N dias com mesma definição
+}
+```
 
-## Fora de escopo
+### Fase 2 — Refatorar `BarberDeepAnalysis.tsx`
+- Substituir 3 queries paginadas por 1 chamada à RPC.
+- Eliminar `clientMetrics` duplicado vs `vitalMetrics`.
+- **Métricas Vitais (novo layout):** Volume · Ticket Operacional · Ticket Assinatura · Assinaturas vendidas.
+- **Qualidade da Carteira:** Retenção Rede · Retenção Barbeiro · Cobertura Telefone · Visitas/Cliente · Penetração Produto.
+- Legendas explicando cada definição (ex.: "Atendimentos = visitas únicas por cliente/dia").
 
-- Não muda o wizard de assinatura.
-- Não toca em `barbers.unit_id`.
-- Não cria UI nova para visualizar logs do cron (pode vir depois se precisar).
+### Fase 3 — Validação
+- Conferir RPC vs SQL manual para o Abraão Colares maio/2026.
+- Garantir que barbeiros sem itens itemizados continuam coerentes (fallback `daily_productions`).
+- Conferir que retenção sobe ao reconhecer clientes migrados.
+
+---
+
+## Fora de escopo (confirmar se quer incluir)
+- **BarberEvolution.tsx** e ranking comparativo entre barbeiros — provavelmente têm os mesmos vícios.
+- Não vou remover a coluna `is_new_client` do schema (POS continua gravando), só vou parar de usá-la como fonte primária de retenção.
