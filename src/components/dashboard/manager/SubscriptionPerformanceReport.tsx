@@ -21,6 +21,13 @@ interface DataHealth {
   novaAdesaoSemIsNewClient: number;
 }
 
+interface BarberClientDrilldown {
+  barberId: string;
+  barberName: string;
+  unitName: string;
+  opportunities: Array<{ phone: string; converted: boolean }>;
+}
+
 interface BarberPerformance {
   barberId: string;
   barberName: string;
@@ -56,6 +63,8 @@ export default function SubscriptionPerformanceReport() {
     novaAdesaoSemIsNewClient: 0,
   });
   const [healthOpen, setHealthOpen] = useState(false);
+  const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
+  const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -158,6 +167,7 @@ export default function SubscriptionPerformanceReport() {
         name: string;
         unit: string;
         opportunityPhones: Set<string>;
+        convertedPhones: Set<string>;
         newClientAdhesions: number;
         totalAdhesions: number;
       }>();
@@ -174,6 +184,7 @@ export default function SubscriptionPerformanceReport() {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
           opportunityPhones: new Set<string>(),
+          convertedPhones: new Set<string>(),
           newClientAdhesions: 0,
           totalAdhesions: 0,
         };
@@ -188,12 +199,27 @@ export default function SubscriptionPerformanceReport() {
           globalTotalAdh++;
           if (tx.is_new_client === true) {
             existing.newClientAdhesions++;
+            if (tx.mobile_phone) existing.convertedPhones.add(tx.mobile_phone);
             globalNewClientAdh++;
           }
         }
 
         barberMap.set(tx.barber_id, existing);
       });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({ phone, converted: data.convertedPhones.has(phone) }));
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitName: data.unit,
+          opportunities,
+        });
+      }
+      setClientDrilldown(drilldownMap);
 
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
         ([barberId, data]) => {
@@ -621,7 +647,7 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{b.barberName}</p>
+                            <button type="button" className="font-medium underline-offset-2 hover:underline text-left" onClick={() => setSelectedDrilldownBarberId(b.barberId)}>{b.barberName}</button>
                             <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
@@ -694,6 +720,31 @@ export default function SubscriptionPerformanceReport() {
                 </TableBody>
               </Table>
             </div>
+          )}
+
+
+          {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
+            <Card className="mt-4 bg-muted/20 border-dashed">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Clientes atendidos (cliente novo) — {clientDrilldown.get(selectedDrilldownBarberId)?.barberName}</CardTitle>
+                <CardDescription>
+                  Lista de oportunidades do período. "Não converteu" ajuda a auditar possível falha de lançamento da assinatura.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-end mb-2">
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedDrilldownBarberId(null)}>Fechar</Button>
+                </div>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
+                    <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                      <span className="font-mono text-sm">{op.phone}</span>
+                      {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {/* Legend */}
