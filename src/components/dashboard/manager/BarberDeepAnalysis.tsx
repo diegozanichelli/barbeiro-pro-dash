@@ -301,16 +301,21 @@ export default function BarberDeepAnalysis({
   >([]);
   const [vitalMetrics, setVitalMetrics] = useState<VitalMetrics>({
     uniqueClients: 0,
-    ticketMedio: 0,
-    recurringPct: 0,
-    newCount: 0,
-    returningCount: 0,
+    ticketOperacional: 0,
+    ticketAssinatura: 0,
     subscriptionCount: 0,
     subscriptionRevenue: 0,
     houseUniqueClientsAvg: 0,
-    houseTicketMedioAvg: 0,
+    houseTicketOpAvg: 0,
     houseSubscriptionCountAvg: 0,
     hasItemizedData: false,
+  });
+  const [retentionMetrics, setRetentionMetrics] = useState<RetentionMetrics>({
+    networkPct: 0,
+    barberPct: 0,
+    networkCount: 0,
+    barberCount: 0,
+    totalWithPhone: 0,
   });
   const [portfolioQuality, setPortfolioQuality] = useState<PortfolioQuality>({
     phoneCoveragePct: 0,
