@@ -10,6 +10,8 @@ import { useOrganization } from "@/hooks/useOrganization";
 import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
 interface UnitOption { id: string; name: string; }
@@ -25,7 +27,7 @@ interface BarberClientDrilldown {
   barberId: string;
   barberName: string;
   unitName: string;
-  opportunities: Array<{ phone: string; converted: boolean }>;
+  opportunities: Array<{ phone: string; name: string; converted: boolean }>;
 }
 
 interface BarberPerformance {
@@ -123,6 +125,7 @@ export default function SubscriptionPerformanceReport() {
           item_type,
           subscription_action,
           mobile_phone,
+          client_name,
           attribution_source,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
@@ -209,9 +212,20 @@ export default function SubscriptionPerformanceReport() {
 
       const drilldownMap = new Map<string, BarberClientDrilldown>();
       for (const [barberId, data] of barberMap.entries()) {
+        const phoneNameMap = new Map<string, string>();
+        (transactions || []).forEach((tx) => {
+          if (tx.barber_id !== barberId || !tx.mobile_phone) return;
+          const safeName = ((tx as any).client_name || "").trim();
+          if (safeName && !phoneNameMap.has(tx.mobile_phone)) phoneNameMap.set(tx.mobile_phone, safeName);
+        });
+
         const opportunities = Array.from(data.opportunityPhones)
           .sort()
-          .map((phone) => ({ phone, converted: data.convertedPhones.has(phone) }));
+          .map((phone) => ({
+            phone,
+            name: phoneNameMap.get(phone) || "Cliente sem nome",
+            converted: data.convertedPhones.has(phone),
+          }));
         drilldownMap.set(barberId, {
           barberId,
           barberName: data.name,
@@ -637,7 +651,8 @@ export default function SubscriptionPerformanceReport() {
                   {performanceData.map((b) => (
                     <TableRow
                       key={b.barberId}
-                      className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}
+                      className={`cursor-pointer hover:bg-primary/5 ${isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}`}
+                      onClick={() => setSelectedDrilldownBarberId(b.barberId)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -647,7 +662,7 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <button type="button" className="font-medium underline-offset-2 hover:underline text-left" onClick={() => setSelectedDrilldownBarberId(b.barberId)}>{b.barberName}</button>
+                            <span className="font-medium underline underline-offset-2 decoration-dotted">{b.barberName}</span>
                             <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
@@ -723,29 +738,36 @@ export default function SubscriptionPerformanceReport() {
           )}
 
 
-          {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
-            <Card className="mt-4 bg-muted/20 border-dashed">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Clientes atendidos (cliente novo) — {clientDrilldown.get(selectedDrilldownBarberId)?.barberName}</CardTitle>
-                <CardDescription>
-                  Lista de oportunidades do período. "Não converteu" ajuda a auditar possível falha de lançamento da assinatura.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-end mb-2">
-                  <Button variant="ghost" size="sm" onClick={() => setSelectedDrilldownBarberId(null)}>Fechar</Button>
+                    <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>
+                  Análise de clientes atendidos — {selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId)?.barberName : ""}
+                </DialogTitle>
+                <DialogDescription>
+                  Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
+                </DialogDescription>
+              </DialogHeader>
+              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Total de oportunidades: <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
+                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                        <div>
+                          <p className="text-sm font-medium">{op.name}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)}</p>
+                        </div>
+                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
-                    <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
-                      <span className="font-mono text-sm">{op.phone}</span>
-                      {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
