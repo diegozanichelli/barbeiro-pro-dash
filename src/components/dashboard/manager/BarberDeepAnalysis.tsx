@@ -989,21 +989,8 @@ export default function BarberDeepAnalysis({
         </Card>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs: Atendidos + Retenção Rede + Retenção Barbeiro */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2">
-              <Receipt className="w-4 h-4" />
-              Ticket Médio
-            </CardDescription>
-            <CardTitle className="text-3xl">{formatBRL(ticketMedio)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Receita {formatBRL(barberTotals.total)} ÷ {clientMetrics.atendimentos} atendimentos
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
@@ -1015,7 +1002,9 @@ export default function BarberDeepAnalysis({
           <CardContent className="text-sm text-muted-foreground space-y-0.5">
             <div>{clientMetrics.servicos} serviços vendidos</div>
             <div>{clientMetrics.unicos} clientes únicos (telefone)</div>
-            <div className="text-xs opacity-70">Período: {PERIOD_LABEL[period]}</div>
+            <div className="text-xs opacity-70">
+              Atendimento = cliente único por dia · Período: {PERIOD_LABEL[period]}
+            </div>
           </CardContent>
         </Card>
 
@@ -1023,14 +1012,35 @@ export default function BarberDeepAnalysis({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <Repeat className="w-4 h-4" />
-              Taxa de Retenção
+              Retenção da Rede
             </CardDescription>
-            <CardTitle className="text-3xl">
-              {retention === null ? "—" : `${retention.toFixed(1)}%`}
+            <CardTitle className={`text-3xl ${semaphoreClasses(retNetworkSem).text}`}>
+              {retentionMetrics.totalWithPhone === 0 ? "—" : `${retentionMetrics.networkPct.toFixed(1)}%`}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Clientes do período já atendidos antes
+          <CardContent className="text-sm text-muted-foreground space-y-0.5">
+            <div>
+              {retentionMetrics.networkCount} de {retentionMetrics.totalWithPhone} clientes já eram da casa
+            </div>
+            <div className="text-xs opacity-70">Mede a fidelidade do salão (qualquer barbeiro)</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4" />
+              Retenção do Barbeiro
+            </CardDescription>
+            <CardTitle className={`text-3xl ${semaphoreClasses(retBarberSem).text}`}>
+              {retentionMetrics.totalWithPhone === 0 ? "—" : `${retentionMetrics.barberPct.toFixed(1)}%`}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-0.5">
+            <div>
+              {retentionMetrics.barberCount} de {retentionMetrics.totalWithPhone} já cortaram com ele antes
+            </div>
+            <div className="text-xs opacity-70">Mede a preferência pessoal pelo profissional</div>
           </CardContent>
         </Card>
       </div>
