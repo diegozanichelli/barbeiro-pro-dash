@@ -21,6 +21,13 @@ interface DataHealth {
   novaAdesaoSemIsNewClient: number;
 }
 
+interface BarberClientDrilldown {
+  barberId: string;
+  barberName: string;
+  unitName: string;
+  opportunities: Array<{ phone: string; converted: boolean }>;
+}
+
 interface BarberPerformance {
   barberId: string;
   barberName: string;
@@ -56,6 +63,8 @@ export default function SubscriptionPerformanceReport() {
     novaAdesaoSemIsNewClient: 0,
   });
   const [healthOpen, setHealthOpen] = useState(false);
+  const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
+  const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -114,10 +123,12 @@ export default function SubscriptionPerformanceReport() {
           item_type,
           subscription_action,
           mobile_phone,
+          attribution_source,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
         .eq("source", "manager")
+        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
@@ -134,9 +145,10 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
+        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
@@ -155,6 +167,7 @@ export default function SubscriptionPerformanceReport() {
         name: string;
         unit: string;
         opportunityPhones: Set<string>;
+        convertedPhones: Set<string>;
         newClientAdhesions: number;
         totalAdhesions: number;
       }>();
@@ -171,6 +184,7 @@ export default function SubscriptionPerformanceReport() {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
           opportunityPhones: new Set<string>(),
+          convertedPhones: new Set<string>(),
           newClientAdhesions: 0,
           totalAdhesions: 0,
         };
@@ -185,12 +199,27 @@ export default function SubscriptionPerformanceReport() {
           globalTotalAdh++;
           if (tx.is_new_client === true) {
             existing.newClientAdhesions++;
+            if (tx.mobile_phone) existing.convertedPhones.add(tx.mobile_phone);
             globalNewClientAdh++;
           }
         }
 
         barberMap.set(tx.barber_id, existing);
       });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({ phone, converted: data.convertedPhones.has(phone) }));
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitName: data.unit,
+          opportunities,
+        });
+      }
+      setClientDrilldown(drilldownMap);
 
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
         ([barberId, data]) => {
@@ -441,6 +470,7 @@ export default function SubscriptionPerformanceReport() {
                     <p className="text-muted-foreground">
                       Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
                       Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                      Também não entram neste relatório os lançamentos manuais de regularização (fora do Ao Vivo).
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
@@ -517,8 +547,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Assinaturas com ação = "nova" feitas para clientes marcados como novos.
-                        Critério usado pelo funil da aba Inteligência.
+                        Assinaturas com ação = "nova" feitas para clientes marcados como novos,
+                        registradas no fluxo natural do Ao Vivo de Vendas.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -539,9 +569,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês — clientes novos + clientes da
-                        casa, barbeiros + recepção. Não inclui renovações/upgrades (esses estão na
-                        aba Carteira).
+                        Toda assinatura com ação = "nova" no mês registrada no Ao Vivo de Vendas
+                        (barbeiros + recepção). Lançamentos manuais de regularização não entram aqui.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -618,7 +647,7 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{b.barberName}</p>
+                            <button type="button" className="font-medium underline-offset-2 hover:underline text-left" onClick={() => setSelectedDrilldownBarberId(b.barberId)}>{b.barberName}</button>
                             <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
@@ -691,6 +720,31 @@ export default function SubscriptionPerformanceReport() {
                 </TableBody>
               </Table>
             </div>
+          )}
+
+
+          {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
+            <Card className="mt-4 bg-muted/20 border-dashed">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Clientes atendidos (cliente novo) — {clientDrilldown.get(selectedDrilldownBarberId)?.barberName}</CardTitle>
+                <CardDescription>
+                  Lista de oportunidades do período. "Não converteu" ajuda a auditar possível falha de lançamento da assinatura.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-end mb-2">
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedDrilldownBarberId(null)}>Fechar</Button>
+                </div>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
+                    <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                      <span className="font-mono text-sm">{op.phone}</span>
+                      {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {/* Legend */}
