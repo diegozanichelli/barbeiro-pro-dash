@@ -10,6 +10,8 @@ import { useOrganization } from "@/hooks/useOrganization";
 import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
 interface UnitOption { id: string; name: string; }
@@ -19,6 +21,13 @@ interface DataHealth {
   novoSemTelefone: number;
   novaAdesaoSemTelefone: number;
   novaAdesaoSemIsNewClient: number;
+}
+
+interface BarberClientDrilldown {
+  barberId: string;
+  barberName: string;
+  unitName: string;
+  opportunities: Array<{ phone: string; name: string; converted: boolean }>;
 }
 
 interface BarberPerformance {
@@ -56,6 +65,8 @@ export default function SubscriptionPerformanceReport() {
     novaAdesaoSemIsNewClient: 0,
   });
   const [healthOpen, setHealthOpen] = useState(false);
+  const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
+  const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -114,10 +125,13 @@ export default function SubscriptionPerformanceReport() {
           item_type,
           subscription_action,
           mobile_phone,
+          client_name,
+          attribution_source,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
         .eq("source", "manager")
+        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
@@ -134,9 +148,10 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
+        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
@@ -155,6 +170,7 @@ export default function SubscriptionPerformanceReport() {
         name: string;
         unit: string;
         opportunityPhones: Set<string>;
+        convertedPhones: Set<string>;
         newClientAdhesions: number;
         totalAdhesions: number;
       }>();
@@ -171,6 +187,7 @@ export default function SubscriptionPerformanceReport() {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
           opportunityPhones: new Set<string>(),
+          convertedPhones: new Set<string>(),
           newClientAdhesions: 0,
           totalAdhesions: 0,
         };
@@ -185,12 +202,38 @@ export default function SubscriptionPerformanceReport() {
           globalTotalAdh++;
           if (tx.is_new_client === true) {
             existing.newClientAdhesions++;
+            if (tx.mobile_phone) existing.convertedPhones.add(tx.mobile_phone);
             globalNewClientAdh++;
           }
         }
 
         barberMap.set(tx.barber_id, existing);
       });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const phoneNameMap = new Map<string, string>();
+        (transactions || []).forEach((tx) => {
+          if (tx.barber_id !== barberId || !tx.mobile_phone) return;
+          const safeName = ((tx as any).client_name || "").trim();
+          if (safeName && !phoneNameMap.has(tx.mobile_phone)) phoneNameMap.set(tx.mobile_phone, safeName);
+        });
+
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({
+            phone,
+            name: phoneNameMap.get(phone) || "Cliente sem nome",
+            converted: data.convertedPhones.has(phone),
+          }));
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitName: data.unit,
+          opportunities,
+        });
+      }
+      setClientDrilldown(drilldownMap);
 
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
         ([barberId, data]) => {
@@ -441,6 +484,7 @@ export default function SubscriptionPerformanceReport() {
                     <p className="text-muted-foreground">
                       Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
                       Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                      Também não entram neste relatório os lançamentos manuais de regularização (fora do Ao Vivo).
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
@@ -517,8 +561,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Assinaturas com ação = "nova" feitas para clientes marcados como novos.
-                        Critério usado pelo funil da aba Inteligência.
+                        Assinaturas com ação = "nova" feitas para clientes marcados como novos,
+                        registradas no fluxo natural do Ao Vivo de Vendas.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -539,9 +583,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês — clientes novos + clientes da
-                        casa, barbeiros + recepção. Não inclui renovações/upgrades (esses estão na
-                        aba Carteira).
+                        Toda assinatura com ação = "nova" no mês registrada no Ao Vivo de Vendas
+                        (barbeiros + recepção). Lançamentos manuais de regularização não entram aqui.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -608,7 +651,8 @@ export default function SubscriptionPerformanceReport() {
                   {performanceData.map((b) => (
                     <TableRow
                       key={b.barberId}
-                      className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}
+                      className={`cursor-pointer hover:bg-primary/5 ${isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}`}
+                      onClick={() => setSelectedDrilldownBarberId(b.barberId)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -618,7 +662,7 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{b.barberName}</p>
+                            <span className="font-medium underline underline-offset-2 decoration-dotted">{b.barberName}</span>
                             <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
@@ -692,6 +736,38 @@ export default function SubscriptionPerformanceReport() {
               </Table>
             </div>
           )}
+
+
+                    <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>
+                  Análise de clientes atendidos — {selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId)?.barberName : ""}
+                </DialogTitle>
+                <DialogDescription>
+                  Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
+                </DialogDescription>
+              </DialogHeader>
+              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Total de oportunidades: <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
+                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                        <div>
+                          <p className="text-sm font-medium">{op.name}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)}</p>
+                        </div>
+                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
