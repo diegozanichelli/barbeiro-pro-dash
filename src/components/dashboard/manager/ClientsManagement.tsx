@@ -317,27 +317,36 @@ export default function ClientsManagement() {
 
       const planByNormalized = new Map(plans.map((p) => [normalizePlanName(p.name), p.id]));
 
-      let created = 0, updated = 0, skipped = 0;
-      let importedCount = 0, nameUpdatedCount = 0, planAdaptedCount = 0;
+      let created = 0, skipped = 0, alreadyExisting = 0;
+      let importedCount = 0;
       const issues: ImportIssue[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
         const [nameRaw = "", phoneRaw = "", planRaw = "", dueRaw = ""] = cols;
 
+        const normalizedName = normalize(nameRaw || "").trim();
         const phoneDigits = sanitizePhone(phoneRaw);
-        if (!nameRaw || phoneDigits.length !== 11) { skipped++; issues.push({ line: i + 1, phone: phoneRaw, reason: "nome/telefone inválido" }); continue; }
+        if (!normalizedName || phoneDigits.length !== 11) { skipped++; issues.push({ line: i + 1, phone: phoneRaw, reason: "nome/telefone inválido" }); continue; }
 
         const planId = planByNormalized.get(normalizePlanName(planRaw)) || null;
         const startedAt = parseDateBRorISO(dueRaw);
 
-        const { data: existing, error: qErr } = await supabase
+        const { data: existingByPhone, error: qErr } = await supabase
           .from("clients")
-          .select("id")
+          .select("id, name")
           .eq("organization_id", organizationId)
           .eq("mobile_phone", phoneDigits)
-          .maybeSingle();
+          .limit(20);
         if (qErr) { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao buscar telefone na base" }); continue; }
+
+        const exactDuplicate = (existingByPhone || []).find((c) => normalize(c.name || "").trim() === normalizedName);
+        const anyExistingWithSamePhone = (existingByPhone || []).length > 0;
+
+        if (exactDuplicate || anyExistingWithSamePhone) {
+          alreadyExisting++;
+          continue;
+        }
 
         const payload: any = {
           organization_id: organizationId,
@@ -348,44 +357,16 @@ export default function ClientsManagement() {
         };
         if (planId && startedAt) payload.subscription_started_at = startedAt;
 
-        if (existing?.id) {
-          const { data: current, error: currErr } = await supabase
-            .from("clients")
-            .select("name, subscription_plan_id, subscription_started_at")
-            .eq("id", existing.id)
-            .maybeSingle();
-          if (currErr || !current) {
-            skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "não foi possível validar dados atuais" });
-            continue;
-          }
-
-          const nameDiff = (current.name || "").trim() !== nameRaw.trim();
-          const planDiff = (current.subscription_plan_id || null) !== (planId || null);
-          const dateDiff = (current.subscription_started_at || null) !== (startedAt || null);
-
-          if (nameDiff || planDiff || dateDiff) {
-            const { error } = await supabase.from("clients").update(payload).eq("id", existing.id);
-            if (!error) {
-              updated++;
-              importedCount++;
-              if (nameDiff) nameUpdatedCount++;
-              if (planDiff || dateDiff) planAdaptedCount++;
-            } else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao atualizar cadastro" }); }
-          } else {
-            // already consistent, proceed silently
-          }
-        } else {
-          const { error } = await supabase.from("clients").insert(payload);
-          if (!error) {
-            created++;
-            importedCount++;
-          } else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao criar cadastro" }); }
-        }
+        const { error } = await supabase.from("clients").insert(payload);
+        if (!error) {
+          created++;
+          importedCount++;
+        } else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao criar cadastro" }); }
       }
 
       setImportIssues(issues);
       toast.success("Importação concluída", {
-        description: `${importedCount} importados (${created} novos, ${updated} atualizados) · ${nameUpdatedCount} troca(s) de nome · ${planAdaptedCount} adaptação(ões) de plano/data · ${skipped} ignorados.`,
+        description: `${importedCount} importados (${created} novos) · ${alreadyExisting} já existentes (não importados novamente) · ${skipped} ignorados.`,
       });
       // Não bloquear o término do estado de importação com recarga pesada da tela
       // (evita sensação de "carregando infinito" em CSVs grandes).

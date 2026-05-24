@@ -179,6 +179,22 @@ export default function ClientDetailModal({
     try {
       const oldPhone = sanitizePhone(client.mobile_phone || "");
 
+      const { data: samePhoneClients, error: samePhoneErr } = await supabase
+        .from("clients")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", phoneDigits)
+        .neq("id", client.id)
+        .limit(10);
+      if (samePhoneErr) throw samePhoneErr;
+
+      const normalizedTargetName = name.trim().toLowerCase();
+      const exactDuplicate = (samePhoneClients || []).find((c) => (c.name || "").trim().toLowerCase() === normalizedTargetName);
+      if (exactDuplicate) {
+        toast.error("Já existe cliente com este mesmo nome e telefone");
+        return;
+      }
+
       const { error } = await supabase
         .from("clients")
         .update({
