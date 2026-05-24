@@ -704,41 +704,60 @@ export default function BarberDeepAnalysis({
         ? othersVitals.reduce((s, a) => s + a.subscriptionCount, 0) / othersVitals.length
         : 0;
 
-      const selfTicket =
-        selfVitals.atendimentosTotal > 0
-          ? selfVitals.revenue / selfVitals.atendimentosTotal
-          : 0;
-      const newPlusReturn = selfVitals.newCount + selfVitals.returningCount;
-      const recurringPct =
-        newPlusReturn > 0 ? (selfVitals.returningCount / newPlusReturn) * 100 : 0;
+      // ===== Substituído pela RPC get_barber_deep_analysis (verdade única) =====
+      const { data: rpcData, error: rpcErr } = await supabase.rpc(
+        "get_barber_deep_analysis" as never,
+        {
+          p_organization_id: organizationId,
+          p_barber_id: barberId,
+          p_start: startIso,
+          p_end: endIso,
+        } as never
+      );
+      if (rpcErr) {
+        console.error("[BarberDeepAnalysis] RPC erro:", rpcErr);
+      }
+      const rpc: any = rpcData || {};
+      const volume = rpc.volume || {};
+      const subs = rpc.subscriptions || {};
+      const house = rpc.house || {};
+      const retention = rpc.retention || {};
+      const portfolio = rpc.portfolio || {};
+
+      // Sobrescreve clientMetrics com definições corretas (atendimento = phone+dia OU created_at anônimo)
+      const rpcAtend = Number(volume.atendimentos) || 0;
+      const rpcUniq = Number(volume.unique_clients) || 0;
+      const rpcServiceLines = Number(volume.service_lines) || 0;
+      setClientMetrics({
+        atendimentos: rpcAtend > 0 ? rpcAtend : selected.clients,
+        servicos: rpcServiceLines > 0 ? rpcServiceLines : 0,
+        unicos: rpcUniq,
+      });
 
       setVitalMetrics({
-        uniqueClients: selfVitals.phones.size,
-        ticketMedio: selfTicket,
-        recurringPct,
-        newCount: selfVitals.newCount,
-        returningCount: selfVitals.returningCount,
-        subscriptionCount: selfVitals.subscriptionCount,
-        subscriptionRevenue: selfVitals.subscriptionRevenue,
-        houseUniqueClientsAvg: houseUniqueAvg,
-        houseTicketMedioAvg: houseTicketAvg,
-        houseSubscriptionCountAvg: houseSubsAvg,
-        hasItemizedData: selfVitals.atendimentosTotal > 0,
+        uniqueClients: rpcUniq,
+        ticketOperacional: Number(rpc.ticket_operacional) || 0,
+        ticketAssinatura: Number(rpc.ticket_assinatura) || 0,
+        subscriptionCount: Number(subs.count) || 0,
+        subscriptionRevenue: Number(subs.mrr) || 0,
+        houseUniqueClientsAvg: Number(house.unique_clients_avg) || 0,
+        houseTicketOpAvg: Number(house.ticket_operacional_avg) || 0,
+        houseSubscriptionCountAvg: Number(house.sub_count_avg) || 0,
+        hasItemizedData: rpcAtend > 0,
+      });
+
+      setRetentionMetrics({
+        networkPct: Number(retention.network_pct) || 0,
+        barberPct: Number(retention.barber_pct) || 0,
+        networkCount: Number(retention.network_count) || 0,
+        barberCount: Number(retention.barber_count) || 0,
+        totalWithPhone: Number(retention.total_with_phone) || 0,
       });
 
       setPortfolioQuality({
-        phoneCoveragePct:
-          selfVitals.atendimentosTotal > 0
-            ? (selfVitals.atendimentosComTelefone / selfVitals.atendimentosTotal) * 100
-            : 0,
-        visitsPerClient:
-          selfVitals.phones.size > 0
-            ? selfVitals.atendimentosTotal / selfVitals.phones.size
-            : 0,
-        productPenetrationPct:
-          selfVitals.atendimentosTotal > 0
-            ? (selfVitals.atendimentosComProduto.size / selfVitals.atendimentosTotal) * 100
-            : 0,
+        phoneCoveragePct: Number(portfolio.phone_coverage_pct) || 0,
+        visitsPerClient: Number(portfolio.visits_per_client) || 0,
+        productPenetrationPct: Number(portfolio.product_penetration_pct) || 0,
       });
     } catch (err) {
       console.error("[BarberDeepAnalysis] erro geral:", err);
