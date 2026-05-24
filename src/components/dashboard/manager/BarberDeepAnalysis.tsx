@@ -829,21 +829,29 @@ export default function BarberDeepAnalysis({
     vitalMetrics.uniqueClients,
     vitalMetrics.houseUniqueClientsAvg
   );
-  const ticketSem = getSemaphore(
-    vitalMetrics.ticketMedio,
-    vitalMetrics.houseTicketMedioAvg
+  const ticketOpSem = getSemaphore(
+    vitalMetrics.ticketOperacional,
+    vitalMetrics.houseTicketOpAvg
   );
-  const retentionSem: Semaphore =
-    vitalMetrics.recurringPct >= 60
-      ? "success"
-      : vitalMetrics.recurringPct >= 40
-        ? "warning"
-        : "destructive";
+  const ticketAssinaturaSem: Semaphore =
+    vitalMetrics.ticketAssinatura > 0 ? "success" : "warning";
   const subsSem = getSemaphore(
     vitalMetrics.subscriptionCount,
     vitalMetrics.houseSubscriptionCountAvg,
     { greenRatio: 1, yellowRatio: 0.5 }
   );
+  const retNetworkSem: Semaphore =
+    retentionMetrics.networkPct >= 60
+      ? "success"
+      : retentionMetrics.networkPct >= 40
+        ? "warning"
+        : "destructive";
+  const retBarberSem: Semaphore =
+    retentionMetrics.barberPct >= 40
+      ? "success"
+      : retentionMetrics.barberPct >= 20
+        ? "warning"
+        : "destructive";
 
   return (
     <div className="space-y-6">
@@ -878,26 +886,30 @@ export default function BarberDeepAnalysis({
           />
           <VitalCard
             icon={<Receipt className="w-5 h-5" />}
-            label="Ticket Médio"
-            value={formatBRL(vitalMetrics.ticketMedio)}
-            subtitle={`Média casa ${formatBRL(vitalMetrics.houseTicketMedioAvg)}`}
-            sem={ticketSem}
+            label="Ticket Operacional"
+            value={formatBRL(vitalMetrics.ticketOperacional)}
+            subtitle={`Serviços + produtos ÷ atendimentos · casa ${formatBRL(vitalMetrics.houseTicketOpAvg)}`}
+            sem={ticketOpSem}
             progress={Math.min(
               100,
-              vitalMetrics.houseTicketMedioAvg > 0
-                ? (vitalMetrics.ticketMedio / (vitalMetrics.houseTicketMedioAvg * 1.5)) * 100
-                : vitalMetrics.ticketMedio > 0
+              vitalMetrics.houseTicketOpAvg > 0
+                ? (vitalMetrics.ticketOperacional / (vitalMetrics.houseTicketOpAvg * 1.5)) * 100
+                : vitalMetrics.ticketOperacional > 0
                   ? 100
                   : 0
             )}
           />
           <VitalCard
-            icon={<UserCheck className="w-5 h-5" />}
-            label="Recorrência"
-            value={`${vitalMetrics.recurringPct.toFixed(0)}%`}
-            subtitle={`${vitalMetrics.returningCount} recorrentes · ${vitalMetrics.newCount} novos`}
-            sem={retentionSem}
-            progress={vitalMetrics.recurringPct}
+            icon={<BadgeDollarSign className="w-5 h-5" />}
+            label="Ticket Assinatura"
+            value={formatBRL(vitalMetrics.ticketAssinatura)}
+            subtitle={
+              vitalMetrics.subscriptionCount > 0
+                ? `${formatBRL(vitalMetrics.subscriptionRevenue)} ÷ ${vitalMetrics.subscriptionCount} adesões`
+                : "Sem assinaturas no período"
+            }
+            sem={ticketAssinaturaSem}
+            progress={vitalMetrics.ticketAssinatura > 0 ? 100 : 0}
           />
           <VitalCard
             icon={<BadgeDollarSign className="w-5 h-5" />}
