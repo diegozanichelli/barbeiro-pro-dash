@@ -1411,6 +1411,15 @@ export type Database = {
         }
         Returns: string
       }
+      get_barber_deep_analysis: {
+        Args: {
+          p_barber_id: string
+          p_end: string
+          p_organization_id: string
+          p_start: string
+        }
+        Returns: Json
+      }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
