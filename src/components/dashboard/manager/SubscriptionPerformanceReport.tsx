@@ -114,10 +114,12 @@ export default function SubscriptionPerformanceReport() {
           item_type,
           subscription_action,
           mobile_phone,
+          attribution_source,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
         .eq("source", "manager")
+        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
@@ -134,9 +136,10 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
+        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
@@ -441,6 +444,7 @@ export default function SubscriptionPerformanceReport() {
                     <p className="text-muted-foreground">
                       Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
                       Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                      Também não entram neste relatório os lançamentos manuais de regularização (fora do Ao Vivo).
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
@@ -517,8 +521,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Assinaturas com ação = "nova" feitas para clientes marcados como novos.
-                        Critério usado pelo funil da aba Inteligência.
+                        Assinaturas com ação = "nova" feitas para clientes marcados como novos,
+                        registradas no fluxo natural do Ao Vivo de Vendas.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -539,9 +543,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês — clientes novos + clientes da
-                        casa, barbeiros + recepção. Não inclui renovações/upgrades (esses estão na
-                        aba Carteira).
+                        Toda assinatura com ação = "nova" no mês registrada no Ao Vivo de Vendas
+                        (barbeiros + recepção). Lançamentos manuais de regularização não entram aqui.
                       </TooltipContent>
                     </UITooltip>
                   </div>
