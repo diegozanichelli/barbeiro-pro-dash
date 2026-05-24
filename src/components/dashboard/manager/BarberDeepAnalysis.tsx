@@ -90,17 +90,22 @@ interface ClientMetrics {
 
 interface VitalMetrics {
   uniqueClients: number;
-  ticketMedio: number;
-  recurringPct: number; // 0-100 (apenas considerando linhas com flag is_new_client preenchida)
-  newCount: number;
-  returningCount: number;
+  ticketOperacional: number;
+  ticketAssinatura: number;
   subscriptionCount: number;
   subscriptionRevenue: number;
-  // médias da casa por barbeiro ativo
   houseUniqueClientsAvg: number;
-  houseTicketMedioAvg: number;
+  houseTicketOpAvg: number;
   houseSubscriptionCountAvg: number;
   hasItemizedData: boolean;
+}
+
+interface RetentionMetrics {
+  networkPct: number;
+  barberPct: number;
+  networkCount: number;
+  barberCount: number;
+  totalWithPhone: number;
 }
 
 interface PortfolioQuality {
