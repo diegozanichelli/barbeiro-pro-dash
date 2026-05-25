@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp, Archive, Loader as LoaderIcon } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -146,7 +146,7 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
@@ -160,6 +160,20 @@ export default function SubscriptionPerformanceReport() {
 
       const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
+
+      // Telefones marcados como "Assinante Legado" (subscription_action='import') — sempre todo o histórico.
+      const { data: legacyRows } = await (supabase
+        .from("sale_transactions") as any)
+        .select("mobile_phone")
+        .eq("organization_id", organizationId)
+        .eq("item_type", "subscription")
+        .eq("subscription_action", "import")
+        .not("mobile_phone", "is", null);
+      const legacyPhones = new Set<string>(
+        ((legacyRows || []) as Array<{ mobile_phone: string | null }>)
+          .map((r) => r.mobile_phone || "")
+          .filter(Boolean)
+      );
 
       // Agrupar por barbeiro
       const barberMap = new Map<string, {
@@ -183,6 +197,7 @@ export default function SubscriptionPerformanceReport() {
         const existing = barberMap.get(tx.barber_id) || {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
+          allNewClientPhones: new Set<string>(),
           opportunityPhones: new Set<string>(),
           convertedPhones: new Set<string>(),
           newClientAdhesions: 0,
@@ -195,8 +210,11 @@ export default function SubscriptionPerformanceReport() {
         }
 
         if (tx.is_new_client === true && tx.mobile_phone) {
-          existing.opportunityPhones.add(tx.mobile_phone);
-          globalOpportunityPhones.add(tx.mobile_phone);
+          existing.allNewClientPhones.add(tx.mobile_phone);
+          if (!legacyPhones.has(tx.mobile_phone)) {
+            existing.opportunityPhones.add(tx.mobile_phone);
+            globalOpportunityPhones.add(tx.mobile_phone);
+          }
         }
 
         if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
@@ -269,7 +287,7 @@ export default function SubscriptionPerformanceReport() {
       let receptionTotalAdh = 0;
 
       receptionTx?.forEach((tx) => {
-        if (tx.is_new_client === true && tx.mobile_phone) {
+        if (tx.is_new_client === true && tx.mobile_phone && !legacyPhones.has(tx.mobile_phone)) {
           receptionPhones.add(tx.mobile_phone);
           globalOpportunityPhones.add(tx.mobile_phone);
         }
