@@ -11,17 +11,6 @@ import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle,
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { toast } from "sonner";
 import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
@@ -38,7 +27,7 @@ interface BarberClientDrilldown {
   barberId: string;
   barberName: string;
   unitName: string;
-  opportunities: Array<{ phone: string; name: string; converted: boolean; legacy: boolean }>;
+  opportunities: Array<{ phone: string; name: string; converted: boolean; attendances: number }>;
 }
 
 interface BarberPerformance {
@@ -46,6 +35,7 @@ interface BarberPerformance {
   barberName: string;
   unitName: string;
   opportunities: number;          // pessoas únicas com is_new_client=true
+  rawNewAttendances: number;      // total de lançamentos marcados como cliente novo (sem deduplicação por celular)
   newClientAdhesions: number;     // assinaturas action='new' AND is_new_client=true
   totalAdhesions: number;         // assinaturas action='new' (qualquer cliente)
   strictConversion: number;       // newClientAdhesions / opportunities
@@ -78,8 +68,6 @@ export default function SubscriptionPerformanceReport() {
   const [healthOpen, setHealthOpen] = useState(false);
   const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
-  const [legacyTarget, setLegacyTarget] = useState<{ phone: string; name: string; barberId: string } | null>(null);
-  const [submittingLegacy, setSubmittingLegacy] = useState(false);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -139,12 +127,9 @@ export default function SubscriptionPerformanceReport() {
           subscription_action,
           mobile_phone,
           client_name,
-          attribution_source,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
-        .eq("source", "manager")
-        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
@@ -163,8 +148,6 @@ export default function SubscriptionPerformanceReport() {
         .from("sale_transactions")
         .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
-        .eq("source", "manager")
-        .is("attribution_source", null)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
@@ -196,11 +179,11 @@ export default function SubscriptionPerformanceReport() {
       const barberMap = new Map<string, {
         name: string;
         unit: string;
-        allNewClientPhones: Set<string>;   // todos clientes novos atendidos (inclui legados)
-        opportunityPhones: Set<string>;    // oportunidades reais (exclui legados)
+        opportunityPhones: Set<string>;
         convertedPhones: Set<string>;
         newClientAdhesions: number;
         totalAdhesions: number;
+        rawNewAttendances: number;
       }>();
 
       // Sets globais para deduplicar a visão organizacional
@@ -219,7 +202,12 @@ export default function SubscriptionPerformanceReport() {
           convertedPhones: new Set<string>(),
           newClientAdhesions: 0,
           totalAdhesions: 0,
+          rawNewAttendances: 0,
         };
+
+        if (tx.is_new_client === true) {
+          existing.rawNewAttendances++;
+        }
 
         if (tx.is_new_client === true && tx.mobile_phone) {
           existing.allNewClientPhones.add(tx.mobile_phone);
@@ -245,19 +233,21 @@ export default function SubscriptionPerformanceReport() {
       const drilldownMap = new Map<string, BarberClientDrilldown>();
       for (const [barberId, data] of barberMap.entries()) {
         const phoneNameMap = new Map<string, string>();
+        const attendanceCountMap = new Map<string, number>();
         (transactions || []).forEach((tx) => {
           if (tx.barber_id !== barberId || !tx.mobile_phone) return;
           const safeName = ((tx as any).client_name || "").trim();
           if (safeName && !phoneNameMap.has(tx.mobile_phone)) phoneNameMap.set(tx.mobile_phone, safeName);
+          if (tx.is_new_client === true) attendanceCountMap.set(tx.mobile_phone, (attendanceCountMap.get(tx.mobile_phone) || 0) + 1);
         });
 
-        const opportunities = Array.from(data.allNewClientPhones)
+        const opportunities = Array.from(data.opportunityPhones)
           .sort()
           .map((phone) => ({
             phone,
             name: phoneNameMap.get(phone) || "Cliente sem nome",
             converted: data.convertedPhones.has(phone),
-            legacy: legacyPhones.has(phone),
+            attendances: attendanceCountMap.get(phone) || 1,
           }));
         drilldownMap.set(barberId, {
           barberId,
@@ -276,6 +266,7 @@ export default function SubscriptionPerformanceReport() {
             barberName: data.name,
             unitName: data.unit,
             opportunities: opp,
+            rawNewAttendances: data.rawNewAttendances,
             newClientAdhesions: data.newClientAdhesions,
             totalAdhesions: data.totalAdhesions,
             strictConversion: opp > 0 ? (data.newClientAdhesions / opp) * 100 : 0,
@@ -595,7 +586,7 @@ export default function SubscriptionPerformanceReport() {
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
                         Assinaturas com ação = "nova" feitas para clientes marcados como novos,
-                        registradas no fluxo natural do Ao Vivo de Vendas.
+                        registradas no período selecionado, independentemente da origem do lançamento.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -616,8 +607,7 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês registrada no Ao Vivo de Vendas
-                        (barbeiros + recepção). Lançamentos manuais de regularização não entram aqui.
+                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -705,6 +695,7 @@ export default function SubscriptionPerformanceReport() {
                           isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""
                         }`}>
                           {b.opportunities}
+                          <span className="block text-[11px] text-muted-foreground">{b.rawNewAttendances} lanç.</span>
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
@@ -781,126 +772,26 @@ export default function SubscriptionPerformanceReport() {
                   Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
                 </DialogDescription>
               </DialogHeader>
-              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (() => {
-                const dd = clientDrilldown.get(selectedDrilldownBarberId)!;
-                const realOpps = dd.opportunities.filter((o) => !o.legacy).length;
-                const legacyCount = dd.opportunities.length - realOpps;
-                return (
-                  <div className="space-y-4">
-                    <div className="text-sm text-muted-foreground">
-                      Total de oportunidades: <strong>{realOpps}</strong>
-                      {legacyCount > 0 && (
-                        <span className="ml-2 text-xs">
-                          ({legacyCount} {legacyCount === 1 ? "assinante legado neutralizado" : "assinantes legados neutralizados"})
-                        </span>
-                      )}
-                    </div>
-                    <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-                      {dd.opportunities.map((op) => (
-                        <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
-                          <div>
-                            <p className="text-sm font-medium">{op.name}</p>
-                            <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {op.legacy ? (
-                              <Badge variant="secondary" className="bg-muted text-muted-foreground border border-border">
-                                Assinante Legado
-                              </Badge>
-                            ) : op.converted ? (
-                              <Badge className="bg-success text-white">Virou assinante</Badge>
-                            ) : (
-                              <>
-                                <Badge variant="destructive">Não converteu</Badge>
-                                <TooltipProvider delayDuration={150}>
-                                  <UITooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                        onClick={() => setLegacyTarget({ phone: op.phone, name: op.name, barberId: dd.barberId })}
-                                        aria-label="Baixa de Legado: Já é assinante"
-                                      >
-                                        <Archive className="h-4 w-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p className="text-xs">Baixa de Legado: Já é assinante</p>
-                                    </TooltipContent>
-                                  </UITooltip>
-                                </TooltipProvider>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Total de oportunidades únicas (celular): <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
                   </div>
-                );
-              })()}
+                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
+                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                        <div>
+                          <p className="text-sm font-medium">{op.name}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
+                        </div>
+                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
-
-          <AlertDialog open={!!legacyTarget} onOpenChange={(open) => !open && !submittingLegacy && setLegacyTarget(null)}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Importar Assinante Legado</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Este cliente já era assinante? Ele será adicionado ao controle do sistema, mas será
-                  removido da taxa de conversão deste barbeiro para não inflar as métricas.
-                  {legacyTarget && (
-                    <span className="block mt-3 text-foreground">
-                      <strong>{legacyTarget.name}</strong> — <span className="font-mono">{formatPhone(legacyTarget.phone)}</span>
-                    </span>
-                  )}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={submittingLegacy}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                  disabled={submittingLegacy}
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    if (!legacyTarget || !organizationId) return;
-                    setSubmittingLegacy(true);
-                    try {
-                      const { error } = await (supabase.from("sale_transactions") as any).insert({
-                        organization_id: organizationId,
-                        barber_id: legacyTarget.barberId === "__reception__" ? null : legacyTarget.barberId,
-                        mobile_phone: legacyTarget.phone,
-                        client_name: legacyTarget.name,
-                        item_name: "Assinante legado (importação)",
-                        item_type: "subscription",
-                        subscription_action: "import",
-                        price_sold: 0,
-                        commission_amount: 0,
-                        commission_rate_used: 0,
-                        is_new_client: false,
-                        source: "manager",
-                      });
-                      if (error) throw error;
-                      toast.success("Assinante legado registrado. Não conta como nova conversão.");
-                      setLegacyTarget(null);
-                      await fetchPerformanceData();
-                    } catch (err: any) {
-                      console.error("Erro ao importar legado:", err);
-                      toast.error(err?.message || "Erro ao registrar assinante legado");
-                    } finally {
-                      setSubmittingLegacy(false);
-                    }
-                  }}
-                >
-                  {submittingLegacy ? (
-                    <span className="flex items-center gap-2"><LoaderIcon className="w-4 h-4 animate-spin" /> Importando...</span>
-                  ) : (
-                    "Confirmar Importação"
-                  )}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
 
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
