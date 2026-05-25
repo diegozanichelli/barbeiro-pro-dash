@@ -179,15 +179,17 @@ export default function SubscriptionPerformanceReport() {
       if (recError) throw recError;
 
       // Telefones marcados como "Assinante Legado" (subscription_action='import') — sempre todo o histórico.
-      const { data: legacyRows } = await supabase
-        .from("sale_transactions")
+      const { data: legacyRows } = await (supabase
+        .from("sale_transactions") as any)
         .select("mobile_phone")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
-        .eq("subscription_action" as any, "import")
+        .eq("subscription_action", "import")
         .not("mobile_phone", "is", null);
       const legacyPhones = new Set<string>(
-        (legacyRows || []).map((r: any) => r.mobile_phone).filter(Boolean)
+        ((legacyRows || []) as Array<{ mobile_phone: string | null }>)
+          .map((r) => r.mobile_phone || "")
+          .filter(Boolean)
       );
 
       // Agrupar por barbeiro
