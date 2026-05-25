@@ -781,26 +781,126 @@ export default function SubscriptionPerformanceReport() {
                   Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
                 </DialogDescription>
               </DialogHeader>
-              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
-                <div className="space-y-4">
-                  <div className="text-sm text-muted-foreground">
-                    Total de oportunidades: <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
-                  </div>
-                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
-                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
-                        <div>
-                          <p className="text-sm font-medium">{op.name}</p>
-                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)}</p>
+              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (() => {
+                const dd = clientDrilldown.get(selectedDrilldownBarberId)!;
+                const realOpps = dd.opportunities.filter((o) => !o.legacy).length;
+                const legacyCount = dd.opportunities.length - realOpps;
+                return (
+                  <div className="space-y-4">
+                    <div className="text-sm text-muted-foreground">
+                      Total de oportunidades: <strong>{realOpps}</strong>
+                      {legacyCount > 0 && (
+                        <span className="ml-2 text-xs">
+                          ({legacyCount} {legacyCount === 1 ? "assinante legado neutralizado" : "assinantes legados neutralizados"})
+                        </span>
+                      )}
+                    </div>
+                    <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+                      {dd.opportunities.map((op) => (
+                        <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                          <div>
+                            <p className="text-sm font-medium">{op.name}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {op.legacy ? (
+                              <Badge variant="secondary" className="bg-muted text-muted-foreground border border-border">
+                                Assinante Legado
+                              </Badge>
+                            ) : op.converted ? (
+                              <Badge className="bg-success text-white">Virou assinante</Badge>
+                            ) : (
+                              <>
+                                <Badge variant="destructive">Não converteu</Badge>
+                                <TooltipProvider delayDuration={150}>
+                                  <UITooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                        onClick={() => setLegacyTarget({ phone: op.phone, name: op.name, barberId: dd.barberId })}
+                                        aria-label="Baixa de Legado: Já é assinante"
+                                      >
+                                        <Archive className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-xs">Baixa de Legado: Já é assinante</p>
+                                    </TooltipContent>
+                                  </UITooltip>
+                                </TooltipProvider>
+                              </>
+                            )}
+                          </div>
                         </div>
-                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </DialogContent>
           </Dialog>
+
+          <AlertDialog open={!!legacyTarget} onOpenChange={(open) => !open && !submittingLegacy && setLegacyTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Importar Assinante Legado</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Este cliente já era assinante? Ele será adicionado ao controle do sistema, mas será
+                  removido da taxa de conversão deste barbeiro para não inflar as métricas.
+                  {legacyTarget && (
+                    <span className="block mt-3 text-foreground">
+                      <strong>{legacyTarget.name}</strong> — <span className="font-mono">{formatPhone(legacyTarget.phone)}</span>
+                    </span>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={submittingLegacy}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={submittingLegacy}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    if (!legacyTarget || !organizationId) return;
+                    setSubmittingLegacy(true);
+                    try {
+                      const { error } = await (supabase.from("sale_transactions") as any).insert({
+                        organization_id: organizationId,
+                        barber_id: legacyTarget.barberId === "__reception__" ? null : legacyTarget.barberId,
+                        mobile_phone: legacyTarget.phone,
+                        client_name: legacyTarget.name,
+                        item_name: "Assinante legado (importação)",
+                        item_type: "subscription",
+                        subscription_action: "import",
+                        price_sold: 0,
+                        commission_amount: 0,
+                        commission_rate_used: 0,
+                        is_new_client: false,
+                        source: "manager",
+                      });
+                      if (error) throw error;
+                      toast.success("Assinante legado registrado. Não conta como nova conversão.");
+                      setLegacyTarget(null);
+                      await fetchPerformanceData();
+                    } catch (err: any) {
+                      console.error("Erro ao importar legado:", err);
+                      toast.error(err?.message || "Erro ao registrar assinante legado");
+                    } finally {
+                      setSubmittingLegacy(false);
+                    }
+                  }}
+                >
+                  {submittingLegacy ? (
+                    <span className="flex items-center gap-2"><LoaderIcon className="w-4 h-4 animate-spin" /> Importando...</span>
+                  ) : (
+                    "Confirmar Importação"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
