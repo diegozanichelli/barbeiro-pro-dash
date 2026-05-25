@@ -38,7 +38,7 @@ interface BarberClientDrilldown {
   barberId: string;
   barberName: string;
   unitName: string;
-  opportunities: Array<{ phone: string; name: string; converted: boolean }>;
+  opportunities: Array<{ phone: string; name: string; converted: boolean; legacy: boolean }>;
 }
 
 interface BarberPerformance {
