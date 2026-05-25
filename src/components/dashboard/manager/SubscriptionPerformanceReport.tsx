@@ -78,6 +78,8 @@ export default function SubscriptionPerformanceReport() {
   const [healthOpen, setHealthOpen] = useState(false);
   const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
+  const [legacyTarget, setLegacyTarget] = useState<{ phone: string; name: string; barberId: string } | null>(null);
+  const [submittingLegacy, setSubmittingLegacy] = useState(false);
 
   const months = [
     { value: 1, label: "Janeiro" },
