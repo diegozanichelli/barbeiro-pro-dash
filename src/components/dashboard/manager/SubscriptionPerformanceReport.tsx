@@ -196,7 +196,8 @@ export default function SubscriptionPerformanceReport() {
       const barberMap = new Map<string, {
         name: string;
         unit: string;
-        opportunityPhones: Set<string>;
+        allNewClientPhones: Set<string>;   // todos clientes novos atendidos (inclui legados)
+        opportunityPhones: Set<string>;    // oportunidades reais (exclui legados)
         convertedPhones: Set<string>;
         newClientAdhesions: number;
         totalAdhesions: number;
@@ -213,15 +214,19 @@ export default function SubscriptionPerformanceReport() {
         const existing = barberMap.get(tx.barber_id) || {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
+          allNewClientPhones: new Set<string>(),
           opportunityPhones: new Set<string>(),
           convertedPhones: new Set<string>(),
           newClientAdhesions: 0,
           totalAdhesions: 0,
         };
 
-        if (tx.is_new_client === true && tx.mobile_phone && !legacyPhones.has(tx.mobile_phone)) {
-          existing.opportunityPhones.add(tx.mobile_phone);
-          globalOpportunityPhones.add(tx.mobile_phone);
+        if (tx.is_new_client === true && tx.mobile_phone) {
+          existing.allNewClientPhones.add(tx.mobile_phone);
+          if (!legacyPhones.has(tx.mobile_phone)) {
+            existing.opportunityPhones.add(tx.mobile_phone);
+            globalOpportunityPhones.add(tx.mobile_phone);
+          }
         }
 
         if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
@@ -246,12 +251,13 @@ export default function SubscriptionPerformanceReport() {
           if (safeName && !phoneNameMap.has(tx.mobile_phone)) phoneNameMap.set(tx.mobile_phone, safeName);
         });
 
-        const opportunities = Array.from(data.opportunityPhones)
+        const opportunities = Array.from(data.allNewClientPhones)
           .sort()
           .map((phone) => ({
             phone,
             name: phoneNameMap.get(phone) || "Cliente sem nome",
             converted: data.convertedPhones.has(phone),
+            legacy: legacyPhones.has(phone),
           }));
         drilldownMap.set(barberId, {
           barberId,
