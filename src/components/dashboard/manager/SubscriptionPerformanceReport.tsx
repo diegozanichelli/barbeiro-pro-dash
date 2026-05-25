@@ -219,7 +219,7 @@ export default function SubscriptionPerformanceReport() {
           totalAdhesions: 0,
         };
 
-        if (tx.is_new_client === true && tx.mobile_phone) {
+        if (tx.is_new_client === true && tx.mobile_phone && !legacyPhones.has(tx.mobile_phone)) {
           existing.opportunityPhones.add(tx.mobile_phone);
           globalOpportunityPhones.add(tx.mobile_phone);
         }
