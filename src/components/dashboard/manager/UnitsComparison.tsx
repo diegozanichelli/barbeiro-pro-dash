@@ -6,6 +6,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
 
 interface Unit {
@@ -176,7 +178,6 @@ export default function UnitsComparison() {
     const { data: transactions, error: transactionsError } = await supabase
       .from("sale_transactions")
       .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
-      .eq("source", "manager")
       .gte("created_at", `${startDate}T00:00:00`)
       .lte("created_at", `${endDate}T23:59:59`)
       .not("barber_id", "is", null);
@@ -290,13 +291,13 @@ export default function UnitsComparison() {
 
       const conversion = conversionMap.get(unitId)!;
 
-      if (tx.mobile_phone) {
-        if (tx.is_new_client === true) conversion.newPhones.add(tx.mobile_phone);
-        if (tx.is_new_client === false) conversion.existingPhones.add(tx.mobile_phone);
+      const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+      if (normalizedPhone) {
+        if (isValidOpportunity(tx)) conversion.newPhones.add(normalizedPhone);
+        if (tx.is_new_client === false) conversion.existingPhones.add(normalizedPhone);
       }
 
-      const isNewSubscription = tx.item_type === "subscription" && tx.subscription_action === "new";
-      if (isNewSubscription) {
+      if (isNewSubscription(tx)) {
         conversion.totalNewSubs += 1;
         if (tx.is_new_client === true) conversion.newSubsFromNewClients += 1;
         if (tx.is_new_client === false) conversion.newSubsFromExistingClients += 1;
