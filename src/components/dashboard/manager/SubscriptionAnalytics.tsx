@@ -72,9 +72,19 @@ interface IntelPayload {
   transactions: IntelTransaction[];
 }
 
+interface PortfolioPayload {
+  mrr_total: number;
+  active_subscribers: number;
+  legacy_count: number;
+  legacy_mrr: number;
+  app_acquired_count: number;
+  app_acquired_mrr: number;
+}
+
 export default function SubscriptionAnalytics() {
   const { organizationId } = useOrganization();
   const [manausNow, setManausNow] = useState(() => getManausDate());
+  const [portfolio, setPortfolio] = useState<PortfolioPayload | null>(null);
 
   // Refresh manausNow if user keeps the page open across month change
   useEffect(() => {
