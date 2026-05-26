@@ -182,6 +182,7 @@ export default function SubscriptionPerformanceReport() {
       const barberMap = new Map<string, {
         name: string;
         unit: string;
+        allNewClientPhones: Set<string>;
         opportunityPhones: Set<string>;
         convertedPhones: Set<string>;
         newClientAdhesions: number;
