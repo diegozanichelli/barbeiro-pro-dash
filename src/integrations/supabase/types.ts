@@ -1475,6 +1475,10 @@ export type Database = {
         }
         Returns: Json
       }
+      get_subscription_portfolio_overview: {
+        Args: { p_unit_id?: string }
+        Returns: Json
+      }
       get_user_organization: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
