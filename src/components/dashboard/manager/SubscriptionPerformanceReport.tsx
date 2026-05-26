@@ -312,6 +312,7 @@ export default function SubscriptionPerformanceReport() {
           barberName: "Recepção",
           unitName: "Sem barbeiro atribuído",
           opportunities: opp,
+          rawNewAttendances: receptionNewClientAdh,
           newClientAdhesions: receptionNewClientAdh,
           totalAdhesions: receptionTotalAdh,
           strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
