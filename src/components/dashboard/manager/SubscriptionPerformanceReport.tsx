@@ -198,6 +198,7 @@ export default function SubscriptionPerformanceReport() {
 
       // Sets globais para deduplicar a visão organizacional
       const globalOpportunityPhones = new Set<string>();
+      const globalRegularizedPhones = new Set<string>();
       let globalNewClientAdh = 0;
       let globalTotalAdh = 0;
 
@@ -241,6 +242,7 @@ export default function SubscriptionPerformanceReport() {
           normalizedPhone
         ) {
           existing.regularizedPhones.add(normalizedPhone);
+          globalRegularizedPhones.add(normalizedPhone);
         }
 
         barberMap.set(tx.barber_id, existing);
@@ -305,6 +307,13 @@ export default function SubscriptionPerformanceReport() {
 
       receptionTx?.forEach((tx) => {
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+        if (
+          tx.item_type === "subscription" &&
+          tx.subscription_action === "legacy_import" &&
+          normalizedPhone
+        ) {
+          globalRegularizedPhones.add(normalizedPhone);
+        }
         if (isValidOpportunity(tx) && normalizedPhone) {
           receptionPhones.add(normalizedPhone);
           globalOpportunityPhones.add(normalizedPhone);
@@ -318,6 +327,38 @@ export default function SubscriptionPerformanceReport() {
           }
         }
       });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const phoneNameMap = new Map<string, string>();
+        const attendanceCountMap = new Map<string, number>();
+        (transactions || []).forEach((tx) => {
+          const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+          if (tx.barber_id !== barberId || !normalizedPhone) return;
+          const safeName = ((tx as any).client_name || "").trim();
+          if (safeName && !phoneNameMap.has(normalizedPhone)) phoneNameMap.set(normalizedPhone, safeName);
+          if (tx.is_new_client === true) attendanceCountMap.set(normalizedPhone, (attendanceCountMap.get(normalizedPhone) || 0) + 1);
+        });
+
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({
+            phone,
+            name: phoneNameMap.get(phone) || "Cliente sem nome",
+            converted:
+              data.convertedPhones.has(phone) ||
+              data.regularizedPhones.has(phone) ||
+              globalRegularizedPhones.has(phone),
+            attendances: attendanceCountMap.get(phone) || 1,
+          }));
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitName: data.unit,
+          opportunities,
+        });
+      }
+      setClientDrilldown(drilldownMap);
 
       if (receptionPhones.size > 0 || receptionTotalAdh > 0) {
         const opp = receptionPhones.size;
