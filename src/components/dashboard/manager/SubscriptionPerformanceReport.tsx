@@ -182,6 +182,7 @@ export default function SubscriptionPerformanceReport() {
       const barberMap = new Map<string, {
         name: string;
         unit: string;
+        allNewClientPhones: Set<string>;
         opportunityPhones: Set<string>;
         convertedPhones: Set<string>;
         newClientAdhesions: number;
@@ -311,6 +312,7 @@ export default function SubscriptionPerformanceReport() {
           barberName: "Recepção",
           unitName: "Sem barbeiro atribuído",
           opportunities: opp,
+          rawNewAttendances: receptionNewClientAdh,
           newClientAdhesions: receptionNewClientAdh,
           totalAdhesions: receptionTotalAdh,
           strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
