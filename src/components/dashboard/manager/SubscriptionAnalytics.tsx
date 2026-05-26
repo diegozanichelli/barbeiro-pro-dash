@@ -83,7 +83,7 @@ export default function SubscriptionAnalytics() {
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth());
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<"manager" | "all">("manager");
+  const [sourceFilter, setSourceFilter] = useState<"manager" | "all">("all");
   const [units, setUnits] = useState<Unit[]>([]);
   const [data, setData] = useState<IntelPayload | null>(null);
   const [loading, setLoading] = useState(true);
