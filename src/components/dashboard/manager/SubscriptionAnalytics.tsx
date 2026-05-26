@@ -509,9 +509,11 @@ export default function SubscriptionAnalytics() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{t.downgrade_reason || "—"}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingTransaction(t)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
+                          {action !== "legacy_import" && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingTransaction(t)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
