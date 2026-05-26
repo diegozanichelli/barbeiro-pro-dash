@@ -825,7 +825,7 @@ export default function LiveDashboard() {
     managerTransactions.forEach((t) => {
       if (t.item_type !== "subscription") return;
       const price = Number(t.price_sold) || 0;
-      if (t.subscription_action === "new" && t.subscription_action !== "legacy_import") {
+      if (t.subscription_action === "new") {
         newCount += 1;
         newRevenue += price;
       } else {
