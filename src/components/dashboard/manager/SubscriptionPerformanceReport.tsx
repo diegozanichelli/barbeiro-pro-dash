@@ -29,6 +29,7 @@ interface DataHealth {
 interface BarberClientDrilldown {
   barberId: string;
   barberName: string;
+  unitId: string | null;
   unitName: string;
   opportunities: Array<{ phone: string; name: string; converted: boolean; attendances: number }>;
 }
@@ -76,6 +77,7 @@ export default function SubscriptionPerformanceReport() {
     phone: string;
     name: string;
     barberId: string;
+    unitId: string | null;
   } | null>(null);
 
   const months = [
@@ -190,6 +192,7 @@ export default function SubscriptionPerformanceReport() {
       // Agrupar por barbeiro
       const barberMap = new Map<string, {
         name: string;
+        unitId: string | null;
         unit: string;
         allNewClientPhones: Set<string>;
         opportunityPhones: Set<string>;
@@ -211,6 +214,7 @@ export default function SubscriptionPerformanceReport() {
 
         const existing = barberMap.get(tx.barber_id) || {
           name: (tx.barbers as any)?.name || "Desconhecido",
+          unitId: tx.unit_id ?? null,
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
           allNewClientPhones: new Set<string>(),
           opportunityPhones: new Set<string>(),
@@ -358,6 +362,7 @@ export default function SubscriptionPerformanceReport() {
         drilldownMap.set(barberId, {
           barberId,
           barberName: data.name,
+          unitId: data.unitId,
           unitName: data.unit,
           opportunities,
         });
@@ -853,10 +858,12 @@ export default function SubscriptionPerformanceReport() {
                               size="sm"
                               variant="outline"
                               onClick={() => {
+                                const drilldown = clientDrilldown.get(selectedDrilldownBarberId);
                                 setRegularizationPrefill({
                                   phone: op.phone,
                                   name: op.name,
                                   barberId: selectedDrilldownBarberId,
+                                  unitId: drilldown?.unitId ?? null,
                                 });
                                 setRegularizationWizardOpen(true);
                               }}
@@ -922,6 +929,7 @@ export default function SubscriptionPerformanceReport() {
         prefillIsNewClient={false}
         prefillAttributionType="barber"
         prefillBarberId={regularizationPrefill?.barberId}
+        prefillUnitId={regularizationPrefill?.unitId}
         startStep="attribution"
       />
 
