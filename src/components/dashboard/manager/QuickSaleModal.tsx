@@ -95,7 +95,7 @@ interface SubscriptionPlan {
   price: number;
 }
 
-type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
+type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
 
 interface SubscriptionCartItem {
   tempId: string;
@@ -117,6 +117,7 @@ const SUBSCRIPTION_ACTION_LABELS: Record<SubscriptionAction, string> = {
   renew: "Renovação",
   upgrade: "Upgrade",
   downgrade: "Downgrade",
+  legacy_import: "Regularização legado",
 };
 
 type CategoryTab = "services" | "products" | "subscription" | "manual";
@@ -1039,8 +1040,8 @@ export default function QuickSaleModal({
             catalog_product_id: null,
             item_name: `Assinatura ${item.name}`,
             service_category: null,
-            price_sold: item.customPrice,
-            is_new_client: clientType === "new",
+            price_sold: item.action === "legacy_import" ? 0 : item.customPrice,
+            is_new_client: item.action === "legacy_import" ? false : clientType === "new",
             client_name: safeClientName,
             mobile_phone: registeredClient.mobilePhone,
             subscription_plan_id: item.planId,
@@ -2090,6 +2091,7 @@ export default function QuickSaleModal({
                               <SelectItem value="renew" className="text-xs">Renovação</SelectItem>
                               <SelectItem value="upgrade" className="text-xs">Upgrade</SelectItem>
                               <SelectItem value="downgrade" className="text-xs">Downgrade</SelectItem>
+                              <SelectItem value="legacy_import" className="text-xs">Regularização legado</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
