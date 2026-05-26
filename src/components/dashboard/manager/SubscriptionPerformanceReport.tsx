@@ -9,7 +9,7 @@ import { getManausDate } from "@/lib/dateUtils";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp, Archive, Loader as LoaderIcon } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -160,7 +160,7 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
@@ -175,11 +175,26 @@ export default function SubscriptionPerformanceReport() {
       const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
 
+      // Telefones marcados como "Assinante Legado" (subscription_action='import') — sempre todo o histórico.
+      const { data: legacyRows } = await (supabase
+        .from("sale_transactions") as any)
+        .select("mobile_phone")
+        .eq("organization_id", organizationId)
+        .eq("item_type", "subscription")
+        .eq("subscription_action", "import")
+        .not("mobile_phone", "is", null);
+      const legacyPhones = new Set<string>(
+        ((legacyRows || []) as Array<{ mobile_phone: string | null }>)
+          .map((r) => r.mobile_phone || "")
+          .filter(Boolean)
+      );
+
       // Agrupar por barbeiro
       const barberMap = new Map<string, {
         name: string;
         unitId: string | null;
         unit: string;
+        allNewClientPhones: Set<string>;
         opportunityPhones: Set<string>;
         convertedPhones: Set<string>;
         regularizedPhones: Set<string>;
@@ -201,6 +216,7 @@ export default function SubscriptionPerformanceReport() {
           name: (tx.barbers as any)?.name || "Desconhecido",
           unitId: tx.unit_id ?? null,
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
+          allNewClientPhones: new Set<string>(),
           opportunityPhones: new Set<string>(),
           convertedPhones: new Set<string>(),
           regularizedPhones: new Set<string>(),
@@ -239,6 +255,35 @@ export default function SubscriptionPerformanceReport() {
 
         barberMap.set(tx.barber_id, existing);
       });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const phoneNameMap = new Map<string, string>();
+        const attendanceCountMap = new Map<string, number>();
+        (transactions || []).forEach((tx) => {
+          const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+          if (tx.barber_id !== barberId || !normalizedPhone) return;
+          const safeName = ((tx as any).client_name || "").trim();
+          if (safeName && !phoneNameMap.has(normalizedPhone)) phoneNameMap.set(normalizedPhone, safeName);
+          if (tx.is_new_client === true) attendanceCountMap.set(normalizedPhone, (attendanceCountMap.get(normalizedPhone) || 0) + 1);
+        });
+
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({
+            phone,
+            name: phoneNameMap.get(phone) || "Cliente sem nome",
+            converted: data.convertedPhones.has(phone) || data.regularizedPhones.has(phone),
+            attendances: attendanceCountMap.get(phone) || 1,
+          }));
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitName: data.unit,
+          opportunities,
+        });
+      }
+      setClientDrilldown(drilldownMap);
 
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
         ([barberId, data]) => {
@@ -331,6 +376,7 @@ export default function SubscriptionPerformanceReport() {
           barberName: "Recepção",
           unitName: "Sem barbeiro atribuído",
           opportunities: opp,
+          rawNewAttendances: receptionNewClientAdh,
           newClientAdhesions: receptionNewClientAdh,
           totalAdhesions: receptionTotalAdh,
           strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
