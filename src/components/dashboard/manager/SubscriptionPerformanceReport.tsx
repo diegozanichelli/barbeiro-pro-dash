@@ -220,7 +220,7 @@ export default function SubscriptionPerformanceReport() {
           }
         }
 
-        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
+        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new" && (tx as any).subscription_action !== "legacy_import") {
           existing.totalAdhesions++;
           globalTotalAdh++;
           if (tx.is_new_client === true) {
@@ -294,7 +294,7 @@ export default function SubscriptionPerformanceReport() {
           receptionPhones.add(tx.mobile_phone);
           globalOpportunityPhones.add(tx.mobile_phone);
         }
-        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
+        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new" && (tx as any).subscription_action !== "legacy_import") {
           receptionTotalAdh++;
           globalTotalAdh++;
           if (tx.is_new_client === true) {
@@ -339,13 +339,13 @@ export default function SubscriptionPerformanceReport() {
         novaAdesaoSemTelefone: allTx.filter(
           (t) =>
             t.item_type === "subscription" &&
-            t.subscription_action === "new" &&
+            t.subscription_action === "new" && t.subscription_action !== "legacy_import" &&
             (!t.mobile_phone || t.mobile_phone === "")
         ).length,
         novaAdesaoSemIsNewClient: allTx.filter(
           (t) =>
             t.item_type === "subscription" &&
-            t.subscription_action === "new" &&
+            t.subscription_action === "new" && t.subscription_action !== "legacy_import" &&
             t.is_new_client !== true
         ).length,
       };
