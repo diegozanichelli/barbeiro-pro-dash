@@ -124,19 +124,31 @@ export default function SubscriptionAnalytics() {
     const startStr = format(startOfMonth(refDate), "yyyy-MM-dd");
     const endStr = format(endOfMonth(refDate), "yyyy-MM-dd");
 
-    const { data: rpcData, error } = await supabase.rpc("get_subscription_intelligence", {
-      p_start_date: startStr,
-      p_end_date: endStr,
-      p_unit_id: selectedUnit === "all" ? null : selectedUnit,
-      p_source_filter: sourceFilter === "all" ? null : sourceFilter,
-    });
+    const unitParam = selectedUnit === "all" ? null : selectedUnit;
 
-    if (error) {
-      console.error("Erro ao carregar Inteligência:", error);
+    const [intel, port] = await Promise.all([
+      supabase.rpc("get_subscription_intelligence", {
+        p_start_date: startStr,
+        p_end_date: endStr,
+        p_unit_id: unitParam,
+        p_source_filter: sourceFilter === "all" ? null : sourceFilter,
+      }),
+      supabase.rpc("get_subscription_portfolio_overview", { p_unit_id: unitParam }),
+    ]);
+
+    if (intel.error) {
+      console.error("Erro ao carregar Inteligência:", intel.error);
       toast.error("Falha ao carregar dados da Inteligência de Assinaturas");
       setData(null);
     } else {
-      setData(rpcData as unknown as IntelPayload);
+      setData(intel.data as unknown as IntelPayload);
+    }
+
+    if (port.error) {
+      console.error("Erro ao carregar carteira:", port.error);
+      setPortfolio(null);
+    } else {
+      setPortfolio(port.data as unknown as PortfolioPayload);
     }
     setLoading(false);
   };
