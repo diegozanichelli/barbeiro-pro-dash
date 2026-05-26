@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
+import SubscriptionWizardModal from "./SubscriptionWizardModal";
 
 interface UnitOption { id: string; name: string; }
 interface DataHealth {
@@ -70,6 +71,8 @@ export default function SubscriptionPerformanceReport() {
   const [healthOpen, setHealthOpen] = useState(false);
   const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
+  const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
+  const [regularizationPrefill, setRegularizationPrefill] = useState<{ phone: string; name: string } | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -187,6 +190,7 @@ export default function SubscriptionPerformanceReport() {
         allNewClientPhones: Set<string>;
         opportunityPhones: Set<string>;
         convertedPhones: Set<string>;
+        regularizedPhones: Set<string>;
         newClientAdhesions: number;
         totalAdhesions: number;
         rawNewAttendances: number;
@@ -206,6 +210,7 @@ export default function SubscriptionPerformanceReport() {
           allNewClientPhones: new Set<string>(),
           opportunityPhones: new Set<string>(),
           convertedPhones: new Set<string>(),
+          regularizedPhones: new Set<string>(),
           newClientAdhesions: 0,
           totalAdhesions: 0,
           rawNewAttendances: 0,
@@ -230,6 +235,13 @@ export default function SubscriptionPerformanceReport() {
             globalNewClientAdh++;
           }
         }
+        if (
+          tx.item_type === "subscription" &&
+          tx.subscription_action === "legacy_import" &&
+          normalizedPhone
+        ) {
+          existing.regularizedPhones.add(normalizedPhone);
+        }
 
         barberMap.set(tx.barber_id, existing);
       });
@@ -251,7 +263,7 @@ export default function SubscriptionPerformanceReport() {
           .map((phone) => ({
             phone,
             name: phoneNameMap.get(phone) || "Cliente sem nome",
-            converted: data.convertedPhones.has(phone),
+            converted: data.convertedPhones.has(phone) || data.regularizedPhones.has(phone),
             attendances: attendanceCountMap.get(phone) || 1,
           }));
         drilldownMap.set(barberId, {
@@ -789,7 +801,21 @@ export default function SubscriptionPerformanceReport() {
                           <p className="text-sm font-medium">{op.name}</p>
                           <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
                         </div>
-                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : <Badge variant="destructive">Não converteu</Badge>}
+                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="destructive">Não converteu</Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setRegularizationPrefill({ phone: op.phone, name: op.name });
+                                setRegularizationWizardOpen(true);
+                              }}
+                            >
+                              Dar baixa legado
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -832,6 +858,21 @@ export default function SubscriptionPerformanceReport() {
           </div>
         </CardContent>
       </Card>
+
+      <SubscriptionWizardModal
+        open={regularizationWizardOpen}
+        onOpenChange={(o) => {
+          setRegularizationWizardOpen(o);
+          if (!o) setRegularizationPrefill(null);
+        }}
+        organizationId={organizationId || ""}
+        onComplete={fetchPerformanceData}
+        prefillPhone={regularizationPrefill?.phone}
+        prefillName={regularizationPrefill?.name}
+        prefillAction="legacy_import"
+        prefillIsNewClient={false}
+      />
+
       <SubscriptionScopeFooter />
     </div>
   );

@@ -75,7 +75,7 @@ interface SubscriptionWizardModalProps {
   selectedDate?: string;
   prefillPhone?: string;
   prefillName?: string;
-  prefillAction?: "new" | "renew" | "upgrade" | "downgrade";
+  prefillAction?: "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
   prefillPlanId?: string | null;
   prefillIsNewClient?: boolean;
   startStep?: "client_type" | "attribution";
