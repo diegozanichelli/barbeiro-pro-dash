@@ -116,6 +116,9 @@ export default function SubscriptionPerformanceReport() {
     const endISO = `${endDate}T23:59:59-04:00`;
 
     try {
+      // TODO(metrics-ssot): centralizar regra de "oportunidade de conversão" em hook/util único
+      // para evitar divergência entre relatórios (SubscriptionPerformance, UnitsComparison, etc).
+      // Regra atual: is_new_client=true + mobile_phone válido no período, com deduplicação por celular.
       // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
       let txQuery = supabase
         .from("sale_transactions")

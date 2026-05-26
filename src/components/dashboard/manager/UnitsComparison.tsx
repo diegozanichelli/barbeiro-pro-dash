@@ -176,7 +176,6 @@ export default function UnitsComparison() {
     const { data: transactions, error: transactionsError } = await supabase
       .from("sale_transactions")
       .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
-      .eq("source", "manager")
       .gte("created_at", `${startDate}T00:00:00`)
       .lte("created_at", `${endDate}T23:59:59`)
       .not("barber_id", "is", null);
