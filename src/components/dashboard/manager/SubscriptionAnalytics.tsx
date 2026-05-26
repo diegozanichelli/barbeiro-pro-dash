@@ -207,12 +207,15 @@ export default function SubscriptionAnalytics() {
               <div>
                 <Label className="text-[10px] text-muted-foreground">Origem</Label>
                 <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as any)}>
-                  <SelectTrigger className="w-36 bg-secondary"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-44 bg-secondary"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="manager">Apenas Gestor</SelectItem>
-                    <SelectItem value="all">Gestor + Barbeiro (legado)</SelectItem>
+                    <SelectItem value="all">Todas as origens (padrão)</SelectItem>
+                    <SelectItem value="manager">Apenas Gestor (auditoria)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground mt-1 max-w-[180px] leading-tight">
+                  Lente de auditoria. A base global inclui Gestor + Barbeiro (legado).
+                </p>
               </div>
             </div>
           </div>
