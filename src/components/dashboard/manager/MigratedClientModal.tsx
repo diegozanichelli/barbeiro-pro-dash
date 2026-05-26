@@ -118,13 +118,19 @@ export default function MigratedClientModal({
       const normalizedPhone = sanitizePhone(phone);
       const startedDate = format(startedAt, "yyyy-MM-dd");
 
-      // Check if client already exists by phone
-      const { data: existing } = await supabase
+      // Check existing clients by phone (supports legacy duplicates)
+      const { data: existingByPhone, error: existingErr } = await supabase
         .from("clients")
         .select("id, name, subscription_plan_id")
         .eq("organization_id", organizationId)
         .eq("mobile_phone", normalizedPhone)
-        .maybeSingle();
+        .order("created_at", { ascending: true })
+        .limit(5);
+      if (existingErr) throw existingErr;
+
+      const normalizedName = name.trim().toLowerCase();
+      const exactDuplicate = (existingByPhone || []).find((c) => (c.name || "").trim().toLowerCase() === normalizedName);
+      const existing = exactDuplicate || (existingByPhone || [])[0];
 
       if (existing) {
         const { error } = await supabase
@@ -138,7 +144,7 @@ export default function MigratedClientModal({
           })
           .eq("id", existing.id);
         if (error) throw error;
-        toast.success("Cliente existente atualizado com o plano migrado");
+        toast.success(exactDuplicate ? "Cliente já existente identificado e atualizado" : "Cliente existente atualizado com o plano migrado");
       } else {
         const { error } = await supabase.from("clients").insert({
           organization_id: organizationId,
