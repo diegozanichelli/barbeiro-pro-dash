@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { formatManausDateTime, getManausDate } from "@/lib/dateUtils";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle, AlertCircle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle, AlertCircle, ArrowUpRight, ArrowDownRight, Wallet, Users, Database } from "lucide-react";
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
   renew: "Renovação",
   upgrade: "Upgrade",
   downgrade: "Downgrade",
+  legacy_import: "Migrado",
 };
 
 const ACTION_BADGE_CLASS: Record<string, string> = {
@@ -30,6 +31,7 @@ const ACTION_BADGE_CLASS: Record<string, string> = {
   renew: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   upgrade: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   downgrade: "bg-red-500/20 text-red-400 border-red-500/30",
+  legacy_import: "bg-muted text-muted-foreground border-border",
 };
 
 const DONUT_COLORS = ["#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
