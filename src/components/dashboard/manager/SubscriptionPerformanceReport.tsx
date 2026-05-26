@@ -6,6 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp, Archive, Loader as LoaderIcon } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -209,24 +211,22 @@ export default function SubscriptionPerformanceReport() {
           rawNewAttendances: 0,
         };
 
+        const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
         if (tx.is_new_client === true) {
           existing.rawNewAttendances++;
         }
 
-        if (tx.is_new_client === true && tx.mobile_phone) {
-          existing.allNewClientPhones.add(tx.mobile_phone);
-          if (!legacyPhones.has(tx.mobile_phone)) {
-            existing.opportunityPhones.add(tx.mobile_phone);
-            globalOpportunityPhones.add(tx.mobile_phone);
-          }
+        if (isValidOpportunity(tx) && normalizedPhone) {
+          existing.opportunityPhones.add(normalizedPhone);
+          globalOpportunityPhones.add(normalizedPhone);
         }
 
-        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new" && (tx as any).subscription_action !== "legacy_import") {
+        if (isNewSubscription(tx)) {
           existing.totalAdhesions++;
           globalTotalAdh++;
           if (tx.is_new_client === true) {
             existing.newClientAdhesions++;
-            if (tx.mobile_phone) existing.convertedPhones.add(tx.mobile_phone);
+            if (normalizedPhone) existing.convertedPhones.add(normalizedPhone);
             globalNewClientAdh++;
           }
         }
@@ -239,10 +239,11 @@ export default function SubscriptionPerformanceReport() {
         const phoneNameMap = new Map<string, string>();
         const attendanceCountMap = new Map<string, number>();
         (transactions || []).forEach((tx) => {
-          if (tx.barber_id !== barberId || !tx.mobile_phone) return;
+          const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+          if (tx.barber_id !== barberId || !normalizedPhone) return;
           const safeName = ((tx as any).client_name || "").trim();
-          if (safeName && !phoneNameMap.has(tx.mobile_phone)) phoneNameMap.set(tx.mobile_phone, safeName);
-          if (tx.is_new_client === true) attendanceCountMap.set(tx.mobile_phone, (attendanceCountMap.get(tx.mobile_phone) || 0) + 1);
+          if (safeName && !phoneNameMap.has(normalizedPhone)) phoneNameMap.set(normalizedPhone, safeName);
+          if (tx.is_new_client === true) attendanceCountMap.set(normalizedPhone, (attendanceCountMap.get(normalizedPhone) || 0) + 1);
         });
 
         const opportunities = Array.from(data.opportunityPhones)
@@ -291,11 +292,12 @@ export default function SubscriptionPerformanceReport() {
       let receptionTotalAdh = 0;
 
       receptionTx?.forEach((tx) => {
-        if (tx.is_new_client === true && tx.mobile_phone && !legacyPhones.has(tx.mobile_phone)) {
-          receptionPhones.add(tx.mobile_phone);
-          globalOpportunityPhones.add(tx.mobile_phone);
+        const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+        if (isValidOpportunity(tx) && normalizedPhone) {
+          receptionPhones.add(normalizedPhone);
+          globalOpportunityPhones.add(normalizedPhone);
         }
-        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new" && (tx as any).subscription_action !== "legacy_import") {
+        if (isNewSubscription(tx)) {
           receptionTotalAdh++;
           globalTotalAdh++;
           if (tx.is_new_client === true) {
@@ -336,18 +338,16 @@ export default function SubscriptionPerformanceReport() {
         totalInPeriod: allTx.length,
         txSemUnidade: allTx.filter((t) => !t.unit_id).length,
         novoSemTelefone: allTx.filter(
-          (t) => t.is_new_client === true && (!t.mobile_phone || t.mobile_phone === "")
+          (t) => t.is_new_client === true && !normalizePhoneForMetrics(t.mobile_phone || null)
         ).length,
         novaAdesaoSemTelefone: allTx.filter(
           (t) =>
-            t.item_type === "subscription" &&
-            t.subscription_action === "new" && t.subscription_action !== "legacy_import" &&
+            isNewSubscription(t) &&
             (!t.mobile_phone || t.mobile_phone === "")
         ).length,
         novaAdesaoSemIsNewClient: allTx.filter(
           (t) =>
-            t.item_type === "subscription" &&
-            t.subscription_action === "new" && t.subscription_action !== "legacy_import" &&
+            isNewSubscription(t) &&
             t.is_new_client !== true
         ).length,
       };

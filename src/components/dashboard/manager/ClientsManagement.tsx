@@ -68,6 +68,14 @@ interface ImportIssue {
   reason: string;
 }
 
+interface CsvImportSummary {
+  importedWithPlan: number;
+  importedWithoutPlan: number;
+  alreadyExisting: number;
+  rejected: number;
+  unmatchedPlanNames: string[];
+}
+
 interface OriginSuggestion {
   suggested_unit_id: string;
   suggested_unit_name: string;
@@ -134,6 +142,7 @@ export default function ClientsManagement() {
   const [migratedModalOpen, setMigratedModalOpen] = useState(false);
   const [importingCsv, setImportingCsv] = useState(false);
   const [importIssues, setImportIssues] = useState<ImportIssue[]>([]);
+  const [csvImportSummary, setCsvImportSummary] = useState<CsvImportSummary | null>(null);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -292,7 +301,13 @@ export default function ClientsManagement() {
 
 
 
-  const normalizePlanName = (name: string) => name.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const normalizePlanName = (name: string) =>
+    (name || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, " ");
 
   const parseDateBRorISO = (raw: string): string | null => {
     const v = raw.trim();
@@ -318,7 +333,8 @@ export default function ClientsManagement() {
       const planByNormalized = new Map(plans.map((p) => [normalizePlanName(p.name), p.id]));
 
       let created = 0, skipped = 0, alreadyExisting = 0;
-      let importedCount = 0;
+      let importedCount = 0, importedWithPlan = 0, importedWithoutPlan = 0;
+      const unmatchedPlanNames = new Set<string>();
       const issues: ImportIssue[] = [];
 
       for (let i = 1; i < lines.length; i++) {
@@ -326,10 +342,13 @@ export default function ClientsManagement() {
         const [nameRaw = "", phoneRaw = "", planRaw = "", dueRaw = ""] = cols;
 
         const normalizedName = normalize(nameRaw || "").trim();
-        const phoneDigits = sanitizePhone(phoneRaw);
+        const digitsOnly = sanitizePhone(phoneRaw);
+        const phoneDigits = digitsOnly.length === 13 && digitsOnly.startsWith("55") ? digitsOnly.slice(2) : digitsOnly;
         if (!normalizedName || phoneDigits.length !== 11) { skipped++; issues.push({ line: i + 1, phone: phoneRaw, reason: "nome/telefone inválido" }); continue; }
 
-        const planId = planByNormalized.get(normalizePlanName(planRaw)) || null;
+        const normalizedPlanRaw = normalizePlanName(planRaw);
+        const planId = normalizedPlanRaw ? (planByNormalized.get(normalizedPlanRaw) || null) : null;
+        if (normalizedPlanRaw && !planId) unmatchedPlanNames.add(planRaw.trim());
         const startedAt = parseDateBRorISO(dueRaw);
 
         const { data: existingByPhone, error: qErr } = await supabase
@@ -361,12 +380,20 @@ export default function ClientsManagement() {
         if (!error) {
           created++;
           importedCount++;
+          if (planId) importedWithPlan++; else importedWithoutPlan++;
         } else { skipped++; issues.push({ line: i + 1, phone: phoneDigits, reason: "erro ao criar cadastro" }); }
       }
 
       setImportIssues(issues);
+      setCsvImportSummary({
+        importedWithPlan,
+        importedWithoutPlan,
+        alreadyExisting,
+        rejected: skipped,
+        unmatchedPlanNames: Array.from(unmatchedPlanNames).sort(),
+      });
       toast.success("Importação concluída", {
-        description: `${importedCount} importados (${created} novos) · ${alreadyExisting} já existentes (não importados novamente) · ${skipped} ignorados.`,
+        description: `${importedCount} importados (${importedWithPlan} com plano, ${importedWithoutPlan} sem plano) · ${alreadyExisting} já existentes · ${skipped} rejeitados.`,
       });
       // Não bloquear o término do estado de importação com recarga pesada da tela
       // (evita sensação de "carregando infinito" em CSVs grandes).
@@ -632,6 +659,22 @@ export default function ClientsManagement() {
           >
             Limpar busca
           </Button>
+        </div>
+      )}
+
+      {csvImportSummary && (
+        <div className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2.5 text-xs text-blue-900 dark:text-blue-200">
+          <p className="font-medium">
+            Resumo da importação: {csvImportSummary.importedWithPlan} com plano · {csvImportSummary.importedWithoutPlan} sem plano · {csvImportSummary.alreadyExisting} já existentes · {csvImportSummary.rejected} rejeitados.
+          </p>
+          {csvImportSummary.unmatchedPlanNames.length > 0 && (
+            <div className="mt-1">
+              <p className="font-medium">Planos sem correspondência no sistema:</p>
+              <p className="text-[11px] leading-relaxed">
+                {csvImportSummary.unmatchedPlanNames.join(", ")}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
