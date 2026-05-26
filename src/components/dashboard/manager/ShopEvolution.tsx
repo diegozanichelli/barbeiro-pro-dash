@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target, MapPin } from "lucide-react";
 import { getManausDate } from "@/lib/dateUtils";
+import { isSubscriptionRevenue } from "@/lib/metricsRules";
 
 interface Unit {
   id: string;
@@ -133,7 +134,6 @@ export default function ShopEvolution() {
         .from("sale_transactions")
         .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
         .eq("item_type", "subscription")
-        .eq("source", "manager")
         .gte("created_at", `${selectedYear}-01-01T00:00:00`)
         .lte("created_at", `${selectedYear}-12-31T23:59:59`)
         .order("created_at", { ascending: true })
