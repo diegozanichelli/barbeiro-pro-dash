@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target, MapPin } from "lucide-react";
 import { getManausDate } from "@/lib/dateUtils";
+import { isSubscriptionRevenue } from "@/lib/metricsRules";
 
 interface Unit {
   id: string;

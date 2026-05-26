@@ -17,6 +17,8 @@ import { useOrganization } from "@/hooks/useOrganization";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 import { toast } from "sonner";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
 
 const ACTION_LABELS: Record<string, string> = {
   new: "Nova",
@@ -156,14 +158,31 @@ export default function SubscriptionAnalytics() {
   const counts = data?.counts ?? { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
   const revenue = data?.revenue ?? { new: 0, renew: 0, upgrade: 0, downgrade: 0 };
   const downgradeData = data?.downgrade_reasons ?? [];
-  const totalNewClients = data?.total_new_clients ?? 0;
-  const newSubsToNew = data?.new_subs_to_new ?? 0;
-  const conversionRate = data?.conversion_rate ?? 0;
   const mrrDelta = data?.mrr_delta ?? 0;
+  const transactions = data?.transactions ?? [];
+
+  const ssotConversion = useMemo(() => {
+    const opportunityPhones = new Set<string>();
+    let newSubsToNew = 0;
+
+    for (const t of transactions) {
+      const normalizedPhone = normalizePhoneForMetrics(t.mobile_phone || null);
+      if (isValidOpportunity(t) && normalizedPhone) opportunityPhones.add(normalizedPhone);
+      if (isNewSubscription(t) && t.is_new_client === true) newSubsToNew++;
+    }
+
+    const totalNewClients = opportunityPhones.size;
+    const conversionRate = totalNewClients > 0 ? Number(((newSubsToNew / totalNewClients) * 100).toFixed(1)) : 0;
+    return { totalNewClients, newSubsToNew, conversionRate };
+  }, [transactions]);
+
+  const totalNewClients = ssotConversion.totalNewClients;
+  const newSubsToNew = ssotConversion.newSubsToNew;
+  const conversionRate = ssotConversion.conversionRate;
+
   const mrrKnown = data?.mrr_delta_known_count ?? 0;
   const mrrUnknown = data?.mrr_delta_unknown_count ?? 0;
   const totalUpDown = counts.upgrade + counts.downgrade;
-  const transactions = data?.transactions ?? [];
 
   const funnelData = useMemo(() => ([
     { name: "Clientes Novos Atendidos", value: totalNewClients },
