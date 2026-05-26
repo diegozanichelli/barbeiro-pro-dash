@@ -78,6 +78,9 @@ interface SubscriptionWizardModalProps {
   prefillAction?: "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
   prefillPlanId?: string | null;
   prefillIsNewClient?: boolean;
+  prefillAttributionType?: "reception" | "barber" | "manager_rescue" | "auto_recurring" | null;
+  prefillBarberId?: string | null;
+  prefillUnitId?: string | null;
   startStep?: "client_type" | "attribution";
 }
 
@@ -107,6 +110,9 @@ export default function SubscriptionWizardModal({
   prefillAction,
   prefillPlanId,
   prefillIsNewClient,
+  prefillAttributionType,
+  prefillBarberId,
+  prefillUnitId,
   startStep,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
@@ -183,6 +189,9 @@ export default function SubscriptionWizardModal({
     }
     if (prefillAction) setSubscriptionAction(prefillAction);
     if (prefillPlanId) setSelectedPlanId(prefillPlanId);
+    if (typeof prefillAttributionType !== "undefined") setAttributionType(prefillAttributionType);
+    if (typeof prefillBarberId !== "undefined") setSelectedBarberId(prefillBarberId);
+    if (typeof prefillUnitId !== "undefined") setSelectedUnitId(prefillUnitId);
     if (startStep) setStep(startStep);
   }, [open]);
 

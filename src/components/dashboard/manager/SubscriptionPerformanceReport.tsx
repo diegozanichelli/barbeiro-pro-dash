@@ -72,7 +72,11 @@ export default function SubscriptionPerformanceReport() {
   const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
   const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
-  const [regularizationPrefill, setRegularizationPrefill] = useState<{ phone: string; name: string } | null>(null);
+  const [regularizationPrefill, setRegularizationPrefill] = useState<{
+    phone: string;
+    name: string;
+    barberId: string;
+  } | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -849,7 +853,11 @@ export default function SubscriptionPerformanceReport() {
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                setRegularizationPrefill({ phone: op.phone, name: op.name });
+                                setRegularizationPrefill({
+                                  phone: op.phone,
+                                  name: op.name,
+                                  barberId: selectedDrilldownBarberId,
+                                });
                                 setRegularizationWizardOpen(true);
                               }}
                             >
@@ -912,6 +920,9 @@ export default function SubscriptionPerformanceReport() {
         prefillName={regularizationPrefill?.name}
         prefillAction="legacy_import"
         prefillIsNewClient={false}
+        prefillAttributionType="barber"
+        prefillBarberId={regularizationPrefill?.barberId}
+        startStep="attribution"
       />
 
       <SubscriptionScopeFooter />
