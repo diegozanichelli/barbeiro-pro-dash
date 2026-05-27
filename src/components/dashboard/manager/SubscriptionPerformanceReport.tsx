@@ -142,6 +142,7 @@ export default function SubscriptionPerformanceReport() {
           subscription_action,
           mobile_phone,
           client_name,
+          created_at,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
