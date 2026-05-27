@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   CreditCard,
+  Home,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";

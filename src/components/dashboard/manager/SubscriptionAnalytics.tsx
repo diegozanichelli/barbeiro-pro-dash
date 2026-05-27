@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { formatManausDateTime, getManausDate } from "@/lib/dateUtils";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle, AlertCircle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { TrendingUp, TrendingDown, UserPlus, RefreshCw, Brain, Pencil, HelpCircle, AlertCircle, ArrowUpRight, ArrowDownRight, Wallet, Users, Database } from "lucide-react";
 import SubscriptionEditModal from "./SubscriptionEditModal";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   renew: "Renovação",
   upgrade: "Upgrade",
   downgrade: "Downgrade",
+  legacy_import: "Migrado",
 };
 
 const ACTION_BADGE_CLASS: Record<string, string> = {
@@ -32,6 +33,7 @@ const ACTION_BADGE_CLASS: Record<string, string> = {
   renew: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   upgrade: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   downgrade: "bg-red-500/20 text-red-400 border-red-500/30",
+  legacy_import: "bg-muted text-muted-foreground border-border",
 };
 
 const DONUT_COLORS = ["#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
@@ -72,9 +74,19 @@ interface IntelPayload {
   transactions: IntelTransaction[];
 }
 
+interface PortfolioPayload {
+  mrr_total: number;
+  active_subscribers: number;
+  legacy_count: number;
+  legacy_mrr: number;
+  app_acquired_count: number;
+  app_acquired_mrr: number;
+}
+
 export default function SubscriptionAnalytics() {
   const { organizationId } = useOrganization();
   const [manausNow, setManausNow] = useState(() => getManausDate());
+  const [portfolio, setPortfolio] = useState<PortfolioPayload | null>(null);
 
   // Refresh manausNow if user keeps the page open across month change
   useEffect(() => {
@@ -85,7 +97,7 @@ export default function SubscriptionAnalytics() {
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth());
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<"manager" | "all">("manager");
+  const [sourceFilter, setSourceFilter] = useState<"manager" | "all">("all");
   const [units, setUnits] = useState<Unit[]>([]);
   const [data, setData] = useState<IntelPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,19 +126,31 @@ export default function SubscriptionAnalytics() {
     const startStr = format(startOfMonth(refDate), "yyyy-MM-dd");
     const endStr = format(endOfMonth(refDate), "yyyy-MM-dd");
 
-    const { data: rpcData, error } = await supabase.rpc("get_subscription_intelligence", {
-      p_start_date: startStr,
-      p_end_date: endStr,
-      p_unit_id: selectedUnit === "all" ? null : selectedUnit,
-      p_source_filter: sourceFilter === "all" ? null : sourceFilter,
-    });
+    const unitParam = selectedUnit === "all" ? null : selectedUnit;
 
-    if (error) {
-      console.error("Erro ao carregar Inteligência:", error);
+    const [intel, port] = await Promise.all([
+      supabase.rpc("get_subscription_intelligence", {
+        p_start_date: startStr,
+        p_end_date: endStr,
+        p_unit_id: unitParam,
+        p_source_filter: sourceFilter === "all" ? null : sourceFilter,
+      }),
+      supabase.rpc("get_subscription_portfolio_overview", { p_unit_id: unitParam }),
+    ]);
+
+    if (intel.error) {
+      console.error("Erro ao carregar Inteligência:", intel.error);
       toast.error("Falha ao carregar dados da Inteligência de Assinaturas");
       setData(null);
     } else {
-      setData(rpcData as unknown as IntelPayload);
+      setData(intel.data as unknown as IntelPayload);
+    }
+
+    if (port.error) {
+      console.error("Erro ao carregar carteira:", port.error);
+      setPortfolio(null);
+    } else {
+      setPortfolio(port.data as unknown as PortfolioPayload);
     }
     setLoading(false);
   };
@@ -226,12 +250,15 @@ export default function SubscriptionAnalytics() {
               <div>
                 <Label className="text-[10px] text-muted-foreground">Origem</Label>
                 <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as any)}>
-                  <SelectTrigger className="w-36 bg-secondary"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-44 bg-secondary"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="manager">Apenas Gestor</SelectItem>
-                    <SelectItem value="all">Gestor + Barbeiro (legado)</SelectItem>
+                    <SelectItem value="all">Todas as origens (padrão)</SelectItem>
+                    <SelectItem value="manager">Apenas Gestor (auditoria)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground mt-1 max-w-[180px] leading-tight">
+                  Lente de auditoria. A base global inclui Gestor + Barbeiro (legado).
+                </p>
               </div>
             </div>
           </div>
@@ -260,10 +287,97 @@ export default function SubscriptionAnalytics() {
         </Alert>
       )}
 
+      {/* ============ VISÃO GERAL DA CARTEIRA ============ */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Wallet className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+            Visão Geral da Carteira
+          </h3>
+          <span className="text-[10px] text-muted-foreground">· foto atual (independente do mês)</span>
+        </div>
+        <TooltipProvider delayDuration={150}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="border-l-4 border-primary/60 bg-gradient-to-br from-primary/5 to-transparent">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground">MRR Total da Carteira</p>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre MRR Total"><HelpCircle className="w-3 h-3 text-muted-foreground opacity-60" /></button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Soma do preço dos planos de <strong>todos</strong> os assinantes ativos da carteira (legados + adquiridos no app). Ignora filtro de origem.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-3xl font-bold text-primary">
+                    {(portfolio?.mrr_total ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">receita recorrente mensal</p>
+                </div>
+                <Wallet className="w-7 h-7 text-primary opacity-70" />
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-blue-500/40">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Assinantes Ativos</p>
+                  <p className="text-3xl font-bold">{portfolio?.active_subscribers ?? 0}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    {portfolio && portfolio.active_subscribers > 0 ? (
+                      <>App: <strong>{portfolio.app_acquired_count}</strong> · Legado: <strong>{portfolio.legacy_count}</strong></>
+                    ) : "sem assinantes cadastrados"}
+                  </p>
+                </div>
+                <Users className="w-7 h-7 text-blue-400 opacity-70" />
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-muted-foreground/40 bg-muted/30">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground">Base Legada (Importada)</p>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre base legada"><HelpCircle className="w-3 h-3 text-muted-foreground opacity-60" /></button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Assinantes trazidos via importação CSV (vindos de sistema antigo). Não contam como nova venda nem entram na conversão do mês.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold text-muted-foreground">{portfolio?.legacy_count ?? 0}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {(portfolio?.legacy_mrr ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    {portfolio && portfolio.mrr_total > 0 && (
+                      <> · {Math.round((portfolio.legacy_mrr / portfolio.mrr_total) * 100)}% da carteira</>
+                    )}
+                  </p>
+                </div>
+                <Database className="w-7 h-7 text-muted-foreground opacity-70" />
+              </CardContent>
+            </Card>
+          </div>
+        </TooltipProvider>
+      </div>
+
+      {/* ============ PERFORMANCE DO MÊS ============ */}
+      <div className="flex items-center gap-2 pt-2 border-t border-border/40">
+        <TrendingUp className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+          Performance do Mês
+        </h3>
+        <span className="text-[10px] text-muted-foreground">· {months[selectedMonth]}/{selectedYear} — não inclui legados</span>
+      </div>
+
       {/* Summary Cards */}
       <TooltipProvider delayDuration={150}>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" tooltip="Toda assinatura com ação='nova' — barbeiros + recepção, clientes novos e da casa." />
+          <SummaryCard label="Novas Assinaturas" count={counts.new} amount={revenue.new} icon={<UserPlus className="w-5 h-5 text-green-400" />} color="border-green-500/30" tooltip="Toda assinatura com ação='nova' — barbeiros + recepção, clientes novos e da casa. Não inclui importações legadas." />
           <SummaryCard label="Renovações" count={counts.renew} amount={revenue.renew} icon={<RefreshCw className="w-5 h-5 text-blue-400" />} color="border-blue-500/30" tooltip="Assinantes que renovaram o mesmo plano." />
           <SummaryCard label="Upgrades" count={counts.upgrade} amount={revenue.upgrade} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="border-emerald-500/30" tooltip="Migração para plano de maior valor." />
           <SummaryCard label="Downgrades" count={counts.downgrade} amount={revenue.downgrade} icon={<TrendingDown className="w-5 h-5 text-red-400" />} color="border-red-500/30" tooltip="Migração para plano de menor valor." />
@@ -414,9 +528,11 @@ export default function SubscriptionAnalytics() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{t.downgrade_reason || "—"}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingTransaction(t)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
+                          {action !== "legacy_import" && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingTransaction(t)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
