@@ -270,34 +270,9 @@ export default function SubscriptionPerformanceReport() {
         barberMap.set(tx.barber_id, existing);
       });
 
-      const drilldownMap = new Map<string, BarberClientDrilldown>();
-      for (const [barberId, data] of barberMap.entries()) {
-        const phoneNameMap = new Map<string, string>();
-        const attendanceCountMap = new Map<string, number>();
-        (transactions || []).forEach((tx) => {
-          const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
-          if (tx.barber_id !== barberId || !normalizedPhone) return;
-          const safeName = ((tx as any).client_name || "").trim();
-          if (safeName && !phoneNameMap.has(normalizedPhone)) phoneNameMap.set(normalizedPhone, safeName);
-          if (tx.is_new_client === true) attendanceCountMap.set(normalizedPhone, (attendanceCountMap.get(normalizedPhone) || 0) + 1);
-        });
-
-        const opportunities = Array.from(data.opportunityPhones)
-          .sort()
-          .map((phone) => ({
-            phone,
-            name: phoneNameMap.get(phone) || "Cliente sem nome",
-            converted: data.convertedPhones.has(phone) || data.regularizedPhones.has(phone),
-            attendances: attendanceCountMap.get(phone) || 1,
-          }));
-        drilldownMap.set(barberId, {
-          barberId,
-          barberName: data.name,
-          unitName: data.unit,
-          opportunities,
-        });
-      }
-      setClientDrilldown(drilldownMap);
+      // drilldownMap é construído mais abaixo após processar receptionTx,
+      // para que legacy_import lançados pela recepção (barber_id NULL)
+      // também sejam considerados via globalRegularizedPhones.
 
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
         ([barberId, data]) => {
