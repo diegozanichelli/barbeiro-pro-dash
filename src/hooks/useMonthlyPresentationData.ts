@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
 
 export interface MonthlyPresentationData {
   org_name: string;
@@ -65,6 +67,33 @@ export interface MonthlyPresentationData {
   };
 }
 
+
+async function computeSsoTFunnel(periodStart: string, periodEnd: string, unitId: string | null) {
+  let q = supabase
+    .from("sale_transactions")
+    .select("item_type, subscription_action, is_new_client, mobile_phone, unit_id")
+    .gte("created_at", `${periodStart}T00:00:00-04:00`)
+    .lte("created_at", `${periodEnd}T23:59:59-04:00`);
+
+  if (unitId) q = q.eq("unit_id", unitId);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const phones = new Set<string>();
+  let newSubscriptions = 0;
+
+  for (const tx of data || []) {
+    const normalized = normalizePhoneForMetrics((tx as any).mobile_phone || null);
+    if (isValidOpportunity(tx as any) && normalized) phones.add(normalized);
+    if (isNewSubscription(tx as any) && (tx as any).is_new_client === true) newSubscriptions++;
+  }
+
+  const newClients = phones.size;
+  const conversionRate = newClients > 0 ? Number(((newSubscriptions / newClients) * 100).toFixed(1)) : 0;
+  return { new_clients: newClients, new_subscriptions: newSubscriptions, conversion_rate: conversionRate };
+}
+
 interface RangeParams {
   periodStart: string;
   periodEnd: string;
@@ -96,7 +125,14 @@ export function useMonthlyPresentationData(params: RangeParams) {
       setError(rpcError.message);
       setData(null);
     } else {
-      setData(rpcData as unknown as MonthlyPresentationData);
+      const baseData = rpcData as unknown as MonthlyPresentationData;
+      try {
+        const ssotFunnel = await computeSsoTFunnel(periodStart, periodEnd, unitId);
+        setData({ ...baseData, subscription_funnel: ssotFunnel });
+      } catch (funnelErr: any) {
+        console.error("SSOT funnel fallback error", funnelErr);
+        setData(baseData);
+      }
     }
     setLoading(false);
   }, [periodStart, periodEnd, compareStart, compareEnd, targetRatio, unitId]);

@@ -79,6 +79,8 @@ export default function ManagerRescueReport({ organizationId, from, to }: Manage
             .select("id, created_at, client_name, mobile_phone, item_name, price_sold, subscription_action, unit_id")
             .eq("organization_id", organizationId)
             .eq("item_type", "subscription")
+            // Regra de negócio: este relatório é estritamente de recuperações lançadas pelo gestor,
+            // independente de source/origem do lançamento.
             .eq("attribution_source", "manager_rescue")
             .gte("created_at", fromIso)
             .lte("created_at", toIso)
