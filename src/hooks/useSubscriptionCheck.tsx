@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { withTimeout } from "@/lib/asyncTimeout";
 
 interface SubscriptionStatus {
   has_access: boolean;
@@ -17,11 +16,7 @@ export function useSubscriptionCheck() {
 
   const checkSubscription = useCallback(async () => {
     try {
-      const { data: { session } } = await withTimeout(
-        supabase.auth.getSession(),
-        10000,
-        "Tempo esgotado ao validar a sessão.",
-      );
+      const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
         // No session - user should login, not go to subscription-blocked
@@ -30,11 +25,7 @@ export function useSubscriptionCheck() {
         return;
       }
 
-      const { data, error } = await withTimeout(
-        supabase.functions.invoke("check-subscription-status"),
-        12000,
-        "Tempo esgotado ao validar a assinatura.",
-      );
+      const { data, error } = await supabase.functions.invoke("check-subscription-status");
 
       if (error) {
         console.error("Error checking subscription:", error);
@@ -53,11 +44,7 @@ export function useSubscriptionCheck() {
         // Wait for autoRefreshToken to complete
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const { data: { session: freshSession } } = await withTimeout(
-          supabase.auth.getSession(),
-          10000,
-          "Tempo esgotado ao renovar a sessão.",
-        );
+        const { data: { session: freshSession } } = await supabase.auth.getSession();
         if (!freshSession) {
           await supabase.auth.signOut();
           setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
@@ -67,11 +54,7 @@ export function useSubscriptionCheck() {
         }
         
         // Retry with fresh session
-        const retryResult = await withTimeout(
-          supabase.functions.invoke("check-subscription-status"),
-          12000,
-          "Tempo esgotado ao validar a assinatura novamente.",
-        );
+        const retryResult = await supabase.functions.invoke("check-subscription-status");
         if (retryResult.data?.message?.includes("Invalid") || retryResult.data?.message?.includes("invalid claim")) {
           await supabase.auth.signOut();
           setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });

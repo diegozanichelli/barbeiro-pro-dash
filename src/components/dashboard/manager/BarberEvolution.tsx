@@ -5,11 +5,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Building2, User, GitCompare, Crown, Users2 } from "lucide-react";
+import { TrendingUp, Building2, User, GitCompare, Crown, Users2, Brain } from "lucide-react";
 import ShopEvolution from "./ShopEvolution";
 import UnitsComparison from "./UnitsComparison";
 import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
 import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
+import SubscriptionAnalytics from "./SubscriptionAnalytics";
 import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
 import { useOrganization } from "@/hooks/useOrganization";
 
@@ -278,7 +279,7 @@ function BarberEvolutionChart() {
 export default function BarberEvolution() {
   return (
     <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full grid-cols-5 h-auto">
+      <TabsList className="grid w-full grid-cols-6 h-auto">
         <TabsTrigger value="barbearia" title="Barbearia" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
           <Building2 className="w-4 h-4 shrink-0" />
           <span className="hidden sm:inline truncate">Barbearia</span>
@@ -298,6 +299,10 @@ export default function BarberEvolution() {
         <TabsTrigger value="recepcao" title="Vendas da Recepção" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
           <Users2 className="w-4 h-4 shrink-0" />
           <span className="hidden sm:inline truncate">Recepção</span>
+        </TabsTrigger>
+        <TabsTrigger value="inteligencia" title="Carteira de Assinaturas" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Brain className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Carteira</span>
         </TabsTrigger>
       </TabsList>
       
@@ -321,6 +326,9 @@ export default function BarberEvolution() {
         <ReceptionPerformanceReport />
       </TabsContent>
 
+      <TabsContent value="inteligencia">
+        <SubscriptionAnalytics />
+      </TabsContent>
     </Tabs>
   );
 }

@@ -98,6 +98,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   });
   const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [migrating, setMigrating] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -213,6 +214,45 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleMigrateOrganization = async () => {
+    if (!isSuperAdmin) {
+      toast({
+        title: "Não autorizado",
+        description: "Você não tem permissão para executar esta operação",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setMigrating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("migrate-organization", {
+        body: {
+          oldManagerEmail: "cassiano.diego@gmail.com",
+          newManagerEmail: "diego_zanichelli@outlook.com",
+          newManagerPassword: "barbeiro123",
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Migração concluída!",
+        description: `Novo gerente criado: diego_zanichelli@outlook.com (senha: barbeiro123)`,
+      });
+
+      fetchOrganizations();
+    } catch (error) {
+      console.error("Error migrating organization:", error);
+      toast({
+        title: "Erro na migração",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   const handleCreateFreeAccount = async () => {
     if (!newAccountData.organizationName || !newAccountData.managerEmail || !newAccountData.managerPassword) {
@@ -608,6 +648,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleMigrateOrganization}
+                    disabled={migrating}
+                  >
+                    {migrating ? "Migrando..." : "🔄 Transferir Organização"}
+                  </Button>
                 </>
               )}
               <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>

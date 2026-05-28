@@ -6,10 +6,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
-import type { Tables } from "@/integrations/supabase/types";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import { useOrganization } from "@/hooks/useOrganization";
-import { useSubscriptionPerformanceDerived } from "@/hooks/useSubscriptionPerformanceDerived";
-import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp, Archive, Loader as LoaderIcon } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,17 +18,34 @@ import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./Subscription
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 
 interface UnitOption { id: string; name: string; }
-type SaleTransactionRow = Tables<"sale_transactions">;
-type TxWithBarberRelation = Pick<
-  SaleTransactionRow,
-  "barber_id" | "unit_id" | "is_new_client" | "item_type" | "subscription_action" | "mobile_phone" | "client_name"
-> & {
-  barbers?: { name?: string | null; units?: { name?: string | null } | null } | null;
-};
-type ReceptionTx = Pick<
-  SaleTransactionRow,
-  "unit_id" | "is_new_client" | "item_type" | "subscription_action" | "mobile_phone"
->;
+interface DataHealth {
+  totalInPeriod: number;
+  txSemUnidade: number;
+  novoSemTelefone: number;
+  novaAdesaoSemTelefone: number;
+  novaAdesaoSemIsNewClient: number;
+}
+
+interface BarberClientDrilldown {
+  barberId: string;
+  barberName: string;
+  unitId: string | null;
+  unitName: string;
+  opportunities: Array<{ phone: string; name: string; converted: boolean; attendances: number }>;
+}
+
+interface BarberPerformance {
+  barberId: string;
+  barberName: string;
+  unitName: string;
+  opportunities: number;          // pessoas únicas com is_new_client=true
+  rawNewAttendances: number;      // total de lançamentos marcados como cliente novo (sem deduplicação por celular)
+  newClientAdhesions: number;     // assinaturas action='new' AND is_new_client=true
+  totalAdhesions: number;         // assinaturas action='new' (qualquer cliente)
+  strictConversion: number;       // newClientAdhesions / opportunities
+  penetration: number;            // totalAdhesions / opportunities
+  isReception?: boolean;
+}
 
 export default function SubscriptionPerformanceReport() {
   const manausNow = useMemo(() => getManausDate(), []);
@@ -36,12 +53,24 @@ export default function SubscriptionPerformanceReport() {
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [loading, setLoading] = useState(true);
-  const [rawTransactions, setRawTransactions] = useState<TxWithBarberRelation[]>([]);
-  const [rawReceptionTx, setRawReceptionTx] = useState<ReceptionTx[]>([]);
+  const [performanceData, setPerformanceData] = useState<BarberPerformance[]>([]);
+  const [receptionRow, setReceptionRow] = useState<BarberPerformance | null>(null);
+  // Total geral DEDUPLICADO entre barbeiros (Set global)
+  const [globalOpportunities, setGlobalOpportunities] = useState(0);
+  const [globalNewClientAdhesions, setGlobalNewClientAdhesions] = useState(0);
+  const [globalTotalAdhesions, setGlobalTotalAdhesions] = useState(0);
   // Filtro de unidade + saúde dos dados
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState<string>("all"); // "all" | "no_unit" | uuid
+  const [dataHealth, setDataHealth] = useState<DataHealth>({
+    totalInPeriod: 0,
+    txSemUnidade: 0,
+    novoSemTelefone: 0,
+    novaAdesaoSemTelefone: 0,
+    novaAdesaoSemIsNewClient: 0,
+  });
   const [healthOpen, setHealthOpen] = useState(false);
+  const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
   const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
   const [regularizationPrefill, setRegularizationPrefill] = useState<{
@@ -99,6 +128,10 @@ export default function SubscriptionPerformanceReport() {
     const debugPhone = "92984700424";
 
     try {
+      // TODO(metrics-ssot): centralizar regra de "oportunidade de conversão" em hook/util único
+      // para evitar divergência entre relatórios (SubscriptionPerformance, UnitsComparison, etc).
+      // Regra atual: is_new_client=true + mobile_phone válido no período, com deduplicação por celular.
+      // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
       let txQuery = supabase
         .from("sale_transactions")
         .select(`
@@ -109,6 +142,7 @@ export default function SubscriptionPerformanceReport() {
           subscription_action,
           mobile_phone,
           client_name,
+          created_at,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
@@ -142,16 +176,258 @@ export default function SubscriptionPerformanceReport() {
 
       const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
-      setRawTransactions((transactions ?? []) as TxWithBarberRelation[]);
-      setRawReceptionTx((receptionTx ?? []) as ReceptionTx[]);
+
+      // Telefones marcados como "Assinante Legado" (subscription_action='import') — sempre todo o histórico.
+      const { data: legacyRows } = await (supabase
+        .from("sale_transactions") as any)
+        .select("mobile_phone")
+        .eq("organization_id", organizationId)
+        .eq("item_type", "subscription")
+        .eq("subscription_action", "import")
+        .not("mobile_phone", "is", null);
+      const legacyPhones = new Set<string>(
+        ((legacyRows || []) as Array<{ mobile_phone: string | null }>)
+          .map((r) => r.mobile_phone || "")
+          .filter(Boolean)
+      );
+
+      // Agrupar por barbeiro
+      const barberMap = new Map<string, {
+        name: string;
+        unitId: string | null;
+        unit: string;
+        allNewClientPhones: Set<string>;
+        opportunityPhones: Set<string>;
+        convertedPhones: Set<string>;
+        regularizedPhones: Set<string>;
+        newClientAdhesions: number;
+        totalAdhesions: number;
+        rawNewAttendances: number;
+      }>();
+
+      // Sets globais para deduplicar a visão organizacional
+      const globalOpportunityPhones = new Set<string>();
+      const globalRegularizedPhones = new Set<string>();
+      let globalNewClientAdh = 0;
+      let globalTotalAdh = 0;
+
+      transactions?.forEach((tx) => {
+        if (!tx.barber_id) return;
+
+        const existing = barberMap.get(tx.barber_id) || {
+          name: (tx.barbers as any)?.name || "Desconhecido",
+          unitId: tx.unit_id ?? null,
+          unit: (tx.barbers as any)?.units?.name || "Sem unidade",
+          allNewClientPhones: new Set<string>(),
+          opportunityPhones: new Set<string>(),
+          convertedPhones: new Set<string>(),
+          regularizedPhones: new Set<string>(),
+          newClientAdhesions: 0,
+          totalAdhesions: 0,
+          rawNewAttendances: 0,
+        };
+
+        const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+        if (normalizedPhone === debugPhone) {
+          console.info("[SubscriptionPerformanceReport][debug-phone][barber]", {
+            phone: normalizedPhone,
+            createdAt: (tx as any).created_at,
+            subscriptionAction: tx.subscription_action,
+            isNewClient: tx.is_new_client,
+            barberId: tx.barber_id,
+            unitId: tx.unit_id,
+            inRange: true,
+            startISO,
+            endISO,
+          });
+        }
+        if (tx.is_new_client === true) {
+          existing.rawNewAttendances++;
+        }
+
+        if (isValidOpportunity(tx) && normalizedPhone) {
+          existing.opportunityPhones.add(normalizedPhone);
+          globalOpportunityPhones.add(normalizedPhone);
+        }
+
+        if (isNewSubscription(tx)) {
+          existing.totalAdhesions++;
+          globalTotalAdh++;
+          if (tx.is_new_client === true) {
+            existing.newClientAdhesions++;
+            if (normalizedPhone) existing.convertedPhones.add(normalizedPhone);
+            globalNewClientAdh++;
+          }
+        }
+        if (
+          tx.item_type === "subscription" &&
+          tx.subscription_action === "legacy_import" &&
+          normalizedPhone
+        ) {
+          existing.regularizedPhones.add(normalizedPhone);
+          globalRegularizedPhones.add(normalizedPhone);
+        }
+
+        barberMap.set(tx.barber_id, existing);
+      });
+
+      // drilldownMap é construído mais abaixo após processar receptionTx,
+      // para que legacy_import lançados pela recepção (barber_id NULL)
+      // também sejam considerados via globalRegularizedPhones.
+
+      const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
+        ([barberId, data]) => {
+          const opp = data.opportunityPhones.size;
+          return {
+            barberId,
+            barberName: data.name,
+            unitName: data.unit,
+            opportunities: opp,
+            rawNewAttendances: data.rawNewAttendances,
+            newClientAdhesions: data.newClientAdhesions,
+            totalAdhesions: data.totalAdhesions,
+            strictConversion: opp > 0 ? (data.newClientAdhesions / opp) * 100 : 0,
+            penetration: opp > 0 ? (data.totalAdhesions / opp) * 100 : 0,
+          };
+        }
+      );
+
+      // Ordena por conversão estrita desc, com penetração como desempate
+      performance.sort((a, b) =>
+        b.strictConversion - a.strictConversion || b.penetration - a.penetration
+      );
+      setPerformanceData(performance);
+
+      // Recepção
+      const receptionPhones = new Set<string>();
+      let receptionNewClientAdh = 0;
+      let receptionTotalAdh = 0;
+
+      receptionTx?.forEach((tx) => {
+        const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+        if (normalizedPhone === debugPhone) {
+          console.info("[SubscriptionPerformanceReport][debug-phone][reception]", {
+            phone: normalizedPhone,
+            createdAt: (tx as any).created_at,
+            subscriptionAction: tx.subscription_action,
+            isNewClient: tx.is_new_client,
+            barberId: null,
+            unitId: tx.unit_id,
+            inRange: true,
+            startISO,
+            endISO,
+          });
+        }
+        if (
+          tx.item_type === "subscription" &&
+          tx.subscription_action === "legacy_import" &&
+          normalizedPhone
+        ) {
+          globalRegularizedPhones.add(normalizedPhone);
+        }
+        if (isValidOpportunity(tx) && normalizedPhone) {
+          receptionPhones.add(normalizedPhone);
+          globalOpportunityPhones.add(normalizedPhone);
+        }
+        if (isNewSubscription(tx)) {
+          receptionTotalAdh++;
+          globalTotalAdh++;
+          if (tx.is_new_client === true) {
+            receptionNewClientAdh++;
+            globalNewClientAdh++;
+          }
+        }
+      });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const phoneNameMap = new Map<string, string>();
+        const attendanceKeysMap = new Map<string, Set<string>>();
+        (transactions || []).forEach((tx) => {
+          const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+          if (tx.barber_id !== barberId || !normalizedPhone) return;
+          const safeName = ((tx as any).client_name || "").trim();
+          if (safeName && !phoneNameMap.has(normalizedPhone)) phoneNameMap.set(normalizedPhone, safeName);
+          if (tx.is_new_client === true) {
+            const key = (tx as any).created_at || "";
+            const set = attendanceKeysMap.get(normalizedPhone) || new Set<string>();
+            set.add(key);
+            attendanceKeysMap.set(normalizedPhone, set);
+          }
+        });
+
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({
+            phone,
+            name: phoneNameMap.get(phone) || "Cliente sem nome",
+            converted:
+              data.convertedPhones.has(phone) ||
+              data.regularizedPhones.has(phone) ||
+              globalRegularizedPhones.has(phone),
+            attendances: attendanceKeysMap.get(phone)?.size || 1,
+          }));
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitId: data.unitId,
+          unitName: data.unit,
+          opportunities,
+        });
+      }
+      setClientDrilldown(drilldownMap);
+
+      if (receptionPhones.size > 0 || receptionTotalAdh > 0) {
+        const opp = receptionPhones.size;
+        setReceptionRow({
+          barberId: "__reception__",
+          barberName: "Recepção",
+          unitName: "Sem barbeiro atribuído",
+          opportunities: opp,
+          rawNewAttendances: receptionNewClientAdh,
+          newClientAdhesions: receptionNewClientAdh,
+          totalAdhesions: receptionTotalAdh,
+          strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
+          penetration: opp > 0 ? (receptionTotalAdh / opp) * 100 : 0,
+          isReception: true,
+        });
+      } else {
+        setReceptionRow(null);
+      }
+
+      setGlobalOpportunities(globalOpportunityPhones.size);
+      setGlobalNewClientAdhesions(globalNewClientAdh);
+      setGlobalTotalAdhesions(globalTotalAdh);
+
+      // Saúde dos dados — calculado a partir do mesmo conjunto exibido
+      const allTx = [
+        ...(transactions ?? []).map((t: any) => ({ ...t, _hasBarber: true })),
+        ...(receptionTx ?? []).map((t: any) => ({ ...t, _hasBarber: false })),
+      ];
+      const health: DataHealth = {
+        totalInPeriod: allTx.length,
+        txSemUnidade: allTx.filter((t) => !t.unit_id).length,
+        novoSemTelefone: allTx.filter(
+          (t) => t.is_new_client === true && !normalizePhoneForMetrics(t.mobile_phone || null)
+        ).length,
+        novaAdesaoSemTelefone: allTx.filter(
+          (t) =>
+            isNewSubscription(t) &&
+            (!t.mobile_phone || t.mobile_phone === "")
+        ).length,
+        novaAdesaoSemIsNewClient: allTx.filter(
+          (t) =>
+            isNewSubscription(t) &&
+            t.is_new_client !== true
+        ).length,
+      };
+      setDataHealth(health);
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
       setLoading(false);
     }
   };
-
-  const derived = useSubscriptionPerformanceDerived(rawTransactions, rawReceptionTx);
 
   // Badge para Conversão estrita (≤100%)
   const getStrictBadge = (rate: number, opportunities: number, sales: number) => {
@@ -200,16 +476,6 @@ export default function SubscriptionPerformanceReport() {
 
   const isCriticalCase = (opportunities: number, sales: number) =>
     opportunities >= 5 && sales === 0;
-
-  const {
-    performanceData,
-    receptionRow,
-    globalOpportunities,
-    globalNewClientAdhesions,
-    globalTotalAdhesions,
-    clientDrilldown,
-    dataHealth,
-  } = derived;
 
   const overallStrict = globalOpportunities > 0
     ? (globalNewClientAdhesions / globalOpportunities) * 100
@@ -672,7 +938,7 @@ export default function SubscriptionPerformanceReport() {
         prefillAttributionType="barber"
         prefillBarberId={regularizationPrefill?.barberId}
         prefillUnitId={regularizationPrefill?.unitId}
-        startStep="attribution"
+        
       />
 
       <SubscriptionScopeFooter />

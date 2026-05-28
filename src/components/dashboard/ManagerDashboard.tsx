@@ -1,9 +1,9 @@
 import { User } from "@supabase/supabase-js";
 import { useState, useEffect } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { LogOut, Loader2 } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import UnitsManagement from "./manager/UnitsManagement";
@@ -20,7 +20,6 @@ import AIUsageTracking from "./manager/AIUsageTracking";
 import CatalogManagement from "./manager/CatalogManagement";
 import ManagerNavigation from "./manager/ManagerNavigation";
 import SubscriptionsTracking from "./manager/SubscriptionsTracking";
-import SubscriptionAnalytics from "./manager/SubscriptionAnalytics";
 import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
@@ -34,22 +33,9 @@ interface ManagerDashboardProps {
 
 export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("live");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const { hasSubscriptionModule } = useSubscriptionModule();
-  const subscriptionSubtabParam = searchParams.get("subtab");
-  const subscriptionSubtab = subscriptionSubtabParam === "tracking" ? "tracking" : "analytics";
-
-  const handleSubscriptionSubtabChange = (value: string) => {
-    const next = new URLSearchParams(searchParams);
-    if (value === "tracking") {
-      next.set("subtab", "tracking");
-    } else {
-      next.set("subtab", "analytics");
-    }
-    setSearchParams(next, { replace: true });
-  };
 
   // Auto-replicar metas silenciosamente ao carregar o dashboard
   useEffect(() => {
@@ -188,18 +174,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           </TabsContent>
 
           <TabsContent value="subscriptions" className="mt-0">
-            <Tabs value={subscriptionSubtab} onValueChange={handleSubscriptionSubtabChange} className="space-y-6">
-              <TabsList className="grid w-full max-w-md grid-cols-2">
-                <TabsTrigger value="analytics">Inteligência</TabsTrigger>
-                <TabsTrigger value="tracking">Tracking</TabsTrigger>
-              </TabsList>
-              <TabsContent value="analytics" className="mt-0">
-                <SubscriptionAnalytics />
-              </TabsContent>
-              <TabsContent value="tracking" className="mt-0">
-                <SubscriptionsTracking />
-              </TabsContent>
-            </Tabs>
+            <SubscriptionsTracking />
           </TabsContent>
 
           {hasSubscriptionModule && (
