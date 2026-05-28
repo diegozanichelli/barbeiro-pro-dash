@@ -96,6 +96,7 @@ export default function SubscriptionPerformanceReport() {
     // Filtros com timezone Manaus (UTC-4) explícito para evitar bordas erradas
     const startISO = `${startDate}T00:00:00-04:00`;
     const endISO = `${endDate}T23:59:59-04:00`;
+    const debugPhone = "92984700424";
 
     try {
       let txQuery = supabase
@@ -127,7 +128,7 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
         .eq("organization_id", organizationId)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
