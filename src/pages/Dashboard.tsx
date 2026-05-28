@@ -8,6 +8,7 @@ import BarberDashboard from "@/components/dashboard/BarberDashboard";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { withTimeout } from "@/lib/asyncTimeout";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -17,11 +18,15 @@ export default function Dashboard() {
 
   const fetchUserRole = useCallback(async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId)
-        .single();
+      const { data, error } = await withTimeout(
+        supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId)
+          .single(),
+        10000,
+        "Tempo esgotado ao identificar o perfil do usuário.",
+      );
 
       if (error) throw error;
       setUserRole(data.role);
@@ -35,18 +40,29 @@ export default function Dashboard() {
 
   useEffect(() => {
     const initializeSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUser = session?.user ?? null;
+      try {
+        const { data: { session } } = await withTimeout(
+          supabase.auth.getSession(),
+          10000,
+          "Tempo esgotado ao validar a sessão.",
+        );
+        const currentUser = session?.user ?? null;
 
-      setUser(currentUser);
+        setUser(currentUser);
 
-      if (!currentUser) {
+        if (!currentUser) {
+          setLoading(false);
+          navigate("/auth");
+          return;
+        }
+
+        fetchUserRole(currentUser.id);
+      } catch (error) {
+        console.error("Error initializing dashboard session:", error);
+        setUser(null);
+        setUserRole(null);
         setLoading(false);
-        navigate("/auth");
-        return;
       }
-
-      fetchUserRole(currentUser.id);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -87,25 +103,6 @@ export default function Dashboard() {
         <div className="text-center space-y-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
           <p className="text-sm text-muted-foreground">Redirecionando para login...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!userRole) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
-        <div className="max-w-md w-full rounded-lg border border-border bg-card p-6 text-center space-y-3">
-          <h2 className="text-lg font-semibold">Não foi possível identificar seu perfil</h2>
-          <p className="text-sm text-muted-foreground">
-            Faça login novamente. Se o erro persistir, verifique o vínculo de papel do usuário.
-          </p>
-          <div className="flex items-center justify-center gap-2">
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              Tentar novamente
-            </Button>
-            <Button onClick={() => navigate("/auth")}>Ir para login</Button>
-          </div>
         </div>
       </div>
     );

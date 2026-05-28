@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import { SubscriptionGuard } from "./components/SubscriptionGuard";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 
 // Lazy load non-critical pages for better initial load performance
 const Auth = lazy(() => import("./pages/Auth"));
@@ -36,19 +37,21 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <SubscriptionGuard />
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/recuperar-senha" element={<RecoverPassword />} />
-            <Route path="/atualizar-senha" element={<ResetPassword />} />
-            <Route path="/onboarding" element={<Onboarding />} />
-            <Route path="/onboarding-success" element={<OnboardingSuccess />} />
-            <Route path="/subscription-blocked" element={<SubscriptionBlocked />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
+        <AppErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/recuperar-senha" element={<RecoverPassword />} />
+              <Route path="/atualizar-senha" element={<ResetPassword />} />
+              <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/onboarding-success" element={<OnboardingSuccess />} />
+              <Route path="/subscription-blocked" element={<SubscriptionBlocked />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </AppErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
