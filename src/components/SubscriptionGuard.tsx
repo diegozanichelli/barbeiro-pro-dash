@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { withTimeout } from "@/lib/asyncTimeout";
 
 // Rotas que NÃO exigem assinatura ativa (auth/recuperação e a própria tela de bloqueio)
 const PUBLIC_PATHS = new Set<string>([
@@ -28,12 +29,20 @@ export function SubscriptionGuard() {
     if (checkingRef.current) return;
     checkingRef.current = true;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await withTimeout(
+        supabase.auth.getSession(),
+        10000,
+        "Tempo esgotado ao validar a sessão.",
+      );
       if (!session) {
         setBlocked(false);
         return;
       }
-      const { data, error } = await supabase.functions.invoke("check-subscription-status");
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke("check-subscription-status"),
+        12000,
+        "Tempo esgotado ao validar a assinatura.",
+      );
       if (error) return;
 
       const isBlocked =
@@ -43,6 +52,9 @@ export function SubscriptionGuard() {
         !ALLOWED_STATUSES.has(data.subscription_status);
 
       setBlocked(!!isBlocked);
+    } catch (error) {
+      console.error("Erro ao validar assinatura no guard global:", error);
+      setBlocked(false);
     } finally {
       checkingRef.current = false;
     }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { signInSchema, signUpSchema, type SignInFormData, type SignUpFormData } from "@/lib/validations/auth";
 import { Loader2, TrendingUp, Users, BarChart3, Zap, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const preloadDashboard = () => import("./Dashboard");
+
+const waitForDashboardPreload = () =>
+  Promise.race([
+    preloadDashboard(),
+    new Promise((resolve) => window.setTimeout(resolve, 2500)),
+  ]);
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -25,6 +33,16 @@ export default function Auth() {
     defaultValues: { email: "", password: "", fullName: "" },
   });
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void preloadDashboard().catch((error) => {
+        console.error("Erro ao pré-carregar dashboard:", error);
+      });
+    }, 600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
   const handleSignUp = (data: SignUpFormData) => {
     navigate("/onboarding", {
       state: { email: data.email, password: data.password, fullName: data.fullName },
@@ -39,6 +57,9 @@ export default function Auth() {
       });
       if (error) throw error;
       toast.success("Login realizado com sucesso!");
+      await waitForDashboardPreload().catch((error) => {
+        console.error("Erro ao carregar dashboard após login:", error);
+      });
       navigate("/dashboard");
     } catch (error: any) {
       toast.error(error.message || "Erro ao fazer login");
