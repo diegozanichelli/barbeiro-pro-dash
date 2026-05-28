@@ -938,7 +938,7 @@ export default function SubscriptionPerformanceReport() {
         prefillAttributionType="barber"
         prefillBarberId={regularizationPrefill?.barberId}
         prefillUnitId={regularizationPrefill?.unitId}
-        startStep="attribution"
+        
       />
 
       <SubscriptionScopeFooter />
