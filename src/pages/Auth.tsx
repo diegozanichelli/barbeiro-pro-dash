@@ -20,6 +20,14 @@ const waitForDashboardPreload = () =>
     new Promise((resolve) => window.setTimeout(resolve, 2500)),
   ]);
 
+const preloadDashboard = () => import("./Dashboard");
+
+const waitForDashboardPreload = () =>
+  Promise.race([
+    preloadDashboard(),
+    new Promise((resolve) => window.setTimeout(resolve, 2500)),
+  ]);
+
 export default function Auth() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"signin" | "signup">("signin");
