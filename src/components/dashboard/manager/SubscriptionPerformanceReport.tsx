@@ -6,32 +6,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
+import type { Tables } from "@/integrations/supabase/types";
 import { useOrganization } from "@/hooks/useOrganization";
+import { useSubscriptionPerformanceDerived } from "@/hooks/useSubscriptionPerformanceDerived";
 import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
+import SubscriptionWizardModal from "./SubscriptionWizardModal";
 
 interface UnitOption { id: string; name: string; }
-interface DataHealth {
-  totalInPeriod: number;
-  txSemUnidade: number;
-  novoSemTelefone: number;
-  novaAdesaoSemTelefone: number;
-  novaAdesaoSemIsNewClient: number;
-}
-
-interface BarberPerformance {
-  barberId: string;
-  barberName: string;
-  unitName: string;
-  opportunities: number;          // pessoas únicas com is_new_client=true
-  newClientAdhesions: number;     // assinaturas action='new' AND is_new_client=true
-  totalAdhesions: number;         // assinaturas action='new' (qualquer cliente)
-  strictConversion: number;       // newClientAdhesions / opportunities
-  penetration: number;            // totalAdhesions / opportunities
-  isReception?: boolean;
-}
+type SaleTransactionRow = Tables<"sale_transactions">;
+type TxWithBarberRelation = Pick<
+  SaleTransactionRow,
+  "barber_id" | "unit_id" | "is_new_client" | "item_type" | "subscription_action" | "mobile_phone" | "client_name"
+> & {
+  barbers?: { name?: string | null; units?: { name?: string | null } | null } | null;
+};
+type ReceptionTx = Pick<
+  SaleTransactionRow,
+  "unit_id" | "is_new_client" | "item_type" | "subscription_action" | "mobile_phone"
+>;
 
 export default function SubscriptionPerformanceReport() {
   const manausNow = useMemo(() => getManausDate(), []);
@@ -39,23 +36,20 @@ export default function SubscriptionPerformanceReport() {
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [loading, setLoading] = useState(true);
-  const [performanceData, setPerformanceData] = useState<BarberPerformance[]>([]);
-  const [receptionRow, setReceptionRow] = useState<BarberPerformance | null>(null);
-  // Total geral DEDUPLICADO entre barbeiros (Set global)
-  const [globalOpportunities, setGlobalOpportunities] = useState(0);
-  const [globalNewClientAdhesions, setGlobalNewClientAdhesions] = useState(0);
-  const [globalTotalAdhesions, setGlobalTotalAdhesions] = useState(0);
+  const [rawTransactions, setRawTransactions] = useState<TxWithBarberRelation[]>([]);
+  const [rawReceptionTx, setRawReceptionTx] = useState<ReceptionTx[]>([]);
   // Filtro de unidade + saúde dos dados
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState<string>("all"); // "all" | "no_unit" | uuid
-  const [dataHealth, setDataHealth] = useState<DataHealth>({
-    totalInPeriod: 0,
-    txSemUnidade: 0,
-    novoSemTelefone: 0,
-    novaAdesaoSemTelefone: 0,
-    novaAdesaoSemIsNewClient: 0,
-  });
   const [healthOpen, setHealthOpen] = useState(false);
+  const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
+  const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
+  const [regularizationPrefill, setRegularizationPrefill] = useState<{
+    phone: string;
+    name: string;
+    barberId: string;
+    unitId: string | null;
+  } | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -104,7 +98,6 @@ export default function SubscriptionPerformanceReport() {
     const endISO = `${endDate}T23:59:59-04:00`;
 
     try {
-      // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
       let txQuery = supabase
         .from("sale_transactions")
         .select(`
@@ -114,10 +107,10 @@ export default function SubscriptionPerformanceReport() {
           item_type,
           subscription_action,
           mobile_phone,
+          client_name,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
         .eq("organization_id", organizationId)
-        .eq("source", "manager")
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .not("barber_id", "is", null);
@@ -136,7 +129,6 @@ export default function SubscriptionPerformanceReport() {
         .from("sale_transactions")
         .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone")
         .eq("organization_id", organizationId)
-        .eq("source", "manager")
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .is("barber_id", null);
@@ -149,143 +141,16 @@ export default function SubscriptionPerformanceReport() {
 
       const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
-
-      // Agrupar por barbeiro
-      const barberMap = new Map<string, {
-        name: string;
-        unit: string;
-        opportunityPhones: Set<string>;
-        newClientAdhesions: number;
-        totalAdhesions: number;
-      }>();
-
-      // Sets globais para deduplicar a visão organizacional
-      const globalOpportunityPhones = new Set<string>();
-      let globalNewClientAdh = 0;
-      let globalTotalAdh = 0;
-
-      transactions?.forEach((tx) => {
-        if (!tx.barber_id) return;
-
-        const existing = barberMap.get(tx.barber_id) || {
-          name: (tx.barbers as any)?.name || "Desconhecido",
-          unit: (tx.barbers as any)?.units?.name || "Sem unidade",
-          opportunityPhones: new Set<string>(),
-          newClientAdhesions: 0,
-          totalAdhesions: 0,
-        };
-
-        if (tx.is_new_client === true && tx.mobile_phone) {
-          existing.opportunityPhones.add(tx.mobile_phone);
-          globalOpportunityPhones.add(tx.mobile_phone);
-        }
-
-        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
-          existing.totalAdhesions++;
-          globalTotalAdh++;
-          if (tx.is_new_client === true) {
-            existing.newClientAdhesions++;
-            globalNewClientAdh++;
-          }
-        }
-
-        barberMap.set(tx.barber_id, existing);
-      });
-
-      const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
-        ([barberId, data]) => {
-          const opp = data.opportunityPhones.size;
-          return {
-            barberId,
-            barberName: data.name,
-            unitName: data.unit,
-            opportunities: opp,
-            newClientAdhesions: data.newClientAdhesions,
-            totalAdhesions: data.totalAdhesions,
-            strictConversion: opp > 0 ? (data.newClientAdhesions / opp) * 100 : 0,
-            penetration: opp > 0 ? (data.totalAdhesions / opp) * 100 : 0,
-          };
-        }
-      );
-
-      // Ordena por conversão estrita desc, com penetração como desempate
-      performance.sort((a, b) =>
-        b.strictConversion - a.strictConversion || b.penetration - a.penetration
-      );
-      setPerformanceData(performance);
-
-      // Recepção
-      const receptionPhones = new Set<string>();
-      let receptionNewClientAdh = 0;
-      let receptionTotalAdh = 0;
-
-      receptionTx?.forEach((tx) => {
-        if (tx.is_new_client === true && tx.mobile_phone) {
-          receptionPhones.add(tx.mobile_phone);
-          globalOpportunityPhones.add(tx.mobile_phone);
-        }
-        if (tx.item_type === "subscription" && (tx as any).subscription_action === "new") {
-          receptionTotalAdh++;
-          globalTotalAdh++;
-          if (tx.is_new_client === true) {
-            receptionNewClientAdh++;
-            globalNewClientAdh++;
-          }
-        }
-      });
-
-      if (receptionPhones.size > 0 || receptionTotalAdh > 0) {
-        const opp = receptionPhones.size;
-        setReceptionRow({
-          barberId: "__reception__",
-          barberName: "Recepção",
-          unitName: "Sem barbeiro atribuído",
-          opportunities: opp,
-          newClientAdhesions: receptionNewClientAdh,
-          totalAdhesions: receptionTotalAdh,
-          strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
-          penetration: opp > 0 ? (receptionTotalAdh / opp) * 100 : 0,
-          isReception: true,
-        });
-      } else {
-        setReceptionRow(null);
-      }
-
-      setGlobalOpportunities(globalOpportunityPhones.size);
-      setGlobalNewClientAdhesions(globalNewClientAdh);
-      setGlobalTotalAdhesions(globalTotalAdh);
-
-      // Saúde dos dados — calculado a partir do mesmo conjunto exibido
-      const allTx = [
-        ...(transactions ?? []).map((t: any) => ({ ...t, _hasBarber: true })),
-        ...(receptionTx ?? []).map((t: any) => ({ ...t, _hasBarber: false })),
-      ];
-      const health: DataHealth = {
-        totalInPeriod: allTx.length,
-        txSemUnidade: allTx.filter((t) => !t.unit_id).length,
-        novoSemTelefone: allTx.filter(
-          (t) => t.is_new_client === true && (!t.mobile_phone || t.mobile_phone === "")
-        ).length,
-        novaAdesaoSemTelefone: allTx.filter(
-          (t) =>
-            t.item_type === "subscription" &&
-            t.subscription_action === "new" &&
-            (!t.mobile_phone || t.mobile_phone === "")
-        ).length,
-        novaAdesaoSemIsNewClient: allTx.filter(
-          (t) =>
-            t.item_type === "subscription" &&
-            t.subscription_action === "new" &&
-            t.is_new_client !== true
-        ).length,
-      };
-      setDataHealth(health);
+      setRawTransactions((transactions ?? []) as TxWithBarberRelation[]);
+      setRawReceptionTx((receptionTx ?? []) as ReceptionTx[]);
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  const derived = useSubscriptionPerformanceDerived(rawTransactions, rawReceptionTx);
 
   // Badge para Conversão estrita (≤100%)
   const getStrictBadge = (rate: number, opportunities: number, sales: number) => {
@@ -334,6 +199,16 @@ export default function SubscriptionPerformanceReport() {
 
   const isCriticalCase = (opportunities: number, sales: number) =>
     opportunities >= 5 && sales === 0;
+
+  const {
+    performanceData,
+    receptionRow,
+    globalOpportunities,
+    globalNewClientAdhesions,
+    globalTotalAdhesions,
+    clientDrilldown,
+    dataHealth,
+  } = derived;
 
   const overallStrict = globalOpportunities > 0
     ? (globalNewClientAdhesions / globalOpportunities) * 100
@@ -441,6 +316,7 @@ export default function SubscriptionPerformanceReport() {
                     <p className="text-muted-foreground">
                       Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
                       Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                      Também não entram neste relatório os lançamentos manuais de regularização (fora do Ao Vivo).
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
@@ -517,8 +393,8 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Assinaturas com ação = "nova" feitas para clientes marcados como novos.
-                        Critério usado pelo funil da aba Inteligência.
+                        Assinaturas com ação = "nova" feitas para clientes marcados como novos,
+                        registradas no período selecionado, independentemente da origem do lançamento.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -539,9 +415,7 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês — clientes novos + clientes da
-                        casa, barbeiros + recepção. Não inclui renovações/upgrades (esses estão na
-                        aba Carteira).
+                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -608,7 +482,8 @@ export default function SubscriptionPerformanceReport() {
                   {performanceData.map((b) => (
                     <TableRow
                       key={b.barberId}
-                      className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}
+                      className={`cursor-pointer hover:bg-primary/5 ${isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}`}
+                      onClick={() => setSelectedDrilldownBarberId(b.barberId)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -618,7 +493,7 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{b.barberName}</p>
+                            <span className="font-medium underline underline-offset-2 decoration-dotted">{b.barberName}</span>
                             <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
@@ -628,6 +503,7 @@ export default function SubscriptionPerformanceReport() {
                           isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""
                         }`}>
                           {b.opportunities}
+                          <span className="block text-[11px] text-muted-foreground">{b.rawNewAttendances} lanç.</span>
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
@@ -693,6 +569,58 @@ export default function SubscriptionPerformanceReport() {
             </div>
           )}
 
+
+                    <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>
+                  Análise de clientes atendidos — {selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId)?.barberName : ""}
+                </DialogTitle>
+                <DialogDescription>
+                  Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
+                </DialogDescription>
+              </DialogHeader>
+              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Total de oportunidades únicas (celular): <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
+                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                        <div>
+                          <p className="text-sm font-medium">{op.name}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
+                        </div>
+                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="destructive">Não converteu</Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const drilldown = clientDrilldown.get(selectedDrilldownBarberId);
+                                setRegularizationPrefill({
+                                  phone: op.phone,
+                                  name: op.name,
+                                  barberId: selectedDrilldownBarberId,
+                                  unitId: drilldown?.unitId ?? null,
+                                });
+                                setRegularizationWizardOpen(true);
+                              }}
+                            >
+                              Dar baixa legado
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
             <span className="text-xs font-medium uppercase tracking-wider">Conv. Estrita:</span>
@@ -727,6 +655,25 @@ export default function SubscriptionPerformanceReport() {
           </div>
         </CardContent>
       </Card>
+
+      <SubscriptionWizardModal
+        open={regularizationWizardOpen}
+        onOpenChange={(o) => {
+          setRegularizationWizardOpen(o);
+          if (!o) setRegularizationPrefill(null);
+        }}
+        organizationId={organizationId || ""}
+        onComplete={fetchPerformanceData}
+        prefillPhone={regularizationPrefill?.phone}
+        prefillName={regularizationPrefill?.name}
+        prefillAction="legacy_import"
+        prefillIsNewClient={false}
+        prefillAttributionType="barber"
+        prefillBarberId={regularizationPrefill?.barberId}
+        prefillUnitId={regularizationPrefill?.unitId}
+        startStep="attribution"
+      />
+
       <SubscriptionScopeFooter />
     </div>
   );
