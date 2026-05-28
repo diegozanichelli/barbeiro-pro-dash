@@ -37,21 +37,26 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <SubscriptionGuard />
-        <AppErrorBoundary>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/recuperar-senha" element={<RecoverPassword />} />
-              <Route path="/atualizar-senha" element={<ResetPassword />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/onboarding-success" element={<OnboardingSuccess />} />
-              <Route path="/subscription-blocked" element={<SubscriptionBlocked />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </AppErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/recuperar-senha" element={<RecoverPassword />} />
+            <Route path="/atualizar-senha" element={<ResetPassword />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/onboarding-success" element={<OnboardingSuccess />} />
+            <Route path="/subscription-blocked" element={<SubscriptionBlocked />} />
+            <Route
+              path="/dashboard"
+              element={(
+                <AppErrorBoundary>
+                  <Dashboard />
+                </AppErrorBoundary>
+              )}
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

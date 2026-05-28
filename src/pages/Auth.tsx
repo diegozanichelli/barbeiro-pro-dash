@@ -10,6 +10,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { signInSchema, signUpSchema, type SignInFormData, type SignUpFormData } from "@/lib/validations/auth";
 import { Loader2, TrendingUp, Users, BarChart3, Zap, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { markPostLoginProcessing } from "@/components/AppErrorBoundary";
+
+const preloadDashboard = () => import("./Dashboard");
+
+const waitForDashboardPreload = () =>
+  Promise.race([
+    preloadDashboard(),
+    new Promise((resolve) => window.setTimeout(resolve, 2500)),
+  ]);
 
 const preloadDashboard = () => import("./Dashboard");
 
@@ -60,6 +69,7 @@ export default function Auth() {
       await waitForDashboardPreload().catch((error) => {
         console.error("Erro ao carregar dashboard após login:", error);
       });
+      markPostLoginProcessing();
       navigate("/dashboard");
     } catch (error: any) {
       toast.error(error.message || "Erro ao fazer login");

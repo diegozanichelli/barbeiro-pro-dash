@@ -10,6 +10,15 @@ interface AppErrorBoundaryState {
 }
 
 const RELOAD_FLAG = "performance_barber_chunk_reload_attempted";
+const POST_LOGIN_PROCESSING_FLAG = "performance_barber_post_login_processing";
+
+export function markPostLoginProcessing() {
+  sessionStorage.setItem(POST_LOGIN_PROCESSING_FLAG, "true");
+}
+
+export function clearPostLoginProcessing() {
+  sessionStorage.removeItem(POST_LOGIN_PROCESSING_FLAG);
+}
 
 function isChunkLoadError(error: Error) {
   return /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|ChunkLoadError|dynamically imported module/i.test(
@@ -53,12 +62,12 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
         <div className="max-w-md w-full rounded-lg border border-border bg-card p-6 text-center space-y-4 shadow-card-custom">
           <div className="space-y-2">
             <h1 className="text-xl font-semibold text-foreground">
-              Não foi possível carregar a aplicação
+              Não foi possível finalizar o login
             </h1>
             <p className="text-sm text-muted-foreground">
               {isLazyChunkError
-                ? "Uma atualização do sistema pode ter deixado arquivos antigos no navegador. Recarregue a página para baixar a versão mais recente."
-                : "Encontramos um erro inesperado ao abrir esta tela. Tente recarregar; se continuar, entre em contato com o suporte."}
+                ? "O login foi confirmado, mas houve erro ao abrir o dashboard com a versão atual. Recarregue a página para concluir o carregamento."
+                : "O login foi confirmado, mas ocorreu um erro no processamento do dashboard. Recarregue a página; se continuar, entre em contato com o suporte."}
             </p>
           </div>
           <Button className="w-full" onClick={this.handleReload}>

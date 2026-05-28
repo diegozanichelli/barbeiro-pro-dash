@@ -9,6 +9,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { withTimeout } from "@/lib/asyncTimeout";
+import { clearPostLoginProcessing } from "@/components/AppErrorBoundary";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -85,6 +86,15 @@ export default function Dashboard() {
 
     return () => subscription.unsubscribe();
   }, [fetchUserRole, navigate]);
+
+
+  useEffect(() => {
+    if (loading || !user || !userRole) return;
+
+    const timeoutId = window.setTimeout(clearPostLoginProcessing, 5000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, user, userRole]);
 
   if (loading) {
     return (
