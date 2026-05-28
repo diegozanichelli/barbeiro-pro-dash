@@ -1,15 +1,17 @@
-## Causa
+## Deduplicar contagem de atendimentos no drilldown
 
-Em `SubscriptionPerformanceReport.tsx` (linha 941), o `SubscriptionWizardModal` do fluxo "Dar baixa legado" é aberto com `startStep="attribution"`, pulando direto para o Passo 2 (Atribuição de Pontos). O usuário precisa começar no Passo 1 para selecionar o tipo de cliente e o plano vendido.
+### Causa
+Em `SubscriptionPerformanceReport.tsx` (linhas ~341-351), `attendanceCountMap` faz `+1` para cada `sale_transactions` com `is_new_client=true`. Quando o cliente recebe múltiplos itens no mesmo checkout (ex.: corte + produto), cada item vira uma linha e a contagem infla.
 
-## Mudança
+Exemplo Igson Farias: 1 atendimento real, 2 linhas (service + product) com `created_at` idêntico → mostra "2 lançamentos como novo".
 
-**Arquivo:** `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx` (linha ~941)
+### Mudança
 
-Remover a prop `startStep="attribution"` da instância do `SubscriptionWizardModal` usada na regularização legado. Com isso o wizard usa o default (`"client_type"`) e abre no Passo 1.
+**Arquivo:** `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx`
 
-Os prefills (`prefillPhone`, `prefillName`, `prefillAction="legacy_import"`, `prefillIsNewClient={false}`, `prefillAttributionType="barber"`, `prefillBarberId`, `prefillUnitId`) permanecem intactos — o gestor avança normalmente pelos 3 passos e escolhe o plano no Passo 3 (Detalhes).
+Trocar `attendanceCountMap` de `Map<phone, number>` para `Map<phone, Set<string>>`, onde o Set guarda chaves únicas de atendimento (`created_at` da transação). No final, `attendances = set.size || 1`.
 
-## Fora de escopo
-- Não mexer na lógica interna do wizard nem em outros pontos de entrada.
-- Não alterar a ordem dos passos do wizard.
+Isso colapsa todos os itens do mesmo checkout em 1 atendimento, mantendo a lógica de "oportunidade" (`opportunityPhones`) intacta.
+
+### Fora de escopo
+- Não mexer em SQL/RPC nem em outras métricas (oportunidades, conversão, regularização).
