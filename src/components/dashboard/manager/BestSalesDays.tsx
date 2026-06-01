@@ -11,7 +11,7 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
-import { DateRange } from "react-day-picker";
+import type { DateRange } from "react-day-picker";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { getManausDate, TIMEZONE } from "@/lib/dateUtils";
@@ -42,11 +42,17 @@ interface Unit {
 interface SaleTransaction {
   barber_id: string | null;
   created_at: string;
-  daily_productions?: { date: string } | { date: string }[] | null;
+  daily_production_id: string | null;
+  production_date?: string | null;
   item_type: string;
   service_category: string | null;
   price_sold: number;
   unit_id: string | null;
+}
+
+interface DailyProductionDate {
+  id: string;
+  date: string;
 }
 
 interface BarberUnit {
@@ -170,16 +176,9 @@ const getDateDisplayInfo = (dateKey: string) => {
   };
 };
 
-const getSaleDateKey = (transaction: SaleTransaction) => {
-  const productionDate = Array.isArray(transaction.daily_productions)
-    ? transaction.daily_productions[0]?.date
-    : transaction.daily_productions?.date;
-
-  return (
-    productionDate ||
-    formatInTimeZone(transaction.created_at, TIMEZONE, "yyyy-MM-dd")
-  );
-};
+const getSaleDateKey = (transaction: SaleTransaction) =>
+  transaction.production_date ||
+  formatInTimeZone(transaction.created_at, TIMEZONE, "yyyy-MM-dd");
 
 const getHeatIntensityClass = (value: number, max: number) => {
   if (value <= 0 || max <= 0)
@@ -234,6 +233,13 @@ export default function BestSalesDays() {
         .select("id, unit_id")
         .eq("organization_id", organizationId);
 
+      const productionsPromise = supabase
+        .from("daily_productions")
+        .select("id, date")
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
       const allTransactions: SaleTransaction[] = [];
       let from = 0;
 
@@ -241,7 +247,7 @@ export default function BestSalesDays() {
         const { data, error } = await supabase
           .from("sale_transactions")
           .select(
-            "barber_id, created_at, item_type, service_category, price_sold, unit_id, daily_productions(date)",
+            "barber_id, created_at, daily_production_id, item_type, service_category, price_sold, unit_id",
           )
           .eq("organization_id", organizationId)
           .in("item_type", ["service", "product"])
@@ -262,10 +268,28 @@ export default function BestSalesDays() {
       const [
         { data: unitsData, error: unitsError },
         { data: barbersData, error: barbersError },
-      ] = await Promise.all([unitsPromise, barbersPromise]);
+        { data: productionsData, error: productionsError },
+      ] = await Promise.all([unitsPromise, barbersPromise, productionsPromise]);
 
       if (unitsError) throw unitsError;
       if (barbersError) throw barbersError;
+      if (productionsError) throw productionsError;
+
+      const productionDateById = new Map(
+        ((productionsData || []) as DailyProductionDate[]).map((production) => [
+          production.id,
+          production.date,
+        ]),
+      );
+
+      const transactionsWithProductionDate = allTransactions.map(
+        (transaction) => ({
+          ...transaction,
+          production_date: transaction.daily_production_id
+            ? productionDateById.get(transaction.daily_production_id)
+            : null,
+        }),
+      );
 
       const barberUnitById = new Map(
         ((barbersData || []) as BarberUnit[]).map((barber) => [
@@ -276,8 +300,8 @@ export default function BestSalesDays() {
 
       const filteredTransactions =
         selectedUnit === "all"
-          ? allTransactions
-          : allTransactions.filter((transaction) => {
+          ? transactionsWithProductionDate
+          : transactionsWithProductionDate.filter((transaction) => {
               const transactionUnitId =
                 transaction.unit_id ||
                 (transaction.barber_id
