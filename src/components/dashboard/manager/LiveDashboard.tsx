@@ -1799,7 +1799,6 @@ export default function LiveDashboard() {
         dailyProductionId={viewTransactionsModal.dailyProductionId}
         date={viewTransactionsModal.date}
         onSuccess={fetchData}
-        sourceFilter="manager"
         readOnly
       />
     </div>
