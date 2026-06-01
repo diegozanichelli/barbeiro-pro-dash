@@ -40,10 +40,16 @@ interface Unit {
 }
 
 interface SaleTransaction {
+  barber_id: string | null;
   created_at: string;
   item_type: string;
   service_category: string | null;
   price_sold: number;
+  unit_id: string | null;
+}
+
+interface BarberUnit {
+  id: string;
   unit_id: string | null;
 }
 
@@ -107,8 +113,10 @@ const getCategory = (transaction: SaleTransaction): CategoryKey | null => {
   if (transaction.item_type === "product") return "product";
   if (transaction.item_type !== "service") return null;
   if (transaction.service_category === "extra") return "extra";
-  if (transaction.service_category === "basic") return "basic";
-  return null;
+
+  // Transações antigas de serviço podem não ter service_category preenchido.
+  // Nos demais relatórios do gestor, serviço sem categoria é tratado como base.
+  return "basic";
 };
 
 const getBucketValue = (bucket: BucketValue, metric: MetricKey) =>
@@ -118,6 +126,8 @@ const formatMetric = (value: number, metric: MetricKey) =>
   metric === "amount"
     ? currencyFormatter.format(value)
     : `${numberFormatter.format(value)} venda${value === 1 ? "" : "s"}`;
+
+const PAGE_SIZE = 1000;
 
 const getHeatIntensityClass = (value: number, max: number) => {
   if (value <= 0 || max <= 0)
@@ -144,6 +154,7 @@ export default function BestSalesDays() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [transactions, setTransactions] = useState<SaleTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!organizationId || !dateRange?.from) {
@@ -153,6 +164,7 @@ export default function BestSalesDays() {
     }
 
     setIsLoading(true);
+    setErrorMessage(null);
     const rangeEnd = dateRange.to ?? dateRange.from;
     const startDate = format(dateRange.from, "yyyy-MM-dd");
     const endDate = format(rangeEnd, "yyyy-MM-dd");
@@ -160,45 +172,86 @@ export default function BestSalesDays() {
     nextDay.setDate(nextDay.getDate() + 1);
     const nextDayKey = format(nextDay, "yyyy-MM-dd");
 
-    const unitsPromise = supabase
-      .from("units")
-      .select("id, name")
-      .eq("organization_id", organizationId)
-      .order("name");
+    try {
+      const unitsPromise = supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .order("name");
 
-    let transactionQuery = supabase
-      .from("sale_transactions")
-      .select("created_at, item_type, service_category, price_sold, unit_id")
-      .eq("organization_id", organizationId)
-      .in("item_type", ["service", "product"])
-      .gte("created_at", `${startDate}T00:00:00-04:00`)
-      .lt("created_at", `${nextDayKey}T00:00:00-04:00`)
-      .order("created_at", { ascending: true });
+      const barbersPromise = supabase
+        .from("barbers")
+        .select("id, unit_id")
+        .eq("organization_id", organizationId);
 
-    if (selectedUnit !== "all") {
-      transactionQuery = transactionQuery.eq("unit_id", selectedUnit);
-    }
+      const allTransactions: SaleTransaction[] = [];
+      let from = 0;
 
-    const [
-      { data: unitsData },
-      { data: transactionsData, error: transactionsError },
-    ] = await Promise.all([unitsPromise, transactionQuery]);
+      while (true) {
+        const { data, error } = await supabase
+          .from("sale_transactions")
+          .select(
+            "barber_id, created_at, item_type, service_category, price_sold, unit_id",
+          )
+          .eq("organization_id", organizationId)
+          .in("item_type", ["service", "product"])
+          .gte("created_at", `${startDate}T00:00:00-04:00`)
+          .lt("created_at", `${nextDayKey}T00:00:00-04:00`)
+          .order("created_at", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
 
-    if (transactionsError) {
-      console.error(
-        "Erro ao buscar vendas para mapa de calor:",
-        transactionsError,
-        {
-          startDate,
-          endDate,
-          selectedUnit,
-        },
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        allTransactions.push(...((data || []) as SaleTransaction[]));
+
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+
+      const [
+        { data: unitsData, error: unitsError },
+        { data: barbersData, error: barbersError },
+      ] = await Promise.all([unitsPromise, barbersPromise]);
+
+      if (unitsError) throw unitsError;
+      if (barbersError) throw barbersError;
+
+      const barberUnitById = new Map(
+        ((barbersData || []) as BarberUnit[]).map((barber) => [
+          barber.id,
+          barber.unit_id,
+        ]),
       );
-    }
 
-    setUnits(unitsData || []);
-    setTransactions((transactionsData || []) as SaleTransaction[]);
-    setIsLoading(false);
+      const filteredTransactions =
+        selectedUnit === "all"
+          ? allTransactions
+          : allTransactions.filter((transaction) => {
+              const transactionUnitId =
+                transaction.unit_id ||
+                (transaction.barber_id
+                  ? barberUnitById.get(transaction.barber_id)
+                  : null);
+
+              return transactionUnitId === selectedUnit;
+            });
+
+      setUnits(unitsData || []);
+      setTransactions(filteredTransactions);
+    } catch (error) {
+      console.error("Erro ao buscar vendas para mapa de calor:", error, {
+        startDate,
+        endDate,
+        selectedUnit,
+      });
+      setTransactions([]);
+      setErrorMessage(
+        "Não foi possível carregar as vendas para este período. Tente novamente em alguns instantes.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }, [organizationId, dateRange, selectedUnit]);
 
   useEffect(() => {
@@ -394,6 +447,12 @@ export default function BestSalesDays() {
           <CardContent className="flex min-h-[320px] items-center justify-center gap-3 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
             Carregando mapa de calor de vendas...
+          </CardContent>
+        </Card>
+      ) : errorMessage ? (
+        <Card className="glass-card">
+          <CardContent className="py-12 text-center text-muted-foreground">
+            {errorMessage}
           </CardContent>
         </Card>
       ) : (
