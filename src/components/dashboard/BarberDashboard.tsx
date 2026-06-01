@@ -1014,6 +1014,22 @@ const [todayProduction, setTodayProduction] = useState<{
                       </p>
                     </div>
                   </>
+                ) : dailyTarget > 0 ? (
+                  <>
+                    <div className="text-center space-y-3">
+                      <p className="text-5xl font-bold text-primary">
+                        R$ {dailyTarget.toFixed(2)}
+                      </p>
+                      <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
+                        (EM COMISSÃO)
+                      </p>
+                    </div>
+                    <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
+                      <p className="text-xs text-muted-foreground">
+                        Assim que você registrar suas primeiras vendas no mês, vamos calcular também a meta em faturamento de serviços.
+                      </p>
+                    </div>
+                  </>
                 ) : (
                   <div className="text-center space-y-3">
                     <p className="text-3xl font-bold text-muted-foreground">
