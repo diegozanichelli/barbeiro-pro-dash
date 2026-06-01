@@ -368,10 +368,16 @@ const [todayProduction, setTodayProduction] = useState<{
     const dailyTarget = daysToUse > 0 ? Math.max(0, remaining / daysToUse) : 0;
     setDailyTarget(dailyTarget);
 
-    // Calcular meta diária de serviços (mesma lógica proporcional)
-    const servicesTarget = monthlyGoal.target_commission > 0 
-      ? dailyTarget * (stats.total_services / Math.max(1, stats.accumulated_commission))
-      : 0;
+    // Calcular meta diária de faturamento (em serviços)
+    // Preferência 1: usar proporção real do mês (faturamento/comissão acumulada)
+    // Fallback: usar a % de comissão de serviços cadastrada no barbeiro
+    const servicesRate = Number((barber as any)?.services_commission) || 0;
+    let servicesTarget = 0;
+    if (stats.accumulated_commission > 0 && stats.total_services > 0) {
+      servicesTarget = dailyTarget * (stats.total_services / stats.accumulated_commission);
+    } else if (servicesRate > 0) {
+      servicesTarget = dailyTarget / (servicesRate / 100);
+    }
     setDailyTargetServices(servicesTarget);
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
 
