@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { endOfMonth, format, startOfMonth, eachDayOfInterval } from "date-fns";
+import { endOfMonth, format, startOfMonth } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import {
   CalendarDays,
@@ -42,6 +42,7 @@ interface Unit {
 interface SaleTransaction {
   barber_id: string | null;
   created_at: string;
+  daily_productions?: { date: string } | { date: string }[] | null;
   item_type: string;
   service_category: string | null;
   price_sold: number;
@@ -128,6 +129,57 @@ const formatMetric = (value: number, metric: MetricKey) =>
     : `${numberFormatter.format(value)} venda${value === 1 ? "" : "s"}`;
 
 const PAGE_SIZE = 1000;
+const OPENING_HOUR = 7;
+const CLOSING_HOUR = 22;
+const BUSINESS_HOURS = Array.from(
+  { length: CLOSING_HOUR - OPENING_HOUR + 1 },
+  (_, index) => OPENING_HOUR + index,
+);
+
+const parseDateKey = (dateKey: string) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return { year, month, day };
+};
+
+const addDaysToDateKey = (dateKey: string, days: number) => {
+  const { year, month, day } = parseDateKey(dateKey);
+  const date = new Date(Date.UTC(year, month - 1, day + days, 12));
+  return date.toISOString().slice(0, 10);
+};
+
+const getDateKeysInRange = (startDateKey: string, endDateKey: string) => {
+  const dates: string[] = [];
+  let current = startDateKey;
+
+  while (current <= endDateKey) {
+    dates.push(current);
+    current = addDaysToDateKey(current, 1);
+  }
+
+  return dates;
+};
+
+const getDateDisplayInfo = (dateKey: string) => {
+  const { year, month, day } = parseDateKey(dateKey);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12));
+
+  return {
+    day,
+    weekday: utcDate.getUTCDay(),
+    shortDate: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`,
+  };
+};
+
+const getSaleDateKey = (transaction: SaleTransaction) => {
+  const productionDate = Array.isArray(transaction.daily_productions)
+    ? transaction.daily_productions[0]?.date
+    : transaction.daily_productions?.date;
+
+  return (
+    productionDate ||
+    formatInTimeZone(transaction.created_at, TIMEZONE, "yyyy-MM-dd")
+  );
+};
 
 const getHeatIntensityClass = (value: number, max: number) => {
   if (value <= 0 || max <= 0)
@@ -168,9 +220,7 @@ export default function BestSalesDays() {
     const rangeEnd = dateRange.to ?? dateRange.from;
     const startDate = format(dateRange.from, "yyyy-MM-dd");
     const endDate = format(rangeEnd, "yyyy-MM-dd");
-    const nextDay = new Date(rangeEnd);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayKey = format(nextDay, "yyyy-MM-dd");
+    const nextDayKey = addDaysToDateKey(endDate, 1);
 
     try {
       const unitsPromise = supabase
@@ -191,7 +241,7 @@ export default function BestSalesDays() {
         const { data, error } = await supabase
           .from("sale_transactions")
           .select(
-            "barber_id, created_at, item_type, service_category, price_sold, unit_id",
+            "barber_id, created_at, item_type, service_category, price_sold, unit_id, daily_productions(date)",
           )
           .eq("organization_id", organizationId)
           .in("item_type", ["service", "product"])
@@ -259,39 +309,56 @@ export default function BestSalesDays() {
   }, [fetchData]);
 
   const analytics = useMemo(() => {
-    const hourlyBuckets = Array.from({ length: 24 }, (_, hour) => ({
+    const hourlyBuckets = BUSINESS_HOURS.map((hour) => ({
       hour,
       categories: emptyBucket(),
     }));
+    const hourlyBucketByHour = new Map(
+      hourlyBuckets.map((bucket) => [bucket.hour, bucket]),
+    );
+
+    const rangeEnd = dateRange?.to ?? dateRange?.from;
+    const startDateKey = dateRange?.from
+      ? format(dateRange.from, "yyyy-MM-dd")
+      : null;
+    const endDateKey = rangeEnd ? format(rangeEnd, "yyyy-MM-dd") : null;
 
     const dayMap = new Map<string, Record<CategoryKey, BucketValue>>();
-    const rangeDays = dateRange?.from
-      ? eachDayOfInterval({
-          start: dateRange.from,
-          end: dateRange.to ?? dateRange.from,
-        })
-      : [];
+    const rangeDays =
+      startDateKey && endDateKey
+        ? getDateKeysInRange(startDateKey, endDateKey)
+        : [];
 
-    rangeDays.forEach((day) => {
-      dayMap.set(format(day, "yyyy-MM-dd"), emptyBucket());
+    rangeDays.forEach((dateKey) => {
+      dayMap.set(dateKey, emptyBucket());
     });
+
+    let outOfBusinessHoursCount = 0;
 
     transactions.forEach((transaction) => {
       const category = getCategory(transaction);
       if (!category) return;
 
+      const dayKey = getSaleDateKey(transaction);
+      if (
+        (startDateKey && dayKey < startDateKey) ||
+        (endDateKey && dayKey > endDateKey)
+      ) {
+        return;
+      }
+
       const hour = Number(
         formatInTimeZone(transaction.created_at, TIMEZONE, "H"),
       );
-      const dayKey = formatInTimeZone(
-        transaction.created_at,
-        TIMEZONE,
-        "yyyy-MM-dd",
-      );
       const price = Number(transaction.price_sold) || 0;
 
-      hourlyBuckets[hour].categories[category].amount += price;
-      hourlyBuckets[hour].categories[category].count += 1;
+      const hourlyBucket = hourlyBucketByHour.get(hour);
+      if (hourlyBucket) {
+        hourlyBucket.categories[category].amount += price;
+        hourlyBucket.categories[category].count += 1;
+      } else {
+        outOfBusinessHoursCount += 1;
+      }
 
       const dayBucket = dayMap.get(dayKey) || emptyBucket();
       dayBucket[category].amount += price;
@@ -301,11 +368,12 @@ export default function BestSalesDays() {
 
     const dayBuckets = Array.from(dayMap.entries()).map(
       ([date, categories]) => {
-        const dateObj = new Date(`${date}T00:00:00`);
+        const dateInfo = getDateDisplayInfo(date);
         return {
           date,
-          day: Number(format(dateObj, "d")),
-          weekday: dateObj.getDay(),
+          day: dateInfo.day,
+          weekday: dateInfo.weekday,
+          shortDate: dateInfo.shortDate,
           categories,
         };
       },
@@ -315,6 +383,15 @@ export default function BestSalesDays() {
     transactions.forEach((transaction) => {
       const category = getCategory(transaction);
       if (!category) return;
+
+      const dayKey = getSaleDateKey(transaction);
+      if (
+        (startDateKey && dayKey < startDateKey) ||
+        (endDateKey && dayKey > endDateKey)
+      ) {
+        return;
+      }
+
       totals[category].amount += Number(transaction.price_sold) || 0;
       totals[category].count += 1;
     });
@@ -345,6 +422,7 @@ export default function BestSalesDays() {
           0,
         ),
       }))
+      .filter((item) => item.value > 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 3);
 
@@ -353,12 +431,14 @@ export default function BestSalesDays() {
         date: bucket.date,
         day: bucket.day,
         weekday: WEEKDAY_LABELS[bucket.weekday],
+        shortDate: bucket.shortDate,
         value: CATEGORIES.reduce(
           (sum, category) =>
             sum + getBucketValue(bucket.categories[category.key], metric),
           0,
         ),
       }))
+      .filter((item) => item.value > 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
@@ -381,11 +461,15 @@ export default function BestSalesDays() {
       dayRanking,
       totalAmount,
       totalCount,
+      outOfBusinessHoursCount,
     };
   }, [dateRange, transactions, metric]);
 
   const metricLabel = metric === "amount" ? "Receita" : "Quantidade";
-  const noData = !isLoading && transactions.length === 0;
+  const noData = !isLoading && analytics.totalCount === 0;
+  const hourlyGridStyle = {
+    gridTemplateColumns: `72px repeat(${BUSINESS_HOURS.length}, minmax(36px, 1fr))`,
+  };
 
   return (
     <div className="space-y-6">
@@ -538,13 +622,26 @@ export default function BestSalesDays() {
                     {metric === "amount"
                       ? "a receita"
                       : "a quantidade de vendas"}{" "}
-                    por hora e tipo de venda.
+                    por hora e tipo de venda, considerando o horário operacional
+                    exibido ({String(OPENING_HOUR).padStart(2, "0")}h–
+                    {String(CLOSING_HOUR).padStart(2, "0")}h).
                   </CardDescription>
+                  {analytics.outOfBusinessHoursCount > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {analytics.outOfBusinessHoursCount} lançamento
+                      {analytics.outOfBusinessHoursCount === 1 ? "" : "s"} fora
+                      desse intervalo entraram nos totais e nos dias, mas foram
+                      ignorados no mapa por horário.
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto pb-2">
-                    <div className="min-w-[760px] space-y-2">
-                      <div className="grid grid-cols-[72px_repeat(24,minmax(28px,1fr))] gap-1 text-[10px] text-muted-foreground">
+                    <div className="min-w-[650px] space-y-2">
+                      <div
+                        className="grid gap-1 text-[10px] text-muted-foreground"
+                        style={hourlyGridStyle}
+                      >
                         <div />
                         {analytics.hourlyBuckets.map((bucket) => (
                           <div key={bucket.hour} className="text-center">
@@ -556,7 +653,8 @@ export default function BestSalesDays() {
                       {CATEGORIES.map((category) => (
                         <div
                           key={category.key}
-                          className="grid grid-cols-[72px_repeat(24,minmax(28px,1fr))] gap-1 items-center"
+                          className="grid gap-1 items-center"
+                          style={hourlyGridStyle}
                         >
                           <div className="text-xs font-medium text-muted-foreground">
                             {category.shortLabel}
@@ -638,11 +736,7 @@ export default function BestSalesDays() {
                           <div className="flex items-center gap-2">
                             <Badge variant="secondary">#{index + 1}</Badge>
                             <span className="font-medium">
-                              {item.weekday},{" "}
-                              {format(
-                                new Date(`${item.date}T00:00:00`),
-                                "dd/MM",
-                              )}
+                              {item.weekday}, {item.shortDate}
                             </span>
                           </div>
                           <span className="font-semibold">
