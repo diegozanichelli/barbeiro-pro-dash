@@ -26,6 +26,7 @@ import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
 import SendNotificationsButton from "./manager/SendNotificationsButton";
 import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
+import BestSalesDays from "./manager/BestSalesDays";
 
 interface ManagerDashboardProps {
   user: User;
@@ -163,6 +164,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="monthly-presentation" className="mt-0">
             <MonthlyPresentation />
+          </TabsContent>
+
+          <TabsContent value="best-sales-days" className="mt-0">
+            <BestSalesDays />
           </TabsContent>
 
           <TabsContent value="payroll" className="mt-0">
