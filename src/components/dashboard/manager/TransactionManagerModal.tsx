@@ -463,7 +463,7 @@ export default function TransactionManagerModal({
               <div>
                 <DialogTitle className="text-lg font-semibold">
                   {viewMode === "list"
-                    ? `${readOnly ? "Comandas Recepção" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
+                    ? `${readOnly ? "Comandas" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
                     : "Adicionar Itens"}
                 </DialogTitle>
                 <DialogDescription>
