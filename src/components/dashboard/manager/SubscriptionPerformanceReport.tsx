@@ -390,12 +390,16 @@ export default function SubscriptionPerformanceReport() {
               globalRegularizedPhones.has(phone),
             attendances: attendanceKeysMap.get(phone)?.size || 1,
           }));
+        const adhesions = [...data.adhesions].sort(
+          (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+        );
         drilldownMap.set(barberId, {
           barberId,
           barberName: data.name,
           unitId: data.unitId,
           unitName: data.unit,
           opportunities,
+          adhesions,
         });
       }
       setClientDrilldown(drilldownMap);
