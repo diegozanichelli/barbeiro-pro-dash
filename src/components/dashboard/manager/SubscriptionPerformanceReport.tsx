@@ -216,6 +216,7 @@ export default function SubscriptionPerformanceReport() {
         newClientAdhesions: number;
         totalAdhesions: number;
         rawNewAttendances: number;
+        adhesions: AdhesionRow[];
       }>();
 
       // Sets globais para deduplicar a visão organizacional
