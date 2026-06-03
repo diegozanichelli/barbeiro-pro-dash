@@ -153,6 +153,8 @@ export default function SubscriptionPerformanceReport() {
           subscription_action,
           mobile_phone,
           client_name,
+          item_name,
+          price_sold,
           created_at,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
