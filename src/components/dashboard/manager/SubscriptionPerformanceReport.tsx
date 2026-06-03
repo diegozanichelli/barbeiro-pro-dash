@@ -873,7 +873,11 @@ export default function SubscriptionPerformanceReport() {
                     );
                   })}
                   {receptionRow && (
-                    <TableRow key="reception" className="bg-muted/30 border-t-2">
+                    <TableRow
+                      key="reception"
+                      className="bg-muted/30 border-t-2 cursor-pointer hover:bg-primary/5"
+                      onClick={() => { setDrilldownTab("opportunities"); setSelectedDrilldownBarberId("__reception__"); }}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border-2 border-primary/20">
@@ -882,19 +886,38 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{receptionRow.barberName}</p>
+                            <p className="font-medium underline underline-offset-2 decoration-dotted">{receptionRow.barberName}</p>
                             <p className="text-xs text-muted-foreground">{receptionRow.unitName}</p>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.opportunities}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("opportunities"); setSelectedDrilldownBarberId("__reception__"); }}
+                        >
+                          {receptionRow.opportunities}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.newClientAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("adhesions"); setSelectedDrilldownBarberId("__reception__"); }}
+                        >
+                          {receptionRow.newClientAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.totalAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("adhesions"); setSelectedDrilldownBarberId("__reception__"); }}
+                          title="Clique para ver a lista detalhada das adesões"
+                        >
+                          {receptionRow.totalAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
                         {getStrictBadge(receptionRow.strictConversion, receptionRow.opportunities, receptionRow.totalAdhesions)}
