@@ -27,12 +27,22 @@ interface DataHealth {
   novaAdesaoSemIsNewClient: number;
 }
 
+interface AdhesionRow {
+  phone: string | null;
+  name: string;
+  planName: string;
+  priceSold: number;
+  createdAt: string;
+  isNewClient: boolean;
+}
+
 interface BarberClientDrilldown {
   barberId: string;
   barberName: string;
   unitId: string | null;
   unitName: string;
   opportunities: Array<{ phone: string; name: string; converted: boolean; attendances: number }>;
+  adhesions: AdhesionRow[];
 }
 
 interface BarberPerformance {
