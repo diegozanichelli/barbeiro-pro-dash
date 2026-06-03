@@ -776,7 +776,7 @@ export default function LiveDashboard() {
     const unitMap = new Map<string, { name: string; revenue: number }>();
     units.forEach(u => unitMap.set(u.id, { name: u.name, revenue: 0 }));
     managerTransactions.forEach(t => {
-      if (t.item_type === "subscription") return;
+      if (!isOperationalRevenueTx(t)) return;
       if (!t.unit_id) return;
       const existing = unitMap.get(t.unit_id);
       if (existing) existing.revenue += Number(t.price_sold) || 0;
