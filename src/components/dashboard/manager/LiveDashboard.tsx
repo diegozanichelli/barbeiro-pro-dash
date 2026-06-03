@@ -1200,8 +1200,12 @@ export default function LiveDashboard() {
                   // Ignora assinaturas (já contabilizadas à parte).
                   const barberTxToday = managerTransactions.filter(t => t.barber_id === barber.id);
                   const barberClientKeys = new Set<string>();
+                  let barberSubscriptionsToday = 0;
                   barberTxToday.forEach((t) => {
-                    if (t.item_type === "subscription") return;
+                    if (isSubscriptionRevenue(t)) {
+                      barberSubscriptionsToday += 1;
+                      return;
+                    }
                     const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
                     barberClientKeys.add(key);
                   });
