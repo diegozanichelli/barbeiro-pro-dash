@@ -83,6 +83,7 @@ export default function SubscriptionPerformanceReport() {
   const [healthOpen, setHealthOpen] = useState(false);
   const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
+  const [drilldownTab, setDrilldownTab] = useState<"adhesions" | "opportunities">("adhesions");
   const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
   const [regularizationPrefill, setRegularizationPrefill] = useState<{
     phone: string;
