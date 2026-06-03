@@ -325,6 +325,7 @@ export default function SubscriptionPerformanceReport() {
       const receptionPhones = new Set<string>();
       let receptionNewClientAdh = 0;
       let receptionTotalAdh = 0;
+      const receptionAdhesions: AdhesionRow[] = [];
 
       receptionTx?.forEach((tx) => {
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
