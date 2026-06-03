@@ -268,6 +268,14 @@ export default function SubscriptionPerformanceReport() {
         if (isNewSubscription(tx)) {
           existing.totalAdhesions++;
           globalTotalAdh++;
+          existing.adhesions.push({
+            phone: normalizedPhone || null,
+            name: ((tx as any).client_name || "").trim() || "Cliente sem nome",
+            planName: ((tx as any).item_name || "").trim() || "Assinatura",
+            priceSold: Number((tx as any).price_sold) || 0,
+            createdAt: (tx as any).created_at || "",
+            isNewClient: tx.is_new_client === true,
+          });
           if (tx.is_new_client === true) {
             existing.newClientAdhesions++;
             if (normalizedPhone) existing.convertedPhones.add(normalizedPhone);
