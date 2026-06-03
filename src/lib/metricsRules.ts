@@ -16,3 +16,11 @@ export const isNewSubscription = (tx: MetricTx): boolean =>
   tx.item_type === "subscription" && tx.subscription_action === "new" && !isLegacyImport(tx);
 
 export const isSubscriptionRevenue = (tx: MetricTx): boolean => tx.item_type === "subscription";
+
+/**
+ * Faturamento "operacional" = tudo que NÃO é assinatura.
+ * Assinaturas (MRR) não devem somar à meta diária do barbeiro/unidade no Ao Vivo;
+ * elas aparecem apenas no card lateral "Ranking de Assinaturas".
+ */
+export const isOperationalRevenueTx = (tx: MetricTx): boolean =>
+  tx.item_type !== "subscription";
