@@ -802,11 +802,16 @@ export default function SubscriptionPerformanceReport() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {performanceData.map((b) => (
+                  {performanceData.map((b) => {
+                    const openDrill = (tab: "adhesions" | "opportunities") => {
+                      setDrilldownTab(tab);
+                      setSelectedDrilldownBarberId(b.barberId);
+                    };
+                    return (
                     <TableRow
                       key={b.barberId}
                       className={`cursor-pointer hover:bg-primary/5 ${isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}`}
-                      onClick={() => setSelectedDrilldownBarberId(b.barberId)}
+                      onClick={() => openDrill("opportunities")}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -822,18 +827,35 @@ export default function SubscriptionPerformanceReport() {
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className={`font-semibold text-lg ${
-                          isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""
-                        }`}>
-                          {b.opportunities}
-                          <span className="block text-[11px] text-muted-foreground">{b.rawNewAttendances} lanç.</span>
-                        </span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("opportunities"); }}
+                        >
+                          <span className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""}>
+                            {b.opportunities}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground font-normal">{b.rawNewAttendances} lanç.</span>
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{b.newClientAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("adhesions"); }}
+                        >
+                          {b.newClientAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{b.totalAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("adhesions"); }}
+                          title="Clique para ver a lista detalhada das adesões"
+                        >
+                          {b.totalAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
                         {getStrictBadge(b.strictConversion, b.opportunities, b.totalAdhesions)}
@@ -848,7 +870,8 @@ export default function SubscriptionPerformanceReport() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                   {receptionRow && (
                     <TableRow key="reception" className="bg-muted/30 border-t-2">
                       <TableCell>
