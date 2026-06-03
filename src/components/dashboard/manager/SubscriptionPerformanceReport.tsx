@@ -239,6 +239,7 @@ export default function SubscriptionPerformanceReport() {
           newClientAdhesions: 0,
           totalAdhesions: 0,
           rawNewAttendances: 0,
+          adhesions: [] as AdhesionRow[],
         };
 
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
