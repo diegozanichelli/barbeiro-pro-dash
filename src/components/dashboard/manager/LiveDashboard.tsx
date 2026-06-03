@@ -307,7 +307,7 @@ export default function LiveDashboard() {
       const { data: yesterdayTxData } = await ydayQuery;
 
       const yRevenue = (yesterdayTxData || [])
-        .filter(t => t.item_type !== 'subscription')
+        .filter(isOperationalRevenueTx)
         .reduce((sum, t) => sum + (t.price_sold || 0), 0);
       setYesterdayRevenue(yRevenue);
     } catch (error) {
