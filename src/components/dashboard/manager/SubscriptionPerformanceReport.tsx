@@ -939,54 +939,139 @@ export default function SubscriptionPerformanceReport() {
           )}
 
 
-                    <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  Análise de clientes atendidos — {selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId)?.barberName : ""}
-                </DialogTitle>
-                <DialogDescription>
-                  Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
-                </DialogDescription>
-              </DialogHeader>
-              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
-                <div className="space-y-4">
-                  <div className="text-sm text-muted-foreground">
-                    Total de oportunidades únicas (celular): <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
-                  </div>
-                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
-                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
-                        <div>
-                          <p className="text-sm font-medium">{op.name}</p>
-                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
-                        </div>
-                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : (
-                          <div className="flex items-center gap-2">
-                            <Badge variant="destructive">Não converteu</Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const drilldown = clientDrilldown.get(selectedDrilldownBarberId);
-                                setRegularizationPrefill({
-                                  phone: op.phone,
-                                  name: op.name,
-                                  barberId: selectedDrilldownBarberId,
-                                  unitId: drilldown?.unitId ?? null,
-                                });
-                                setRegularizationWizardOpen(true);
-                              }}
-                            >
-                              Dar baixa legado
-                            </Button>
+          <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              {(() => {
+                const drill = selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId) : null;
+                const adhesionsCount = drill?.adhesions.length || 0;
+                const opportunitiesCount = drill?.opportunities.length || 0;
+                const isReception = selectedDrilldownBarberId === "__reception__";
+                return (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>
+                        Detalhamento — {drill?.barberName || ""}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Auditoria das adesões e oportunidades no período selecionado.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {drill && (
+                      <Tabs value={drilldownTab} onValueChange={(v) => setDrilldownTab(v as "adhesions" | "opportunities")}>
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="adhesions">
+                            👑 Adesões totais ({adhesionsCount})
+                          </TabsTrigger>
+                          <TabsTrigger value="opportunities" disabled={isReception && opportunitiesCount === 0}>
+                            🎯 Oportunidades ({opportunitiesCount})
+                          </TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="adhesions" className="mt-4">
+                          {adhesionsCount === 0 ? (
+                            <div className="text-sm text-muted-foreground text-center py-8">
+                              Nenhuma adesão "nova" registrada para este barbeiro no período.
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-sm text-muted-foreground mb-3">
+                                Toda assinatura com ação <strong>"nova"</strong> atribuída no período.
+                                Inclui cliente novo e cliente da casa.
+                              </div>
+                              <div className="space-y-2 pr-1">
+                                {drill.adhesions.map((a, idx) => (
+                                  <div
+                                    key={`${a.createdAt}-${idx}`}
+                                    className="flex items-start justify-between rounded border px-3 py-2 bg-background/60 gap-3"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-medium truncate">{a.name}</p>
+                                        {a.isNewClient ? (
+                                          <Badge className="bg-success text-white text-[10px] h-4">Cliente novo</Badge>
+                                        ) : (
+                                          <Badge variant="secondary" className="text-[10px] h-4">Cliente da casa</Badge>
+                                        )}
+                                      </div>
+                                      <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                                        {a.phone ? formatPhone(a.phone) : "sem telefone"}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {a.planName} •{" "}
+                                        {a.createdAt
+                                          ? new Date(a.createdAt).toLocaleString("pt-BR", {
+                                              timeZone: "America/Manaus",
+                                              day: "2-digit",
+                                              month: "2-digit",
+                                              year: "numeric",
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })
+                                          : "—"}
+                                      </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <p className="text-sm font-semibold">
+                                        {a.priceSold.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="opportunities" className="mt-4">
+                          <div className="text-sm text-muted-foreground mb-3">
+                            Total de oportunidades únicas (celular): <strong>{opportunitiesCount}</strong>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                          {opportunitiesCount === 0 ? (
+                            <div className="text-sm text-muted-foreground text-center py-8">
+                              Nenhum cliente novo registrado no período.
+                            </div>
+                          ) : (
+                            <div className="space-y-2 pr-1">
+                              {drill.opportunities.map((op) => (
+                                <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                                  <div>
+                                    <p className="text-sm font-medium">{op.name}</p>
+                                    <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
+                                  </div>
+                                  {op.converted ? (
+                                    <Badge className="bg-success text-white">Virou assinante</Badge>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="destructive">Não converteu</Badge>
+                                      {!isReception && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setRegularizationPrefill({
+                                              phone: op.phone,
+                                              name: op.name,
+                                              barberId: selectedDrilldownBarberId!,
+                                              unitId: drill.unitId ?? null,
+                                            });
+                                            setRegularizationWizardOpen(true);
+                                          }}
+                                        >
+                                          Dar baixa legado
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    )}
+                  </>
+                );
+              })()}
             </DialogContent>
           </Dialog>
 
