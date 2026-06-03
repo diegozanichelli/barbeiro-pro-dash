@@ -441,8 +441,10 @@ export default function LiveDashboard() {
       return 0;
     }
     // AO VIVO é sempre a fonte de verdade - usar transações do gestor
+    // Assinaturas (item_type='subscription') NÃO contam para a meta diária —
+    // ficam apenas no card "Ranking de Assinaturas".
     return managerTransactions
-      .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
+      .filter(t => t.barber_id === barberId && isOperationalRevenueTx(t))
       .reduce((sum, t) => sum + (t.price_sold || 0), 0);
   };
 
