@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { isOperationalRevenueTx, isSubscriptionRevenue } from "@/lib/metricsRules";
 import {
   Dialog,
   DialogContent,
@@ -306,7 +307,7 @@ export default function LiveDashboard() {
       const { data: yesterdayTxData } = await ydayQuery;
 
       const yRevenue = (yesterdayTxData || [])
-        .filter(t => t.item_type !== 'subscription')
+        .filter(isOperationalRevenueTx)
         .reduce((sum, t) => sum + (t.price_sold || 0), 0);
       setYesterdayRevenue(yRevenue);
     } catch (error) {
@@ -349,7 +350,7 @@ export default function LiveDashboard() {
     managerTransactions.forEach((t) => {
       if (t.barber_id !== null) return;
       if (!t.unit_id) return;
-      if (t.item_type === "subscription") return;
+      if (!isOperationalRevenueTx(t)) return;
       const unit = units.find((u) => u.id === t.unit_id);
       if (!unit) return;
       const existing =
@@ -440,8 +441,10 @@ export default function LiveDashboard() {
       return 0;
     }
     // AO VIVO é sempre a fonte de verdade - usar transações do gestor
+    // Assinaturas (item_type='subscription') NÃO contam para a meta diária —
+    // ficam apenas no card "Ranking de Assinaturas".
     return managerTransactions
-      .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
+      .filter(t => t.barber_id === barberId && isOperationalRevenueTx(t))
       .reduce((sum, t) => sum + (t.price_sold || 0), 0);
   };
 
@@ -773,7 +776,7 @@ export default function LiveDashboard() {
     const unitMap = new Map<string, { name: string; revenue: number }>();
     units.forEach(u => unitMap.set(u.id, { name: u.name, revenue: 0 }));
     managerTransactions.forEach(t => {
-      if (t.item_type === "subscription") return;
+      if (!isOperationalRevenueTx(t)) return;
       if (!t.unit_id) return;
       const existing = unitMap.get(t.unit_id);
       if (existing) existing.revenue += Number(t.price_sold) || 0;
@@ -1197,8 +1200,12 @@ export default function LiveDashboard() {
                   // Ignora assinaturas (já contabilizadas à parte).
                   const barberTxToday = managerTransactions.filter(t => t.barber_id === barber.id);
                   const barberClientKeys = new Set<string>();
+                  let barberSubscriptionsToday = 0;
                   barberTxToday.forEach((t) => {
-                    if (t.item_type === "subscription") return;
+                    if (isSubscriptionRevenue(t)) {
+                      barberSubscriptionsToday += 1;
+                      return;
+                    }
                     const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
                     barberClientKeys.add(key);
                   });
@@ -1234,12 +1241,23 @@ export default function LiveDashboard() {
                         </Avatar>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-foreground truncate">{barber.name}</p>
-                          {hasPendingManualEntry(barber.id) && (
-                            <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30 mt-0.5">
-                              <FileText className="w-2.5 h-2.5 mr-0.5" />
-                              Aguardando
-                            </Badge>
-                          )}
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {hasPendingManualEntry(barber.id) && (
+                              <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30">
+                                <FileText className="w-2.5 h-2.5 mr-0.5" />
+                                Aguardando
+                              </Badge>
+                            )}
+                            {barberSubscriptionsToday > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] h-4 bg-primary/10 text-primary border-primary/30"
+                                title="Assinaturas não contam na meta diária. Veja o card 'Ranking de Assinaturas'."
+                              >
+                                {barberSubscriptionsToday} {barberSubscriptionsToday === 1 ? "assinatura" : "assinaturas"}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
 
