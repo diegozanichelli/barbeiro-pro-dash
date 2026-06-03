@@ -1241,12 +1241,23 @@ export default function LiveDashboard() {
                         </Avatar>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-foreground truncate">{barber.name}</p>
-                          {hasPendingManualEntry(barber.id) && (
-                            <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30 mt-0.5">
-                              <FileText className="w-2.5 h-2.5 mr-0.5" />
-                              Aguardando
-                            </Badge>
-                          )}
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {hasPendingManualEntry(barber.id) && (
+                              <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30">
+                                <FileText className="w-2.5 h-2.5 mr-0.5" />
+                                Aguardando
+                              </Badge>
+                            )}
+                            {barberSubscriptionsToday > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] h-4 bg-primary/10 text-primary border-primary/30"
+                                title="Assinaturas não contam na meta diária. Veja o card 'Ranking de Assinaturas'."
+                              >
+                                {barberSubscriptionsToday} {barberSubscriptionsToday === 1 ? "assinatura" : "assinaturas"}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
 
