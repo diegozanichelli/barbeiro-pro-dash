@@ -175,7 +175,7 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, attribution_source")
         .eq("organization_id", organizationId)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
