@@ -738,7 +738,7 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento.
+                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento. Clique no número da linha para ver a lista detalhada.
                       </TooltipContent>
                     </UITooltip>
                   </div>
