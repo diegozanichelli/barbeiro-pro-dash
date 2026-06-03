@@ -13,6 +13,7 @@ import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle,
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
@@ -26,12 +27,22 @@ interface DataHealth {
   novaAdesaoSemIsNewClient: number;
 }
 
+interface AdhesionRow {
+  phone: string | null;
+  name: string;
+  planName: string;
+  priceSold: number;
+  createdAt: string;
+  isNewClient: boolean;
+}
+
 interface BarberClientDrilldown {
   barberId: string;
   barberName: string;
   unitId: string | null;
   unitName: string;
   opportunities: Array<{ phone: string; name: string; converted: boolean; attendances: number }>;
+  adhesions: AdhesionRow[];
 }
 
 interface BarberPerformance {
@@ -72,6 +83,7 @@ export default function SubscriptionPerformanceReport() {
   const [healthOpen, setHealthOpen] = useState(false);
   const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
   const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
+  const [drilldownTab, setDrilldownTab] = useState<"adhesions" | "opportunities">("adhesions");
   const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
   const [regularizationPrefill, setRegularizationPrefill] = useState<{
     phone: string;
@@ -142,6 +154,8 @@ export default function SubscriptionPerformanceReport() {
           subscription_action,
           mobile_phone,
           client_name,
+          item_name,
+          price_sold,
           created_at,
           barbers!sale_transactions_barber_id_fkey(name, units(name))
         `)
@@ -162,7 +176,7 @@ export default function SubscriptionPerformanceReport() {
       // Transações da recepção (sem barber_id)
       let recQuery = supabase
         .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, attribution_source")
+        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, attribution_source")
         .eq("organization_id", organizationId)
         .gte("created_at", startISO)
         .lte("created_at", endISO)
@@ -203,6 +217,7 @@ export default function SubscriptionPerformanceReport() {
         newClientAdhesions: number;
         totalAdhesions: number;
         rawNewAttendances: number;
+        adhesions: AdhesionRow[];
       }>();
 
       // Sets globais para deduplicar a visão organizacional
@@ -225,6 +240,7 @@ export default function SubscriptionPerformanceReport() {
           newClientAdhesions: 0,
           totalAdhesions: 0,
           rawNewAttendances: 0,
+          adhesions: [] as AdhesionRow[],
         };
 
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
@@ -253,6 +269,14 @@ export default function SubscriptionPerformanceReport() {
         if (isNewSubscription(tx)) {
           existing.totalAdhesions++;
           globalTotalAdh++;
+          existing.adhesions.push({
+            phone: normalizedPhone || null,
+            name: ((tx as any).client_name || "").trim() || "Cliente sem nome",
+            planName: ((tx as any).item_name || "").trim() || "Assinatura",
+            priceSold: Number((tx as any).price_sold) || 0,
+            createdAt: (tx as any).created_at || "",
+            isNewClient: tx.is_new_client === true,
+          });
           if (tx.is_new_client === true) {
             existing.newClientAdhesions++;
             if (normalizedPhone) existing.convertedPhones.add(normalizedPhone);
@@ -302,6 +326,7 @@ export default function SubscriptionPerformanceReport() {
       const receptionPhones = new Set<string>();
       let receptionNewClientAdh = 0;
       let receptionTotalAdh = 0;
+      const receptionAdhesions: AdhesionRow[] = [];
 
       receptionTx?.forEach((tx) => {
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
@@ -332,6 +357,14 @@ export default function SubscriptionPerformanceReport() {
         if (isNewSubscription(tx)) {
           receptionTotalAdh++;
           globalTotalAdh++;
+          receptionAdhesions.push({
+            phone: normalizedPhone || null,
+            name: ((tx as any).client_name || "").trim() || "Cliente sem nome",
+            planName: ((tx as any).item_name || "").trim() || "Assinatura",
+            priceSold: Number((tx as any).price_sold) || 0,
+            createdAt: (tx as any).created_at || "",
+            isNewClient: tx.is_new_client === true,
+          });
           if (tx.is_new_client === true) {
             receptionNewClientAdh++;
             globalNewClientAdh++;
@@ -367,12 +400,35 @@ export default function SubscriptionPerformanceReport() {
               globalRegularizedPhones.has(phone),
             attendances: attendanceKeysMap.get(phone)?.size || 1,
           }));
+        const adhesions = [...data.adhesions].sort(
+          (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+        );
         drilldownMap.set(barberId, {
           barberId,
           barberName: data.name,
           unitId: data.unitId,
           unitName: data.unit,
           opportunities,
+          adhesions,
+        });
+      }
+
+      // Drilldown da recepção (sem barber_id) — mesma estrutura, sem oportunidades por barbeiro
+      if (receptionPhones.size > 0 || receptionAdhesions.length > 0) {
+        drilldownMap.set("__reception__", {
+          barberId: "__reception__",
+          barberName: "Recepção",
+          unitId: null,
+          unitName: "Sem barbeiro atribuído",
+          opportunities: Array.from(receptionPhones).sort().map((phone) => ({
+            phone,
+            name: "Cliente sem nome",
+            converted: globalRegularizedPhones.has(phone),
+            attendances: 1,
+          })),
+          adhesions: [...receptionAdhesions].sort(
+            (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+          ),
         });
       }
       setClientDrilldown(drilldownMap);
@@ -682,7 +738,7 @@ export default function SubscriptionPerformanceReport() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs">
-                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento.
+                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento. Clique no número da linha para ver a lista detalhada.
                       </TooltipContent>
                     </UITooltip>
                   </div>
@@ -746,11 +802,16 @@ export default function SubscriptionPerformanceReport() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {performanceData.map((b) => (
+                  {performanceData.map((b) => {
+                    const openDrill = (tab: "adhesions" | "opportunities") => {
+                      setDrilldownTab(tab);
+                      setSelectedDrilldownBarberId(b.barberId);
+                    };
+                    return (
                     <TableRow
                       key={b.barberId}
                       className={`cursor-pointer hover:bg-primary/5 ${isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}`}
-                      onClick={() => setSelectedDrilldownBarberId(b.barberId)}
+                      onClick={() => openDrill("opportunities")}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -766,18 +827,35 @@ export default function SubscriptionPerformanceReport() {
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className={`font-semibold text-lg ${
-                          isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""
-                        }`}>
-                          {b.opportunities}
-                          <span className="block text-[11px] text-muted-foreground">{b.rawNewAttendances} lanç.</span>
-                        </span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("opportunities"); }}
+                        >
+                          <span className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""}>
+                            {b.opportunities}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground font-normal">{b.rawNewAttendances} lanç.</span>
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{b.newClientAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("adhesions"); }}
+                        >
+                          {b.newClientAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{b.totalAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("adhesions"); }}
+                          title="Clique para ver a lista detalhada das adesões"
+                        >
+                          {b.totalAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
                         {getStrictBadge(b.strictConversion, b.opportunities, b.totalAdhesions)}
@@ -792,9 +870,14 @@ export default function SubscriptionPerformanceReport() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                   {receptionRow && (
-                    <TableRow key="reception" className="bg-muted/30 border-t-2">
+                    <TableRow
+                      key="reception"
+                      className="bg-muted/30 border-t-2 cursor-pointer hover:bg-primary/5"
+                      onClick={() => { setDrilldownTab("opportunities"); setSelectedDrilldownBarberId("__reception__"); }}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border-2 border-primary/20">
@@ -803,19 +886,38 @@ export default function SubscriptionPerformanceReport() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{receptionRow.barberName}</p>
+                            <p className="font-medium underline underline-offset-2 decoration-dotted">{receptionRow.barberName}</p>
                             <p className="text-xs text-muted-foreground">{receptionRow.unitName}</p>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.opportunities}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("opportunities"); setSelectedDrilldownBarberId("__reception__"); }}
+                        >
+                          {receptionRow.opportunities}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.newClientAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("adhesions"); setSelectedDrilldownBarberId("__reception__"); }}
+                        >
+                          {receptionRow.newClientAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{receptionRow.totalAdhesions}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("adhesions"); setSelectedDrilldownBarberId("__reception__"); }}
+                          title="Clique para ver a lista detalhada das adesões"
+                        >
+                          {receptionRow.totalAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
                         {getStrictBadge(receptionRow.strictConversion, receptionRow.opportunities, receptionRow.totalAdhesions)}
@@ -837,54 +939,139 @@ export default function SubscriptionPerformanceReport() {
           )}
 
 
-                    <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  Análise de clientes atendidos — {selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId)?.barberName : ""}
-                </DialogTitle>
-                <DialogDescription>
-                  Clientes novos atendidos no período selecionado para auditoria de conversão em assinatura.
-                </DialogDescription>
-              </DialogHeader>
-              {selectedDrilldownBarberId && clientDrilldown.get(selectedDrilldownBarberId) && (
-                <div className="space-y-4">
-                  <div className="text-sm text-muted-foreground">
-                    Total de oportunidades únicas (celular): <strong>{clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.length || 0}</strong>
-                  </div>
-                  <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-                    {clientDrilldown.get(selectedDrilldownBarberId)?.opportunities.map((op) => (
-                      <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
-                        <div>
-                          <p className="text-sm font-medium">{op.name}</p>
-                          <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
-                        </div>
-                        {op.converted ? <Badge className="bg-success text-white">Virou assinante</Badge> : (
-                          <div className="flex items-center gap-2">
-                            <Badge variant="destructive">Não converteu</Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const drilldown = clientDrilldown.get(selectedDrilldownBarberId);
-                                setRegularizationPrefill({
-                                  phone: op.phone,
-                                  name: op.name,
-                                  barberId: selectedDrilldownBarberId,
-                                  unitId: drilldown?.unitId ?? null,
-                                });
-                                setRegularizationWizardOpen(true);
-                              }}
-                            >
-                              Dar baixa legado
-                            </Button>
+          <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              {(() => {
+                const drill = selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId) : null;
+                const adhesionsCount = drill?.adhesions.length || 0;
+                const opportunitiesCount = drill?.opportunities.length || 0;
+                const isReception = selectedDrilldownBarberId === "__reception__";
+                return (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>
+                        Detalhamento — {drill?.barberName || ""}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Auditoria das adesões e oportunidades no período selecionado.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {drill && (
+                      <Tabs value={drilldownTab} onValueChange={(v) => setDrilldownTab(v as "adhesions" | "opportunities")}>
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="adhesions">
+                            👑 Adesões totais ({adhesionsCount})
+                          </TabsTrigger>
+                          <TabsTrigger value="opportunities" disabled={isReception && opportunitiesCount === 0}>
+                            🎯 Oportunidades ({opportunitiesCount})
+                          </TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="adhesions" className="mt-4">
+                          {adhesionsCount === 0 ? (
+                            <div className="text-sm text-muted-foreground text-center py-8">
+                              Nenhuma adesão "nova" registrada para este barbeiro no período.
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-sm text-muted-foreground mb-3">
+                                Toda assinatura com ação <strong>"nova"</strong> atribuída no período.
+                                Inclui cliente novo e cliente da casa.
+                              </div>
+                              <div className="space-y-2 pr-1">
+                                {drill.adhesions.map((a, idx) => (
+                                  <div
+                                    key={`${a.createdAt}-${idx}`}
+                                    className="flex items-start justify-between rounded border px-3 py-2 bg-background/60 gap-3"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-medium truncate">{a.name}</p>
+                                        {a.isNewClient ? (
+                                          <Badge className="bg-success text-white text-[10px] h-4">Cliente novo</Badge>
+                                        ) : (
+                                          <Badge variant="secondary" className="text-[10px] h-4">Cliente da casa</Badge>
+                                        )}
+                                      </div>
+                                      <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                                        {a.phone ? formatPhone(a.phone) : "sem telefone"}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {a.planName} •{" "}
+                                        {a.createdAt
+                                          ? new Date(a.createdAt).toLocaleString("pt-BR", {
+                                              timeZone: "America/Manaus",
+                                              day: "2-digit",
+                                              month: "2-digit",
+                                              year: "numeric",
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })
+                                          : "—"}
+                                      </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <p className="text-sm font-semibold">
+                                        {a.priceSold.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="opportunities" className="mt-4">
+                          <div className="text-sm text-muted-foreground mb-3">
+                            Total de oportunidades únicas (celular): <strong>{opportunitiesCount}</strong>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                          {opportunitiesCount === 0 ? (
+                            <div className="text-sm text-muted-foreground text-center py-8">
+                              Nenhum cliente novo registrado no período.
+                            </div>
+                          ) : (
+                            <div className="space-y-2 pr-1">
+                              {drill.opportunities.map((op) => (
+                                <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                                  <div>
+                                    <p className="text-sm font-medium">{op.name}</p>
+                                    <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
+                                  </div>
+                                  {op.converted ? (
+                                    <Badge className="bg-success text-white">Virou assinante</Badge>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="destructive">Não converteu</Badge>
+                                      {!isReception && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setRegularizationPrefill({
+                                              phone: op.phone,
+                                              name: op.name,
+                                              barberId: selectedDrilldownBarberId!,
+                                              unitId: drill.unitId ?? null,
+                                            });
+                                            setRegularizationWizardOpen(true);
+                                          }}
+                                        >
+                                          Dar baixa legado
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    )}
+                  </>
+                );
+              })()}
             </DialogContent>
           </Dialog>
 

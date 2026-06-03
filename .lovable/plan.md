@@ -1,51 +1,43 @@
+## Problema
+A coluna "👑 Ades. Totais" mostra apenas o número (ex.: 6 do Diego), sem deixar claro o que são essas adesões e sem permitir auditoria. O drilldown atual abre só a lista de "Oportunidades" (clientes novos atendidos), o que não responde "quais foram as 6 adesões?".
+
 ## Objetivo
-Garantir que vendas com `item_type='subscription'` **nunca** sejam somadas ao "Vendido" / cálculo de progresso da meta diária no painel **Ao Vivo** (manager), mantendo-as visíveis apenas no card lateral "Ranking de Assinaturas".
-
-## Diagnóstico
-Auditei `src/components/dashboard/manager/LiveDashboard.tsx` e a maior parte dos cálculos já exclui assinatura. Caso do Leiva hoje confirma na base:
-- 2 serviços avulsos reais de R$80 (clientes diferentes da assinatura) → R$160
-- 1 assinatura nova R$197,90 (com 2 serviços-benefício R$0)
-- `daily_productions.tx_basic_total = 160` (correto)
-
-Porém existem pontos onde a exclusão depende de filtros espalhados e fáceis de regredir, e o usuário está vendo o valor da assinatura aparecer no "Vendido" da linha do barbeiro. Vamos centralizar a regra e blindar todos os agregados.
+Tornar a célula "Ades. Totais" clicável e mostrar, no diálogo de drilldown, a lista detalhada das adesões "nova" computadas para aquele barbeiro no período, com nome, telefone, plano, data, valor e marcador de "cliente novo" vs "cliente da casa". Manter a lista de Oportunidades como segunda aba.
 
 ## Mudanças
 
-### 1. Helper único de exclusão de assinatura
-Em `src/lib/metricsRules.ts` adicionar:
-```ts
-export const isOperationalRevenueTx = (tx: MetricTx): boolean =>
-  tx.item_type !== "subscription";
-```
-Reaproveitar `isSubscriptionRevenue` já existente.
+### 1. Coletar adesões por barbeiro durante o fetch
+Em `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx`:
+- Adicionar `item_name`, `price_sold` ao select de `txQuery` e `recQuery`.
+- No loop sobre `transactions`, quando `isNewSubscription(tx)`, empilhar em `existing.adhesions: Array<{ phone, name, planName, priceSold, createdAt, isNewClient }>`.
+- Idem para `receptionTx` (lista separada `receptionAdhesions`).
 
-### 2. `LiveDashboard.tsx` — blindar todos os agregados de "faturamento operacional"
-Aplicar `isOperationalRevenueTx` em:
-- `getBarberRevenue` (linha 443)
-- `receptionRows` (linha 352)
-- `unitRankings` (linha 776)
-- `yesterdayTx` reduce (linha 309)
-- `barberClientKeys` / contagem de atendimentos (linha 1201) — já exclui, manter
-- `totalRevenue` (já deriva de `getBarberRevenue`, manter)
+### 2. Estender o `clientDrilldown`
+Incluir o array `adhesions` no objeto setado em `drilldownMap.set(barberId, …)` e um equivalente no `receptionRow` (já que recepção também é clicável visualmente — manter consistência).
 
-### 3. Ranking de assinaturas continua intacto
-`subscriptionRankingData` (linha 787) continua filtrando **apenas** `item_type === 'subscription'`. Card lateral segue mostrando para acompanhamento do gestor — sem alteração visual.
+### 3. Diálogo com abas
+Substituir o conteúdo do `<Dialog>` por `Tabs` (shadcn) com duas abas:
+- **Adesões totais (N)** — nova aba padrão se o usuário clicou na coluna Ades. Totais. Lista ordenada por data desc, cada linha: nome, telefone formatado, badge "Cliente novo" ou "Cliente da casa", plano (`item_name`), valor, data (Manaus).
+- **Oportunidades (N)** — conteúdo atual (lista de telefones únicos com botão "Dar baixa legado").
 
-### 4. Adicionar badge "Assinaturas: N" na linha do barbeiro (opcional, leve)
-Na grid de linhas (≈ linha 1244), abaixo do nome, mostrar contador discreto quando o barbeiro tiver assinaturas vendidas no dia, deixando explícito que estão sendo registradas mas **não somam** à meta. Tooltip: "Assinaturas não contam na meta diária; veja o ranking de assinaturas ao lado".
+Estado novo: `drilldownTab: "adhesions" | "opportunities"`. Setado para `"adhesions"` quando o usuário clica na célula Ades. Totais; `"opportunities"` quando clica na linha (comportamento atual) ou na célula de Oportunidades.
 
-### 5. Validação
-Após o ajuste, abrir Ao Vivo logado como gestor e conferir Leiva:
-- "Vendido" = R$ 160,00
-- Badge "1 assinatura" na linha
-- Card "Ranking de Assinaturas" exibindo Leiva com 1 venda R$ 197,90
-- Total da equipe e ranking de unidade sem o R$ 197,90
+### 4. Tornar a célula clicável com `stopPropagation`
+- Envolver `b.totalAdhesions` em um `<button>` que chama `setSelectedDrilldownBarberId(b.barberId); setDrilldownTab("adhesions"); e.stopPropagation()`.
+- Mesmo tratamento para a célula de Oportunidades (abre aba "opportunities") — mais consistente.
+- Aplicar também à linha da Recepção.
 
-### Fora de escopo
-- BarberDashboard (app do barbeiro) — não foi mencionado
-- DailyGoalsTracking (aba Metas do gestor) — já usa `commission_earned` que tem comissão 0 para assinatura
-- Folha mensal / outros relatórios
+### 5. Tooltip do header
+Atualizar o tooltip da coluna "Ades. Totais" para: "Toda assinatura com ação = 'nova' atribuída a este barbeiro no mês. Clique para ver a lista detalhada."
+
+### 6. Validação manual
+- Abrir o relatório, achar Diego Indrago, clicar nas 6 adesões → o diálogo abre na aba "Adesões totais" com 6 linhas.
+- Conferir que a soma de `is_new_client=true` na lista bate com o valor da coluna "Ades. Cliente Novo".
+- Conferir Recepção também.
 
 ## Arquivos afetados
-- `src/lib/metricsRules.ts` (adicionar helper)
-- `src/components/dashboard/manager/LiveDashboard.tsx` (aplicar helper + badge informativo)
+- `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx` (única alteração)
+
+## Fora de escopo
+- Não mudar regra de cálculo de conversão/penetração.
+- Não tocar em wizard/edição de assinaturas a partir do drilldown (botão "Dar baixa legado" continua só na aba Oportunidades).
