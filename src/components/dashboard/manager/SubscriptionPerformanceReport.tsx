@@ -411,6 +411,25 @@ export default function SubscriptionPerformanceReport() {
           adhesions,
         });
       }
+
+      // Drilldown da recepção (sem barber_id) — mesma estrutura, sem oportunidades por barbeiro
+      if (receptionPhones.size > 0 || receptionAdhesions.length > 0) {
+        drilldownMap.set("__reception__", {
+          barberId: "__reception__",
+          barberName: "Recepção",
+          unitId: null,
+          unitName: "Sem barbeiro atribuído",
+          opportunities: Array.from(receptionPhones).sort().map((phone) => ({
+            phone,
+            name: "Cliente sem nome",
+            converted: globalRegularizedPhones.has(phone),
+            attendances: 1,
+          })),
+          adhesions: [...receptionAdhesions].sort(
+            (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+          ),
+        });
+      }
       setClientDrilldown(drilldownMap);
 
       if (receptionPhones.size > 0 || receptionTotalAdh > 0) {
