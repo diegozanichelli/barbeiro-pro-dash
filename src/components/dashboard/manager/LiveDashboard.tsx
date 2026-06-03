@@ -350,7 +350,7 @@ export default function LiveDashboard() {
     managerTransactions.forEach((t) => {
       if (t.barber_id !== null) return;
       if (!t.unit_id) return;
-      if (t.item_type === "subscription") return;
+      if (!isOperationalRevenueTx(t)) return;
       const unit = units.find((u) => u.id === t.unit_id);
       if (!unit) return;
       const existing =
