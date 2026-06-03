@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { isOperationalRevenueTx, isSubscriptionRevenue } from "@/lib/metricsRules";
 import {
   Dialog,
   DialogContent,
