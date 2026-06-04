@@ -1175,14 +1175,64 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
       throw new Error("Missing Supabase credentials");
     }
-    
+
+    // === AUTH CHECK ===
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const token = authHeader.replace("Bearer ", "");
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData, error: userErr } = await userClient.auth.getUser(token);
+    if (userErr || !userData?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const authUserId = userData.user.id;
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const body: RequestBody = await req.json();
     const today = getManausDateString();
+
+    // Verify caller owns the requested barberId, or is a manager/super_admin in the same org
+    const { data: callerBarber } = await supabase
+      .from("barbers")
+      .select("id, organization_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+
+    const { data: callerRole } = await supabase
+      .from("user_roles")
+      .select("role, organization_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+
+    const ownsBarber =
+      callerBarber?.id === body.barberId &&
+      callerBarber?.organization_id === body.organizationId;
+    const sameOrgManager =
+      (callerRole?.role === "manager") &&
+      callerRole?.organization_id === body.organizationId;
+    const isSuperAdmin = callerRole?.role === "super_admin";
+
+    if (!ownsBarber && !sameOrgManager && !isSuperAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // ============================================
     // FLUXO PARA DAILY INSIGHT (COM CACHE + REGRAS)

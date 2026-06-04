@@ -21,11 +21,9 @@ verify_jwt = false
 [functions.check-subscription-status]
 verify_jwt = true
 
-[functions.migrate-organization]
-verify_jwt = true
-
 [functions.complete-onboarding]
 verify_jwt = true
+
 
 [functions.create-free-account]
 verify_jwt = true
