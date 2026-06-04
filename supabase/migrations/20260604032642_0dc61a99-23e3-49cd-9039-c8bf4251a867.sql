@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Barbers can insert purchase history in their organization" ON public.client_purchase_history;
