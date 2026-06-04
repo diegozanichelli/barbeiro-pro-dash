@@ -1489,9 +1489,21 @@ export default function LiveDashboard() {
               </div>
 
               {/* Total Row */}
-              {sortedBarbers.length > 0 && (
-                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
+              {sortedBarbers.length > 0 && (() => {
+                const totalCommands = sortedBarbers.reduce((sum, b) => {
+                  const keys = new Set<string>();
+                  managerTransactions
+                    .filter(t => t.barber_id === b.id && !isSubscriptionRevenue(t))
+                    .forEach(t => {
+                      const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+                      keys.add(key);
+                    });
+                  return sum + keys.size;
+                }, 0) + receptionRows.reduce((s, r) => s + r.clients, 0);
+                return (
+                <div className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
                   <div className="text-sm font-bold text-foreground">TOTAL</div>
+                  <div className="text-center text-sm font-bold text-foreground">{totalCommands}</div>
                   <div className="text-right text-sm font-bold text-muted-foreground">
                     {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
@@ -1506,7 +1518,8 @@ export default function LiveDashboard() {
                   <div />
                   <div />
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Pagination */}
