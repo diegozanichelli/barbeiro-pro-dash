@@ -703,6 +703,13 @@ export default function LiveDashboard() {
       .slice(0, 2);
   };
 
+  // "Gabriel Peter Silva" -> "Gabriel P."
+  const abbreviateName = (name: string) => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return name;
+    return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
+  };
+
   const filteredBarbers = selectedUnit === "all"
     ? barbers
     : barbers.filter((b) => b.unit_id === selectedUnit);
