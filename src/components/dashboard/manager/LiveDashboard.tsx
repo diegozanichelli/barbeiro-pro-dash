@@ -1433,7 +1433,7 @@ export default function LiveDashboard() {
                   return (
                     <div
                       key={`reception-${r.unitId}`}
-                      className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
+                      className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar className="h-9 w-9 shrink-0 border border-blue-500/40">
@@ -1449,6 +1449,11 @@ export default function LiveDashboard() {
                             {r.unitName}
                           </p>
                         </div>
+                      </div>
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${r.clients > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {r.clients}
+                        </span>
                       </div>
                       <div className="text-right">
                         <span className="text-sm text-muted-foreground">—</span>
