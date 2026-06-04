@@ -1269,6 +1269,13 @@ export default function LiveDashboard() {
                         </div>
                       </div>
 
+                      {/* Comandas */}
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${barberClientsToday > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {barberClientsToday}
+                        </span>
+                      </div>
+
                       {/* Meta */}
                       <div className="text-right">
                         <span className="text-sm text-muted-foreground font-medium">
