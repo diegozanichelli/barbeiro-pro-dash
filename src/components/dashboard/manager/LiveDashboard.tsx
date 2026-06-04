@@ -703,6 +703,13 @@ export default function LiveDashboard() {
       .slice(0, 2);
   };
 
+  // "Gabriel Peter Silva" -> "Gabriel P."
+  const abbreviateName = (name: string) => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return name;
+    return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
+  };
+
   const filteredBarbers = selectedUnit === "all"
     ? barbers
     : barbers.filter((b) => b.unit_id === selectedUnit);
@@ -1176,8 +1183,9 @@ export default function LiveDashboard() {
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
             <div>
               {/* Table Header */}
-              <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+              <div className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 <div>Barbeiro</div>
+                <div className="text-center">Comandas</div>
                 <div className="text-right">Meta</div>
                 <div className="text-right">Vendido</div>
                 <div className="text-right">Ticket</div>
@@ -1225,7 +1233,7 @@ export default function LiveDashboard() {
                   return (
                     <motion.div
                       key={barber.id}
-                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
+                      className={`grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
                         isGoalMet ? "bg-green-500/5" : isIdle ? "bg-red-500/5 border-l-2 border-l-red-500/50" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
@@ -1240,7 +1248,7 @@ export default function LiveDashboard() {
                           </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{barber.name}</p>
+                          <p className="text-sm font-semibold text-foreground truncate" title={barber.name}>{abbreviateName(barber.name)}</p>
                           <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                             {hasPendingManualEntry(barber.id) && (
                               <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30">
@@ -1259,6 +1267,13 @@ export default function LiveDashboard() {
                             )}
                           </div>
                         </div>
+                      </div>
+
+                      {/* Comandas */}
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${barberClientsToday > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {barberClientsToday}
+                        </span>
                       </div>
 
                       {/* Meta */}
@@ -1418,7 +1433,7 @@ export default function LiveDashboard() {
                   return (
                     <div
                       key={`reception-${r.unitId}`}
-                      className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
+                      className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar className="h-9 w-9 shrink-0 border border-blue-500/40">
@@ -1434,6 +1449,11 @@ export default function LiveDashboard() {
                             {r.unitName}
                           </p>
                         </div>
+                      </div>
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${r.clients > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {r.clients}
+                        </span>
                       </div>
                       <div className="text-right">
                         <span className="text-sm text-muted-foreground">—</span>
@@ -1469,9 +1489,21 @@ export default function LiveDashboard() {
               </div>
 
               {/* Total Row */}
-              {sortedBarbers.length > 0 && (
-                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
+              {sortedBarbers.length > 0 && (() => {
+                const totalCommands = sortedBarbers.reduce((sum, b) => {
+                  const keys = new Set<string>();
+                  managerTransactions
+                    .filter(t => t.barber_id === b.id && !isSubscriptionRevenue(t))
+                    .forEach(t => {
+                      const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+                      keys.add(key);
+                    });
+                  return sum + keys.size;
+                }, 0) + receptionRows.reduce((s, r) => s + r.clients, 0);
+                return (
+                <div className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
                   <div className="text-sm font-bold text-foreground">TOTAL</div>
+                  <div className="text-center text-sm font-bold text-foreground">{totalCommands}</div>
                   <div className="text-right text-sm font-bold text-muted-foreground">
                     {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
@@ -1486,7 +1518,8 @@ export default function LiveDashboard() {
                   <div />
                   <div />
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Pagination */}
