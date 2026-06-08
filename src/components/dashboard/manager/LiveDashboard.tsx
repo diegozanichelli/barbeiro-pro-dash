@@ -1880,7 +1880,28 @@ export default function LiveDashboard() {
         dailyProductionId={viewTransactionsModal.dailyProductionId}
         date={viewTransactionsModal.date}
         onSuccess={fetchData}
+      <TransactionManagerModal
+        open={viewTransactionsModal.open}
+        onOpenChange={(open) => setViewTransactionsModal((prev) => ({ ...prev, open }))}
+        barberId={viewTransactionsModal.barberId}
+        barberName={viewTransactionsModal.barberName}
+        organizationId={organizationId || ""}
+        dailyProductionId={viewTransactionsModal.dailyProductionId}
+        date={viewTransactionsModal.date}
+        onSuccess={fetchData}
         readOnly
+      />
+
+      {/* Reception Transactions Editor */}
+      <ReceptionTransactionsModal
+        open={receptionEditModal.open}
+        onOpenChange={(open) => setReceptionEditModal((prev) => ({ ...prev, open }))}
+        organizationId={organizationId || ""}
+        unitId={receptionEditModal.unitId}
+        unitName={receptionEditModal.unitName}
+        date={selectedDate}
+        barbers={barbers.map((b) => ({ id: b.id, name: b.name, unit_id: b.unit_id }))}
+        onSuccess={fetchData}
       />
     </div>
   );
