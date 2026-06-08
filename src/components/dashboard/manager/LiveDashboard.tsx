@@ -1880,15 +1880,6 @@ export default function LiveDashboard() {
         dailyProductionId={viewTransactionsModal.dailyProductionId}
         date={viewTransactionsModal.date}
         onSuccess={fetchData}
-      <TransactionManagerModal
-        open={viewTransactionsModal.open}
-        onOpenChange={(open) => setViewTransactionsModal((prev) => ({ ...prev, open }))}
-        barberId={viewTransactionsModal.barberId}
-        barberName={viewTransactionsModal.barberName}
-        organizationId={organizationId || ""}
-        dailyProductionId={viewTransactionsModal.dailyProductionId}
-        date={viewTransactionsModal.date}
-        onSuccess={fetchData}
         readOnly
       />
 
