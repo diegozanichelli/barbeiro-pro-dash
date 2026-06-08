@@ -160,6 +160,11 @@ export default function LiveDashboard() {
   // Subscription wizard modal
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
+  const [receptionEditModal, setReceptionEditModal] = useState<{
+    open: boolean;
+    unitId: string;
+    unitName: string;
+  }>({ open: false, unitId: "", unitName: "" });
   const [currentPage, setCurrentPage] = useState(1);
   const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
   const [teamPacing, setTeamPacing] = useState<{
