@@ -1488,7 +1488,31 @@ export default function LiveDashboard() {
                           BALCÃO
                         </Badge>
                       </div>
-                      <div />
+                      <div className="flex justify-end">
+                        {r.clients > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Mais opções">
+                                <EllipsisVertical className="w-3.5 h-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setReceptionEditModal({
+                                    open: true,
+                                    unitId: r.unitId,
+                                    unitName: r.unitName,
+                                  })
+                                }
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-2" />
+                                Corrigir / excluir venda
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
