@@ -38,6 +38,7 @@ import QuickSaleModal from "./QuickSaleModal";
 import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import SubscriptionAuditModal from "./SubscriptionAuditModal";
+import ReceptionTransactionsModal from "./ReceptionTransactionsModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
@@ -159,6 +160,11 @@ export default function LiveDashboard() {
   // Subscription wizard modal
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
+  const [receptionEditModal, setReceptionEditModal] = useState<{
+    open: boolean;
+    unitId: string;
+    unitName: string;
+  }>({ open: false, unitId: "", unitName: "" });
   const [currentPage, setCurrentPage] = useState(1);
   const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
   const [teamPacing, setTeamPacing] = useState<{
@@ -1482,7 +1488,31 @@ export default function LiveDashboard() {
                           BALCÃO
                         </Badge>
                       </div>
-                      <div />
+                      <div className="flex justify-end">
+                        {r.clients > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Mais opções">
+                                <EllipsisVertical className="w-3.5 h-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setReceptionEditModal({
+                                    open: true,
+                                    unitId: r.unitId,
+                                    unitName: r.unitName,
+                                  })
+                                }
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-2" />
+                                Corrigir / excluir venda
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1851,6 +1881,18 @@ export default function LiveDashboard() {
         date={viewTransactionsModal.date}
         onSuccess={fetchData}
         readOnly
+      />
+
+      {/* Reception Transactions Editor */}
+      <ReceptionTransactionsModal
+        open={receptionEditModal.open}
+        onOpenChange={(open) => setReceptionEditModal((prev) => ({ ...prev, open }))}
+        organizationId={organizationId || ""}
+        unitId={receptionEditModal.unitId}
+        unitName={receptionEditModal.unitName}
+        date={selectedDate}
+        barbers={barbers.map((b) => ({ id: b.id, name: b.name, unit_id: b.unit_id }))}
+        onSuccess={fetchData}
       />
     </div>
   );
