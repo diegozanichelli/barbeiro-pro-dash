@@ -38,6 +38,7 @@ import QuickSaleModal from "./QuickSaleModal";
 import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import SubscriptionAuditModal from "./SubscriptionAuditModal";
+import ReceptionTransactionsModal from "./ReceptionTransactionsModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
