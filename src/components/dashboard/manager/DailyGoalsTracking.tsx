@@ -409,6 +409,10 @@ export default function DailyGoalsTracking() {
                             {goal.barberName}
                           </h3>
                           {getStatusBadge(goal.status)}
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            Sem {goal.weekSlice} · {(goal.weekWeight * 100).toFixed(0)}%
+                            {goal.seasonalitySource === "linear" ? " · linear" : ""}
+                          </Badge>
                           {goal.confirmedPresenceToday && (
                             <TooltipProvider>
                               <Tooltip>
