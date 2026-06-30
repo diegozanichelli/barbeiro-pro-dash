@@ -251,6 +251,9 @@ export default function DailyGoalsTracking() {
           status,
           confirmedPresenceToday,
           presenceType: todayPresenceType,
+          weekSlice: currentSlice,
+          weekWeight: currentSliceWeight,
+          seasonalitySource: seasonality.source_used,
         };
       }));
 
