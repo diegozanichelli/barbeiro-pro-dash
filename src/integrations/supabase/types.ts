@@ -1191,6 +1191,58 @@ export type Database = {
           },
         ]
       }
+      unit_seasonality_config: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          source: Database["public"]["Enums"]["seasonality_source"]
+          unit_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          source?: Database["public"]["Enums"]["seasonality_source"]
+          unit_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          source?: Database["public"]["Enums"]["seasonality_source"]
+          unit_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_seasonality_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_seasonality_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_seasonality_config_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: true
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       units: {
         Row: {
           created_at: string
@@ -1479,6 +1531,10 @@ export type Database = {
         Args: { p_unit_id?: string }
         Returns: Json
       }
+      get_unit_weekly_weights: {
+        Args: { p_month: number; p_unit_id: string; p_year: number }
+        Returns: Json
+      }
       get_user_organization: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -1510,6 +1566,11 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "manager" | "barber"
+      seasonality_source:
+        | "linear"
+        | "previous_year"
+        | "trailing_3m"
+        | "combined"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1638,6 +1699,12 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "manager", "barber"],
+      seasonality_source: [
+        "linear",
+        "previous_year",
+        "trailing_3m",
+        "combined",
+      ],
     },
   },
 } as const

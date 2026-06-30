@@ -1,43 +1,72 @@
-## Problema
-A coluna "👑 Ades. Totais" mostra apenas o número (ex.: 6 do Diego), sem deixar claro o que são essas adesões e sem permitir auditoria. O drilldown atual abre só a lista de "Oportunidades" (clientes novos atendidos), o que não responde "quais foram as 6 adesões?".
-
 ## Objetivo
-Tornar a célula "Ades. Totais" clicável e mostrar, no diálogo de drilldown, a lista detalhada das adesões "nova" computadas para aquele barbeiro no período, com nome, telefone, plano, data, valor e marcador de "cliente novo" vs "cliente da casa". Manter a lista de Oportunidades como segunda aba.
 
-## Mudanças
+Hoje a meta diária do barbeiro é redistribuída de forma linear (meta restante ÷ dias restantes). Vamos passar a redistribuir respeitando a **sazonalidade semanal da unidade**: semanas historicamente mais fortes "puxam" mais meta, semanas mais fracas exigem menos por dia.
 
-### 1. Coletar adesões por barbeiro durante o fetch
-Em `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx`:
-- Adicionar `item_name`, `price_sold` ao select de `txQuery` e `recQuery`.
-- No loop sobre `transactions`, quando `isNewSubscription(tx)`, empilhar em `existing.adhesions: Array<{ phone, name, planName, priceSold, createdAt, isNewClient }>`.
-- Idem para `receptionTx` (lista separada `receptionAdhesions`).
+Escopo confirmado:
+- Pesos calculados **por unidade** (todos barbeiros da unidade compartilham a mesma curva).
+- Fonte histórica **configurável pelo gestor** por unidade.
+- Aplicação apenas no **DailyGoalsTracking** (meta diária do barbeiro). Alertas, Ao Vivo e Apresentação seguem como estão por enquanto.
+- Semanas que cruzam o mês contam só os dias dentro do mês.
 
-### 2. Estender o `clientDrilldown`
-Incluir o array `adhesions` no objeto setado em `drilldownMap.set(barberId, …)` e um equivalente no `receptionRow` (já que recepção também é clicável visualmente — manter consistência).
+## Como o peso é calculado
 
-### 3. Diálogo com abas
-Substituir o conteúdo do `<Dialog>` por `Tabs` (shadcn) com duas abas:
-- **Adesões totais (N)** — nova aba padrão se o usuário clicou na coluna Ades. Totais. Lista ordenada por data desc, cada linha: nome, telefone formatado, badge "Cliente novo" ou "Cliente da casa", plano (`item_name`), valor, data (Manaus).
-- **Oportunidades (N)** — conteúdo atual (lista de telefones únicos com botão "Dar baixa legado").
+Para cada unidade, computamos a receita histórica de cada uma das 5 "fatias semanais" do mês (semana 1 = dias 1-7, 2 = 8-14, 3 = 15-21, 4 = 22-28, 5 = 29-fim). Cada fatia recebe um peso = receita da fatia ÷ receita total do período histórico.
 
-Estado novo: `drilldownTab: "adhesions" | "opportunities"`. Setado para `"adhesions"` quando o usuário clica na célula Ades. Totais; `"opportunities"` quando clica na linha (comportamento atual) ou na célula de Oportunidades.
+Fontes selecionáveis pelo gestor (por unidade):
+1. Mesmo mês do ano anterior
+2. Últimos 3 meses (média móvel)
+3. Combinado (ano anterior + ajuste dos últimos 30 dias)
+4. Linear (desliga sazonalidade — comportamento atual)
 
-### 4. Tornar a célula clicável com `stopPropagation`
-- Envolver `b.totalAdhesions` em um `<button>` que chama `setSelectedDrilldownBarberId(b.barberId); setDrilldownTab("adhesions"); e.stopPropagation()`.
-- Mesmo tratamento para a célula de Oportunidades (abre aba "opportunities") — mais consistente.
-- Aplicar também à linha da Recepção.
+Padrão para unidades sem histórico suficiente: cai automaticamente para linear.
 
-### 5. Tooltip do header
-Atualizar o tooltip da coluna "Ades. Totais" para: "Toda assinatura com ação = 'nova' atribuída a este barbeiro no mês. Clique para ver a lista detalhada."
+## Como a meta diária passa a ser calculada
 
-### 6. Validação manual
-- Abrir o relatório, achar Diego Indrago, clicar nas 6 adesões → o diálogo abre na aba "Adesões totais" com 6 linhas.
-- Conferir que a soma de `is_new_client=true` na lista bate com o valor da coluna "Ades. Cliente Novo".
-- Conferir Recepção também.
+Hoje:
+```
+meta_dia = (meta_total - já_realizado) / dias_restantes
+```
 
-## Arquivos afetados
-- `src/components/dashboard/manager/SubscriptionPerformanceReport.tsx` (única alteração)
+Novo:
+```
+1. peso_semana[1..5] vindo da unidade do barbeiro
+2. meta_esperada_semana_i = meta_total × peso_semana_i × (dias_da_semana_dentro_do_mês / 7)
+3. já_realizado_semana_i = soma do que o barbeiro fez naquela fatia
+4. meta_restante_semana_atual = max(0, meta_esperada_semana_atual − já_realizado_semana_atual)
+5. meta_dia = meta_restante_semana_atual / dias_restantes_dentro_da_semana_atual_e_do_mês
+6. se a semana atual já bateu, sobra é redistribuída para as semanas seguintes proporcional aos pesos restantes
+```
 
-## Fora de escopo
-- Não mudar regra de cálculo de conversão/penetração.
-- Não tocar em wizard/edição de assinaturas a partir do drilldown (botão "Dar baixa legado" continua só na aba Oportunidades).
+Feriados configurados continuam excluídos do divisor (regra atual mantida).
+
+## Mudanças necessárias
+
+### Banco (1 migração)
+
+1. Tabela nova `unit_seasonality_config`:
+   - `unit_id` (FK units, unique)
+   - `source`: enum `linear | previous_year | trailing_3m | combined`
+   - `updated_by`, timestamps
+   - RLS: manager/super_admin da org da unidade lê/escreve; GRANTs padrão.
+
+2. RPC `get_unit_weekly_weights(p_unit_id uuid, p_month int, p_year int)`:
+   - SECURITY DEFINER, retorna `jsonb` com `{weights: [w1..w5], source_used, has_history}`.
+   - Lê `sale_transactions` da unidade no período histórico definido pela config.
+   - Fallback automático para linear quando receita histórica < limiar mínimo (ex.: R$ 5k) ou sem dados.
+
+3. RPC `get_barber_daily_goal_seasonal(p_barber_id, p_month, p_year, p_reference_date)`:
+   - Aplica a fórmula acima usando os pesos da unidade do barbeiro.
+   - Retorna `{ meta_dia, meta_esperada_semana, realizado_semana, peso_semana, source_used }` para a UI mostrar contexto.
+
+### Frontend
+
+1. `src/components/dashboard/manager/GoalsManagement.tsx` (ou novo subcomponente `UnitSeasonalityCard.tsx`): bloco "Sazonalidade semanal" por unidade — select de fonte + preview dos 5 pesos calculados e badge "sem histórico → usando linear".
+
+2. `src/components/dashboard/manager/DailyGoalsTracking.tsx`: trocar o cálculo linear pelo RPC novo; exibir, ao lado da meta diária, um chip discreto "Semana X · peso 28%" para o gestor entender a redistribuição.
+
+3. `src/hooks/` novo `useUnitSeasonality.ts` para buscar/cachear pesos por unidade+mês.
+
+## Fora de escopo (confirmado)
+
+- Alertas de pacing (<85%), Painel Ao Vivo e Apresentação mensal continuam com a lógica atual. Posso estender depois se quiser.
+- Peso por barbeiro individual (ficou descartado em favor de "por unidade").
