@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Target, Calendar, Plus, Pencil, Trash2, Landmark } from "lucide-react";
 import { format } from "date-fns";
 import { getDaysInMonth } from "date-fns";
+import UnitSeasonalityCard from "./UnitSeasonalityCard";
 
 interface BarberOption {
   id: string;
