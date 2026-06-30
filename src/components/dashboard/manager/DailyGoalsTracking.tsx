@@ -49,6 +49,9 @@ interface BarberDailyGoal {
   status: "ahead" | "on-track" | "behind" | "critical";
   confirmedPresenceToday: boolean;
   presenceType: string | null;
+  weekSlice: number;
+  weekWeight: number;
+  seasonalitySource: SeasonalitySource;
 }
 
 export default function DailyGoalsTracking() {
