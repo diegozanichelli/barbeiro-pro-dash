@@ -328,6 +328,7 @@ export default function GoalsManagement() {
 
   return (
     <>
+      <UnitSeasonalityCard />
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
           <div className="flex items-center justify-between">
