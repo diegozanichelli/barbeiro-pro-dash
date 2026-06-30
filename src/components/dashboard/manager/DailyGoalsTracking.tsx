@@ -11,7 +11,6 @@ import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getToda
 import MissingProductionsAlert from "./MissingProductionsAlert";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 import { fetchUnitWeeklyWeights, weekSliceForDay, sliceRange, SeasonalitySource } from "@/hooks/useUnitSeasonality";
-import { Badge } from "@/components/ui/badge";
 interface GoalQueryRow {
   barber_id: string;
   target_commission: number;
