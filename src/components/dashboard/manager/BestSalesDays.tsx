@@ -55,8 +55,9 @@ interface DailyProductionDate {
   date: string;
 }
 
-interface BarberUnit {
+interface Barber {
   id: string;
+  name: string;
   unit_id: string | null;
 }
 
@@ -176,6 +177,20 @@ const getDateDisplayInfo = (dateKey: string) => {
   };
 };
 
+const getWeekDisplayInfo = (dateKey: string) => {
+  const { year, month, day } = parseDateKey(dateKey);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12));
+  const weekday = utcDate.getUTCDay();
+  const weekStart = addDaysToDateKey(dateKey, -weekday);
+  const weekEnd = addDaysToDateKey(weekStart, 6);
+
+  return {
+    weekStart,
+    weekEnd,
+    label: `${getDateDisplayInfo(weekStart).shortDate} a ${getDateDisplayInfo(weekEnd).shortDate}`,
+  };
+};
+
 const getSaleDateKey = (transaction: SaleTransaction) =>
   transaction.production_date ||
   formatInTimeZone(transaction.created_at, TIMEZONE, "yyyy-MM-dd");
@@ -201,8 +216,10 @@ export default function BestSalesDays() {
     to: endOfMonth(today),
   });
   const [selectedUnit, setSelectedUnit] = useState("all");
+  const [selectedBarber, setSelectedBarber] = useState("all");
   const [metric, setMetric] = useState<MetricKey>("amount");
   const [units, setUnits] = useState<Unit[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
   const [transactions, setTransactions] = useState<SaleTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -230,7 +247,7 @@ export default function BestSalesDays() {
 
       const barbersPromise = supabase
         .from("barbers")
-        .select("id, unit_id")
+        .select("id, name, unit_id")
         .eq("organization_id", organizationId);
 
       const productionsPromise = supabase
@@ -292,32 +309,38 @@ export default function BestSalesDays() {
       );
 
       const barberUnitById = new Map(
-        ((barbersData || []) as BarberUnit[]).map((barber) => [
+        ((barbersData || []) as Barber[]).map((barber) => [
           barber.id,
           barber.unit_id,
         ]),
       );
 
-      const filteredTransactions =
-        selectedUnit === "all"
-          ? transactionsWithProductionDate
-          : transactionsWithProductionDate.filter((transaction) => {
-              const transactionUnitId =
-                transaction.unit_id ||
-                (transaction.barber_id
-                  ? barberUnitById.get(transaction.barber_id)
-                  : null);
+      const filteredTransactions = transactionsWithProductionDate.filter(
+        (transaction) => {
+          const transactionUnitId =
+            transaction.unit_id ||
+            (transaction.barber_id
+              ? barberUnitById.get(transaction.barber_id)
+              : null);
 
-              return transactionUnitId === selectedUnit;
-            });
+          const matchesUnit =
+            selectedUnit === "all" || transactionUnitId === selectedUnit;
+          const matchesBarber =
+            selectedBarber === "all" || transaction.barber_id === selectedBarber;
+
+          return matchesUnit && matchesBarber;
+        },
+      );
 
       setUnits(unitsData || []);
+      setBarbers((barbersData || []) as Barber[]);
       setTransactions(filteredTransactions);
     } catch (error) {
       console.error("Erro ao buscar vendas para mapa de calor:", error, {
         startDate,
         endDate,
         selectedUnit,
+        selectedBarber,
       });
       setTransactions([]);
       setErrorMessage(
@@ -326,11 +349,28 @@ export default function BestSalesDays() {
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, dateRange, selectedUnit]);
+  }, [organizationId, dateRange, selectedUnit, selectedBarber]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const availableBarbers = useMemo(
+    () =>
+      selectedUnit === "all"
+        ? barbers
+        : barbers.filter((barber) => barber.unit_id === selectedUnit),
+    [barbers, selectedUnit],
+  );
+
+  useEffect(() => {
+    if (
+      selectedBarber !== "all" &&
+      !availableBarbers.some((barber) => barber.id === selectedBarber)
+    ) {
+      setSelectedBarber("all");
+    }
+  }, [availableBarbers, selectedBarber]);
 
   const analytics = useMemo(() => {
     const hourlyBuckets = BUSINESS_HOURS.map((hour) => ({
@@ -466,6 +506,38 @@ export default function BestSalesDays() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
+    const weekMap = new Map<string, { label: string; value: number }>();
+    transactions.forEach((transaction) => {
+      const category = getCategory(transaction);
+      if (!category) return;
+
+      const dayKey = getSaleDateKey(transaction);
+      if (
+        (startDateKey && dayKey < startDateKey) ||
+        (endDateKey && dayKey > endDateKey)
+      ) {
+        return;
+      }
+
+      const weekInfo = getWeekDisplayInfo(dayKey);
+      const current = weekMap.get(weekInfo.weekStart) || {
+        label: weekInfo.label,
+        value: 0,
+      };
+      current.value += Number(transaction.price_sold) || 0;
+      weekMap.set(weekInfo.weekStart, current);
+    });
+
+    const weekRanking = Array.from(weekMap.entries())
+      .map(([weekStart, week]) => ({
+        weekStart,
+        label: week.label,
+        value: week.value,
+      }))
+      .filter((item) => item.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
     const totalAmount = CATEGORIES.reduce(
       (sum, category) => sum + totals[category.key].amount,
       0,
@@ -483,6 +555,7 @@ export default function BestSalesDays() {
       dailyMax,
       hourRanking,
       dayRanking,
+      weekRanking,
       totalAmount,
       totalCount,
       outOfBusinessHoursCount,
@@ -511,7 +584,7 @@ export default function BestSalesDays() {
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[720px]">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 xl:min-w-[960px]">
           <div className="space-y-2 sm:col-span-1">
             <Label>Período</Label>
             <DateRangePicker date={dateRange} onDateChange={setDateRange} />
@@ -527,6 +600,22 @@ export default function BestSalesDays() {
                 {units.map((unit) => (
                   <SelectItem key={unit.id} value={unit.id}>
                     {unit.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Barbeiro</Label>
+            <Select value={selectedBarber} onValueChange={setSelectedBarber}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos os barbeiros" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os barbeiros</SelectItem>
+                {availableBarbers.map((barber) => (
+                  <SelectItem key={barber.id} value={barber.id}>
+                    {barber.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -765,6 +854,30 @@ export default function BestSalesDays() {
                           </div>
                           <span className="font-semibold">
                             {formatMetric(item.value, metric)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-3 text-sm font-semibold">
+                      Top semanas por faturamento
+                    </p>
+                    <div className="space-y-2">
+                      {analytics.weekRanking.map((item, index) => (
+                        <div
+                          key={item.weekStart}
+                          className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-muted/20 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">#{index + 1}</Badge>
+                            <span className="font-medium">
+                              Semana {item.label}
+                            </span>
+                          </div>
+                          <span className="font-semibold">
+                            {currencyFormatter.format(item.value)}
                           </span>
                         </div>
                       ))}
