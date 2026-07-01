@@ -1195,6 +1195,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          manual_weights: number[] | null
           organization_id: string
           source: Database["public"]["Enums"]["seasonality_source"]
           unit_id: string
@@ -1204,6 +1205,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          manual_weights?: number[] | null
           organization_id: string
           source?: Database["public"]["Enums"]["seasonality_source"]
           unit_id: string
@@ -1213,6 +1215,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          manual_weights?: number[] | null
           organization_id?: string
           source?: Database["public"]["Enums"]["seasonality_source"]
           unit_id?: string
@@ -1571,6 +1574,7 @@ export type Database = {
         | "previous_year"
         | "trailing_3m"
         | "combined"
+        | "manual"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1704,6 +1708,7 @@ export const Constants = {
         "previous_year",
         "trailing_3m",
         "combined",
+        "manual",
       ],
     },
   },
