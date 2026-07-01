@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-export type SeasonalitySource = "linear" | "previous_year" | "trailing_3m" | "combined";
+export type SeasonalitySource = "linear" | "previous_year" | "trailing_3m" | "combined" | "manual";
 
 export interface UnitWeeklyWeights {
   weights: number[]; // length 5
