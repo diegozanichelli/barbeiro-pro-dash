@@ -57,6 +57,7 @@ export function sliceRange(slice: number): { start: number; end: number } {
 export interface UnitSeasonalityConfigRow {
   unit_id: string;
   source: SeasonalitySource;
+  manual_weights: number[] | null;
 }
 
 export function useUnitSeasonalityConfig(organizationId: string | null) {
@@ -68,7 +69,7 @@ export function useUnitSeasonalityConfig(organizationId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("unit_seasonality_config" as never)
-      .select("unit_id, source")
+      .select("unit_id, source, manual_weights")
       .eq("organization_id", organizationId);
     setRows((data as unknown as UnitSeasonalityConfigRow[]) || []);
     setLoading(false);
@@ -78,25 +79,48 @@ export function useUnitSeasonalityConfig(organizationId: string | null) {
     fetchData();
   }, [fetchData]);
 
+  const invalidateUnit = (unitId: string) => {
+    for (const k of Array.from(cache.keys())) {
+      if (k.startsWith(`${unitId}:`)) cache.delete(k);
+    }
+  };
+
   const upsert = useCallback(
-    async (unitId: string, source: SeasonalitySource) => {
+    async (unitId: string, source: SeasonalitySource, manualWeights?: number[] | null) => {
       if (!organizationId) return;
+      const payload: Record<string, unknown> = {
+        unit_id: unitId,
+        organization_id: organizationId,
+        source,
+      };
+      if (manualWeights !== undefined) payload.manual_weights = manualWeights;
       await supabase.from("unit_seasonality_config" as never).upsert(
-        {
-          unit_id: unitId,
-          organization_id: organizationId,
-          source,
-        } as never,
+        payload as never,
         { onConflict: "unit_id" } as never
       );
-      // invalidate weight cache for this unit
-      for (const k of Array.from(cache.keys())) {
-        if (k.startsWith(`${unitId}:`)) cache.delete(k);
-      }
+      invalidateUnit(unitId);
       await fetchData();
     },
     [organizationId, fetchData]
   );
 
-  return { rows, loading, upsert, refetch: fetchData };
+  const saveManualWeights = useCallback(
+    async (unitId: string, weights: number[]) => {
+      if (!organizationId) return;
+      await supabase.from("unit_seasonality_config" as never).upsert(
+        {
+          unit_id: unitId,
+          organization_id: organizationId,
+          source: "manual",
+          manual_weights: weights,
+        } as never,
+        { onConflict: "unit_id" } as never
+      );
+      invalidateUnit(unitId);
+      await fetchData();
+    },
+    [organizationId, fetchData]
+  );
+
+  return { rows, loading, upsert, saveManualWeights, refetch: fetchData };
 }
