@@ -179,15 +179,21 @@ const getDateDisplayInfo = (dateKey: string) => {
 
 const getWeekDisplayInfo = (dateKey: string) => {
   const { year, month, day } = parseDateKey(dateKey);
-  const utcDate = new Date(Date.UTC(year, month - 1, day, 12));
-  const weekday = utcDate.getUTCDay();
-  const weekStart = addDaysToDateKey(dateKey, -weekday);
-  const weekEnd = addDaysToDateKey(weekStart, 6);
+  // Fatias fixas de 7 dias a partir do dia 1 do mês:
+  // Semana 1: 1-7, Semana 2: 8-14, Semana 3: 15-21, Semana 4: 22-28, Semana 5: 29+
+  const weekIndex = Math.floor((day - 1) / 7); // 0..4
+  const startDay = weekIndex * 7 + 1;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const endDay = Math.min(startDay + 6, daysInMonth);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const weekStart = `${year}-${pad(month)}-${pad(startDay)}`;
+  const weekEnd = `${year}-${pad(month)}-${pad(endDay)}`;
+  const weekNumber = weekIndex + 1;
 
   return {
     weekStart,
     weekEnd,
-    label: `${getDateDisplayInfo(weekStart).shortDate} a ${getDateDisplayInfo(weekEnd).shortDate}`,
+    label: `${weekNumber} (${getDateDisplayInfo(weekStart).shortDate} a ${getDateDisplayInfo(weekEnd).shortDate})`,
   };
 };
 
