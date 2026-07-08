@@ -87,8 +87,21 @@ export function computeCompareRange(start: Date, end: Date): { compareStart: Dat
     const cEnd = new Date(prevYear, prevMonth, lastDayOfMonth(prevYear, prevMonth + 1));
     return { compareStart: cStart, compareEnd: cEnd };
   }
-  const cEnd = addDays(start, -1);
-  const cStart = addDays(cEnd, -(len - 1));
+  // Mesma "janela" no mês anterior: desloca start/end um mês para trás,
+  // preservando o dia do mês (ajustado ao último dia quando necessário).
+  const shiftMonth = (d: Date): Date => {
+    const y = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear();
+    const m = d.getMonth() === 0 ? 11 : d.getMonth() - 1;
+    const day = Math.min(d.getDate(), lastDayOfMonth(y, m + 1));
+    return new Date(y, m, day);
+  };
+  const cStart = shiftMonth(start);
+  let cEnd = shiftMonth(end);
+  // Garante mesma quantidade de dias quando possível
+  const shiftedLen = daysBetween(cStart, cEnd);
+  if (shiftedLen !== len) {
+    cEnd = addDays(cStart, len - 1);
+  }
   return { compareStart: cStart, compareEnd: cEnd };
 }
 
