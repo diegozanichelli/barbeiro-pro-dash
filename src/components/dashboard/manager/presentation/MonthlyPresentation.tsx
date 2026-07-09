@@ -16,7 +16,7 @@ import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 import { getManausDate } from "@/lib/dateUtils";
 import {
   monthNamesPt, PeriodMode, resolvePeriod, computeCompareRange,
-  countWorkingDays, toISODate, formatPeriodLabel, formatPeriodShort, isFullMonth, lastDayOfMonth,
+  countWorkingDays, toISODate, formatPeriodLabel, formatPeriodShort, isFullMonth, lastDayOfMonth, parseISODate,
 } from "./slideHelpers";
 import PresentationDeck, { buildSlides } from "./PresentationDeck";
 
