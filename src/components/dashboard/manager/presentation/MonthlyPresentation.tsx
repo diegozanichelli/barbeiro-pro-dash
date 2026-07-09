@@ -100,11 +100,11 @@ export default function MonthlyPresentation() {
   }, [data, organizationId, unitId, overrides, saveOverride, resetOverride]);
 
   const periodLabel = useMemo(() => {
-    return formatPeriodLabel(new Date(periodStart), new Date(periodEnd));
+    return formatPeriodLabel(parseISODate(periodStart), parseISODate(periodEnd));
   }, [periodStart, periodEnd]);
 
   const compareLabel = useMemo(() => {
-    return formatPeriodShort(new Date(compareStart), new Date(compareEnd));
+    return formatPeriodShort(parseISODate(compareStart), parseISODate(compareEnd));
   }, [compareStart, compareEnd]);
 
   if (presenting && data) {
