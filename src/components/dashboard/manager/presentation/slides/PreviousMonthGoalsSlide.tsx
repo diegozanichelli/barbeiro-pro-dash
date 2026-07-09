@@ -1,13 +1,13 @@
 import ScaledSlide from "../ScaledSlide";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
-import { formatPeriodShort } from "../slideHelpers";
+import { formatPeriodShort, parseISODate } from "../slideHelpers";
 import { CheckCircle2, XCircle } from "lucide-react";
 
 export default function PreviousMonthGoalsSlide({ data }: { data: MonthlyPresentationData }) {
   const hit = data.previous_month_goals?.hit ?? [];
   const missed = data.previous_month_goals?.missed ?? [];
   const prevLabel = data.compare_start && data.compare_end
-    ? formatPeriodShort(new Date(data.compare_start), new Date(data.compare_end))
+    ? formatPeriodShort(parseISODate(data.compare_start), parseISODate(data.compare_end))
     : "Período anterior";
 
   const renderCol = (
