@@ -1534,6 +1534,14 @@ export type Database = {
         Args: { p_unit_id?: string }
         Returns: Json
       }
+      get_unit_weekday_heatmap: {
+        Args: {
+          p_period_end: string
+          p_period_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
       get_unit_weekly_weights: {
         Args: { p_month: number; p_unit_id: string; p_year: number }
         Returns: Json
