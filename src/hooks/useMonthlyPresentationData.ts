@@ -156,18 +156,20 @@ export function useMonthlyPresentationData(params: RangeParams) {
     }
     const baseData = rpcData as unknown as MonthlyPresentationData;
     try {
-      const [ssotFunnel, unitHeatmap] = await Promise.all([
+      const [ssotFunnel, unitHeatmap, extrasSellers] = await Promise.all([
         computeSsoTFunnel(periodStart, periodEnd, unitId),
         supabase.rpc("get_unit_weekday_heatmap" as never, {
           p_period_start: periodStart,
           p_period_end: periodEnd,
           p_unit_id: unitId,
         } as never),
+        computeExtrasSellersRanking(periodStart, periodEnd, unitId),
       ]);
       setData({
         ...baseData,
         subscription_funnel: ssotFunnel,
         unit_weekday_heatmap: (unitHeatmap.data ?? []) as unknown as MonthlyPresentationData["unit_weekday_heatmap"],
+        extras_sellers_ranking: extrasSellers,
       });
     } catch (err: any) {
       console.error("Erro ao carregar dados complementares", err);
