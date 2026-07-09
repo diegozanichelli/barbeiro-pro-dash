@@ -41,6 +41,7 @@ export interface MonthlyPresentationData {
     ticket_curr: number; ticket_prev: number;
   }>;
   weekday_heatmap: Array<{ weekday: number; total_revenue: number; days_count: number; avg_revenue: number }>;
+  unit_weekday_heatmap: Array<{ unit_id: string; unit_name: string; weekday: number; total_revenue: number; days_count: number; avg_revenue: number }>;
   month_comparison: {
     revenue: { current: number; previous: number; delta_pct: number | null };
     clients: { current: number; previous: number; delta_pct: number | null };
