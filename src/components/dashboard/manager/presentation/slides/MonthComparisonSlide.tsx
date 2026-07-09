@@ -1,12 +1,12 @@
 import ScaledSlide from "../ScaledSlide";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
-import { fmtBRL, fmtInt, fmtPct, formatPeriodShort } from "../slideHelpers";
+import { fmtBRL, fmtInt, fmtPct, formatPeriodShort, parseISODate } from "../slideHelpers";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 export default function MonthComparisonSlide({ data }: { data: MonthlyPresentationData }) {
   const c = data.month_comparison;
   const prevLabel = data.compare_start && data.compare_end
-    ? formatPeriodShort(new Date(data.compare_start), new Date(data.compare_end))
+    ? formatPeriodShort(parseISODate(data.compare_start), parseISODate(data.compare_end))
     : "Período anterior";
   const cards = [
     { label: "Faturamento", curr: fmtBRL(c.revenue.current), prev: fmtBRL(c.revenue.previous), delta: c.revenue.delta_pct },
