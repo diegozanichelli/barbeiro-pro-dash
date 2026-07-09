@@ -66,6 +66,7 @@ export interface MonthlyPresentationData {
     best_streak: { barber: string | null; days: number };
     top_barber: { name: string | null; revenue: number };
   };
+  extras_sellers_ranking?: Array<{ barber_name: string; qty: number; revenue: number }>;
 }
 
 
@@ -93,6 +94,31 @@ async function computeSsoTFunnel(periodStart: string, periodEnd: string, unitId:
   const newClients = phones.size;
   const conversionRate = newClients > 0 ? Number(((newSubscriptions / newClients) * 100).toFixed(1)) : 0;
   return { new_clients: newClients, new_subscriptions: newSubscriptions, conversion_rate: conversionRate };
+}
+
+async function computeExtrasSellersRanking(periodStart: string, periodEnd: string, unitId: string | null) {
+  let q = supabase
+    .from("sale_transactions")
+    .select("price_sold, barbers!inner(name)")
+    .eq("item_type", "service")
+    .eq("service_category", "extra")
+    .gte("created_at", `${periodStart}T00:00:00-04:00`)
+    .lte("created_at", `${periodEnd}T23:59:59-04:00`);
+  if (unitId) q = q.eq("unit_id", unitId);
+  const { data, error } = await q;
+  if (error) throw error;
+  const map = new Map<string, { qty: number; revenue: number }>();
+  for (const row of (data || []) as any[]) {
+    const name = row.barbers?.name;
+    if (!name) continue;
+    const cur = map.get(name) || { qty: 0, revenue: 0 };
+    cur.qty += 1;
+    cur.revenue += Number(row.price_sold || 0);
+    map.set(name, cur);
+  }
+  return Array.from(map.entries())
+    .map(([barber_name, v]) => ({ barber_name, qty: v.qty, revenue: v.revenue }))
+    .sort((a, b) => b.revenue - a.revenue);
 }
 
 interface RangeParams {
@@ -130,18 +156,20 @@ export function useMonthlyPresentationData(params: RangeParams) {
     }
     const baseData = rpcData as unknown as MonthlyPresentationData;
     try {
-      const [ssotFunnel, unitHeatmap] = await Promise.all([
+      const [ssotFunnel, unitHeatmap, extrasSellers] = await Promise.all([
         computeSsoTFunnel(periodStart, periodEnd, unitId),
         supabase.rpc("get_unit_weekday_heatmap" as never, {
           p_period_start: periodStart,
           p_period_end: periodEnd,
           p_unit_id: unitId,
         } as never),
+        computeExtrasSellersRanking(periodStart, periodEnd, unitId),
       ]);
       setData({
         ...baseData,
         subscription_funnel: ssotFunnel,
         unit_weekday_heatmap: (unitHeatmap.data ?? []) as unknown as MonthlyPresentationData["unit_weekday_heatmap"],
+        extras_sellers_ranking: extrasSellers,
       });
     } catch (err: any) {
       console.error("Erro ao carregar dados complementares", err);
