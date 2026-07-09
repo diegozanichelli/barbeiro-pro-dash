@@ -16,6 +16,7 @@ import UnitWeekdayHeatmapSlide from "./slides/UnitWeekdayHeatmapSlide";
 import TopServicesProductsSlide from "./slides/TopServicesProductsSlide";
 import ExtrasPenetrationSlide from "./slides/ExtrasPenetrationSlide";
 import ProductSellersSlide from "./slides/ProductSellersSlide";
+import ExtrasSellersSlide from "./slides/ExtrasSellersSlide";
 import ReceptionSalesSlide from "./slides/ReceptionSalesSlide";
 import NewClientsSlide from "./slides/NewClientsSlide";
 import ClientsNewVsReturningSlide from "./slides/ClientsNewVsReturningSlide";
