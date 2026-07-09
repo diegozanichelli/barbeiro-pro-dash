@@ -66,6 +66,7 @@ export interface MonthlyPresentationData {
     best_streak: { barber: string | null; days: number };
     top_barber: { name: string | null; revenue: number };
   };
+  extras_sellers_ranking?: Array<{ barber_name: string; qty: number; revenue: number }>;
 }
 
 
