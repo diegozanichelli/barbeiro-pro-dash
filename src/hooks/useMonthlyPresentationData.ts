@@ -41,6 +41,7 @@ export interface MonthlyPresentationData {
     ticket_curr: number; ticket_prev: number;
   }>;
   weekday_heatmap: Array<{ weekday: number; total_revenue: number; days_count: number; avg_revenue: number }>;
+  unit_weekday_heatmap: Array<{ unit_id: string; unit_name: string; weekday: number; total_revenue: number; days_count: number; avg_revenue: number }>;
   month_comparison: {
     revenue: { current: number; previous: number; delta_pct: number | null };
     clients: { current: number; previous: number; delta_pct: number | null };
@@ -124,15 +125,27 @@ export function useMonthlyPresentationData(params: RangeParams) {
       console.error("get_presentation_data_range error", rpcError);
       setError(rpcError.message);
       setData(null);
-    } else {
-      const baseData = rpcData as unknown as MonthlyPresentationData;
-      try {
-        const ssotFunnel = await computeSsoTFunnel(periodStart, periodEnd, unitId);
-        setData({ ...baseData, subscription_funnel: ssotFunnel });
-      } catch (funnelErr: any) {
-        console.error("SSOT funnel fallback error", funnelErr);
-        setData(baseData);
-      }
+      setLoading(false);
+      return;
+    }
+    const baseData = rpcData as unknown as MonthlyPresentationData;
+    try {
+      const [ssotFunnel, unitHeatmap] = await Promise.all([
+        computeSsoTFunnel(periodStart, periodEnd, unitId),
+        supabase.rpc("get_unit_weekday_heatmap" as never, {
+          p_period_start: periodStart,
+          p_period_end: periodEnd,
+          p_unit_id: unitId,
+        } as never),
+      ]);
+      setData({
+        ...baseData,
+        subscription_funnel: ssotFunnel,
+        unit_weekday_heatmap: (unitHeatmap.data ?? []) as unknown as MonthlyPresentationData["unit_weekday_heatmap"],
+      });
+    } catch (err: any) {
+      console.error("Erro ao carregar dados complementares", err);
+      setData(baseData);
     }
     setLoading(false);
   }, [periodStart, periodEnd, compareStart, compareEnd, targetRatio, unitId]);

@@ -12,6 +12,7 @@ import RankingSlide from "./slides/RankingSlide";
 import IndividualEvolutionSlide from "./slides/IndividualEvolutionSlide";
 import UnitsSlide from "./slides/UnitsSlide";
 import WeekdayHeatmapSlide from "./slides/WeekdayHeatmapSlide";
+import UnitWeekdayHeatmapSlide from "./slides/UnitWeekdayHeatmapSlide";
 import TopServicesProductsSlide from "./slides/TopServicesProductsSlide";
 import ExtrasPenetrationSlide from "./slides/ExtrasPenetrationSlide";
 import ProductSellersSlide from "./slides/ProductSellersSlide";
@@ -82,6 +83,7 @@ export function buildSlides(
     { key: "evolution", title: "Evolução individual", el: <IndividualEvolutionSlide data={data} /> },
     { key: "units", title: "Por unidade", el: <UnitsSlide data={data} /> },
     { key: "weekday", title: "Heatmap dia da semana", el: <WeekdayHeatmapSlide data={data} /> },
+    { key: "unit-weekday", title: "Heatmap por unidade", el: <UnitWeekdayHeatmapSlide data={data} /> },
     { key: "ticket", title: "Ticket médio por unidade", el: <TicketByUnitSlide data={data} /> },
     { key: "mix", title: "Mix de receita", el: <RevenueMixSlide data={data} /> },
     { key: "top-services-products", title: "Top serviços & produtos", el: <TopServicesProductsSlide data={data} /> },
