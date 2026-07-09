@@ -96,6 +96,31 @@ async function computeSsoTFunnel(periodStart: string, periodEnd: string, unitId:
   return { new_clients: newClients, new_subscriptions: newSubscriptions, conversion_rate: conversionRate };
 }
 
+async function computeExtrasSellersRanking(periodStart: string, periodEnd: string, unitId: string | null) {
+  let q = supabase
+    .from("sale_transactions")
+    .select("price_sold, barbers!inner(name)")
+    .eq("item_type", "service")
+    .eq("service_category", "extra")
+    .gte("created_at", `${periodStart}T00:00:00-04:00`)
+    .lte("created_at", `${periodEnd}T23:59:59-04:00`);
+  if (unitId) q = q.eq("unit_id", unitId);
+  const { data, error } = await q;
+  if (error) throw error;
+  const map = new Map<string, { qty: number; revenue: number }>();
+  for (const row of (data || []) as any[]) {
+    const name = row.barbers?.name;
+    if (!name) continue;
+    const cur = map.get(name) || { qty: 0, revenue: 0 };
+    cur.qty += 1;
+    cur.revenue += Number(row.price_sold || 0);
+    map.set(name, cur);
+  }
+  return Array.from(map.entries())
+    .map(([barber_name, v]) => ({ barber_name, qty: v.qty, revenue: v.revenue }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
 interface RangeParams {
   periodStart: string;
   periodEnd: string;
