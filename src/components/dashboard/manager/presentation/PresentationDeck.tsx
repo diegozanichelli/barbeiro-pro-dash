@@ -12,6 +12,7 @@ import RankingSlide from "./slides/RankingSlide";
 import IndividualEvolutionSlide from "./slides/IndividualEvolutionSlide";
 import UnitsSlide from "./slides/UnitsSlide";
 import WeekdayHeatmapSlide from "./slides/WeekdayHeatmapSlide";
+import UnitWeekdayHeatmapSlide from "./slides/UnitWeekdayHeatmapSlide";
 import TopServicesProductsSlide from "./slides/TopServicesProductsSlide";
 import ExtrasPenetrationSlide from "./slides/ExtrasPenetrationSlide";
 import ProductSellersSlide from "./slides/ProductSellersSlide";
