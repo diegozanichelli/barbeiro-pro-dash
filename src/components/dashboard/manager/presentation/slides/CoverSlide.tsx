@@ -24,7 +24,7 @@ interface Props {
 export default function CoverSlide({ data, override, editable, onSave, onReset }: Props) {
   const [open, setOpen] = useState(false);
   const periodLabel = data.period_start && data.period_end
-    ? formatPeriodLabel(new Date(data.period_start), new Date(data.period_end))
+    ? formatPeriodLabel(parseISODate(data.period_start), parseISODate(data.period_end))
     : `${data.month}/${data.year}`;
   const defaultTitle = periodLabel;
   const eyebrow = override?.eyebrow ?? "Reunião de Resultados";
