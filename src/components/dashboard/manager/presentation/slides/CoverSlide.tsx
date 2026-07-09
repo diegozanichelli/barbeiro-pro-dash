@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ScaledSlide from "../ScaledSlide";
-import { formatPeriodLabel } from "../slideHelpers";
+import { formatPeriodLabel, parseISODate } from "../slideHelpers";
 import { MonthlyPresentationData } from "@/hooks/useMonthlyPresentationData";
 import { Button } from "@/components/ui/button";
 import { Pencil } from "lucide-react";
