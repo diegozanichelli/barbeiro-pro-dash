@@ -65,8 +65,8 @@ export default function MonthlyPresentation() {
   }, [mode, month, year, customStart, customEnd, holidayDates, today]);
 
   const { compareStart, compareEnd } = useMemo(() => {
-    const s = new Date(periodStart);
-    const e = new Date(periodEnd);
+    const s = parseISODate(periodStart);
+    const e = parseISODate(periodEnd);
     const { compareStart, compareEnd } = computeCompareRange(s, e);
     return { compareStart: toISODate(compareStart), compareEnd: toISODate(compareEnd) };
   }, [periodStart, periodEnd]);
