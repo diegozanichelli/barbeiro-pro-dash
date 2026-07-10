@@ -115,43 +115,55 @@ export default function PendingDayReviews({ barberId, onReview }: PendingDayRevi
 
   return (
     <Card className="border-primary/30 bg-primary/5 shadow-card-custom">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <ClipboardCheck className="w-5 h-5 text-primary" />
-          Dias Pendentes de Conferência
-          <Badge variant="destructive" className="ml-auto">
-            {pendingDays.length}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="text-sm text-muted-foreground mb-3">
-          A recepção lançou vendas nesses dias. Confira e confirme sua produção.
-        </p>
-        {pendingDays.map((day) => (
-          <div
-            key={day.date}
-            className="flex items-center justify-between rounded-lg border bg-background px-4 py-3"
-          >
-            <div>
-              <p className="font-semibold">
-                {format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {day.itemCount} itens • {formatCurrency(day.total)}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              onClick={() => onReview(day.date)}
-              className="gap-1.5"
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left"
+        aria-expanded={open}
+      >
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ClipboardCheck className="w-5 h-5 text-primary" />
+            <span>Dias Pendentes de Conferência</span>
+            <Badge variant="destructive" className="ml-2">
+              {pendingDays.length}
+            </Badge>
+            <ChevronDown
+              className={`w-5 h-5 ml-auto text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          </CardTitle>
+        </CardHeader>
+      </button>
+      {open && (
+        <CardContent className="space-y-2">
+          <p className="text-sm text-muted-foreground mb-3">
+            A recepção lançou vendas nesses dias. Confira e confirme sua produção.
+          </p>
+          {pendingDays.map((day) => (
+            <div
+              key={day.date}
+              className="flex items-center justify-between rounded-lg border bg-background px-4 py-3"
             >
-              <Eye className="w-4 h-4" />
-              Conferir
-            </Button>
-          </div>
-        ))}
-      </CardContent>
+              <div>
+                <p className="font-semibold">
+                  {format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {day.itemCount} itens • {formatCurrency(day.total)}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => onReview(day.date)}
+                className="gap-1.5"
+              >
+                <Eye className="w-4 h-4" />
+                Conferir
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      )}
     </Card>
   );
 }
