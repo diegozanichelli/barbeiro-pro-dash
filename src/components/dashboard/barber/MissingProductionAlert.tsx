@@ -212,41 +212,53 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
   return (
     <>
       <Card className="border-destructive/30 bg-destructive/5 shadow-card-custom">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <AlertCircle className="w-5 h-5 text-destructive" />
-            Dias sem Registro
-            <Badge variant="destructive" className="ml-auto">
-              {missingDays.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm text-muted-foreground mb-3">
-            Esses dias não têm vendas nem status registrado. Informe o que aconteceu.
-          </p>
-          {missingDays.map((day) => (
-            <div
-              key={day}
-              className="flex items-center justify-between rounded-lg border bg-background px-4 py-3"
-            >
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
-                <p className="font-semibold">
-                  {format(new Date(`${day}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setSelectedDate(day)}
-                className="gap-1.5"
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full text-left"
+          aria-expanded={open}
+        >
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <span>Dias sem Registro</span>
+              <Badge variant="destructive" className="ml-2">
+                {missingDays.length}
+              </Badge>
+              <ChevronDown
+                className={`w-5 h-5 ml-auto text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </button>
+        {open && (
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground mb-3">
+              Esses dias não têm vendas nem status registrado. Informe o que aconteceu.
+            </p>
+            {missingDays.map((day) => (
+              <div
+                key={day}
+                className="flex items-center justify-between rounded-lg border bg-background px-4 py-3"
               >
-                Registrar
-              </Button>
-            </div>
-          ))}
-        </CardContent>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <p className="font-semibold">
+                    {format(new Date(`${day}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedDate(day)}
+                  className="gap-1.5"
+                >
+                  Registrar
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        )}
       </Card>
 
       <StatusDoDiaDialog
