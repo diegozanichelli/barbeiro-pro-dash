@@ -24,6 +24,7 @@ interface PendingDayReviewsProps {
 export default function PendingDayReviews({ barberId, onReview }: PendingDayReviewsProps) {
   const [pendingDays, setPendingDays] = useState<PendingReviewDay[]>([]);
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     fetchPendingDays();
