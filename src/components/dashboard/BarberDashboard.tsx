@@ -943,15 +943,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </p>
             </div>
             {/* Alerta de Produções Pendentes */}
-            {/* Dias sem nenhum registro (sem vendas ao vivo) */}
-            <MissingProductionAlert
-              barberId={barber.id}
-              organizationId={barber.organization_id}
-              onStatusRegistered={() => {
-                fetchMonthlyStats();
-                fetchLivePanelData();
-              }}
-            />
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
