@@ -943,11 +943,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </p>
             </div>
             {/* Alerta de Produções Pendentes */}
-            {/* Dias Pendentes de Conferência (AO VIVO) */}
-            <PendingDayReviews 
-              barberId={barber.id} 
-              onReview={(date) => setReviewingDate(date)} 
-            />
             {/* Dias sem nenhum registro (sem vendas ao vivo) */}
             <MissingProductionAlert
               barberId={barber.id}
@@ -995,6 +990,11 @@ const [todayProduction, setTodayProduction] = useState<{
                 </div>
               </CardContent>
             </Card>
+            {/* Dias Pendentes de Conferência (colapsável) */}
+            <PendingDayReviews
+              barberId={barber.id}
+              onReview={(date) => setReviewingDate(date)}
+            />
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
