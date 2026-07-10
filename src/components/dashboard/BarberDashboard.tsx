@@ -943,11 +943,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </p>
             </div>
             {/* Alerta de Produções Pendentes */}
-            {/* Dias Pendentes de Conferência (AO VIVO) */}
-            <PendingDayReviews 
-              barberId={barber.id} 
-              onReview={(date) => setReviewingDate(date)} 
-            />
             {/* Dias sem nenhum registro (sem vendas ao vivo) */}
             <MissingProductionAlert
               barberId={barber.id}
