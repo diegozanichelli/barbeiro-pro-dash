@@ -995,10 +995,6 @@ const [todayProduction, setTodayProduction] = useState<{
               barberId={barber.id}
               onReview={(date) => setReviewingDate(date)}
             />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
