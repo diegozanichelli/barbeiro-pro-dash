@@ -1134,23 +1134,33 @@ export default function LiveDashboard() {
                   );
                 })()}
               </div>
-              <span
-                className={`text-sm font-bold cursor-help ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}
-                title={`% de Vendas atingido sobre a Meta de Vendas do mês.\n\nVendas: ${teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}\nMeta: ${teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
-              >
-                {teamMonthlyGoal.pct.toFixed(0)}%
-              </span>
+              {(() => {
+                const displayPct = teamPacing ? teamPacing.actualPct : teamMonthlyGoal.pct;
+                return (
+                  <span
+                    className={`text-sm font-bold cursor-help ${displayPct >= 80 ? "text-green-500" : displayPct >= 50 ? "text-amber-500" : "text-red-500"}`}
+                    title={`% de Comissão Real acumulada sobre a Meta de Comissão do mês (mesma base do marcador "Esperado para hoje").\n\nVendas: ${teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}\nMeta Vendas: ${teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
+                  >
+                    {displayPct.toFixed(0)}%
+                  </span>
+                );
+              })()}
             </div>
             <div
               className="relative h-3 bg-muted/50 rounded-full overflow-hidden mb-2"
-              title="Barra colorida = % de Vendas realizado. Linha vertical = % de Comissão Esperada para hoje (com base nos dias úteis decorridos)."
+              title="Barra colorida = % de Comissão Real acumulada. Linha vertical = % de Comissão Esperada para hoje (com base nos dias úteis decorridos)."
             >
-              <motion.div
-                className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                initial={{ width: 0 }}
-                animate={{ width: `${teamMonthlyGoal.pct}%` }}
-                transition={{ duration: 1, ease: "easeOut" }}
-              />
+              {(() => {
+                const barPct = teamPacing ? teamPacing.actualPct : teamMonthlyGoal.pct;
+                return (
+                  <motion.div
+                    className={`h-full rounded-full ${barPct >= 80 ? "bg-green-500" : barPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(barPct, 100)}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                  />
+                );
+              })()}
               {teamPacing && teamPacing.expectedPct > 0 && teamPacing.expectedPct <= 100 && (
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-foreground/70"
