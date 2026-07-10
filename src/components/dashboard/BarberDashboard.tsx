@@ -990,6 +990,15 @@ const [todayProduction, setTodayProduction] = useState<{
                 </div>
               </CardContent>
             </Card>
+            {/* Dias Pendentes de Conferência (colapsável) */}
+            <PendingDayReviews
+              barberId={barber.id}
+              onReview={(date) => setReviewingDate(date)}
+            />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
