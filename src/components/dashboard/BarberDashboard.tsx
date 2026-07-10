@@ -986,6 +986,15 @@ const [todayProduction, setTodayProduction] = useState<{
               barberId={barber.id}
               onReview={(date) => setReviewingDate(date)}
             />
+            {/* Dias sem nenhum registro (colapsável) */}
+            <MissingProductionAlert
+              barberId={barber.id}
+              organizationId={barber.organization_id}
+              onStatusRegistered={() => {
+                fetchMonthlyStats();
+                fetchLivePanelData();
+              }}
+            />
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
