@@ -188,6 +188,7 @@ export default function MissingProductionAlert({ barberId, organizationId, onSta
         present: "Presença registrada",
         day_off: "Folga registrada",
         absence: "Falta registrada",
+        optional_sunday: "Domingo opcional registrado",
       };
       toast.success(`${statusLabels[status] || "Status registrado"} em ${dateLabel}`);
 
