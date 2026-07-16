@@ -85,6 +85,15 @@ export default function StatusDoDiaDialog({
                 Falta / Atestado
               </Label>
             </div>
+
+            {isSunday && (
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="optional_sunday" id="status-optional-sunday" />
+                <Label htmlFor="status-optional-sunday" className="cursor-pointer">
+                  Domingo opcional (não conta como folga/falta)
+                </Label>
+              </div>
+            )}
           </RadioGroup>
         </div>
 
