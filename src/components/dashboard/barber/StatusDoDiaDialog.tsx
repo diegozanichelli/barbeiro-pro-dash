@@ -32,15 +32,20 @@ export default function StatusDoDiaDialog({
   onConfirm,
 }: StatusDoDiaDialogProps) {
   void barberId;
-  void date;
+
+  const isSunday = (() => {
+    if (!date) return false;
+    const d = new Date(`${date}T12:00:00`);
+    return d.getDay() === 0;
+  })();
 
   const [selectedValue, setSelectedValue] = useState<PresenceType>("present");
 
   useEffect(() => {
     if (open) {
-      setSelectedValue("present");
+      setSelectedValue(isSunday ? "optional_sunday" : "present");
     }
-  }, [open]);
+  }, [open, isSunday]);
 
   const handleConfirm = async () => {
     await onConfirm(selectedValue);
