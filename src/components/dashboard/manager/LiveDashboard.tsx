@@ -1458,8 +1458,8 @@ export default function LiveDashboard() {
                             🛎️
                           </AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <p className="text-sm font-semibold text-foreground truncate leading-tight">
                             Recepção
                           </p>
                           <p className="text-[10px] text-muted-foreground truncate">
