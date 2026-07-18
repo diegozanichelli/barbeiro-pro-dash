@@ -1561,6 +1561,7 @@ export default function LiveDashboard() {
                 </div>
                 );
               })()}
+              </div>
             </div>
 
             {/* Pagination */}
