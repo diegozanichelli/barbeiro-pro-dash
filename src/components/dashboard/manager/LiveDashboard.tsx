@@ -1197,7 +1197,8 @@ export default function LiveDashboard() {
         {/* Barber Table */}
         <div className="flex-1 min-w-0">
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-            <div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[860px]">
               {/* Table Header */}
               <div className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 <div>Barbeiro</div>
@@ -1560,6 +1561,7 @@ export default function LiveDashboard() {
                 </div>
                 );
               })()}
+              </div>
             </div>
 
             {/* Pagination */}
