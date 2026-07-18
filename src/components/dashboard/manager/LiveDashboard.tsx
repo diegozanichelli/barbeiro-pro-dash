@@ -1264,8 +1264,8 @@ export default function LiveDashboard() {
                             {getInitials(barber.name)}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate" title={barber.name}>{abbreviateName(barber.name)}</p>
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <p className="text-sm font-semibold text-foreground truncate leading-tight" title={barber.name}>{abbreviateName(barber.name)}</p>
                           <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                             {hasPendingManualEntry(barber.id) && (
                               <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30">
