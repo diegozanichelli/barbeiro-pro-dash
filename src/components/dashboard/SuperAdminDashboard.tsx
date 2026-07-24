@@ -135,7 +135,8 @@ function ExpiryControl({ org, onSave }: ExpiryControlProps) {
   const normalizedDraft = draftDate.trim();
   const hasDraftChanged = normalizedDraft !== isoToBrazilianDate(org.access_expires_at);
   const isComplete = normalizedDraft.length === 10;
-  const canSave = normalizedDraft === "" || (hasDraftChanged && isComplete);
+  const parsedDraftDate = isComplete ? brazilianDateToIso(normalizedDraft) : null;
+  const canSave = hasDraftChanged && (normalizedDraft === "" || Boolean(parsedDraftDate));
 
   const handleSaveDate = () => {
     if (normalizedDraft === "") {
@@ -143,7 +144,7 @@ function ExpiryControl({ org, onSave }: ExpiryControlProps) {
       return;
     }
 
-    const isoDate = brazilianDateToIso(normalizedDraft);
+    const isoDate = parsedDraftDate;
     if (!isoDate) return;
 
     onSave(org.id, { access_expires_at: isoDate });
@@ -174,7 +175,7 @@ function ExpiryControl({ org, onSave }: ExpiryControlProps) {
       {normalizedDraft !== "" && !isComplete && (
         <span className="text-[10px] text-muted-foreground">Digite a data completa antes de salvar</span>
       )}
-      {normalizedDraft !== "" && isComplete && hasDraftChanged && !brazilianDateToIso(normalizedDraft) && (
+      {normalizedDraft !== "" && isComplete && hasDraftChanged && !parsedDraftDate && (
         <span className="text-[10px] text-destructive">Data inválida</span>
       )}
       <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
