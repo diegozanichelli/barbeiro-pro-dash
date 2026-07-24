@@ -664,6 +664,8 @@ export type Database = {
       }
       organizations: {
         Row: {
+          access_expires_at: string | null
+          auto_deactivate: boolean
           championship_name: string
           created_at: string
           has_subscription_module: boolean
@@ -674,6 +676,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          access_expires_at?: string | null
+          auto_deactivate?: boolean
           championship_name?: string
           created_at?: string
           has_subscription_module?: boolean
@@ -684,6 +688,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          access_expires_at?: string | null
+          auto_deactivate?: boolean
           championship_name?: string
           created_at?: string
           has_subscription_module?: boolean

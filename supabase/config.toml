@@ -51,3 +51,6 @@ verify_jwt = false
 
 [functions.delete-barber]
 verify_jwt = true
+
+[functions.auto-deactivate-expired]
+verify_jwt = false

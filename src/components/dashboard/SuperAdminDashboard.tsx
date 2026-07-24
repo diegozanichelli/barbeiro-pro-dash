@@ -57,6 +57,8 @@ interface Organization {
   subscription_status: string;
   created_at: string;
   has_subscription_module: boolean;
+  access_expires_at: string | null;
+  auto_deactivate: boolean;
 }
 
 interface OrganizationStats {
@@ -211,6 +213,24 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
         description: "Erro ao alterar status",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleUpdateExpiry = async (
+    orgId: string,
+    fields: { access_expires_at?: string | null; auto_deactivate?: boolean }
+  ) => {
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update(fields)
+        .eq("id", orgId);
+      if (error) throw error;
+      toast({ title: "Atualizado", description: "Vencimento salvo com sucesso" });
+      fetchOrganizations();
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Erro", description: "Falha ao salvar vencimento", variant: "destructive" });
     }
   };
 
@@ -781,6 +801,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   <TableHead>Status</TableHead>
                   <TableHead>Módulo Assinatura</TableHead>
                   <TableHead>Data de Cadastro</TableHead>
+                  <TableHead>Vencimento</TableHead>
                   <TableHead>Customer ID</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
@@ -849,6 +870,37 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                     </TableCell>
                     <TableCell>
                       {new Date(org.created_at).toLocaleDateString("pt-BR")}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const exp = org.access_expires_at;
+                        const today = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                        const daysLeft = exp ? Math.ceil((new Date(exp + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : null;
+                        const isSoon = daysLeft !== null && daysLeft <= 3 && daysLeft >= 0;
+                        const isExpired = daysLeft !== null && daysLeft < 0;
+                        return (
+                          <div className="flex flex-col gap-1.5 min-w-[180px]">
+                            <Input
+                              type="date"
+                              value={exp || ""}
+                              onChange={(e) => handleUpdateExpiry(org.id, { access_expires_at: e.target.value || null })}
+                              className={`h-8 text-xs ${isExpired ? "border-destructive text-destructive" : isSoon ? "border-amber-500 text-amber-600" : ""}`}
+                            />
+                            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                              <Switch
+                                checked={org.auto_deactivate}
+                                onCheckedChange={(checked) => handleUpdateExpiry(org.id, { auto_deactivate: checked })}
+                              />
+                              Auto-desativar
+                            </label>
+                            {exp && daysLeft !== null && (
+                              <span className={`text-[10px] font-medium ${isExpired ? "text-destructive" : isSoon ? "text-amber-600" : "text-muted-foreground"}`}>
+                                {isExpired ? `Venceu há ${Math.abs(daysLeft)}d` : daysLeft === 0 ? "Vence hoje" : `${daysLeft}d restantes`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {org.stripe_customer_id || "N/A"}
