@@ -216,6 +216,24 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleUpdateExpiry = async (
+    orgId: string,
+    fields: { access_expires_at?: string | null; auto_deactivate?: boolean }
+  ) => {
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update(fields)
+        .eq("id", orgId);
+      if (error) throw error;
+      toast({ title: "Atualizado", description: "Vencimento salvo com sucesso" });
+      fetchOrganizations();
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Erro", description: "Falha ao salvar vencimento", variant: "destructive" });
+    }
+  };
+
   const handleMigrateOrganization = async () => {
     if (!isSuperAdmin) {
       toast({
