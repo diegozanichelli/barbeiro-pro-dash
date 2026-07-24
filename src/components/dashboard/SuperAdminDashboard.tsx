@@ -985,35 +985,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                       {new Date(org.created_at).toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell>
-                      {(() => {
-                        const exp = org.access_expires_at;
-                        const today = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                        const daysLeft = exp ? Math.ceil((new Date(exp + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : null;
-                        const isSoon = daysLeft !== null && daysLeft <= 3 && daysLeft >= 0;
-                        const isExpired = daysLeft !== null && daysLeft < 0;
-                        return (
-                          <div className="flex flex-col gap-1.5 min-w-[180px]">
-                            <Input
-                              type="date"
-                              value={exp || ""}
-                              onChange={(e) => handleUpdateExpiry(org.id, { access_expires_at: e.target.value || null })}
-                              className={`h-8 text-xs ${isExpired ? "border-destructive text-destructive" : isSoon ? "border-amber-500 text-amber-600" : ""}`}
-                            />
-                            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <Switch
-                                checked={org.auto_deactivate}
-                                onCheckedChange={(checked) => handleUpdateExpiry(org.id, { auto_deactivate: checked })}
-                              />
-                              Auto-desativar
-                            </label>
-                            {exp && daysLeft !== null && (
-                              <span className={`text-[10px] font-medium ${isExpired ? "text-destructive" : isSoon ? "text-amber-600" : "text-muted-foreground"}`}>
-                                {isExpired ? `Venceu há ${Math.abs(daysLeft)}d` : daysLeft === 0 ? "Vence hoje" : `${daysLeft}d restantes`}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      <ExpiryControl org={org} onSave={handleUpdateExpiry} />
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {org.stripe_customer_id || "N/A"}
