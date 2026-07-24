@@ -57,6 +57,8 @@ interface Organization {
   subscription_status: string;
   created_at: string;
   has_subscription_module: boolean;
+  access_expires_at: string | null;
+  auto_deactivate: boolean;
 }
 
 interface OrganizationStats {
