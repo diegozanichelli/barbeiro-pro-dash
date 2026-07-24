@@ -73,11 +73,124 @@ type OrgFilter = "all" | "trial" | "gratuita";
 
 const TRIAL_DAYS = 7;
 
+const isoToBrazilianDate = (value: string | null): string => {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return "";
+  return `${day}/${month}/${year}`;
+};
+
+const maskBrazilianDate = (value: string): string => {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+};
+
+const brazilianDateToIso = (value: string): string | null => {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  const parsed = new Date(year, month - 1, day);
+
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${yearText}-${monthText}-${dayText}`;
+};
+
 function getTrialDaysLeft(createdAt: string): number {
   const created = new Date(createdAt).getTime();
   const expires = created + TRIAL_DAYS * 24 * 60 * 60 * 1000;
   const diffMs = expires - Date.now();
   return Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+}
+
+interface ExpiryControlProps {
+  org: Organization;
+  onSave: (orgId: string, fields: { access_expires_at?: string | null; auto_deactivate?: boolean }) => void;
+}
+
+function ExpiryControl({ org, onSave }: ExpiryControlProps) {
+  const [draftDate, setDraftDate] = useState(() => isoToBrazilianDate(org.access_expires_at));
+
+  useEffect(() => {
+    setDraftDate(isoToBrazilianDate(org.access_expires_at));
+  }, [org.access_expires_at]);
+
+  const exp = org.access_expires_at;
+  const today = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const daysLeft = exp ? Math.ceil((new Date(exp + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : null;
+  const isSoon = daysLeft !== null && daysLeft <= 3 && daysLeft >= 0;
+  const isExpired = daysLeft !== null && daysLeft < 0;
+  const normalizedDraft = draftDate.trim();
+  const hasDraftChanged = normalizedDraft !== isoToBrazilianDate(org.access_expires_at);
+  const isComplete = normalizedDraft.length === 10;
+  const canSave = normalizedDraft === "" || (hasDraftChanged && isComplete);
+
+  const handleSaveDate = () => {
+    if (normalizedDraft === "") {
+      onSave(org.id, { access_expires_at: null });
+      return;
+    }
+
+    const isoDate = brazilianDateToIso(normalizedDraft);
+    if (!isoDate) return;
+
+    onSave(org.id, { access_expires_at: isoDate });
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 min-w-[220px]">
+      <div className="flex items-center gap-2">
+        <Input
+          type="text"
+          inputMode="numeric"
+          placeholder="dd/mm/aaaa"
+          value={draftDate}
+          onChange={(e) => setDraftDate(maskBrazilianDate(e.target.value))}
+          className={`h-8 text-xs ${isExpired ? "border-destructive text-destructive" : isSoon ? "border-amber-500 text-amber-600" : ""}`}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 px-2 text-xs"
+          onClick={handleSaveDate}
+          disabled={!canSave}
+        >
+          Salvar
+        </Button>
+      </div>
+      {normalizedDraft !== "" && !isComplete && (
+        <span className="text-[10px] text-muted-foreground">Digite a data completa antes de salvar</span>
+      )}
+      {normalizedDraft !== "" && isComplete && hasDraftChanged && !brazilianDateToIso(normalizedDraft) && (
+        <span className="text-[10px] text-destructive">Data inválida</span>
+      )}
+      <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <Switch
+          checked={org.auto_deactivate}
+          onCheckedChange={(checked) => onSave(org.id, { auto_deactivate: checked })}
+        />
+        Auto-desativar
+      </label>
+      {exp && daysLeft !== null && (
+        <span className={`text-[10px] font-medium ${isExpired ? "text-destructive" : isSoon ? "text-amber-600" : "text-muted-foreground"}`}>
+          {isExpired ? `Venceu há ${Math.abs(daysLeft)}d` : daysLeft === 0 ? "Vence hoje" : `${daysLeft}d restantes`}
+        </span>
+      )}
+    </div>
+  );
 }
 
 interface Manager {
