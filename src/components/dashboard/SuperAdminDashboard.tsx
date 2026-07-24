@@ -801,6 +801,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   <TableHead>Status</TableHead>
                   <TableHead>Módulo Assinatura</TableHead>
                   <TableHead>Data de Cadastro</TableHead>
+                  <TableHead>Vencimento</TableHead>
                   <TableHead>Customer ID</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
