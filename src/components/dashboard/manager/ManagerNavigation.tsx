@@ -108,6 +108,7 @@ export default function ManagerNavigation({
 
   const relatoriosItems: NavItem[] = [
     { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
+    { id: "barber-report", label: "Relatório do Barbeiro", icon: FileText },
     { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
     { id: "evolution", label: "Evolução", icon: TrendingUp },
     { id: "best-sales-days", label: "Melhores Dias", icon: Flame },
