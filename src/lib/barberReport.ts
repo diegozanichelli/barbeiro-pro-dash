@@ -64,9 +64,10 @@ export const maskPhone = (phone: string | null) => {
   if (!phone) return "—";
   const digits = phone.replace(/\D/g, "");
   if (digits.length < 8) return phone;
-  const tail = digits.slice(-4);
-  const head = digits.slice(0, digits.length - 4).slice(-7, -4);
-  return `(${digits.slice(-11, -9) || "--"}) ${head}****-${tail}`;
+  const local = digits.slice(-9);
+  const ddd = digits.length >= 10 ? digits.slice(-11, -9) : "";
+  const tail = local.slice(-4);
+  return `${ddd ? `(${ddd}) ` : ""}${local.slice(0, 1)}****-${tail}`;
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
