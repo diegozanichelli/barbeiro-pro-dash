@@ -1,35 +1,37 @@
 ## Objetivo
-No painel do super admin, permitir definir uma **data de vencimento** para contas que não estão na recorrência automática (Stripe) e desativá-las sozinho quando essa data chegar.
 
-## Mudanças
+Criar um relatório individual por barbeiro, com intervalo de datas livre, exportável em PDF, mostrando o que ele mais e menos vende (separado por serviço, produto e assinatura) e a lista completa de clientes com o que cada um consumiu.
 
-### 1. Banco de dados (migration)
-- Adicionar em `public.organizations`:
-  - `access_expires_at date` (nullable) — data limite de acesso quando não há recorrência.
-  - `auto_deactivate boolean not null default false` — liga/desliga o desativador para a org.
-- Sem alteração no `valid_subscription_status` check (continuamos usando `past_due` como estado desativado, igual ao `revoke-free-access`).
+## Onde fica
 
-### 2. Edge Function `auto-deactivate-expired` (nova, `verify_jwt = false`)
-- Roda com service role.
-- `UPDATE organizations SET subscription_status='past_due' WHERE auto_deactivate = true AND access_expires_at IS NOT NULL AND access_expires_at < CURRENT_DATE (America/Manaus) AND subscription_status IN ('active','trial','gratuita')`.
-- Retorna quantas foram desativadas.
+Novo item no menu **Relatórios** do gestor: **"Relatório do Barbeiro"**.
 
-### 3. Agendamento (pg_cron via `supabase--insert`)
-- Job diário às 03:10 Manaus (07:10 UTC) chamando a edge function via `pg_net.http_post` (mesmo padrão do `check-performance-alerts`). Extensões `pg_cron` e `pg_net` já usadas no projeto.
+Filtros no topo:
+- Unidade (opcional)
+- Barbeiro (obrigatório, combobox já existente)
+- Data inicial e data final (intervalo livre, fuso Manaus)
+- Botões: **Gerar relatório** e **Exportar PDF**
 
-### 4. UI — `SuperAdminDashboard.tsx`
-Na tabela de organizações (para contas **sem** `stripe_customer_id` recorrente, i.e. `gratuita`/`trial`/`active` manual):
-- Nova coluna **"Vencimento"** mostrando `access_expires_at` (ou "—") + badge "Auto-desativar" quando `auto_deactivate` estiver ligado.
-- Novo botão/modal **"Definir vencimento"** com:
-  - date picker (`access_expires_at`)
-  - switch `auto_deactivate`
-  - botão Salvar (update direto na tabela via RLS de super_admin já existente) e botão Remover vencimento.
-- Destacar em vermelho quando `access_expires_at` estiver a ≤ 3 dias.
+O relatório aparece primeiro na tela (preview) e o PDF é a mesma estrutura.
 
-### 5. Segurança
-- Update permitido apenas para `super_admin` (política já existente em `organizations`).
-- Edge function usa service role e não expõe dados.
+## Conteúdo do relatório
 
-## Fora de escopo
-- Notificação por e-mail antes do vencimento (pode virar próximo passo).
-- Contas com Stripe recorrente ativa continuam sendo controladas pelo webhook do Stripe; o campo de vencimento fica apenas informativo caso o gestor preencha.
+1. **Cabeçalho** — nome do barbeiro, unidade(s), período (dd/mm/aaaa a dd/mm/aaaa), data de emissão.
+2. **Resumo geral** — faturamento total, comissão, nº de atendimentos (comandas), nº de clientes únicos, ticket médio.
+3. **Quebra por categoria** — três blocos separados com faturamento, quantidade e ticket médio de cada:
+   - Serviços básicos/extras
+   - Produtos
+   - Assinaturas (mantidas separadas do operacional, como já é a regra do sistema)
+4. **O que mais vende / o que menos vende** — por categoria (serviço, produto, assinatura), lista **completa** de itens do período ordenada por faturamento, com quantidade, faturamento e % do total da categoria. Os 3 primeiros ficam destacados como "mais vendidos" e os 3 últimos como "menos vendidos".
+5. **Itens do catálogo que ele nunca vendeu no período** — lista de oportunidades perdidas (itens ativos do catálogo sem nenhuma venda dele).
+6. **Clientes** — lista **completa** de clientes do período, ordenada por valor gasto, com: nome, telefone (mascarado), nº de visitas, valor total e **o que consumiu** (itens agrupados com quantidade). Destaque para o Top 10.
+7. **Rodapé** — numeração de páginas e observação de que assinaturas não entram na meta operacional.
+
+## Detalhes técnicos
+
+- **Dados**: nova RPC `get_barber_report_range(p_barber_id, p_start, p_end, p_unit_id)` retornando JSON com: totais, quebra por `item_type`/`service_category`, agregação por `item_name` e agregação por cliente (`mobile_phone` + itens consumidos). Agregação feita no banco para não bater no limite de 1000 linhas do PostgREST.
+- Nomes de clientes: usar a tabela `clients` como fonte do nome (os nomes em `sale_transactions` são efêmeros/limpos após 30 dias); fallback para "Cliente sem cadastro" quando não houver telefone.
+- **PDF**: gerar com `jspdf` + `jspdf-autotable` (novas dependências), diretamente no navegador — tabelas paginam sozinhas, acentuação correta, e o arquivo sai como `relatorio-<barbeiro>-<inicio>-a-<fim>.pdf`. Não usa impressão do navegador.
+- Componentes novos: `src/components/dashboard/manager/BarberReportPage.tsx` (filtros + preview) e `src/lib/barberReportPdf.ts` (montagem do PDF).
+- Registrar a nova rota/aba em `ManagerNavigation.tsx` dentro do grupo **Relatórios**.
+- Textos e formatação em pt-BR, valores em BRL, datas em fuso Manaus.
