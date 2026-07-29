@@ -1481,6 +1481,15 @@ export type Database = {
         }
         Returns: Json
       }
+      get_barber_report_range: {
+        Args: {
+          p_barber_id: string
+          p_end: string
+          p_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
