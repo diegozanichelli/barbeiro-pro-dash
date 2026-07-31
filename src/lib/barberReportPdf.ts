@@ -259,7 +259,7 @@ export function generateBarberReportPdf(data: BarberReportData) {
     doc.setFontSize(7.5);
     doc.setTextColor(140, 140, 140);
     doc.text(
-      "Assinaturas são exibidas separadamente e não compõem a meta operacional diária.",
+      "Assinaturas não geram comissão e não compõem a meta operacional: aparecem apenas pela quantidade vendida.",
       margin,
       doc.internal.pageSize.getHeight() - 22
     );
