@@ -15,6 +15,7 @@ import { ShieldAlert, AlertTriangle, TrendingDown, ListFilter } from "lucide-rea
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhone } from "@/lib/phoneUtils";
+import { fetchAllRows } from "@/lib/supabasePagination";
 
 interface ManagerRescueReportProps {
   organizationId: string;
@@ -73,23 +74,27 @@ export default function ManagerRescueReport({ organizationId, from, to }: Manage
     const load = async () => {
       setLoading(true);
       try {
-        const [rescueRes, totalRes, unitsRes] = await Promise.all([
-          supabase
-            .from("sale_transactions")
-            .select("id, created_at, client_name, mobile_phone, item_name, price_sold, subscription_action, unit_id")
-            .eq("organization_id", organizationId)
-            .eq("item_type", "subscription")
-            // Regra de negócio: este relatório é estritamente de recuperações lançadas pelo gestor,
-            // independente de source/origem do lançamento.
-            .eq("attribution_source", "manager_rescue")
-            .gte("created_at", fromIso)
-            .lte("created_at", toIso)
-            .order("created_at", { ascending: false }),
+        const [rescueList, totalRes, unitsRes] = await Promise.all([
+          fetchAllRows<any>(() =>
+            supabase
+              .from("sale_transactions")
+              .select("id, created_at, client_name, mobile_phone, item_name, price_sold, subscription_action, unit_id")
+              .eq("organization_id", organizationId)
+              .eq("item_type", "subscription")
+              // Regra de negócio: este relatório é estritamente de recuperações lançadas pelo gestor,
+              // independente de source/origem do lançamento.
+              .eq("attribution_source", "manager_rescue")
+              .gte("created_at", fromIso)
+              .lte("created_at", toIso)
+              .order("created_at", { ascending: false })
+          ),
           supabase
             .from("sale_transactions")
             .select("id", { count: "exact", head: true })
             .eq("organization_id", organizationId)
             .eq("item_type", "subscription")
+            // Denominador de adesões reais: exclui clientes migrados do sistema antigo.
+            .or("subscription_action.is.null,subscription_action.neq.legacy_import")
             .gte("created_at", fromIso)
             .lte("created_at", toIso),
           supabase
@@ -98,10 +103,11 @@ export default function ManagerRescueReport({ organizationId, from, to }: Manage
             .eq("organization_id", organizationId),
         ]);
 
+
         const unitMap = new Map<string, string>();
         (unitsRes.data || []).forEach((u: any) => unitMap.set(u.id, u.name));
 
-        const list: RescueTx[] = (rescueRes.data || []).map((t: any) => ({
+        const list: RescueTx[] = (rescueList || []).map((t: any) => ({
           ...t,
           unit_name: t.unit_id ? unitMap.get(t.unit_id) || "Unidade removida" : "Sem unidade",
         }));

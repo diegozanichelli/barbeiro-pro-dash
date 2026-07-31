@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
-import { getManausDate } from "@/lib/dateUtils";
+import { getManausDate, manausDayStart, manausDayEnd } from "@/lib/dateUtils";
 import {
   PieChart,
   Pie,
@@ -444,8 +444,8 @@ export default function BarberDeepAnalysis({
             "barber_id, created_at, mobile_phone, daily_production_id, item_type, is_new_client, price_sold"
           )
           .eq("organization_id", organizationId!)
-          .gte("created_at", start.toISOString())
-          .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
+          .gte("created_at", manausDayStart(startIso))
+          .lte("created_at", manausDayEnd(endIso))
           .range(f, t)
       );
 
@@ -593,7 +593,7 @@ export default function BarberDeepAnalysis({
             .select("mobile_phone")
             .eq("organization_id", organizationId!)
             .eq("barber_id", barberId)
-            .lt("created_at", start.toISOString())
+            .lt("created_at", manausDayStart(startIso))
             .not("mobile_phone", "is", null)
             .range(f, t)
         );
@@ -620,7 +620,8 @@ export default function BarberDeepAnalysis({
         returningCount: number;
         subscriptionCount: number;
         subscriptionRevenue: number;
-        revenue: number; // soma de price_sold
+        // Regra do projeto: assinatura NÃO entra no faturamento operacional.
+        operationalRevenue: number;
       };
       const newAgg = (): Agg => ({
         phones: new Set(),
@@ -632,7 +633,7 @@ export default function BarberDeepAnalysis({
         returningCount: 0,
         subscriptionCount: 0,
         subscriptionRevenue: 0,
-        revenue: 0,
+        operationalRevenue: 0,
       });
       const perBarberVitals = new Map<string, Agg>();
       // marcar atendimentos com telefone usando set de created_at
@@ -650,8 +651,9 @@ export default function BarberDeepAnalysis({
         if (t.item_type === "subscription") {
           cur.subscriptionCount += 1;
           cur.subscriptionRevenue += Number(t.price_sold) || 0;
+        } else {
+          cur.operationalRevenue += Number(t.price_sold) || 0;
         }
-        cur.revenue += Number(t.price_sold) || 0;
 
         // telefone por atendimento (qualquer linha do mesmo created_at com phone marca true)
         let pmap = phoneByAtend.get(t.barber_id);
@@ -696,13 +698,23 @@ export default function BarberDeepAnalysis({
         : 0;
       const houseTicketAvg = (() => {
         const tickets = othersVitals
-          .map((a) => (a.atendimentosTotal > 0 ? a.revenue / a.atendimentosTotal : 0))
+          .map((a) => (a.atendimentosTotal > 0 ? a.operationalRevenue / a.atendimentosTotal : 0))
           .filter((v) => v > 0);
         return tickets.length ? tickets.reduce((s, v) => s + v, 0) / tickets.length : 0;
       })();
       const houseSubsAvg = othersVitals.length
         ? othersVitals.reduce((s, a) => s + a.subscriptionCount, 0) / othersVitals.length
         : 0;
+
+      // Fallback local (usado se a RPC falhar) — mesmas definições, calculadas no cliente
+      const localTicketOp =
+        selfVitals.atendimentosTotal > 0
+          ? selfVitals.operationalRevenue / selfVitals.atendimentosTotal
+          : 0;
+      const localTicketSub =
+        selfVitals.subscriptionCount > 0
+          ? selfVitals.subscriptionRevenue / selfVitals.subscriptionCount
+          : 0;
 
       // ===== Substituído pela RPC get_barber_deep_analysis (verdade única) =====
       const { data: rpcData, error: rpcErr } = await supabase.rpc(
@@ -717,48 +729,68 @@ export default function BarberDeepAnalysis({
       if (rpcErr) {
         console.error("[BarberDeepAnalysis] RPC erro:", rpcErr);
       }
+      const rpcOk = !rpcErr && !!rpcData;
       const rpc: any = rpcData || {};
       const volume = rpc.volume || {};
       const subs = rpc.subscriptions || {};
       const house = rpc.house || {};
-      const retention = rpc.retention || {};
+      const rpcRetention = rpc.retention || {};
       const portfolio = rpc.portfolio || {};
 
       // Sobrescreve clientMetrics com definições corretas (atendimento = phone+dia OU created_at anônimo)
       const rpcAtend = Number(volume.atendimentos) || 0;
       const rpcUniq = Number(volume.unique_clients) || 0;
       const rpcServiceLines = Number(volume.service_lines) || 0;
+      const atendimentos = rpcAtend > 0 ? rpcAtend : selectedAtendimentos || selected.clients;
+      const unicos = rpcOk && rpcUniq > 0 ? rpcUniq : selfVitals.phones.size;
       setClientMetrics({
-        atendimentos: rpcAtend > 0 ? rpcAtend : selected.clients,
-        servicos: rpcServiceLines > 0 ? rpcServiceLines : 0,
-        unicos: rpcUniq,
+        atendimentos,
+        servicos: rpcServiceLines > 0 ? rpcServiceLines : selectedServicos,
+        unicos,
       });
 
       setVitalMetrics({
-        uniqueClients: rpcUniq,
-        ticketOperacional: Number(rpc.ticket_operacional) || 0,
-        ticketAssinatura: Number(rpc.ticket_assinatura) || 0,
-        subscriptionCount: Number(subs.count) || 0,
-        subscriptionRevenue: Number(subs.mrr) || 0,
-        houseUniqueClientsAvg: Number(house.unique_clients_avg) || 0,
-        houseTicketOpAvg: Number(house.ticket_operacional_avg) || 0,
-        houseSubscriptionCountAvg: Number(house.sub_count_avg) || 0,
-        hasItemizedData: rpcAtend > 0,
+        uniqueClients: unicos,
+        ticketOperacional: rpcOk ? Number(rpc.ticket_operacional) || 0 : localTicketOp,
+        ticketAssinatura: rpcOk ? Number(rpc.ticket_assinatura) || 0 : localTicketSub,
+        subscriptionCount: rpcOk ? Number(subs.count) || 0 : selfVitals.subscriptionCount,
+        subscriptionRevenue: rpcOk ? Number(subs.mrr) || 0 : selfVitals.subscriptionRevenue,
+        houseUniqueClientsAvg: rpcOk ? Number(house.unique_clients_avg) || 0 : houseUniqueAvg,
+        houseTicketOpAvg: rpcOk ? Number(house.ticket_operacional_avg) || 0 : houseTicketAvg,
+        houseSubscriptionCountAvg: rpcOk ? Number(house.sub_count_avg) || 0 : houseSubsAvg,
+        hasItemizedData: atendimentos > 0,
       });
 
       setRetentionMetrics({
-        networkPct: Number(retention.network_pct) || 0,
-        barberPct: Number(retention.barber_pct) || 0,
-        networkCount: Number(retention.network_count) || 0,
-        barberCount: Number(retention.barber_count) || 0,
-        totalWithPhone: Number(retention.total_with_phone) || 0,
+        networkPct: Number(rpcRetention.network_pct) || 0,
+        barberPct: Number(rpcRetention.barber_pct) || 0,
+        networkCount: Number(rpcRetention.network_count) || 0,
+        barberCount: Number(rpcRetention.barber_count) || 0,
+        totalWithPhone: Number(rpcRetention.total_with_phone) || 0,
       });
 
-      setPortfolioQuality({
-        phoneCoveragePct: Number(portfolio.phone_coverage_pct) || 0,
-        visitsPerClient: Number(portfolio.visits_per_client) || 0,
-        productPenetrationPct: Number(portfolio.product_penetration_pct) || 0,
-      });
+      setPortfolioQuality(
+        rpcOk
+          ? {
+              phoneCoveragePct: Number(portfolio.phone_coverage_pct) || 0,
+              visitsPerClient: Number(portfolio.visits_per_client) || 0,
+              productPenetrationPct: Number(portfolio.product_penetration_pct) || 0,
+            }
+          : {
+              phoneCoveragePct:
+                selfVitals.atendimentosTotal > 0
+                  ? (selfVitals.atendimentosComTelefone / selfVitals.atendimentosTotal) * 100
+                  : 0,
+              visitsPerClient:
+                selfVitals.phones.size > 0
+                  ? selfVitals.atendimentosTotal / selfVitals.phones.size
+                  : 0,
+              productPenetrationPct:
+                selfVitals.atendimentosTotal > 0
+                  ? (selfVitals.atendimentosComProduto.size / selfVitals.atendimentosTotal) * 100
+                  : 0,
+            }
+      );
     } catch (err) {
       console.error("[BarberDeepAnalysis] erro geral:", err);
     } finally {

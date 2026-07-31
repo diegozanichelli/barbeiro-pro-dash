@@ -54,8 +54,8 @@ export function generateBarberReportPdf(data: BarberReportData) {
   const t = data.totals;
   const ticket = t.visits > 0 ? t.revenue / t.visits : 0;
   const subsQty = Number(data.by_category?.subscription?.qty || 0);
-  const subsCommission = Number(data.by_category?.subscription?.commission || 0);
-  const commissionNoSubs = Number(t.commission || 0) - subsCommission;
+  // A RPC já devolve totals.commission sem assinaturas (regra aplicada na origem).
+  const commissionNoSubs = Number(t.commission || 0);
 
   // ---------- Resumo ----------
   autoTable(doc, {
