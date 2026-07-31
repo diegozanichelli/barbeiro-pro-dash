@@ -5,7 +5,9 @@ import {
   CATEGORY_LABEL,
   fmtBRL,
   fmtDateBR,
+  groupReportItems,
   maskPhone,
+  sumGroup,
 } from "@/lib/barberReport";
 
 const PRIMARY: [number, number, number] = [17, 17, 17];
