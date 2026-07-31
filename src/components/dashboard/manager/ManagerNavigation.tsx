@@ -22,6 +22,8 @@ import {
   Calculator,
   UserRound,
   ChevronRight,
+  ShieldCheck,
+
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
