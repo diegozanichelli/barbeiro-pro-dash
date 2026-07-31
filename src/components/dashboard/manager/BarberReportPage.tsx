@@ -194,9 +194,12 @@ export default function BarberReportPage() {
               {[
                 { label: "Faturamento", value: fmtBRL(totals.revenue) },
                 { label: "Operacional", value: fmtBRL(totals.operational_revenue) },
-                { label: "Comissão", value: fmtBRL(totals.commission) },
+                {
+                  label: "Comissão (sem assinaturas)",
+                  value: fmtBRL(totals.commission - Number(data.by_category?.subscription?.commission || 0)),
+                },
+                { label: "Assinaturas vendidas", value: String(data.by_category?.subscription?.qty || 0) },
                 { label: "Atendimentos", value: String(totals.visits) },
-                { label: "Clientes únicos", value: String(totals.unique_clients) },
                 { label: "Ticket médio", value: fmtBRL(ticket) },
               ].map((k) => (
                 <div key={k.label} className="rounded-lg border border-border p-3">
@@ -218,7 +221,9 @@ export default function BarberReportPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">{CATEGORY_LABEL[cat]}</CardTitle>
                     <CardDescription>
-                      {row.qty} vendas • {fmtBRL(row.revenue)}
+                      {cat === "subscription"
+                        ? `${row.qty} assinaturas vendidas (sem comissão)`
+                        : `${row.qty} vendas • ${fmtBRL(row.revenue)}`}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">

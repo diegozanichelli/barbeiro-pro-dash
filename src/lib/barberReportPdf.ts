@@ -53,6 +53,9 @@ export function generateBarberReportPdf(data: BarberReportData) {
 
   const t = data.totals;
   const ticket = t.visits > 0 ? t.revenue / t.visits : 0;
+  const subsQty = Number(data.by_category?.subscription?.qty || 0);
+  const subsCommission = Number(data.by_category?.subscription?.commission || 0);
+  const commissionNoSubs = Number(t.commission || 0) - subsCommission;
 
   // ---------- Resumo ----------
   autoTable(doc, {
@@ -61,7 +64,8 @@ export function generateBarberReportPdf(data: BarberReportData) {
     body: [
       ["Faturamento total", fmtBRL(t.revenue)],
       ["Faturamento operacional (sem assinaturas)", fmtBRL(t.operational_revenue)],
-      ["Comissão", fmtBRL(t.commission)],
+      ["Comissão (sem assinaturas)", fmtBRL(commissionNoSubs)],
+      ["Assinaturas vendidas (quantidade)", String(subsQty)],
       ["Atendimentos (comandas)", String(t.visits)],
       ["Clientes únicos", String(t.unique_clients)],
       ["Ticket médio por atendimento", fmtBRL(ticket)],
@@ -82,7 +86,7 @@ export function generateBarberReportPdf(data: BarberReportData) {
       String(row.qty),
       fmtBRL(row.revenue),
       fmtBRL(row.qty > 0 ? row.revenue / row.qty : 0),
-      fmtBRL(row.commission),
+      c === "subscription" ? "—" : fmtBRL(row.commission),
       `${share.toFixed(1)}%`,
     ];
   });
@@ -98,6 +102,7 @@ export function generateBarberReportPdf(data: BarberReportData) {
       t.revenue > 0 ? `${((v.revenue / t.revenue) * 100).toFixed(1)}%` : "0.0%",
     ]);
   });
+
 
   autoTable(doc, {
     head: [["Categoria", "Qtd", "Faturamento", "Ticket médio", "Comissão", "% do total"]],
@@ -254,7 +259,7 @@ export function generateBarberReportPdf(data: BarberReportData) {
     doc.setFontSize(7.5);
     doc.setTextColor(140, 140, 140);
     doc.text(
-      "Assinaturas são exibidas separadamente e não compõem a meta operacional diária.",
+      "Assinaturas não geram comissão e não compõem a meta operacional: aparecem apenas pela quantidade vendida.",
       margin,
       doc.internal.pageSize.getHeight() - 22
     );
