@@ -28,6 +28,8 @@ import SendNotificationsButton from "./manager/SendNotificationsButton";
 import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
 import BestSalesDays from "./manager/BestSalesDays";
 import BarberReportPage from "./manager/BarberReportPage";
+import ReportsAuditPanel from "./manager/ReportsAuditPanel";
+
 
 interface ManagerDashboardProps {
   user: User;
@@ -179,9 +181,14 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <MonthlyPayroll />
           </TabsContent>
 
+          <TabsContent value="reports-audit" className="mt-0">
+            <ReportsAuditPanel onNavigate={setActiveTab} />
+          </TabsContent>
+
           <TabsContent value="ai-usage" className="mt-0">
             <AIUsageTracking />
           </TabsContent>
+
 
           <TabsContent value="subscriptions" className="mt-0">
             <SubscriptionsTracking />

@@ -1472,6 +1472,18 @@ export type Database = {
         }
         Returns: string
       }
+      get_audit_finding_rows: {
+        Args: {
+          p_check_key: string
+          p_end: string
+          p_limit?: number
+          p_offset?: number
+          p_organization_id?: string
+          p_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
       get_barber_deep_analysis: {
         Args: {
           p_barber_id: string
@@ -1532,6 +1544,15 @@ export type Database = {
           p_period_end: string
           p_period_start: string
           p_target_ratio?: number
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
+      get_report_audit_findings: {
+        Args: {
+          p_end: string
+          p_organization_id?: string
+          p_start: string
           p_unit_id?: string
         }
         Returns: Json
