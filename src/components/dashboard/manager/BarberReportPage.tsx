@@ -263,45 +263,62 @@ export default function BarberReportPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {(["service", "product", "subscription"] as const).map((cat) => {
-              const row = data.by_category?.[cat] || { qty: 0, revenue: 0, commission: 0 };
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(["service", "product", "subscription", "service_base"] as const).map((cat) => {
+              const row = groupTotals[cat];
               const items = grouped[cat] || [];
-              const best = items[0];
-              const worst = items.length > 1 ? items[items.length - 1] : null;
+              const top3 = items.slice(0, 3);
+              const worst = items.length > 3 ? items[items.length - 1] : null;
               return (
-                <Card key={cat}>
+                <Card key={cat} className={cat === "service_base" ? "border-primary/40" : undefined}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">{CATEGORY_LABEL[cat]}</CardTitle>
                     <CardDescription>
                       {cat === "subscription"
                         ? `${row.qty} assinaturas vendidas (sem comissão)`
+                        : cat === "service_base"
+                        ? `Corte, barba e pezinho • ${row.qty} vendas • ${fmtBRL(row.revenue)}`
                         : `${row.qty} vendas • ${fmtBRL(row.revenue)}`}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-[hsl(var(--success))]" />
-                      <span className="truncate">{best ? `${best.item_name} (${best.qty}x)` : "Sem vendas"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <TrendingDown className="w-4 h-4 text-destructive" />
-                      <span className="truncate">{worst ? `${worst.item_name} (${worst.qty}x)` : "—"}</span>
-                    </div>
+                    {top3.length === 0 && <p className="text-muted-foreground">Sem vendas no período.</p>}
+                    {top3.map((i, idx) => (
+                      <div key={i.item_name} className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-primary w-5">#{idx + 1}</span>
+                        <span className="truncate flex-1">{i.item_name}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {i.qty}x • {fmtBRL(i.revenue)}
+                        </span>
+                      </div>
+                    ))}
+                    {worst && (
+                      <div className="flex items-center gap-2 pt-1 border-t border-border">
+                        <TrendingDown className="w-4 h-4 text-destructive" />
+                        <span className="truncate flex-1">{worst.item_name}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{worst.qty}x</span>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
             })}
           </div>
 
-          {(["service", "product", "subscription"] as const).map((cat) => {
+          {(["service", "service_base", "product", "subscription"] as const).map((cat) => {
             const items = grouped[cat] || [];
             const catTotal = items.reduce((s, i) => s + Number(i.revenue || 0), 0);
             return (
               <Card key={cat}>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">{CATEGORY_LABEL[cat]} — ranking completo</CardTitle>
-                  <CardDescription>{items.length} itens diferentes no período</CardDescription>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    {CATEGORY_LABEL[cat]} — ranking completo
+                    {cat === "service" && <TrendingUp className="w-4 h-4 text-[hsl(var(--success))]" />}
+                  </CardTitle>
+                  <CardDescription>
+                    {items.length} itens diferentes no período
+                    {cat === "service" && " • exclui corte, barba e pezinho (ver bloco de serviços base)"}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {items.length === 0 ? (
@@ -324,7 +341,7 @@ export default function BarberReportPage() {
                               <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
                               <TableCell className="font-medium">
                                 {i.item_name}
-                                {idx < 3 && <Badge className="ml-2" variant="secondary">Mais vendido</Badge>}
+                                {idx < 3 && <Badge className="ml-2" variant="secondary">Top 3</Badge>}
                                 {items.length > 3 && idx >= items.length - 3 && (
                                   <Badge className="ml-2" variant="outline">Menos vendido</Badge>
                                 )}
