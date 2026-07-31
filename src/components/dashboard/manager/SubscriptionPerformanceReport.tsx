@@ -191,13 +191,13 @@ export default function SubscriptionPerformanceReport() {
       const { data: receptionTx, error: recError } = await recQuery;
       if (recError) throw recError;
 
-      // Telefones marcados como "Assinante Legado" (subscription_action='import') — sempre todo o histórico.
+      // Telefones marcados como "Assinante Legado" (subscription_action='legacy_import') — sempre todo o histórico.
       const { data: legacyRows } = await (supabase
         .from("sale_transactions") as any)
         .select("mobile_phone")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
-        .eq("subscription_action", "import")
+        .eq("subscription_action", "legacy_import")
         .not("mobile_phone", "is", null);
       const legacyPhones = new Set<string>(
         ((legacyRows || []) as Array<{ mobile_phone: string | null }>)
