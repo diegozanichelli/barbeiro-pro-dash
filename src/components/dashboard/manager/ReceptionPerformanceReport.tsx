@@ -5,6 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate, manausDayStart, manausDayEnd, toDateKey } from "@/lib/dateUtils";
 import { fetchAllRows } from "@/lib/supabasePagination";
+import { isLegacyImport, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Building2, Crown, TrendingUp, TrendingDown, Minus, Users, HelpCircle } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -78,10 +80,16 @@ export default function ReceptionPerformanceReport() {
 
     try {
       // Buscar vendas de assinatura da recepção (barber_id IS NULL)
-      const currentMonthData = await fetchAllRows<{ unit_id: string | null; is_new_client: boolean | null }>(() =>
+      const currentMonthData = await fetchAllRows<{
+        unit_id: string | null;
+        is_new_client: boolean | null;
+        mobile_phone: string | null;
+        subscription_action: string | null;
+        item_type: string | null;
+      }>(() =>
         supabase
           .from("sale_transactions")
-          .select("unit_id, is_new_client")
+          .select("unit_id, is_new_client, mobile_phone, subscription_action, item_type")
           .eq("organization_id", organizationId)
           .eq("item_type", "subscription")
           .is("barber_id", null)
@@ -90,10 +98,10 @@ export default function ReceptionPerformanceReport() {
       );
 
       // Buscar mês anterior para trend
-      const prevMonthData = await fetchAllRows<{ unit_id: string | null }>(() =>
+      const prevMonthData = await fetchAllRows<{ unit_id: string | null; subscription_action: string | null }>(() =>
         supabase
           .from("sale_transactions")
-          .select("unit_id")
+          .select("unit_id, subscription_action")
           .eq("organization_id", organizationId)
           .eq("item_type", "subscription")
           .is("barber_id", null)
@@ -127,13 +135,19 @@ export default function ReceptionPerformanceReport() {
         previousMonthTotal: 0,
       });
 
-      // Processar dados do mês atual
+      // Processar dados do mês atual.
+      // Regras unificadas (src/lib/metricsRules.ts): clientes migrados do sistema antigo
+      // não contam como adesão, e "cliente novo" exige telefone válido de 11 dígitos.
+      const seenNewPhones = new Set<string>();
       currentMonthData?.forEach(tx => {
+        if (isLegacyImport(tx)) return;
         const key = tx.unit_id || "unknown";
         const unit = unitMap.get(key);
         if (unit) {
           unit.totalSubscriptions++;
-          if (tx.is_new_client) {
+          const phone = normalizePhoneForMetrics(tx.mobile_phone);
+          if (isValidOpportunity(tx) && phone && !seenNewPhones.has(phone)) {
+            seenNewPhones.add(phone);
             unit.newClients++;
           } else {
             unit.existingClients++;
@@ -143,6 +157,7 @@ export default function ReceptionPerformanceReport() {
 
       // Processar dados do mês anterior
       prevMonthData?.forEach(tx => {
+        if (isLegacyImport(tx)) return;
         const key = tx.unit_id || "unknown";
         const unit = unitMap.get(key);
         if (unit) {
@@ -274,7 +289,7 @@ export default function ReceptionPerformanceReport() {
                       </div>
                       <p className="text-2xl font-bold">{totalNew}</p>
                       <p className="text-xs text-muted-foreground">
-                        {totalSales > 0 ? Math.round((totalNew / totalSales) * 100) : 0}% de conversão
+                        {totalSales > 0 ? Math.round((totalNew / totalSales) * 100) : 0}% das adesões são de clientes novos
                       </p>
                     </div>
                   </div>

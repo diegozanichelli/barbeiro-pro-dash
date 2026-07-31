@@ -196,7 +196,7 @@ export default function BarberReportPage() {
                 { label: "Operacional", value: fmtBRL(totals.operational_revenue) },
                 {
                   label: "Comissão (sem assinaturas)",
-                  value: fmtBRL(totals.commission - Number(data.by_category?.subscription?.commission || 0)),
+                  value: fmtBRL(totals.commission),
                 },
                 { label: "Assinaturas vendidas", value: String(data.by_category?.subscription?.qty || 0) },
                 { label: "Atendimentos", value: String(totals.visits) },

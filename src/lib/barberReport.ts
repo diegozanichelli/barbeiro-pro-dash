@@ -24,7 +24,10 @@ export interface BarberReportData {
   period: { start: string; end: string };
   totals: {
     revenue: number;
+    /** Comissão operacional: a RPC já exclui assinaturas. */
     commission: number;
+    /** Comissão registrada em assinaturas (apenas auditoria). */
+    subscription_commission?: number;
     visits: number;
     unique_clients: number;
     operational_revenue: number;

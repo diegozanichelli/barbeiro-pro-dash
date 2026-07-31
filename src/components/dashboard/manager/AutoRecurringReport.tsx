@@ -15,6 +15,7 @@ import { CreditCard, Repeat, ListFilter } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhone } from "@/lib/phoneUtils";
+import { fetchAllRows } from "@/lib/supabasePagination";
 
 interface AutoRecurringReportProps {
   organizationId: string;
@@ -71,21 +72,25 @@ export default function AutoRecurringReport({ organizationId, from, to }: AutoRe
     const load = async () => {
       setLoading(true);
       try {
-        const [recRes, totalRes, unitsRes] = await Promise.all([
-          supabase
-            .from("sale_transactions")
-            .select("id, created_at, client_name, mobile_phone, item_name, price_sold, subscription_action, unit_id")
-            .eq("organization_id", organizationId)
-            .eq("item_type", "subscription")
-            .eq("attribution_source", "auto_recurring")
-            .gte("created_at", fromIso)
-            .lte("created_at", toIso)
-            .order("created_at", { ascending: false }),
+        const [recList, totalRes, unitsRes] = await Promise.all([
+          fetchAllRows<any>(() =>
+            supabase
+              .from("sale_transactions")
+              .select("id, created_at, client_name, mobile_phone, item_name, price_sold, subscription_action, unit_id")
+              .eq("organization_id", organizationId)
+              .eq("item_type", "subscription")
+              .eq("attribution_source", "auto_recurring")
+              .gte("created_at", fromIso)
+              .lte("created_at", toIso)
+              .order("created_at", { ascending: false })
+          ),
           supabase
             .from("sale_transactions")
             .select("id", { count: "exact", head: true })
             .eq("organization_id", organizationId)
             .eq("item_type", "subscription")
+            // Denominador de adesões reais: exclui clientes migrados do sistema antigo.
+            .or("subscription_action.is.null,subscription_action.neq.legacy_import")
             .gte("created_at", fromIso)
             .lte("created_at", toIso),
           supabase
@@ -97,7 +102,7 @@ export default function AutoRecurringReport({ organizationId, from, to }: AutoRe
         const unitMap = new Map<string, string>();
         (unitsRes.data || []).forEach((u: any) => unitMap.set(u.id, u.name));
 
-        const list: RecurringTx[] = (recRes.data || []).map((t: any) => ({
+        const list: RecurringTx[] = (recList || []).map((t: any) => ({
           ...t,
           unit_name: t.unit_id ? unitMap.get(t.unit_id) || "Unidade removida" : "Sem unidade",
         }));

@@ -15,6 +15,7 @@ import type { DateRange } from "react-day-picker";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { getManausDate, TIMEZONE } from "@/lib/dateUtils";
+import { fetchAllRows } from "@/lib/supabasePagination";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -256,12 +257,14 @@ export default function BestSalesDays() {
         .select("id, name, unit_id")
         .eq("organization_id", organizationId);
 
-      const productionsPromise = supabase
-        .from("daily_productions")
-        .select("id, date")
-        .eq("organization_id", organizationId)
-        .gte("date", startDate)
-        .lte("date", endDate);
+      const productionsPromise = fetchAllRows<{ id: string; date: string }>(() =>
+        supabase
+          .from("daily_productions")
+          .select("id, date")
+          .eq("organization_id", organizationId)
+          .gte("date", startDate)
+          .lte("date", endDate)
+      ).then((data) => ({ data, error: null as null }));
 
       const allTransactions: SaleTransaction[] = [];
       let from = 0;

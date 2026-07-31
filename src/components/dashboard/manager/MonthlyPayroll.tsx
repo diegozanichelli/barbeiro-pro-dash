@@ -7,9 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calculator, Calendar, DollarSign, TrendingUp, Users } from "lucide-react";
-import { format, startOfMonth, endOfMonth } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { getManausDate } from "@/lib/dateUtils";
+import { startOfMonth, endOfMonth } from "date-fns";
+import { getManausDate, toDateKey, manausDayStart, manausDayEnd } from "@/lib/dateUtils";
+import { fetchAllRows } from "@/lib/supabasePagination";
+import { useOrganization } from "@/hooks/useOrganization";
 
 interface BarberPayrollData {
   barberId: string;
@@ -28,22 +29,44 @@ interface BarberPayrollData {
 }
 
 export default function MonthlyPayroll() {
+  const { organizationId } = useOrganization();
   const now = getManausDate();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedUnit, setSelectedUnit] = useState("all");
 
   const startDate = startOfMonth(new Date(selectedYear, selectedMonth - 1));
   const endDate = endOfMonth(new Date(selectedYear, selectedMonth - 1));
+  const startKey = toDateKey(startDate);
+  const endKey = toDateKey(endDate);
+
+  // Unidades da organização (para o filtro)
+  const { data: units = [] } = useQuery({
+    queryKey: ["payroll-units", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId!)
+        .order("name");
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
   // Buscar barbeiros com suas taxas
   const { data: barbers = [], isLoading: loadingBarbers } = useQuery({
-    queryKey: ["barbers-payroll"],
+    queryKey: ["barbers-payroll", organizationId, selectedUnit],
+    enabled: !!organizationId,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("barbers")
-        .select("id, name, subscription_commission_rate, units(name)")
-        .eq("status", "active")
-        .order("name");
+        .select("id, name, unit_id, subscription_commission_rate, units(name)")
+        .eq("organization_id", organizationId!)
+        .eq("status", "active");
+      if (selectedUnit !== "all") query = query.eq("unit_id", selectedUnit);
+      const { data, error } = await query.order("name");
       if (error) throw error;
       return data || [];
     },
@@ -51,33 +74,33 @@ export default function MonthlyPayroll() {
 
   // Buscar produções do mês (comissões já calculadas)
   const { data: productions = [], isLoading: loadingProductions } = useQuery({
-    queryKey: ["payroll-productions", selectedMonth, selectedYear],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("daily_productions")
-        .select("barber_id, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, commission_earned")
-        .gte("date", format(startDate, "yyyy-MM-dd"))
-        .lte("date", format(endDate, "yyyy-MM-dd"));
-      if (error) throw error;
-      return data || [];
-    },
+    queryKey: ["payroll-productions", organizationId, selectedMonth, selectedYear],
+    enabled: !!organizationId,
+    queryFn: () =>
+      fetchAllRows<any>(() =>
+        supabase
+          .from("daily_productions")
+          .select("barber_id, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, commission_earned")
+          .eq("organization_id", organizationId!)
+          .gte("date", startKey)
+          .lte("date", endKey)
+      ),
   });
 
-  // Buscar vendas de assinaturas do mês
+  // Buscar vendas de assinaturas do mês (limites em fuso de Manaus)
   const { data: subscriptionSales = [], isLoading: loadingSubscriptions } = useQuery({
-    queryKey: ["payroll-subscriptions", selectedMonth, selectedYear],
-    queryFn: async () => {
-      const startDateStr = format(startDate, "yyyy-MM-dd");
-      const endDateStr = format(endDate, "yyyy-MM-dd");
-      const { data, error } = await supabase
-        .from("sale_transactions")
-        .select("barber_id, price_sold")
-        .eq("item_type", "subscription")
-        .gte("created_at", startDateStr)
-        .lte("created_at", endDateStr + "T23:59:59");
-      if (error) throw error;
-      return data || [];
-    },
+    queryKey: ["payroll-subscriptions", organizationId, selectedMonth, selectedYear],
+    enabled: !!organizationId,
+    queryFn: () =>
+      fetchAllRows<any>(() =>
+        supabase
+          .from("sale_transactions")
+          .select("barber_id, price_sold")
+          .eq("organization_id", organizationId!)
+          .eq("item_type", "subscription")
+          .gte("created_at", manausDayStart(startKey))
+          .lte("created_at", manausDayEnd(endKey))
+      ),
   });
 
   // Calcular dados do payroll
@@ -212,6 +235,19 @@ export default function MonthlyPayroll() {
                   {years.map((y) => (
                     <SelectItem key={y} value={String(y)}>
                       {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {units.map((u: any) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
