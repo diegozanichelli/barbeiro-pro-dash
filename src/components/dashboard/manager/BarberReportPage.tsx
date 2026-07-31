@@ -21,7 +21,9 @@ import {
   fetchBarberReport,
   fmtBRL,
   fmtDateBR,
+  groupReportItems,
   maskPhone,
+  sumGroup,
 } from "@/lib/barberReport";
 import { generateBarberReportPdf } from "@/lib/barberReportPdf";
 
