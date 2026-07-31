@@ -74,7 +74,59 @@ export const maskPhone = (phone: string | null) => {
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
-  service: "Serviços",
+  service: "Serviços extras",
   product: "Produtos",
   subscription: "Assinaturas",
+  service_base: "Serviços base",
 };
+
+const normalize = (v: string) =>
+  String(v || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const BASE_TOKENS = ["corte", "cabelo", "barba", "bigode", "pezinho", "acabamento"];
+
+/** Serviço base = corte / barba / pezinho (e variações de escrita). */
+export const isBaseService = (itemName: string) => {
+  const n = normalize(itemName);
+  return BASE_TOKENS.some((t) => n.includes(t));
+};
+
+const byRevenue = (a: BarberReportItem, b: BarberReportItem) =>
+  Number(b.revenue || 0) - Number(a.revenue || 0) || Number(b.qty || 0) - Number(a.qty || 0);
+
+export interface BarberReportGroups {
+  service: BarberReportItem[];
+  service_base: BarberReportItem[];
+  product: BarberReportItem[];
+  subscription: BarberReportItem[];
+}
+
+/** Agrupa os itens em serviços extras, serviços base, produtos e assinaturas. */
+export function groupReportItems(items: BarberReportItem[] | undefined): BarberReportGroups {
+  const groups: BarberReportGroups = { service: [], service_base: [], product: [], subscription: [] };
+  (items || []).forEach((i) => {
+    if (i.category === "service") {
+      (isBaseService(i.item_name) ? groups.service_base : groups.service).push(i);
+    } else if (i.category === "product") {
+      groups.product.push(i);
+    } else if (i.category === "subscription") {
+      groups.subscription.push(i);
+    }
+  });
+  (Object.keys(groups) as Array<keyof BarberReportGroups>).forEach((k) => groups[k].sort(byRevenue));
+  return groups;
+}
+
+export const sumGroup = (items: BarberReportItem[]) =>
+  items.reduce(
+    (acc, i) => ({
+      qty: acc.qty + Number(i.qty || 0),
+      revenue: acc.revenue + Number(i.revenue || 0),
+      commission: acc.commission + Number(i.commission || 0),
+    }),
+    { qty: 0, revenue: 0, commission: 0 }
+  );
