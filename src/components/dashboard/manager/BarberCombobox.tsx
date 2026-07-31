@@ -32,6 +32,8 @@ interface BarberComboboxProps {
   placeholder?: string;
   allowReception?: boolean;
   disabled?: boolean;
+  /** Quando informado, lista apenas barbeiros dessa unidade. */
+  unitId?: string | null;
 }
 
 export default function BarberCombobox({
@@ -41,6 +43,7 @@ export default function BarberCombobox({
   placeholder = "Selecionar barbeiro...",
   allowReception = true,
   disabled = false,
+  unitId = null,
 }: BarberComboboxProps) {
   const [open, setOpen] = useState(false);
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -51,7 +54,7 @@ export default function BarberCombobox({
     if (organizationId) {
       fetchBarbers();
     }
-  }, [organizationId]);
+  }, [organizationId, unitId]);
 
   const fetchBarbers = async () => {
     setLoading(true);
@@ -59,12 +62,16 @@ export default function BarberCombobox({
 
     try {
       // Buscar barbeiros
-      const { data: barbersData, error: barbersError } = await supabase
+      let barbersQuery = supabase
         .from("barbers")
         .select("id, name, units(name)")
         .eq("organization_id", organizationId)
-        .eq("status", "active")
-        .order("name");
+        .eq("status", "active");
+
+      if (unitId) barbersQuery = barbersQuery.eq("unit_id", unitId);
+
+      const { data: barbersData, error: barbersError } = await barbersQuery.order("name");
+
 
       if (barbersError) throw barbersError;
 
