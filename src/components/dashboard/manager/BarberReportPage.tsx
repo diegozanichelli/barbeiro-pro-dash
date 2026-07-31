@@ -121,13 +121,17 @@ export default function BarberReportPage() {
   };
 
 
-  const grouped = useMemo(() => {
-    const map: Record<string, BarberReportData["items"]> = { service: [], product: [], subscription: [] };
-    (data?.items || []).forEach((i) => {
-      if (map[i.category]) map[i.category].push(i);
-    });
-    return map;
-  }, [data]);
+  const grouped = useMemo(() => groupReportItems(data?.items), [data]);
+
+  const groupTotals = useMemo(
+    () => ({
+      service: sumGroup(grouped.service),
+      service_base: sumGroup(grouped.service_base),
+      product: sumGroup(grouped.product),
+      subscription: sumGroup(grouped.subscription),
+    }),
+    [grouped]
+  );
 
   const totals = data?.totals;
   const ticket = totals && totals.visits > 0 ? totals.revenue / totals.visits : 0;
