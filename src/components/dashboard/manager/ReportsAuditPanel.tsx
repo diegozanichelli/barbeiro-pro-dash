@@ -42,13 +42,14 @@ const CHECK_META: Record<
   dup_clients_phone: {
     title: "Clientes duplicados (telefone)",
     description: "Telefones repetidos no cadastro de clientes.",
-    hint: "O mesmo telefone em mais de um cadastro divide o histórico de visitas e quebra a leitura de assinaturas.",
+    hint: "O mesmo telefone em mais de um cadastro divide o histórico de visitas e quebra a leitura de assinaturas. O filtro de unidade usa a unidade de origem do cliente.",
   },
   dup_clients_name: {
     title: "Clientes duplicados (nome)",
     description: "Nomes iguais com cadastros diferentes.",
-    hint: "Pode ser homônimo legítimo, mas também é a causa mais comum de cliente novo contado duas vezes.",
+    hint: "Pode ser homônimo legítimo, mas também é a causa mais comum de cliente novo contado duas vezes. O filtro de unidade usa a unidade de origem do cliente.",
   },
+
   missing_days: {
     title: "Dias sem lançamento",
     description: "Barbeiros ativos sem produção nem presença registrada no dia.",
