@@ -89,9 +89,25 @@ const normalize = (v: string) =>
 
 const BASE_TOKENS = ["corte", "cabelo", "barba", "bigode", "pezinho", "acabamento"];
 
+/** Termos que indicam que o serviço é de coloração/pigmentação, não base. */
+const EXCLUDED_BASE_TOKENS = [
+  "pigmentacao",
+  "pigmentação",
+  "tintura",
+  "coloracao",
+  "coloração",
+  "henna",
+  "descoloracao",
+  "descoloração",
+  "clareamento",
+  "correcao",
+  "correção",
+];
+
 /** Serviço base = corte / barba / pezinho (e variações de escrita). */
 export const isBaseService = (itemName: string) => {
   const n = normalize(itemName);
+  if (EXCLUDED_BASE_TOKENS.some((t) => n.includes(t))) return false;
   return BASE_TOKENS.some((t) => n.includes(t));
 };
 
