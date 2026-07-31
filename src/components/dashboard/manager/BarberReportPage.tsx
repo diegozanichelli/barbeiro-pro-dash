@@ -65,10 +65,12 @@ export default function BarberReportPage() {
   const [startDate, setStartDate] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
   const [endDate, setEndDate] = useState<Date>(today);
   const [unitId, setUnitId] = useState<string>("all");
+  const [appliedUnitId, setAppliedUnitId] = useState<string>("all");
   const [barberId, setBarberId] = useState<string | null>(null);
   const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
   const [data, setData] = useState<BarberReportData | null>(null);
   const [loading, setLoading] = useState(false);
+
 
   useEffect(() => {
     if (!organizationId) return;
