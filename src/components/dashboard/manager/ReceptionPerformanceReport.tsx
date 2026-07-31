@@ -20,6 +20,7 @@ interface UnitPerformance {
 }
 
 export default function ReceptionPerformanceReport() {
+  const { organizationId } = useOrganization();
   const manausNow = useMemo(() => getManausDate(), []);
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
@@ -36,16 +37,18 @@ export default function ReceptionPerformanceReport() {
 
   useEffect(() => {
     fetchUnits();
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth, selectedYear, units]);
+  }, [selectedMonth, selectedYear, units, organizationId]);
 
   const fetchUnits = async () => {
+    if (!organizationId) return;
     const { data: unitsData, error } = await supabase
       .from("units")
       .select("id, name")
+      .eq("organization_id", organizationId)
       .eq("status", "active")
       .order("name");
 
@@ -59,40 +62,45 @@ export default function ReceptionPerformanceReport() {
 
   const fetchData = async () => {
     if (units.length === 0) return;
-    
+    if (!organizationId) return;
+
     setLoading(true);
 
-    const startDate = new Date(selectedYear, selectedMonth - 1, 1);
-    const endDate = new Date(selectedYear, selectedMonth, 0, 23, 59, 59);
-    
+    // Limites do mês em Manaus (evita capturar vendas do dia 1 do mês seguinte)
+    const startISO = manausDayStart(toDateKey(new Date(selectedYear, selectedMonth - 1, 1)));
+    const endISO = manausDayEnd(toDateKey(new Date(selectedYear, selectedMonth, 0)));
+
     // Mês anterior para comparação
     const prevMonth = selectedMonth === 1 ? 12 : selectedMonth - 1;
     const prevYear = selectedMonth === 1 ? selectedYear - 1 : selectedYear;
-    const prevStartDate = new Date(prevYear, prevMonth - 1, 1);
-    const prevEndDate = new Date(prevYear, prevMonth, 0, 23, 59, 59);
+    const prevStartISO = manausDayStart(toDateKey(new Date(prevYear, prevMonth - 1, 1)));
+    const prevEndISO = manausDayEnd(toDateKey(new Date(prevYear, prevMonth, 0)));
 
     try {
       // Buscar vendas de assinatura da recepção (barber_id IS NULL)
-      const { data: currentMonthData, error: currentError } = await supabase
-        .from("sale_transactions")
-        .select("unit_id, is_new_client")
-        .eq("item_type", "subscription")
-        .is("barber_id", null)
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
-
-      if (currentError) throw currentError;
+      const currentMonthData = await fetchAllRows<{ unit_id: string | null; is_new_client: boolean | null }>(() =>
+        supabase
+          .from("sale_transactions")
+          .select("unit_id, is_new_client")
+          .eq("organization_id", organizationId)
+          .eq("item_type", "subscription")
+          .is("barber_id", null)
+          .gte("created_at", startISO)
+          .lte("created_at", endISO) as any
+      );
 
       // Buscar mês anterior para trend
-      const { data: prevMonthData, error: prevError } = await supabase
-        .from("sale_transactions")
-        .select("unit_id")
-        .eq("item_type", "subscription")
-        .is("barber_id", null)
-        .gte("created_at", prevStartDate.toISOString())
-        .lte("created_at", prevEndDate.toISOString());
+      const prevMonthData = await fetchAllRows<{ unit_id: string | null }>(() =>
+        supabase
+          .from("sale_transactions")
+          .select("unit_id")
+          .eq("organization_id", organizationId)
+          .eq("item_type", "subscription")
+          .is("barber_id", null)
+          .gte("created_at", prevStartISO)
+          .lte("created_at", prevEndISO) as any
+      );
 
-      if (prevError) throw prevError;
 
       // Agrupar dados por unidade
       const unitMap = new Map<string, UnitPerformance>();
