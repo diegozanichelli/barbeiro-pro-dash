@@ -114,7 +114,9 @@ export default function ManagerNavigation({
     { id: "best-sales-days", label: "Melhores Dias", icon: Flame },
     { id: "leaderboard", label: "Rankings", icon: Trophy },
     { id: "subscriptions", label: "Assinaturas", icon: Repeat },
+    { id: "reports-audit", label: "Auditoria", icon: ShieldCheck },
     { id: "ai-usage", label: "Uso IA", icon: Bot },
+
   ];
 
   const groups: NavGroup[] = [
