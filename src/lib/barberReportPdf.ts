@@ -91,6 +91,18 @@ export function generateBarberReportPdf(data: BarberReportData) {
     ];
   });
 
+  const sb = data.service_breakdown || {};
+  Object.entries(sb).forEach(([key, v]) => {
+    catRows.push([
+      `   • ${key === "extra" ? "Serviços extras" : "Serviços básicos"}`,
+      String(v.qty),
+      fmtBRL(v.revenue),
+      fmtBRL(v.qty > 0 ? v.revenue / v.qty : 0),
+      "—",
+      t.revenue > 0 ? `${((v.revenue / t.revenue) * 100).toFixed(1)}%` : "0.0%",
+    ]);
+  });
+
 
   autoTable(doc, {
     head: [["Categoria", "Qtd", "Faturamento", "Ticket médio", "Comissão", "% do total"]],
