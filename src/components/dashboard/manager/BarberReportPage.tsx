@@ -150,9 +150,9 @@ export default function BarberReportPage() {
             completa de clientes com o que cada um consumiu.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1.5 min-w-[200px]">
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Unidade</span>
               <Select
                 value={unitId}
@@ -173,12 +173,9 @@ export default function BarberReportPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <span className="text-[11px] text-muted-foreground max-w-[220px]">
-                O filtro de unidade considera a unidade onde a venda foi feita.
-              </span>
             </div>
 
-            <div className="flex flex-col gap-1.5 min-w-[220px]">
+            <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Barbeiro</span>
               {organizationId && (
                 <BarberCombobox
@@ -192,26 +189,33 @@ export default function BarberReportPage() {
               )}
             </div>
 
-
             <DateField label="Data inicial" value={startDate} onChange={setStartDate} />
             <DateField label="Data final" value={endDate} onChange={setEndDate} />
+          </div>
 
-            <Button onClick={handleGenerate} disabled={loading || !barberId} className="h-11">
-              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-              Gerar relatório
-            </Button>
-            <Button
-              variant="outline"
-              className="h-11"
-              disabled={!data}
-              onClick={() => data && generateBarberReportPdf(data)}
-            >
-              <FileDown className="w-4 h-4 mr-2" />
-              Exportar PDF
-            </Button>
+          <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[11px] text-muted-foreground max-w-md">
+              O filtro de unidade considera a unidade onde a venda foi feita.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button onClick={handleGenerate} disabled={loading || !barberId} className="h-11">
+                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+                Gerar relatório
+              </Button>
+              <Button
+                variant="outline"
+                className="h-11"
+                disabled={!data}
+                onClick={() => data && generateBarberReportPdf(data)}
+              >
+                <FileDown className="w-4 h-4 mr-2" />
+                Exportar PDF
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
+
 
       {isEmptyResult && (
         <Card className="border-warning/40">
