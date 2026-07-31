@@ -81,7 +81,7 @@ export default function BarberReportPage() {
       .then(({ data: rows }) => setUnits(rows || []));
   }, [organizationId]);
 
-  const handleGenerate = async () => {
+  const runReport = async (unitFilter: string) => {
     if (!barberId) {
       toast({ title: "Selecione um barbeiro", variant: "destructive" });
       return;
@@ -92,9 +92,10 @@ export default function BarberReportPage() {
         barberId,
         toISO(startDate),
         toISO(endDate),
-        unitId === "all" ? null : unitId
+        unitFilter === "all" ? null : unitFilter
       );
       setData(result);
+      setAppliedUnitId(unitFilter);
     } catch (err: unknown) {
       console.error("Erro ao gerar relatório do barbeiro", err);
       toast({
@@ -107,6 +108,14 @@ export default function BarberReportPage() {
       setLoading(false);
     }
   };
+
+  const handleGenerate = () => runReport(unitId);
+
+  const handleRetryAllUnits = () => {
+    setUnitId("all");
+    runReport("all");
+  };
+
 
   const grouped = useMemo(() => {
     const map: Record<string, BarberReportData["items"]> = { service: [], product: [], subscription: [] };
