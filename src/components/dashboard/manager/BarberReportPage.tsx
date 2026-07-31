@@ -221,7 +221,9 @@ export default function BarberReportPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">{CATEGORY_LABEL[cat]}</CardTitle>
                     <CardDescription>
-                      {row.qty} vendas • {fmtBRL(row.revenue)}
+                      {cat === "subscription"
+                        ? `${row.qty} assinaturas vendidas (sem comissão)`
+                        : `${row.qty} vendas • ${fmtBRL(row.revenue)}`}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
