@@ -123,10 +123,12 @@ export default function AuditFindingModal({
                 >
                   <span className="text-foreground">{String(c.name)}</span>
                   <span>{String(c.phone || "sem telefone")}</span>
+                  <span>{String(c.unit_name || "sem unidade")}</span>
                   <span>{dayLabel(c.created_at)}</span>
                 </div>
               ))}
             </div>
+
           </div>
         );
       })}
