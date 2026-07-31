@@ -5,7 +5,9 @@ import {
   CATEGORY_LABEL,
   fmtBRL,
   fmtDateBR,
+  groupReportItems,
   maskPhone,
+  sumGroup,
 } from "@/lib/barberReport";
 
 const PRIMARY: [number, number, number] = [17, 17, 17];
@@ -78,8 +80,16 @@ export function generateBarberReportPdf(data: BarberReportData) {
   });
 
   // ---------- Quebra por categoria ----------
-  const catRows = (["service", "product", "subscription"] as const).map((c) => {
-    const row = data.by_category?.[c] || { qty: 0, revenue: 0, commission: 0 };
+  const groups = groupReportItems(data.items);
+  const gTotals = {
+    service: sumGroup(groups.service),
+    service_base: sumGroup(groups.service_base),
+    product: sumGroup(groups.product),
+    subscription: sumGroup(groups.subscription),
+  };
+
+  const catRows = (["service", "service_base", "product", "subscription"] as const).map((c) => {
+    const row = gTotals[c];
     const share = t.revenue > 0 ? (row.revenue / t.revenue) * 100 : 0;
     return [
       CATEGORY_LABEL[c],
@@ -90,19 +100,6 @@ export function generateBarberReportPdf(data: BarberReportData) {
       `${share.toFixed(1)}%`,
     ];
   });
-
-  const sb = data.service_breakdown || {};
-  Object.entries(sb).forEach(([key, v]) => {
-    catRows.push([
-      `   • ${key === "extra" ? "Serviços extras" : "Serviços básicos"}`,
-      String(v.qty),
-      fmtBRL(v.revenue),
-      fmtBRL(v.qty > 0 ? v.revenue / v.qty : 0),
-      "—",
-      t.revenue > 0 ? `${((v.revenue / t.revenue) * 100).toFixed(1)}%` : "0.0%",
-    ]);
-  });
-
 
   autoTable(doc, {
     head: [["Categoria", "Qtd", "Faturamento", "Ticket médio", "Comissão", "% do total"]],
@@ -121,8 +118,8 @@ export function generateBarberReportPdf(data: BarberReportData) {
   });
 
   // ---------- Itens por categoria ----------
-  (["service", "product", "subscription"] as const).forEach((cat) => {
-    const items = (data.items || []).filter((i) => i.category === cat);
+  (["service", "service_base", "product", "subscription"] as const).forEach((cat) => {
+    const items = groups[cat];
     const catTotal = items.reduce((s, i) => s + Number(i.revenue || 0), 0);
 
     doc.addPage();
@@ -133,10 +130,15 @@ export function generateBarberReportPdf(data: BarberReportData) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(110, 110, 110);
+    const subtitle = items.length
+      ? `${items.length} itens diferentes • ${fmtBRL(catTotal)} no período`
+      : "Nenhuma venda desta categoria no período.";
     doc.text(
-      items.length
-        ? `${items.length} itens diferentes • ${fmtBRL(catTotal)} no período`
-        : "Nenhuma venda desta categoria no período.",
+      cat === "service"
+        ? `${subtitle} (exclui corte, barba e pezinho)`
+        : cat === "service_base"
+        ? `${subtitle} (corte, barba e pezinho)`
+        : subtitle,
       margin,
       64
     );
@@ -146,8 +148,19 @@ export function generateBarberReportPdf(data: BarberReportData) {
     const top = items.slice(0, 3).map((i) => i.item_name);
     const bottom = items.slice(-3).map((i) => i.item_name);
 
+    // Top 3 em destaque
     autoTable(doc, {
       startY: 80,
+      head: [["Top 3 do período", "Qtd", "Faturamento"]],
+      body: items.slice(0, 3).map((i, idx) => [`#${idx + 1}  ${i.item_name}`, String(i.qty), fmtBRL(i.revenue)]),
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 5 },
+      headStyles: { fillColor: ACCENT, textColor: 20, fontStyle: "bold" },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right", fontStyle: "bold" } },
+      margin: { left: margin, right: margin },
+    });
+
+    autoTable(doc, {
       head: [["#", "Item", "Qtd", "Faturamento", "Ticket médio", "% da categoria", "Destaque"]],
       body: items.map((i, idx) => [
         String(idx + 1),
@@ -157,7 +170,7 @@ export function generateBarberReportPdf(data: BarberReportData) {
         fmtBRL(i.qty > 0 ? i.revenue / i.qty : 0),
         catTotal > 0 ? `${((i.revenue / catTotal) * 100).toFixed(1)}%` : "0.0%",
         top.includes(i.item_name)
-          ? "Mais vendido"
+          ? "Top 3"
           : bottom.includes(i.item_name)
           ? "Menos vendido"
           : "",
@@ -175,7 +188,7 @@ export function generateBarberReportPdf(data: BarberReportData) {
       didParseCell: (hook) => {
         if (hook.section === "body" && hook.column.index === 6) {
           const text = String(hook.cell.raw || "");
-          if (text === "Mais vendido") hook.cell.styles.textColor = [22, 130, 62];
+          if (text === "Top 3") hook.cell.styles.textColor = [22, 130, 62];
           if (text === "Menos vendido") hook.cell.styles.textColor = [178, 40, 40];
         }
       },
