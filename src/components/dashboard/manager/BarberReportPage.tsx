@@ -148,7 +148,13 @@ export default function BarberReportPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5 min-w-[200px]">
               <span className="text-xs text-muted-foreground">Unidade</span>
-              <Select value={unitId} onValueChange={setUnitId}>
+              <Select
+                value={unitId}
+                onValueChange={(v) => {
+                  setUnitId(v);
+                  setBarberId(null);
+                }}
+              >
                 <SelectTrigger className="h-11">
                   <SelectValue placeholder="Todas as unidades" />
                 </SelectTrigger>
@@ -161,6 +167,9 @@ export default function BarberReportPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <span className="text-[11px] text-muted-foreground max-w-[220px]">
+                O filtro de unidade considera a unidade onde a venda foi feita.
+              </span>
             </div>
 
             <div className="flex flex-col gap-1.5 min-w-[220px]">
@@ -171,10 +180,12 @@ export default function BarberReportPage() {
                   value={barberId}
                   onChange={(id) => setBarberId(id)}
                   allowReception={false}
+                  unitId={unitId === "all" ? null : unitId}
                   placeholder="Selecionar barbeiro..."
                 />
               )}
             </div>
+
 
             <DateField label="Data inicial" value={startDate} onChange={setStartDate} />
             <DateField label="Data final" value={endDate} onChange={setEndDate} />
