@@ -129,6 +129,10 @@ export default function BarberReportPage() {
 
   const totals = data?.totals;
   const ticket = totals && totals.visits > 0 ? totals.revenue / totals.visits : 0;
+  const isEmptyResult = !!data && Number(totals?.revenue || 0) === 0 && Number(totals?.visits || 0) === 0;
+  const appliedUnitName =
+    appliedUnitId === "all" ? "Todas as unidades" : units.find((u) => u.id === appliedUnitId)?.name || "Unidade";
+
 
   return (
     <div className="space-y-6">
