@@ -65,10 +65,12 @@ export default function BarberReportPage() {
   const [startDate, setStartDate] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
   const [endDate, setEndDate] = useState<Date>(today);
   const [unitId, setUnitId] = useState<string>("all");
+  const [appliedUnitId, setAppliedUnitId] = useState<string>("all");
   const [barberId, setBarberId] = useState<string | null>(null);
   const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
   const [data, setData] = useState<BarberReportData | null>(null);
   const [loading, setLoading] = useState(false);
+
 
   useEffect(() => {
     if (!organizationId) return;
@@ -81,7 +83,7 @@ export default function BarberReportPage() {
       .then(({ data: rows }) => setUnits(rows || []));
   }, [organizationId]);
 
-  const handleGenerate = async () => {
+  const runReport = async (unitFilter: string) => {
     if (!barberId) {
       toast({ title: "Selecione um barbeiro", variant: "destructive" });
       return;
@@ -92,9 +94,10 @@ export default function BarberReportPage() {
         barberId,
         toISO(startDate),
         toISO(endDate),
-        unitId === "all" ? null : unitId
+        unitFilter === "all" ? null : unitFilter
       );
       setData(result);
+      setAppliedUnitId(unitFilter);
     } catch (err: unknown) {
       console.error("Erro ao gerar relatório do barbeiro", err);
       toast({
@@ -108,6 +111,14 @@ export default function BarberReportPage() {
     }
   };
 
+  const handleGenerate = () => runReport(unitId);
+
+  const handleRetryAllUnits = () => {
+    setUnitId("all");
+    runReport("all");
+  };
+
+
   const grouped = useMemo(() => {
     const map: Record<string, BarberReportData["items"]> = { service: [], product: [], subscription: [] };
     (data?.items || []).forEach((i) => {
@@ -118,6 +129,10 @@ export default function BarberReportPage() {
 
   const totals = data?.totals;
   const ticket = totals && totals.visits > 0 ? totals.revenue / totals.visits : 0;
+  const isEmptyResult = !!data && Number(totals?.revenue || 0) === 0 && Number(totals?.visits || 0) === 0;
+  const appliedUnitName =
+    appliedUnitId === "all" ? "Todas as unidades" : units.find((u) => u.id === appliedUnitId)?.name || "Unidade";
+
 
   return (
     <div className="space-y-6">
@@ -133,7 +148,13 @@ export default function BarberReportPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5 min-w-[200px]">
               <span className="text-xs text-muted-foreground">Unidade</span>
-              <Select value={unitId} onValueChange={setUnitId}>
+              <Select
+                value={unitId}
+                onValueChange={(v) => {
+                  setUnitId(v);
+                  setBarberId(null);
+                }}
+              >
                 <SelectTrigger className="h-11">
                   <SelectValue placeholder="Todas as unidades" />
                 </SelectTrigger>
@@ -146,6 +167,9 @@ export default function BarberReportPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <span className="text-[11px] text-muted-foreground max-w-[220px]">
+                O filtro de unidade considera a unidade onde a venda foi feita.
+              </span>
             </div>
 
             <div className="flex flex-col gap-1.5 min-w-[220px]">
@@ -156,10 +180,12 @@ export default function BarberReportPage() {
                   value={barberId}
                   onChange={(id) => setBarberId(id)}
                   allowReception={false}
+                  unitId={unitId === "all" ? null : unitId}
                   placeholder="Selecionar barbeiro..."
                 />
               )}
             </div>
+
 
             <DateField label="Data inicial" value={startDate} onChange={setStartDate} />
             <DateField label="Data final" value={endDate} onChange={setEndDate} />
@@ -181,15 +207,36 @@ export default function BarberReportPage() {
         </CardContent>
       </Card>
 
-      {data && totals && (
+      {isEmptyResult && (
+        <Card className="border-warning/40">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Nenhuma venda encontrada</CardTitle>
+            <CardDescription>
+              {data?.barber?.name} não tem vendas registradas em <strong>{appliedUnitName}</strong> entre{" "}
+              {fmtDateBR(data!.period.start)} e {fmtDateBR(data!.period.end)}. O filtro considera a unidade onde a venda
+              foi feita — se ele atendeu em outra unidade, os valores aparecem lá.
+            </CardDescription>
+          </CardHeader>
+          {appliedUnitId !== "all" && (
+            <CardContent>
+              <Button variant="outline" onClick={handleRetryAllUnits} disabled={loading}>
+                Ver todas as unidades
+              </Button>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {data && totals && !isEmptyResult && (
         <>
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-xl">{data.barber?.name}</CardTitle>
               <CardDescription>
-                {data.barber?.unit_name || "Sem unidade"} • {fmtDateBR(data.period.start)} a {fmtDateBR(data.period.end)}
+                {appliedUnitName} • {fmtDateBR(data.period.start)} a {fmtDateBR(data.period.end)}
               </CardDescription>
             </CardHeader>
+
             <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {[
                 { label: "Faturamento", value: fmtBRL(totals.revenue) },

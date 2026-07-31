@@ -1,40 +1,29 @@
-## Objetivo
+## Diagnóstico (confirmado)
 
-Nova aba **Auditoria** no painel do gestor (grupo Relatórios) que lista, por período e unidade, as inconsistências reais dos dados — cada uma com contagem, severidade e link/modal para revisar e corrigir os registros.
+Não é bug de cálculo. Na tela do print, a **Unidade** selecionada é *Adrianópolis*, mas o barbeiro *AGEU FELIPE* é de **Parque 10**.
 
-## Dados confirmados agora no banco (linha de base)
+Consulta ao banco no período 01/07/2026 a 31/07/2026 para esse barbeiro:
+- 553 vendas, R$ 17.528,16 de faturamento
+- **todas** com unidade = Parque 10, nenhuma em Adrianópolis
 
-| Verificação | Resultado hoje |
-| --- | --- |
-| Clientes com mesmo telefone na mesma organização | 0 |
-| Clientes com mesmo nome normalizado na mesma organização | 129 grupos |
-| Vendas sem `daily_production_id` (órfãs) | 78 |
-| Assinaturas com `commission_amount ≠ 0` | 2.172 (R$ 55.863,59) |
-| Adesões novas sem telefone | 6 |
-| Produções com `tx_*` divergindo da soma das vendas (últimos 60 dias) | 0 |
+A função do relatório aplica o filtro `unidade` junto com o barbeiro, então a combinação "Adrianópolis + AGEU FELIPE" devolve zero corretamente — a tela apenas não avisa disso, e ainda mostra "PARQUE 10" no cabeçalho (unidade cadastral do barbeiro), o que confunde.
 
-Ou seja: o problema real hoje é **duplicidade por nome**, **vendas órfãs**, **comissão gravada em assinatura** e algumas adesões sem telefone. Divergência de agregados não aparece no recorte recente — a checagem entra no painel como monitoramento, não como correção urgente.
+## O que fazer
 
-## Cards de auditoria (cada um clicável)
+1. **Lista de barbeiros respeita a unidade selecionada**
+   Ao escolher uma unidade, o seletor de barbeiro passa a listar só os barbeiros daquela unidade. Se o barbeiro já selecionado não pertencer à nova unidade, a seleção é limpa (evita a combinação impossível).
 
-1. **Clientes duplicados** — grupos por telefone normalizado e por nome normalizado dentro da organização. Drilldown: lista dos clientes do grupo com nº de visitas, última compra e plano; ação de abrir o `ClientDetailModal` existente para conferir antes de qualquer merge.
-2. **Dias sem lançamento** — por barbeiro/unidade no período: dias úteis sem `daily_productions` e sem status de folga/falta/domingo opcional (respeita data de início do barbeiro e feriados da organização, como já faz o alerta de produções faltantes). Drilldown: tabela barbeiro × dia com link para o dia no Ao Vivo.
-3. **Assinaturas com comissão gravada** — transações `item_type='subscription'` com `commission_amount ≠ 0`, agrupadas por barbeiro/mês, com o valor total. Regra do projeto é comissão zero em assinatura; o painel expõe o passivo e permite abrir a transação no `TransactionManagerModal` / `SubscriptionAuditModal`.
-4. **Vendas órfãs** — vendas com barbeiro e sem produção diária vinculada (78 hoje). Drilldown com barbeiro, data, item e valor.
-5. **Adesões sem telefone** — assinaturas novas sem `mobile_phone`, que quebram a contagem de conversão por telefone único.
-6. **Produção vs. vendas** — produções cujo `tx_basic+tx_extra+tx_products` não fecha com a soma das vendas do dia (monitoramento; hoje zero).
+2. **Aviso quando o resultado vier vazio**
+   Se o relatório retornar zerado, exibir um bloco explicativo no lugar dos cards vazios: "Nenhuma venda encontrada para este barbeiro nesta unidade e período" + botão **"Ver todas as unidades"**, que refaz a busca com unidade = Todas.
 
-Cada card mostra: título, contagem, severidade (crítico / atenção / informativo), e um texto curto de "por que isso importa" em pt-BR.
+3. **Cabeçalho mais claro**
+   No cabeçalho do resultado, mostrar a unidade do filtro aplicado (ex.: "Adrianópolis (filtro)") em vez de apenas a unidade de cadastro do barbeiro, para não parecer que os dados são de Parque 10.
+
+4. **Nota nos filtros**
+   Texto pequeno sob o seletor: "O filtro de unidade considera a unidade onde a venda foi feita."
 
 ## Detalhes técnicos
 
-- **RPC única** `get_report_audit_findings(p_org uuid, p_start date, p_end date, p_unit uuid default null)` retornando JSON com `{ check_key, severity, count, total_value, sample }`. Agregação no banco conforme a regra do projeto (nada de View, nada de listar >1000 linhas no cliente).
-- **RPCs de drilldown** por verificação (`get_audit_duplicate_clients`, `get_audit_missing_days`, `get_audit_subscription_commissions`, `get_audit_orphan_sales`), paginadas, para alimentar os modais sem estourar o limite de 1000 linhas.
-- Limites de data via `manausDayStart` / `manausDayEnd` (`src/lib/dateUtils.ts`); dias puros `YYYY-MM-DD` na UI.
-- `organization_id` obrigatório em todo filtro; RLS restringindo a gestores da própria organização + super admin.
-- Novo componente `src/components/dashboard/manager/ReportsAuditPanel.tsx` + `AuditFindingModal.tsx`, aba registrada em `ManagerNavigation.tsx` e `ManagerDashboard.tsx` (grupo Relatórios).
-- Modais seguindo o padrão do projeto: `max-h-[90vh]`, header fixo, corpo com `overflow-y-auto`, toques de 44px.
-
-## Escopo desta etapa
-
-O painel é **diagnóstico + navegação**: ele aponta, explica e leva ao registro. Não faz merge automático de clientes nem zera comissões em massa — correções em lote seriam uma etapa seguinte, depois de você validar os números que o painel mostrar.
+- `src/components/dashboard/manager/BarberReportPage.tsx`: passar `unitId` para o `BarberCombobox` (filtro por unidade), resetar `barberId` na troca de unidade, tratar estado "resultado vazio" com o atalho de refazer em todas as unidades e ajustar o texto do cabeçalho.
+- `src/components/dashboard/manager/BarberCombobox.tsx`: aceitar prop opcional `unitId` e filtrar a query de barbeiros por ela.
+- Nenhuma mudança na RPC `get_barber_report_range` e nenhuma migração — a lógica de dados está correta.
