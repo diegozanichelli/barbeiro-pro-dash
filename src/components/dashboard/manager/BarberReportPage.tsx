@@ -207,15 +207,36 @@ export default function BarberReportPage() {
         </CardContent>
       </Card>
 
-      {data && totals && (
+      {isEmptyResult && (
+        <Card className="border-warning/40">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Nenhuma venda encontrada</CardTitle>
+            <CardDescription>
+              {data?.barber?.name} não tem vendas registradas em <strong>{appliedUnitName}</strong> entre{" "}
+              {fmtDateBR(data!.period.start)} e {fmtDateBR(data!.period.end)}. O filtro considera a unidade onde a venda
+              foi feita — se ele atendeu em outra unidade, os valores aparecem lá.
+            </CardDescription>
+          </CardHeader>
+          {appliedUnitId !== "all" && (
+            <CardContent>
+              <Button variant="outline" onClick={handleRetryAllUnits} disabled={loading}>
+                Ver todas as unidades
+              </Button>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {data && totals && !isEmptyResult && (
         <>
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-xl">{data.barber?.name}</CardTitle>
               <CardDescription>
-                {data.barber?.unit_name || "Sem unidade"} • {fmtDateBR(data.period.start)} a {fmtDateBR(data.period.end)}
+                {appliedUnitName} • {fmtDateBR(data.period.start)} a {fmtDateBR(data.period.end)}
               </CardDescription>
             </CardHeader>
+
             <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {[
                 { label: "Faturamento", value: fmtBRL(totals.revenue) },
