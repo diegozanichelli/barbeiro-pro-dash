@@ -37,6 +37,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { managerAuthSchema, type ManagerAuthFormData } from "@/lib/validations/manager";
 import { organizationEditSchema, type OrganizationEditFormData } from "@/lib/validations/organization";
+import { getEdgeFunctionErrorMessage } from "@/lib/edgeError";
+
 import {
   Form,
   FormControl,
