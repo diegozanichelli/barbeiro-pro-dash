@@ -232,6 +232,9 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [editingOrg, setEditingOrg] = useState(false);
   const [cancelingOrg, setCancelingOrg] = useState(false);
+  const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deletingOrg, setDeletingOrg] = useState(false);
 
   const form = useForm<ManagerAuthFormData>({
     resolver: zodResolver(managerAuthSchema),
