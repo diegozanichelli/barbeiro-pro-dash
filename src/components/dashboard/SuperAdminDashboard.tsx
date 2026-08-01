@@ -1084,6 +1084,19 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             )}
                           </>
                         )}
+                        {isSuperAdmin && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setOrgToDelete(org);
+                              setDeleteConfirmName("");
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Excluir
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1093,6 +1106,72 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </Table>
             </CardContent>
           </Card>
+
+          {/* Exclusão definitiva de barbearia */}
+          <Dialog
+            open={!!orgToDelete}
+            onOpenChange={(open) => {
+              if (!open && !deletingOrg) {
+                setOrgToDelete(null);
+                setDeleteConfirmName("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Excluir barbearia definitivamente</DialogTitle>
+                <DialogDescription>
+                  Esta ação é irreversível. Todos os dados de{" "}
+                  <strong>{orgToDelete?.name}</strong> serão apagados: unidades, barbeiros,
+                  clientes, vendas, produções, metas, planos e os acessos de login. Assinaturas
+                  ativas de cobrança também serão canceladas.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="delete-confirm">
+                  Digite o nome da barbearia para confirmar
+                </Label>
+                <Input
+                  id="delete-confirm"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  placeholder={orgToDelete?.name || ""}
+                  autoComplete="off"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setOrgToDelete(null);
+                    setDeleteConfirmName("");
+                  }}
+                  disabled={deletingOrg}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteOrganization}
+                  disabled={
+                    deletingOrg ||
+                    deleteConfirmName.trim().toLowerCase() !==
+                      (orgToDelete?.name || "").trim().toLowerCase()
+                  }
+                >
+                  {deletingOrg ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    "Excluir definitivamente"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
 
           {/* Modal de Edição de Organização */}
           <Dialog open={showEditOrgDialog} onOpenChange={setShowEditOrgDialog}>
