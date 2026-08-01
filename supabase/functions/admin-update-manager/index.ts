@@ -223,8 +223,9 @@ Deno.serve(async (req) => {
         .from('user_roles')
         .upsert(
           { user_id: newManagerId, role: 'manager', organization_id },
-          { onConflict: 'user_id,role' }
+          { onConflict: 'user_id,role,organization_id' }
         )
+
       if (roleInsertError) {
         console.error('Error creating manager role:', roleInsertError)
         throw roleInsertError
