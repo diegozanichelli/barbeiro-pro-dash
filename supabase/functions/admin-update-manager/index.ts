@@ -93,24 +93,158 @@ Deno.serve(async (req) => {
       }
     )
 
+    // Validar senha se fornecida (usado tanto na atualização quanto na criação)
+    const validatePassword = (value: unknown): string | null => {
+      const passwordStr = String(value)
+      if (passwordStr.length < 8) {
+        return 'Senha deve ter no mínimo 8 caracteres'
+      }
+      const hasUpperCase = /[A-Z]/.test(passwordStr)
+      const hasLowerCase = /[a-z]/.test(passwordStr)
+      const hasNumber = /\d/.test(passwordStr)
+      if (!hasLowerCase || !(hasUpperCase || hasNumber)) {
+        return 'Senha deve conter letras maiúsculas e minúsculas ou números'
+      }
+      return null
+    }
+
     // Buscar o gerente da organização
-    const { data: managerRole, error: managerRoleError } = await supabaseAdmin
+    const { data: managerRole } = await supabaseAdmin
       .from('user_roles')
       .select('user_id')
       .eq('organization_id', organization_id)
       .eq('role', 'manager')
-      .single()
+      .maybeSingle()
 
-    if (managerRoleError || !managerRole) {
-      console.error('Manager not found for organization')
+    // Organização órfã (sem gerente): provisionar o acesso
+    if (!managerRole) {
+      console.log('Organization has no manager - provisioning flow')
+
+      if (!email || !password) {
+        return new Response(
+          JSON.stringify({
+            error: 'Esta barbearia não possui gerente. Informe email e senha para criar o acesso.',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const passwordError = validatePassword(password)
+      if (passwordError) {
+        return new Response(
+          JSON.stringify({ error: passwordError }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const trimmedEmail = String(email).trim()
+
+      // Atualizar nome da organização se fornecido
+      if (organization_name) {
+        const { error: orgError } = await supabaseAdmin
+          .from('organizations')
+          .update({ name: organization_name })
+          .eq('id', organization_id)
+        if (orgError) throw orgError
+      }
+
+      let newManagerId: string | null = null
+
+      const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: trimmedEmail,
+        password: String(password),
+        email_confirm: true,
+        user_metadata: { full_name: manager_name || organization_name || trimmedEmail },
+      })
+
+      if (createError) {
+        if (createError.message?.includes('already been registered')) {
+          const { data: listed, error: listError } = await supabaseAdmin.auth.admin.listUsers({
+            page: 1,
+            perPage: 1000,
+          })
+          if (listError) throw listError
+
+          const existingUser = listed.users.find(
+            (u) => u.email?.toLowerCase() === trimmedEmail.toLowerCase()
+          )
+          if (!existingUser) {
+            return new Response(
+              JSON.stringify({ error: 'Não foi possível localizar o usuário existente com este email' }),
+              { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          const { data: existingRole } = await supabaseAdmin
+            .from('user_roles')
+            .select('id, organization_id')
+            .eq('user_id', existingUser.id)
+            .maybeSingle()
+
+          if (existingRole && existingRole.organization_id !== organization_id) {
+            return new Response(
+              JSON.stringify({ error: 'Este email já está vinculado a outra organização' }),
+              { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Reaproveitar usuário existente e redefinir a senha
+          const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+            password: String(password),
+          })
+          if (updErr) throw updErr
+
+          newManagerId = existingUser.id
+        } else {
+          throw createError
+        }
+      } else {
+        newManagerId = created.user.id
+      }
+
+      if (!newManagerId) {
+        return new Response(
+          JSON.stringify({ error: 'Falha ao criar o usuário do gerente' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Garantir perfil com nome
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .upsert({ id: newManagerId, full_name: manager_name || organization_name || trimmedEmail })
+      if (profileError) {
+        console.error('Error upserting profile:', profileError)
+        throw profileError
+      }
+
+      // Vincular role de manager à organização
+      const { error: roleInsertError } = await supabaseAdmin
+        .from('user_roles')
+        .upsert(
+          { user_id: newManagerId, role: 'manager', organization_id },
+          { onConflict: 'user_id,role' }
+        )
+      if (roleInsertError) {
+        console.error('Error creating manager role:', roleInsertError)
+        throw roleInsertError
+      }
+
+      console.log('=== Admin Update Manager - Manager provisioned ===')
+
       return new Response(
-        JSON.stringify({ error: 'Gerente não encontrado para esta organização' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: true,
+          created: true,
+          message: 'Gerente criado e vinculado à barbearia com sucesso',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     const manager_user_id = managerRole.user_id
     console.log('Manager user ID found:', manager_user_id)
+
 
     // Atualizar nome da organização se fornecido
     if (organization_name) {
