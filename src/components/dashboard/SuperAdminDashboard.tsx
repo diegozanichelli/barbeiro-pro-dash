@@ -998,7 +998,14 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             {trialDaysLeft > 0 ? `${trialDaysLeft} ${trialDaysLeft === 1 ? "dia restante" : "dias restantes"}` : "Trial expirado"}
                           </Badge>
                         )}
+                        {orgsWithoutManager.includes(org.id) && (
+                          <Badge variant="outline" className="w-fit border-destructive/60 text-destructive bg-destructive/10 text-[10px]">
+                            <Ban className="w-3 h-3 mr-1" />
+                            Sem gerente
+                          </Badge>
+                        )}
                       </div>
+
                     </TableCell>
                     <TableCell>{getStatusBadge(org.subscription_status)}</TableCell>
                     <TableCell>
