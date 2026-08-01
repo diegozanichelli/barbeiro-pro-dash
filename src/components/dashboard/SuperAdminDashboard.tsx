@@ -1203,6 +1203,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   Atualize as informações da barbearia e do gerente responsável
                 </DialogDescription>
               </DialogHeader>
+              {selectedOrganization && orgsWithoutManager.includes(selectedOrganization.id) && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  Esta barbearia não possui gerente vinculado. Informe email e senha para criar o
+                  acesso do gerente.
+                </div>
+              )}
+
               <Form {...orgForm}>
                 <form onSubmit={orgForm.handleSubmit(handleUpdateOrganization)} className="space-y-4">
                   <FormField
