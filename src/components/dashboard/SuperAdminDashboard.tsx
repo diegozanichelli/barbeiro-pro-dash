@@ -509,7 +509,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error deleting organization:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao excluir barbearia",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao excluir barbearia"),
         variant: "destructive",
       });
     } finally {
