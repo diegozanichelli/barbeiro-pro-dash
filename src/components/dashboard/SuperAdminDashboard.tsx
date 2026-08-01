@@ -534,15 +534,21 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       if (error) throw error;
 
       setManagers(data?.managers || []);
+      setOrgsWithoutManager(
+        (data?.organizations_without_manager || []).map(
+          (org: { organization_id: string }) => org.organization_id
+        )
+      );
     } catch (error) {
       console.error("Error fetching managers:", error);
       toast({
         title: "Erro",
-        description: "Erro ao carregar gerentes",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao carregar gerentes"),
         variant: "destructive",
       });
     }
   };
+
 
   const handleEditManager = (manager: Manager) => {
     setSelectedManager(manager);
