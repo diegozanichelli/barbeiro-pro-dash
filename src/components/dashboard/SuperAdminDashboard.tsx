@@ -588,7 +588,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error updating manager:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao atualizar gerente",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao atualizar gerente"),
         variant: "destructive",
       });
     } finally {
