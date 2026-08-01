@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban, Gift, Clock, Sparkles } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban, Gift, Clock, Sparkles, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
@@ -232,6 +232,9 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [editingOrg, setEditingOrg] = useState(false);
   const [cancelingOrg, setCancelingOrg] = useState(false);
+  const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deletingOrg, setDeletingOrg] = useState(false);
 
   const form = useForm<ManagerAuthFormData>({
     resolver: zodResolver(managerAuthSchema),
@@ -475,6 +478,38 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       });
     } finally {
       setCancelingOrg(false);
+    }
+  };
+
+  const handleDeleteOrganization = async () => {
+    if (!orgToDelete) return;
+    setDeletingOrg(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-organization", {
+        body: { organizationId: orgToDelete.id, confirmationName: deleteConfirmName },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Barbearia excluída",
+        description: data?.message || "Conta excluída definitivamente",
+      });
+
+      setOrgToDelete(null);
+      setDeleteConfirmName("");
+      fetchOrganizations();
+      fetchManagers();
+    } catch (error) {
+      console.error("Error deleting organization:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao excluir barbearia",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingOrg(false);
     }
   };
 
@@ -1049,6 +1084,19 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             )}
                           </>
                         )}
+                        {isSuperAdmin && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setOrgToDelete(org);
+                              setDeleteConfirmName("");
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Excluir
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1058,6 +1106,72 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </Table>
             </CardContent>
           </Card>
+
+          {/* Exclusão definitiva de barbearia */}
+          <Dialog
+            open={!!orgToDelete}
+            onOpenChange={(open) => {
+              if (!open && !deletingOrg) {
+                setOrgToDelete(null);
+                setDeleteConfirmName("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Excluir barbearia definitivamente</DialogTitle>
+                <DialogDescription>
+                  Esta ação é irreversível. Todos os dados de{" "}
+                  <strong>{orgToDelete?.name}</strong> serão apagados: unidades, barbeiros,
+                  clientes, vendas, produções, metas, planos e os acessos de login. Assinaturas
+                  ativas de cobrança também serão canceladas.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="delete-confirm">
+                  Digite o nome da barbearia para confirmar
+                </Label>
+                <Input
+                  id="delete-confirm"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  placeholder={orgToDelete?.name || ""}
+                  autoComplete="off"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setOrgToDelete(null);
+                    setDeleteConfirmName("");
+                  }}
+                  disabled={deletingOrg}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteOrganization}
+                  disabled={
+                    deletingOrg ||
+                    deleteConfirmName.trim().toLowerCase() !==
+                      (orgToDelete?.name || "").trim().toLowerCase()
+                  }
+                >
+                  {deletingOrg ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    "Excluir definitivamente"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
 
           {/* Modal de Edição de Organização */}
           <Dialog open={showEditOrgDialog} onOpenChange={setShowEditOrgDialog}>

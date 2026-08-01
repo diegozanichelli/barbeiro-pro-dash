@@ -54,3 +54,6 @@ verify_jwt = true
 
 [functions.auto-deactivate-expired]
 verify_jwt = false
+
+[functions.delete-organization]
+verify_jwt = true
