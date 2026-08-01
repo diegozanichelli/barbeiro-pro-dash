@@ -481,6 +481,38 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleDeleteOrganization = async () => {
+    if (!orgToDelete) return;
+    setDeletingOrg(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-organization", {
+        body: { organizationId: orgToDelete.id, confirmationName: deleteConfirmName },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Barbearia excluída",
+        description: data?.message || "Conta excluída definitivamente",
+      });
+
+      setOrgToDelete(null);
+      setDeleteConfirmName("");
+      fetchOrganizations();
+      fetchManagers();
+    } catch (error) {
+      console.error("Error deleting organization:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro ao excluir barbearia",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingOrg(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
