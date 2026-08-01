@@ -664,7 +664,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     try {
       setEditingOrg(true);
 
-      const { error } = await supabase.functions.invoke("admin-update-manager", {
+      const { data: result, error } = await supabase.functions.invoke("admin-update-manager", {
         body: {
           organization_id: selectedOrganization.id,
           organization_name: data.organizationName,
@@ -675,10 +675,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       });
 
       if (error) throw error;
+      if (result?.error) throw new Error(result.error);
 
       toast({
         title: "Sucesso",
-        description: "Organização e gerente atualizados com sucesso",
+        description: result?.created
+          ? "Gerente criado e vinculado à barbearia com sucesso"
+          : "Organização e gerente atualizados com sucesso",
       });
 
       setShowEditOrgDialog(false);
@@ -690,7 +693,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error updating organization:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao atualizar organização",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao atualizar organização"),
+
         variant: "destructive",
       });
     } finally {
