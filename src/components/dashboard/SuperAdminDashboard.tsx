@@ -227,6 +227,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   });
   const [creating, setCreating] = useState(false);
   const [managers, setManagers] = useState<Manager[]>([]);
+  const [orgsWithoutManager, setOrgsWithoutManager] = useState<string[]>([]);
+
   const [showEditManagerDialog, setShowEditManagerDialog] = useState(false);
   const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
   const [updating, setUpdating] = useState(false);
