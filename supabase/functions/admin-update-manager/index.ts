@@ -278,29 +278,16 @@ Deno.serve(async (req) => {
     if (email || password) {
       // Validate password if provided
       if (password) {
-        const passwordStr = String(password);
-        if (passwordStr.length < 8) {
-          console.error('Password too short')
+        const passwordError = validatePassword(password)
+        if (passwordError) {
+          console.error('Password validation failed')
           return new Response(
-            JSON.stringify({ error: 'Senha deve ter no mínimo 8 caracteres' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-        }
-
-        const hasUpperCase = /[A-Z]/.test(passwordStr)
-        const hasLowerCase = /[a-z]/.test(passwordStr)
-        const hasNumber = /\d/.test(passwordStr)
-        
-        if (!hasLowerCase || !(hasUpperCase || hasNumber)) {
-          console.error('Password does not meet complexity requirements')
-          return new Response(
-            JSON.stringify({ 
-              error: 'Senha deve conter letras maiúsculas e minúsculas ou números' 
-            }),
+            JSON.stringify({ error: passwordError }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
       }
+
 
       console.log('Updating manager authentication...')
       const updateData: { email?: string; password?: string } = {}
