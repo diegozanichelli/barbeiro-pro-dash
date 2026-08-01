@@ -1,29 +1,27 @@
-## Diagnóstico (confirmado)
+## Diagnóstico (confirmado no banco)
 
-Não é bug de cálculo. Na tela do print, a **Unidade** selecionada é *Adrianópolis*, mas o barbeiro *AGEU FELIPE* é de **Parque 10**.
+A organização **Basic CN12** existe, mas **não tem nenhum usuário gerente vinculado** (zero linhas em `user_roles` para ela). A Edge Function `admin-update-manager` busca o gerente da organização e, não encontrando, responde 404 — daí o toast genérico "Edge Function returned a non-2xx status code".
 
-Consulta ao banco no período 01/07/2026 a 31/07/2026 para esse barbeiro:
-- 553 vendas, R$ 17.528,16 de faturamento
-- **todas** com unidade = Parque 10, nenhuma em Adrianópolis
-
-A função do relatório aplica o filtro `unidade` junto com o barbeiro, então a combinação "Adrianópolis + AGEU FELIPE" devolve zero corretamente — a tela apenas não avisa disso, e ainda mostra "PARQUE 10" no cabeçalho (unidade cadastral do barbeiro), o que confunde.
+Há **2 organizações órfãs** hoje (sem gerente): `Basic CN12` e `MadBarber` — ambas com `subscription_status = canceled`. Provável causa histórica: exclusão do usuário do gerente (ou rollback parcial de criação/exclusão de conta) sem remover a organização.
 
 ## O que fazer
 
-1. **Lista de barbeiros respeita a unidade selecionada**
-   Ao escolher uma unidade, o seletor de barbeiro passa a listar só os barbeiros daquela unidade. Se o barbeiro já selecionado não pertencer à nova unidade, a seleção é limpa (evita a combinação impossível).
+### 1. `admin-update-manager` passa a recuperar organizações órfãs
+Quando não houver gerente para a organização:
+- se `email` + `password` foram informados, **criar** o usuário de autenticação (email já confirmado), criar o `profiles.full_name` com o nome do gerente e inserir `user_roles` com `role = manager` e `organization_id` da organização — ou seja, o modal "Editar" passa a também *provisionar* o gerente faltante;
+- se o email já existir em outra organização, retornar mensagem clara ("Este email já está vinculado a outra organização");
+- se faltar email/senha, retornar 400 com mensagem explícita: "Esta barbearia não possui gerente. Informe email e senha para criar o acesso."
 
-2. **Aviso quando o resultado vier vazio**
-   Se o relatório retornar zerado, exibir um bloco explicativo no lugar dos cards vazios: "Nenhuma venda encontrada para este barbeiro nesta unidade e período" + botão **"Ver todas as unidades"**, que refaz a busca com unidade = Todas.
+### 2. Mensagens de erro reais na interface
+No `SuperAdminDashboard.tsx`, ler o corpo da resposta da função (`FunctionsHttpError`) e exibir a mensagem em português no toast, em vez de "Edge Function returned a non-2xx status code". Isso vale para editar, ativar/desativar e excluir.
 
-3. **Cabeçalho mais claro**
-   No cabeçalho do resultado, mostrar a unidade do filtro aplicado (ex.: "Adrianópolis (filtro)") em vez de apenas a unidade de cadastro do barbeiro, para não parecer que os dados são de Parque 10.
+### 3. Sinalizar organizações sem gerente na lista
+Badge/aviso "Sem gerente" na linha da barbearia (a listagem já vem de `list-managers`, que retorna somente vínculos existentes), para o super admin saber que precisa provisionar o acesso ou excluir a conta.
 
-4. **Nota nos filtros**
-   Texto pequeno sob o seletor: "O filtro de unidade considera a unidade onde a venda foi feita."
+### 4. Consistência de dados
+Nenhuma exclusão automática: as 2 organizações órfãs ficam acessíveis via o fluxo novo (criar gerente) ou via o botão **Excluir** já existente.
 
 ## Detalhes técnicos
-
-- `src/components/dashboard/manager/BarberReportPage.tsx`: passar `unitId` para o `BarberCombobox` (filtro por unidade), resetar `barberId` na troca de unidade, tratar estado "resultado vazio" com o atalho de refazer em todas as unidades e ajustar o texto do cabeçalho.
-- `src/components/dashboard/manager/BarberCombobox.tsx`: aceitar prop opcional `unitId` e filtrar a query de barbeiros por ela.
-- Nenhuma mudança na RPC `get_barber_report_range` e nenhuma migração — a lógica de dados está correta.
+- Arquivos: `supabase/functions/admin-update-manager/index.ts` (fallback de criação), `src/components/dashboard/SuperAdminDashboard.tsx` (erros + badge), `supabase/functions/list-managers/index.ts` (retornar também organizações sem gerente, com `manager_user_id: null`).
+- Validação de senha mantida (mín. 8 caracteres, maiúsculas/minúsculas ou números) e reaproveitada no caminho de criação.
+- Sem migração de banco necessária.

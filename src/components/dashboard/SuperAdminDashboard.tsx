@@ -37,6 +37,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { managerAuthSchema, type ManagerAuthFormData } from "@/lib/validations/manager";
 import { organizationEditSchema, type OrganizationEditFormData } from "@/lib/validations/organization";
+import { getEdgeFunctionErrorMessage } from "@/lib/edgeError";
+
 import {
   Form,
   FormControl,
@@ -225,6 +227,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   });
   const [creating, setCreating] = useState(false);
   const [managers, setManagers] = useState<Manager[]>([]);
+  const [orgsWithoutManager, setOrgsWithoutManager] = useState<string[]>([]);
+
   const [showEditManagerDialog, setShowEditManagerDialog] = useState(false);
   const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -505,7 +509,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error deleting organization:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao excluir barbearia",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao excluir barbearia"),
         variant: "destructive",
       });
     } finally {
@@ -530,15 +534,21 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       if (error) throw error;
 
       setManagers(data?.managers || []);
+      setOrgsWithoutManager(
+        (data?.organizations_without_manager || []).map(
+          (org: { organization_id: string }) => org.organization_id
+        )
+      );
     } catch (error) {
       console.error("Error fetching managers:", error);
       toast({
         title: "Erro",
-        description: "Erro ao carregar gerentes",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao carregar gerentes"),
         variant: "destructive",
       });
     }
   };
+
 
   const handleEditManager = (manager: Manager) => {
     setSelectedManager(manager);
@@ -578,7 +588,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error updating manager:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao atualizar gerente",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao atualizar gerente"),
         variant: "destructive",
       });
     } finally {
@@ -654,7 +664,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     try {
       setEditingOrg(true);
 
-      const { error } = await supabase.functions.invoke("admin-update-manager", {
+      const { data: result, error } = await supabase.functions.invoke("admin-update-manager", {
         body: {
           organization_id: selectedOrganization.id,
           organization_name: data.organizationName,
@@ -665,10 +675,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       });
 
       if (error) throw error;
+      if (result?.error) throw new Error(result.error);
 
       toast({
         title: "Sucesso",
-        description: "Organização e gerente atualizados com sucesso",
+        description: result?.created
+          ? "Gerente criado e vinculado à barbearia com sucesso"
+          : "Organização e gerente atualizados com sucesso",
       });
 
       setShowEditOrgDialog(false);
@@ -680,7 +693,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error updating organization:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao atualizar organização",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao atualizar organização"),
+
         variant: "destructive",
       });
     } finally {
@@ -984,7 +998,14 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             {trialDaysLeft > 0 ? `${trialDaysLeft} ${trialDaysLeft === 1 ? "dia restante" : "dias restantes"}` : "Trial expirado"}
                           </Badge>
                         )}
+                        {orgsWithoutManager.includes(org.id) && (
+                          <Badge variant="outline" className="w-fit border-destructive/60 text-destructive bg-destructive/10 text-[10px]">
+                            <Ban className="w-3 h-3 mr-1" />
+                            Sem gerente
+                          </Badge>
+                        )}
                       </div>
+
                     </TableCell>
                     <TableCell>{getStatusBadge(org.subscription_status)}</TableCell>
                     <TableCell>
@@ -1182,6 +1203,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   Atualize as informações da barbearia e do gerente responsável
                 </DialogDescription>
               </DialogHeader>
+              {selectedOrganization && orgsWithoutManager.includes(selectedOrganization.id) && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  Esta barbearia não possui gerente vinculado. Informe email e senha para criar o
+                  acesso do gerente.
+                </div>
+              )}
+
               <Form {...orgForm}>
                 <form onSubmit={orgForm.handleSubmit(handleUpdateOrganization)} className="space-y-4">
                   <FormField
