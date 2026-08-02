@@ -64,8 +64,8 @@ export function generateBarberReportPdf(data: BarberReportData) {
     startY: 108,
     head: [["Resumo do período", ""]],
     body: [
-      ["Faturamento total", fmtBRL(t.revenue)],
-      ["Faturamento operacional (sem assinaturas)", fmtBRL(t.operational_revenue)],
+      ["Faturamento Total", fmtBRL(t.revenue)],
+      ["Avulsos (faturamento sem assinaturas)", fmtBRL(t.operational_revenue)],
       ["Comissão (sem assinaturas)", fmtBRL(commissionNoSubs)],
       ["Assinaturas vendidas (quantidade)", String(subsQty)],
       ["Atendimentos (comandas)", String(t.visits)],
