@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarIcon, FileDown, Loader2, Search, TrendingDown, TrendingUp } from "lucide-react";
+import { CalendarIcon, FileDown, Info, Loader2, Search, TrendingDown, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useToast } from "@/hooks/use-toast";
@@ -249,18 +250,51 @@ export default function BarberReportPage() {
 
             <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {[
-                { label: "Faturamento", value: fmtBRL(totals.revenue) },
-                { label: "Operacional", value: fmtBRL(totals.operational_revenue) },
+                {
+                  label: "Faturamento Total",
+                  value: fmtBRL(totals.revenue),
+                  tooltip: "Soma bruta de todas as vendas no período: serviços base, serviços extras, produtos e assinaturas.",
+                },
+                {
+                  label: "Avulsos",
+                  value: fmtBRL(totals.operational_revenue),
+                  tooltip: "Faturamento Total menos o valor de assinaturas. É o valor que entra na meta operacional diária.",
+                },
                 {
                   label: "Comissão (sem assinaturas)",
                   value: fmtBRL(totals.commission),
+                  tooltip: "Comissão calculada sobre os serviços e produtos avulsos, excluindo assinaturas.",
                 },
-                { label: "Assinaturas vendidas", value: String(data.by_category?.subscription?.qty || 0) },
-                { label: "Atendimentos", value: String(totals.visits) },
-                { label: "Ticket médio", value: fmtBRL(ticket) },
+                {
+                  label: "Assinaturas vendidas",
+                  value: String(data.by_category?.subscription?.qty || 0),
+                  tooltip: "Quantidade de planos adquiridos no período. Assinaturas não geram comissão e não compõem a meta.",
+                },
+                {
+                  label: "Atendimentos",
+                  value: String(totals.visits),
+                  tooltip: "Número de comandas únicas atendidas pelo barbeiro no período.",
+                },
+                {
+                  label: "Ticket médio",
+                  value: fmtBRL(ticket),
+                  tooltip: "Faturamento Total dividido pelo número de atendimentos.",
+                },
               ].map((k) => (
                 <div key={k.label} className="rounded-lg border border-border p-3">
-                  <p className="text-xs text-muted-foreground">{k.label}</p>
+                  <div className="flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground">{k.label}</p>
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[240px] text-xs">
+                          <p>{k.tooltip}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <p className="text-lg font-bold">{k.value}</p>
                 </div>
               ))}

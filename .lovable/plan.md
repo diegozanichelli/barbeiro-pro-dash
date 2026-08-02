@@ -1,27 +1,34 @@
-## Diagnóstico (confirmado no banco)
+Ajustar o relatório individual do barbeiro para que cada marcador tenha nome mais claro e explicação do cálculo.
 
-A organização **Basic CN12** existe, mas **não tem nenhum usuário gerente vinculado** (zero linhas em `user_roles` para ela). A Edge Function `admin-update-manager` busca o gerente da organização e, não encontrando, responde 404 — daí o toast genérico "Edge Function returned a non-2xx status code".
+## O que será feito
 
-Há **2 organizações órfãs** hoje (sem gerente): `Basic CN12` e `MadBarber` — ambas com `subscription_status = canceled`. Provável causa histórica: exclusão do usuário do gerente (ou rollback parcial de criação/exclusão de conta) sem remover a organização.
+1. **Renomear labels no relatório operacional (UI)**
+   - `Faturamento` → `Faturamento Total`
+   - `Operacional` → `Avulsos`
+   - Ajustar descrições auxiliares (ex: "Comissão (sem assinaturas)" já está correto; deixar consistente).
 
-## O que fazer
+2. **Renomear labels no PDF exportado**
+   - Atualizar `barberReportPdf.ts` para usar "Faturamento total" e "Avulsos" nas tabelas de resumo, mantendo a explicação entre parênteses quando necessário.
 
-### 1. `admin-update-manager` passa a recuperar organizações órfãs
-Quando não houver gerente para a organização:
-- se `email` + `password` foram informados, **criar** o usuário de autenticação (email já confirmado), criar o `profiles.full_name` com o nome do gerente e inserir `user_roles` com `role = manager` e `organization_id` da organização — ou seja, o modal "Editar" passa a também *provisionar* o gerente faltante;
-- se o email já existir em outra organização, retornar mensagem clara ("Este email já está vinculado a outra organização");
-- se faltar email/senha, retornar 400 com mensagem explícita: "Esta barbearia não possui gerente. Informe email e senha para criar o acesso."
+3. **Explicar como chegamos em cada marcador**
+   - Adicionar ícone de info (`Info` do lucide-react) em cada card de métrica do resumo no `BarberReportPage.tsx`.
+   - Usar o componente `Tooltip`/`TooltipProvider` existente para mostrar, ao passar o mouse, a fórmula/cálculo de cada indicador:
+     - **Faturamento Total**: soma bruta de todas as vendas no período (serviços base, extras, produtos e assinaturas) na unidade filtrada.
+     - **Avulsos**: faturamento total menos o valor de assinaturas; é o que entra na meta operacional.
+     - **Comissão (sem assinaturas)**: comissão calculada sobre os serviços e produtos avulsos, excluindo assinaturas.
+     - **Assinaturas vendidas**: quantidade de planos adquiridos; não gera comissão e não compõe a meta.
+     - **Atendimentos**: número de comendas únicas no período.
+     - **Ticket médio**: Faturamento Total ÷ Atendimentos.
 
-### 2. Mensagens de erro reais na interface
-No `SuperAdminDashboard.tsx`, ler o corpo da resposta da função (`FunctionsHttpError`) e exibir a mensagem em português no toast, em vez de "Edge Function returned a non-2xx status code". Isso vale para editar, ativar/desativar e excluir.
+4. **Consistência de linguagem**
+   - Manter todos os textos em português (pt-BR) conforme regra do projeto.
+   - Garantir que o termo "Avulsos" seja usado no card e no PDF, e que o tooltip esclareça o que está incluído/excluído.
 
-### 3. Sinalizar organizações sem gerente na lista
-Badge/aviso "Sem gerente" na linha da barbearia (a listagem já vem de `list-managers`, que retorna somente vínculos existentes), para o super admin saber que precisa provisionar o acesso ou excluir a conta.
+## Arquivos afetados
+- `src/components/dashboard/manager/BarberReportPage.tsx`
+- `src/lib/barberReportPdf.ts`
+- (possível import do `Tooltip` já existe em `src/components/ui/tooltip.tsx`)
 
-### 4. Consistência de dados
-Nenhuma exclusão automática: as 2 organizações órfãs ficam acessíveis via o fluxo novo (criar gerente) ou via o botão **Excluir** já existente.
-
-## Detalhes técnicos
-- Arquivos: `supabase/functions/admin-update-manager/index.ts` (fallback de criação), `src/components/dashboard/SuperAdminDashboard.tsx` (erros + badge), `supabase/functions/list-managers/index.ts` (retornar também organizações sem gerente, com `manager_user_id: null`).
-- Validação de senha mantida (mín. 8 caracteres, maiúsculas/minúsculas ou números) e reaproveitada no caminho de criação.
-- Sem migração de banco necessária.
+## Não será alterado
+- Lógica de cálculo da RPC `get_barber_report_range` (apenas apresentação).
+- Cálculo da comissão ou separação de categorias.
