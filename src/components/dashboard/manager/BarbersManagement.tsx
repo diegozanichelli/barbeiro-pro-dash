@@ -186,7 +186,7 @@ export default function BarbersManagement() {
       const { data, error } = await supabase.functions.invoke("delete-barber", {
         body: { barberId: id },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getEdgeFunctionErrorMessage(error, "Erro ao excluir barbeiro"));
       if (data?.error) throw new Error(data.error);
       toast.success("Barbeiro e dados de login excluídos!");
       fetchBarbers();
