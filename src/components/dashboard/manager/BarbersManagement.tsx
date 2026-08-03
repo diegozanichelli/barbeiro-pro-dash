@@ -145,9 +145,9 @@ export default function BarbersManagement() {
         });
         
         if (error) {
-          const serverMsg = (error as any)?.context?.error || (error as any)?.message;
-          throw new Error(serverMsg || "Falha ao criar barbeiro");
+          throw new Error(await getEdgeFunctionErrorMessage(error, "Falha ao criar barbeiro"));
         }
+        if (data?.error) throw new Error(data.error);
         toast.success("Barbeiro criado com sucesso! Login: " + formData.email);
       }
 
