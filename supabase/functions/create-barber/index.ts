@@ -259,7 +259,7 @@ serve(async (req: Request) => {
     console.log("[CREATE-BARBER] Auth user created:", newUser.id);
 
     // 2) Ensure profile exists
-    const { error: profileErr } = await supabaseAdmin.from("profiles").insert({
+    const { error: profileErr } = await supabaseAdmin.from("profiles").upsert({
       id: newUser.id,
       full_name: trimmedName,
     });
