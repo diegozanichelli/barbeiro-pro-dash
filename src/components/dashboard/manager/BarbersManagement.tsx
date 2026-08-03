@@ -114,8 +114,9 @@ export default function BarbersManagement() {
 
           if (updateAuthError) {
             console.error("Erro da edge function:", updateAuthError);
-            const errorMsg = data?.error || updateAuthError.message || "Falha ao atualizar dados de autenticação";
-            throw new Error(errorMsg);
+            throw new Error(
+              await getEdgeFunctionErrorMessage(updateAuthError, "Falha ao atualizar dados de autenticação")
+            );
           }
 
           if (data?.success) {
