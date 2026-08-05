@@ -90,32 +90,34 @@ export default function SubscriptionsTracking() {
         return;
       }
 
-      // Buscar assinaturas do mês
-      let txQuery = supabase
-        .from("sale_transactions")
-        .select("barber_id, created_at, unit_id")
-        .eq("organization_id", organizationId)
-        .eq("item_type", "subscription")
-        .gte("created_at", monthStart)
-        .lte("created_at", monthEnd + "T23:59:59");
+      // Buscar assinaturas do mês (paginado + fuso Manaus explícito)
+      const transactions = await fetchAllRows<SubTxRow>(() => {
+        let txQuery = supabase
+          .from("sale_transactions")
+          .select(sel("barber_id, created_at, unit_id"))
+          .eq("organization_id", organizationId)
+          .eq("item_type", "subscription")
+          .gte("created_at", manausDayStart(monthStart))
+          .lte("created_at", manausDayEnd(monthEnd));
 
-      if (selectedUnit !== "all") {
-        txQuery = txQuery.eq("unit_id", selectedUnit);
-      }
-
-      const { data: transactions } = await txQuery;
+        if (selectedUnit !== "all") {
+          txQuery = txQuery.eq("unit_id", selectedUnit);
+        }
+        return txQuery.returns<SubTxRow[]>();
+      });
 
       // Agrupar por barbeiro
       const subscriptionsByBarber: Record<string, { today: number; week: number; month: number }> = {};
 
-      (transactions || []).forEach((tx) => {
+      transactions.forEach((tx) => {
         const key = tx.barber_id || "reception";
         if (!subscriptionsByBarber[key]) {
           subscriptionsByBarber[key] = { today: 0, week: 0, month: 0 };
         }
         subscriptionsByBarber[key].month += 1;
 
-        const txDate = tx.created_at.split("T")[0];
+        // created_at é timestamptz: converter para o dia em Manaus antes de comparar.
+        const txDate = formatManausDateTime(tx.created_at, "yyyy-MM-dd");
         if (txDate === today) {
           subscriptionsByBarber[key].today += 1;
         }
@@ -123,6 +125,7 @@ export default function SubscriptionsTracking() {
           subscriptionsByBarber[key].week += 1;
         }
       });
+
 
       // Combinar dados
       const result: BarberSubscriptions[] = barbers.map((barber) => ({
