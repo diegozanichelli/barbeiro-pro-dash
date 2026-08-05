@@ -17,8 +17,40 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPhone } from "@/lib/phoneUtils";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
+import { fetchAllRows } from "@/lib/supabasePagination";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
+interface BarberTxRow {
+  barber_id: string | null;
+  unit_id: string | null;
+  is_new_client: boolean | null;
+  item_type: string;
+  subscription_action: string | null;
+  mobile_phone: string | null;
+  client_name: string | null;
+  item_name: string;
+  price_sold: number | null;
+  created_at: string;
+  barbers: { name: string; units: { name: string } | null } | null;
+}
+
+interface ReceptionTxRow {
+  unit_id: string | null;
+  is_new_client: boolean | null;
+  item_type: string;
+  subscription_action: string | null;
+  mobile_phone: string | null;
+  client_name: string | null;
+  item_name: string;
+  price_sold: number | null;
+  created_at: string;
+  attribution_source: string | null;
+}
 
 interface UnitOption { id: string; name: string; }
+
 interface DataHealth {
   totalInPeriod: number;
   txSemUnidade: number;
