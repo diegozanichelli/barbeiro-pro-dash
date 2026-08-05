@@ -144,66 +144,65 @@ export default function SubscriptionPerformanceReport() {
       // para evitar divergência entre relatórios (SubscriptionPerformance, UnitsComparison, etc).
       // Regra atual: is_new_client=true + mobile_phone válido no período, com deduplicação por celular.
       // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
-      let txQuery = supabase
-        .from("sale_transactions")
-        .select(`
-          barber_id,
-          unit_id,
-          is_new_client,
-          item_type,
-          subscription_action,
-          mobile_phone,
-          client_name,
-          item_name,
-          price_sold,
-          created_at,
-          barbers!sale_transactions_barber_id_fkey(name, units(name))
-        `)
-        .eq("organization_id", organizationId)
-        .gte("created_at", startISO)
-        .lte("created_at", endISO)
-        .not("barber_id", "is", null);
+      // Paginado: o mês inteiro passa de 1000 linhas e era truncado silenciosamente.
+      const transactions = await fetchAllRows<BarberTxRow>(() => {
+        let txQuery = supabase
+          .from("sale_transactions")
+          .select(
+            sel(
+              "barber_id, unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, barbers!sale_transactions_barber_id_fkey(name, units(name))"
+            )
+          )
+          .eq("organization_id", organizationId)
+          .gte("created_at", startISO)
+          .lte("created_at", endISO)
+          .not("barber_id", "is", null);
 
-      if (selectedUnitId === "no_unit") {
-        txQuery = txQuery.is("unit_id", null);
-      } else if (selectedUnitId !== "all") {
-        txQuery = txQuery.eq("unit_id", selectedUnitId);
-      }
-
-      const { data: transactions, error: txError } = await txQuery;
-      if (txError) throw txError;
+        if (selectedUnitId === "no_unit") {
+          txQuery = txQuery.is("unit_id", null);
+        } else if (selectedUnitId !== "all") {
+          txQuery = txQuery.eq("unit_id", selectedUnitId);
+        }
+        return txQuery.returns<BarberTxRow[]>();
+      });
 
       // Transações da recepção (sem barber_id)
-      let recQuery = supabase
-        .from("sale_transactions")
-        .select("unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, attribution_source")
-        .eq("organization_id", organizationId)
-        .gte("created_at", startISO)
-        .lte("created_at", endISO)
-        .is("barber_id", null);
+      const receptionTx = await fetchAllRows<ReceptionTxRow>(() => {
+        let recQuery = supabase
+          .from("sale_transactions")
+          .select(
+            sel(
+              "unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, attribution_source"
+            )
+          )
+          .eq("organization_id", organizationId)
+          .gte("created_at", startISO)
+          .lte("created_at", endISO)
+          .is("barber_id", null);
 
-      if (selectedUnitId === "no_unit") {
-        recQuery = recQuery.is("unit_id", null);
-      } else if (selectedUnitId !== "all") {
-        recQuery = recQuery.eq("unit_id", selectedUnitId);
-      }
-
-      const { data: receptionTx, error: recError } = await recQuery;
-      if (recError) throw recError;
+        if (selectedUnitId === "no_unit") {
+          recQuery = recQuery.is("unit_id", null);
+        } else if (selectedUnitId !== "all") {
+          recQuery = recQuery.eq("unit_id", selectedUnitId);
+        }
+        return recQuery.returns<ReceptionTxRow[]>();
+      });
 
       // Telefones marcados como "Assinante Legado" (subscription_action='legacy_import') — sempre todo o histórico.
-      const { data: legacyRows } = await (supabase
-        .from("sale_transactions") as any)
-        .select("mobile_phone")
-        .eq("organization_id", organizationId)
-        .eq("item_type", "subscription")
-        .eq("subscription_action", "legacy_import")
-        .not("mobile_phone", "is", null);
-      const legacyPhones = new Set<string>(
-        ((legacyRows || []) as Array<{ mobile_phone: string | null }>)
-          .map((r) => r.mobile_phone || "")
-          .filter(Boolean)
+      const legacyRows = await fetchAllRows<{ mobile_phone: string | null }>(() =>
+        supabase
+          .from("sale_transactions")
+          .select(sel("mobile_phone"))
+          .eq("organization_id", organizationId)
+          .eq("item_type", "subscription")
+          .eq("subscription_action", "legacy_import")
+          .not("mobile_phone", "is", null)
+          .returns<{ mobile_phone: string | null }[]>()
       );
+      const legacyPhones = new Set<string>(
+        legacyRows.map((r) => r.mobile_phone || "").filter(Boolean)
+      );
+
 
       // Agrupar por barbeiro
       const barberMap = new Map<string, {
