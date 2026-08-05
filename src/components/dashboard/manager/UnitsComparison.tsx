@@ -174,17 +174,22 @@ export default function UnitsComparison() {
       });
     });
 
-    // Buscar transações para conversões e novos assinantes
-    const { data: transactions, error: transactionsError } = await supabase
-      .from("sale_transactions")
-      .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
-      .gte("created_at", `${startDate}T00:00:00`)
-      .lte("created_at", `${endDate}T23:59:59`)
-      .not("barber_id", "is", null);
-
-    if (transactionsError) {
+    // Buscar transações para conversões e novos assinantes (paginado + fuso Manaus)
+    let transactions: TxRow[] = [];
+    try {
+      transactions = await fetchAllRows<TxRow>(() =>
+        supabase
+          .from("sale_transactions")
+          .select(sel("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)"))
+          .gte("created_at", manausDayStart(startDate))
+          .lte("created_at", manausDayEnd(endDate))
+          .not("barber_id", "is", null)
+          .returns<TxRow[]>()
+      );
+    } catch (transactionsError) {
       console.error("Erro ao buscar transações de assinatura:", transactionsError);
     }
+
 
     // Agregação por barbeiro (para top barbeiros por unidade)
     const barberAgg = new Map<string, { barberId: string; barberName: string; unitId: string; basic: number; extra: number; products: number }>();
