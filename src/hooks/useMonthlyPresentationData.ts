@@ -2,6 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
+import { fetchAllRows } from "@/lib/supabasePagination";
+import { manausDayStart, manausDayEnd } from "@/lib/dateUtils";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
 
 export interface MonthlyPresentationData {
   org_name: string;
@@ -70,25 +76,38 @@ export interface MonthlyPresentationData {
 }
 
 
+interface FunnelTxRow {
+  item_type: string;
+  subscription_action: string | null;
+  is_new_client: boolean | null;
+  mobile_phone: string | null;
+  unit_id: string | null;
+}
+
+interface ExtrasTxRow {
+  price_sold: number | null;
+  barbers: { name: string } | null;
+}
+
 async function computeSsoTFunnel(periodStart: string, periodEnd: string, unitId: string | null) {
-  let q = supabase
-    .from("sale_transactions")
-    .select("item_type, subscription_action, is_new_client, mobile_phone, unit_id")
-    .gte("created_at", `${periodStart}T00:00:00-04:00`)
-    .lte("created_at", `${periodEnd}T23:59:59-04:00`);
-
-  if (unitId) q = q.eq("unit_id", unitId);
-
-  const { data, error } = await q;
-  if (error) throw error;
+  // Paginado: o mês inteiro passa de 1000 linhas e era truncado silenciosamente.
+  const data = await fetchAllRows<FunnelTxRow>(() => {
+    let q = supabase
+      .from("sale_transactions")
+      .select(sel("item_type, subscription_action, is_new_client, mobile_phone, unit_id"))
+      .gte("created_at", manausDayStart(periodStart))
+      .lte("created_at", manausDayEnd(periodEnd));
+    if (unitId) q = q.eq("unit_id", unitId);
+    return q.returns<FunnelTxRow[]>();
+  });
 
   const phones = new Set<string>();
   let newSubscriptions = 0;
 
-  for (const tx of data || []) {
-    const normalized = normalizePhoneForMetrics((tx as any).mobile_phone || null);
+  for (const tx of data) {
+    const normalized = normalizePhoneForMetrics(tx.mobile_phone || null);
     if (isValidOpportunity(tx as any) && normalized) phones.add(normalized);
-    if (isNewSubscription(tx as any) && (tx as any).is_new_client === true) newSubscriptions++;
+    if (isNewSubscription(tx as any) && tx.is_new_client === true) newSubscriptions++;
   }
 
   const newClients = phones.size;
@@ -97,18 +116,20 @@ async function computeSsoTFunnel(periodStart: string, periodEnd: string, unitId:
 }
 
 async function computeExtrasSellersRanking(periodStart: string, periodEnd: string, unitId: string | null) {
-  let q = supabase
-    .from("sale_transactions")
-    .select("price_sold, barbers!inner(name)")
-    .eq("item_type", "service")
-    .eq("service_category", "extra")
-    .gte("created_at", `${periodStart}T00:00:00-04:00`)
-    .lte("created_at", `${periodEnd}T23:59:59-04:00`);
-  if (unitId) q = q.eq("unit_id", unitId);
-  const { data, error } = await q;
-  if (error) throw error;
+  const data = await fetchAllRows<ExtrasTxRow>(() => {
+    let q = supabase
+      .from("sale_transactions")
+      .select(sel("price_sold, barbers!inner(name)"))
+      .eq("item_type", "service")
+      .eq("service_category", "extra")
+      .gte("created_at", manausDayStart(periodStart))
+      .lte("created_at", manausDayEnd(periodEnd));
+    if (unitId) q = q.eq("unit_id", unitId);
+    return q.returns<ExtrasTxRow[]>();
+  });
+
   const map = new Map<string, { qty: number; revenue: number }>();
-  for (const row of (data || []) as any[]) {
+  for (const row of data) {
     const name = row.barbers?.name;
     if (!name) continue;
     const cur = map.get(name) || { qty: 0, revenue: 0 };
@@ -120,6 +141,7 @@ async function computeExtrasSellersRanking(periodStart: string, periodEnd: strin
     .map(([barber_name, v]) => ({ barber_name, qty: v.qty, revenue: v.revenue }))
     .sort((a, b) => b.revenue - a.revenue);
 }
+
 
 interface RangeParams {
   periodStart: string;
