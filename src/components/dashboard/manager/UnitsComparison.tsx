@@ -5,10 +5,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { getManausDate } from "@/lib/dateUtils";
+import { getManausDate, manausDayStart, manausDayEnd } from "@/lib/dateUtils";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
+import { fetchAllRows } from "@/lib/supabasePagination";
 import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
+interface TxRow {
+  barber_id: string | null;
+  is_new_client: boolean | null;
+  item_type: string;
+  subscription_action: string | null;
+  mobile_phone: string | null;
+  barbers: { unit_id: string } | null;
+}
+
 
 interface Unit {
   id: string;
