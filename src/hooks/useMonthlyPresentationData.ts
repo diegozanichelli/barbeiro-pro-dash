@@ -2,6 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
+import { fetchAllRows } from "@/lib/supabasePagination";
+import { manausDayStart, manausDayEnd } from "@/lib/dateUtils";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
 
 export interface MonthlyPresentationData {
   org_name: string;
