@@ -7,10 +7,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Crown, TrendingUp, Users, Calendar, Building2, CalendarDays } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
-import { getTodayString, getManausDate } from "@/lib/dateUtils";
+import { getTodayString, getManausDate, manausDayStart, manausDayEnd, formatManausDateTime } from "@/lib/dateUtils";
 import { ptBR } from "date-fns/locale";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Label } from "@/components/ui/label";
+import { fetchAllRows } from "@/lib/supabasePagination";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
+interface SubTxRow {
+  barber_id: string | null;
+  created_at: string;
+  unit_id: string | null;
+}
+
 
 interface Unit {
   id: string;
