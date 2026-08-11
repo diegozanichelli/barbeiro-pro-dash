@@ -28,6 +28,7 @@ import SendNotificationsButton from "./manager/SendNotificationsButton";
 import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
 import BestSalesDays from "./manager/BestSalesDays";
 import BarberReportPage from "./manager/BarberReportPage";
+import InactiveClientsReport from "./manager/InactiveClientsReport";
 import ReportsAuditPanel from "./manager/ReportsAuditPanel";
 
 
