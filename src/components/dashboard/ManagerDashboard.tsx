@@ -178,6 +178,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <BarberReportPage />
           </TabsContent>
 
+          <TabsContent value="inactive-clients" className="mt-0">
+            <InactiveClientsReport />
+          </TabsContent>
+
+
           <TabsContent value="payroll" className="mt-0">
             <MonthlyPayroll />
           </TabsContent>
