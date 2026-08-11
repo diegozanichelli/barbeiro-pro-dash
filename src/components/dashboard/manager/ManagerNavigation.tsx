@@ -23,6 +23,7 @@ import {
   UserRound,
   ChevronRight,
   ShieldCheck,
+  UserX,
 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
