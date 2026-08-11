@@ -1502,6 +1502,22 @@ export type Database = {
         }
         Returns: Json
       }
+      get_inactive_clients: {
+        Args: { p_barber_id?: string; p_ref_date?: string; p_unit_id?: string }
+        Returns: {
+          bucket: string
+          client_name: string
+          days_inactive: number
+          is_subscriber: boolean
+          last_barber_name: string
+          last_unit_name: string
+          last_visit: string
+          mobile_phone: string
+          previous_visit: string
+          total_spent: number
+          visits: number
+        }[]
+      }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
