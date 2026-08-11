@@ -28,6 +28,7 @@ import SendNotificationsButton from "./manager/SendNotificationsButton";
 import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
 import BestSalesDays from "./manager/BestSalesDays";
 import BarberReportPage from "./manager/BarberReportPage";
+import InactiveClientsReport from "./manager/InactiveClientsReport";
 import ReportsAuditPanel from "./manager/ReportsAuditPanel";
 
 
@@ -176,6 +177,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsContent value="barber-report" className="mt-0">
             <BarberReportPage />
           </TabsContent>
+
+          <TabsContent value="inactive-clients" className="mt-0">
+            <InactiveClientsReport />
+          </TabsContent>
+
 
           <TabsContent value="payroll" className="mt-0">
             <MonthlyPayroll />
