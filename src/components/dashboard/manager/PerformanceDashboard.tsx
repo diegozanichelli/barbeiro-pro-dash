@@ -21,7 +21,7 @@ import {
 import { formatInTimeZone } from "date-fns-tz";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/useOrganization";
-import { getCurrentMonthYear, TIMEZONE } from "@/lib/dateUtils";
+import { getCurrentDay, getCurrentMonthYear, TIMEZONE } from "@/lib/dateUtils";
 import { fetchAllRows } from "@/lib/supabasePagination";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -159,6 +159,7 @@ const variation = (current: number, previous: number) => {
 export default function PerformanceDashboard() {
   const { organizationId, loading: orgLoading } = useOrganization();
   const { month: currentMonth, year: currentYear } = getCurrentMonthYear();
+  const today = getCurrentDay();
 
   const [month, setMonth] = useState(currentMonth);
   const [year, setYear] = useState(currentYear);
@@ -316,6 +317,32 @@ export default function PerformanceDashboard() {
 
   const range = sliceRange(year, month, slice);
   const prevRange = sliceRange(prevYear, prevMonth, slice);
+  const prevTotalDays = daysInMonth(prevYear, prevMonth);
+
+  /**
+   * Último dia que já pode ter lançamento: o mês inteiro quando fechado, hoje
+   * quando é o mês corrente, nenhum dia quando é mês futuro. Sem isso os dias
+   * que ainda não aconteceram entrariam no gráfico e nos cards como R$ 0.
+   */
+  const monthIndex = (y: number, m: number) => y * 12 + m;
+  const lastRealDay = (y: number, m: number) => {
+    const diff = monthIndex(y, m) - monthIndex(currentYear, currentMonth);
+    if (diff > 0) return 0;
+    if (diff === 0) return today;
+    return daysInMonth(y, m);
+  };
+
+  const curLastDay = lastRealDay(year, month);
+  const prevLastDay = lastRealDay(prevYear, prevMonth);
+
+  /** Deslocamento que casa o dia da semana entre as duas fatias. */
+  const prevOffset = weekdayOffset(
+    key(year, month, range.startDay),
+    key(prevYear, prevMonth, prevRange.startDay),
+    prevRange.startDay,
+    range.endDay - range.startDay,
+    prevTotalDays
+  );
 
   const sumRange = (
     byDay: Record<number, DayBucket>,
@@ -333,8 +360,38 @@ export default function PerformanceDashboard() {
     return acc;
   };
 
-  const curTotals = sumRange(scoped.cur.byDay, range.startDay, range.endDay);
-  const prevTotals = sumRange(scoped.prev.byDay, prevRange.startDay, prevRange.endDay);
+  // Fatia em andamento: o mês corrente só tem dados até hoje.
+  const curEndDay = Math.min(range.endDay, curLastDay);
+  const partialPeriod = curEndDay < range.endDay;
+
+  /**
+   * Com a fatia atual incompleta, somar o mês anterior inteiro compararia 22
+   * dias com 31. A janela anterior passa a ter o mesmo tamanho e o mesmo dia da
+   * semana de início — assim os dois lados têm os mesmos sábados e domingos.
+   */
+  const prevWindow = partialPeriod
+    ? {
+        startDay: Math.max(1, prevRange.startDay + prevOffset),
+        endDay: Math.min(
+          prevTotalDays,
+          prevLastDay,
+          prevRange.startDay + prevOffset + (curEndDay - range.startDay)
+        ),
+      }
+    : { startDay: prevRange.startDay, endDay: Math.min(prevRange.endDay, prevLastDay) };
+
+  const curTotals = sumRange(scoped.cur.byDay, range.startDay, curEndDay);
+  const prevTotals = sumRange(scoped.prev.byDay, prevWindow.startDay, prevWindow.endDay);
+
+  const hasPrevWindow = prevWindow.endDay >= prevWindow.startDay;
+  const comparisonLabel = partialPeriod
+    ? "mesmo período do mês anterior"
+    : "período anterior";
+  const comparisonRange = hasPrevWindow
+    ? `${shortDate(key(prevYear, prevMonth, prevWindow.startDay))} a ${shortDate(
+        key(prevYear, prevMonth, prevWindow.endDay)
+      )}`
+    : null;
 
   const curTicket = curTotals.clients ? curTotals.revenue / curTotals.clients : 0;
   const prevTicket = prevTotals.clients ? prevTotals.revenue / prevTotals.clients : 0;
@@ -366,18 +423,12 @@ export default function PerformanceDashboard() {
   const chartData = useMemo(() => {
     const rows: ChartRow[] = [];
     const len = range.endDay - range.startDay;
-    const prevTotalDays = daysInMonth(prevYear, prevMonth);
-    const offset = weekdayOffset(
-      key(year, month, range.startDay),
-      key(prevYear, prevMonth, prevRange.startDay),
-      prevRange.startDay,
-      len,
-      prevTotalDays
-    );
     for (let i = 0; i <= len; i++) {
       const day = range.startDay + i;
-      const prevDay = prevRange.startDay + i + offset;
-      const hasPrev = prevDay >= 1 && prevDay <= prevTotalDays;
+      const prevDay = prevRange.startDay + i + prevOffset;
+      // Dia futuro não é "vendeu zero", é dia que ainda não aconteceu: fica sem ponto.
+      const hasCur = day <= curLastDay;
+      const hasPrev = prevDay >= 1 && prevDay <= Math.min(prevTotalDays, prevLastDay);
       const dk = key(year, month, day);
       const cb = scoped.cur.byDay[day];
       const pb = hasPrev ? scoped.prev.byDay[prevDay] : undefined;
@@ -389,13 +440,27 @@ export default function PerformanceDashboard() {
       };
       rows.push({
         label: slice === "month" ? shortDate(dk) : `${WEEKDAYS[weekdayOf(dk)]} ${day}`,
-        atual: pick(cb),
+        atual: hasCur ? pick(cb) : null,
         anterior: hasPrev ? pick(pb) : null,
         anteriorLabel: hasPrev ? shortDate(key(prevYear, prevMonth, prevDay)) : null,
       });
     }
     return rows;
-  }, [range, prevRange, scoped, metric, slice, year, month, prevYear, prevMonth]);
+  }, [
+    range,
+    prevRange,
+    prevOffset,
+    prevTotalDays,
+    curLastDay,
+    prevLastDay,
+    scoped,
+    metric,
+    slice,
+    year,
+    month,
+    prevYear,
+    prevMonth,
+  ]);
 
   const teamRanking = useMemo(() => {
     const rows = filterTx(current, null);
@@ -592,8 +657,11 @@ export default function PerformanceDashboard() {
                     <DeltaIcon className="w-3 h-3" />
                     {k.delta === null ? "—" : `${k.delta >= 0 ? "+" : ""}${k.delta.toFixed(1)}%`}
                   </span>
-                  <span className="text-xs text-muted-foreground/80">
-                    período anterior: {k.previous}
+                  <span
+                    className="text-xs text-muted-foreground/80"
+                    title={comparisonRange ? `Comparando com ${comparisonRange}` : undefined}
+                  >
+                    {comparisonLabel}: {k.previous}
                   </span>
                 </div>
               </CardContent>
