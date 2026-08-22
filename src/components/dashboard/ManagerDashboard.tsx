@@ -14,8 +14,6 @@ import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
-import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
-import EarningsComparison from "./manager/EarningsComparison";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
 import AIUsageTracking from "./manager/AIUsageTracking";
@@ -26,6 +24,14 @@ import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
+import SendNotificationsButton from "./manager/SendNotificationsButton";
+import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
+import BestSalesDays from "./manager/BestSalesDays";
+import BarberReportPage from "./manager/BarberReportPage";
+import InactiveClientsReport from "./manager/InactiveClientsReport";
+import ReportsAuditPanel from "./manager/ReportsAuditPanel";
+import PerformanceDashboard from "./manager/PerformanceDashboard";
+
 
 interface ManagerDashboardProps {
   user: User;
@@ -47,7 +53,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
         } else if (data && typeof data === 'object' && 'goals_created' in data) {
           const result = data as { goals_created: number; month: number; year: number };
           if (result.goals_created > 0) {
-            console.log(`Metas replicadas automaticamente: ${result.goals_created} para ${result.month}/${result.year}`);
           }
         }
       } catch (err) {
@@ -69,50 +74,51 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+    <div className="min-h-screen bg-background md:pl-14">
+      <ManagerNavigation
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        hasSubscriptionModule={hasSubscriptionModule}
+      />
+
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-30">
         <div className="container mx-auto px-4 py-3">
           <div className="flex flex-row items-center justify-between gap-4">
-            {/* Left: Logo + Title */}
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 md:pl-2">
               <img
                 src={logo}
                 alt="Performance Barber"
                 className="h-10 md:h-12 w-auto"
               />
               <div className="hidden lg:block">
-                <h1 className="text-base font-bold text-foreground leading-tight">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-primary/80">
+                  Performance Barber
+                </p>
+                <h1 className="font-display text-base font-semibold leading-tight text-foreground">
                   Painel do Gestor
                 </h1>
-                <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                <p className="text-xs text-muted-foreground/80 truncate max-w-[200px]">
                   {user.email}
                 </p>
               </div>
             </div>
 
-            {/* Center/Right: Navigation */}
-            <div className="flex-1 flex justify-end">
-              <ManagerNavigation
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                hasSubscriptionModule={hasSubscriptionModule}
-              />
+            <div className="flex items-center gap-2 shrink-0">
+              <SendNotificationsButton />
+              <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 md:mr-2 animate-spin" />
+                    <span className="hidden md:inline">Saindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 md:mr-2" />
+                    <span className="hidden md:inline">Sair</span>
+                  </>
+                )}
+              </Button>
             </div>
-
-            {/* Far Right: Sign Out */}
-            <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0" disabled={isSigningOut}>
-              {isSigningOut ? (
-                <>
-                  <Loader2 className="w-4 h-4 md:mr-2 animate-spin" />
-                  <span className="hidden md:inline">Saindo...</span>
-                </>
-              ) : (
-                <>
-                  <LogOut className="w-4 h-4 md:mr-2" />
-                  <span className="hidden md:inline">Sair</span>
-                </>
-              )}
-            </Button>
           </div>
         </div>
       </header>
@@ -127,6 +133,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <PerformanceAlerts />
             <MonthlyOccurrencesSummary />
             <ManagerReports />
+          </TabsContent>
+
+          <TabsContent value="performance" className="mt-0">
+            <PerformanceDashboard />
           </TabsContent>
 
           <TabsContent value="daily-goals" className="mt-0">
@@ -161,13 +171,35 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <Leaderboard />
           </TabsContent>
 
+          <TabsContent value="monthly-presentation" className="mt-0">
+            <MonthlyPresentation />
+          </TabsContent>
+
+          <TabsContent value="best-sales-days" className="mt-0">
+            <BestSalesDays />
+          </TabsContent>
+
+          <TabsContent value="barber-report" className="mt-0">
+            <BarberReportPage />
+          </TabsContent>
+
+          <TabsContent value="inactive-clients" className="mt-0">
+            <InactiveClientsReport />
+          </TabsContent>
+
+
           <TabsContent value="payroll" className="mt-0">
             <MonthlyPayroll />
+          </TabsContent>
+
+          <TabsContent value="reports-audit" className="mt-0">
+            <ReportsAuditPanel onNavigate={setActiveTab} />
           </TabsContent>
 
           <TabsContent value="ai-usage" className="mt-0">
             <AIUsageTracking />
           </TabsContent>
+
 
           <TabsContent value="subscriptions" className="mt-0">
             <SubscriptionsTracking />
@@ -179,17 +211,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             </TabsContent>
           )}
 
-          {hasSubscriptionModule && (
-            <>
-              <TabsContent value="subscription" className="mt-0">
-                <SubscriptionEarningsForm />
-              </TabsContent>
-
-              <TabsContent value="comparison" className="mt-0">
-                <EarningsComparison />
-              </TabsContent>
-            </>
-          )}
         </Tabs>
       </div>
     </div>

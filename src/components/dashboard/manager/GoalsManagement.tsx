@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Target, Calendar, Plus, Pencil, Trash2, Landmark } from "lucide-react";
 import { format } from "date-fns";
 import { getDaysInMonth } from "date-fns";
+import UnitSeasonalityCard from "./UnitSeasonalityCard";
 
 interface BarberOption {
   id: string;
@@ -78,7 +79,6 @@ export default function GoalsManagement() {
       return;
     }
     
-    console.log("Barbeiros carregados:", data);
     if (data) setBarbers(data);
   }, []);
 
@@ -329,6 +329,7 @@ export default function GoalsManagement() {
 
   return (
     <>
+      <UnitSeasonalityCard />
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
           <div className="flex items-center justify-between">

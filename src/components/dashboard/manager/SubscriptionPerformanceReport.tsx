@@ -6,23 +6,123 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
-import { Crown, TrendingUp, Users, Target, Loader2, Star, AlertTriangle, Trophy } from "lucide-react";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
+import { useOrganization } from "@/hooks/useOrganization";
+import { Crown, Users, Target, Loader2, Star, AlertTriangle, Trophy, HelpCircle, UserPlus, ShieldCheck, ChevronDown, ChevronUp, Archive, Loader as LoaderIcon } from "lucide-react";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatPhone } from "@/lib/phoneUtils";
+import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
+import SubscriptionWizardModal from "./SubscriptionWizardModal";
+import { fetchAllRows } from "@/lib/supabasePagination";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
+interface BarberTxRow {
+  barber_id: string | null;
+  unit_id: string | null;
+  is_new_client: boolean | null;
+  item_type: string;
+  subscription_action: string | null;
+  mobile_phone: string | null;
+  client_name: string | null;
+  item_name: string;
+  price_sold: number | null;
+  created_at: string;
+  barbers: { name: string; units: { name: string } | null } | null;
+}
+
+interface ReceptionTxRow {
+  unit_id: string | null;
+  is_new_client: boolean | null;
+  item_type: string;
+  subscription_action: string | null;
+  mobile_phone: string | null;
+  client_name: string | null;
+  item_name: string;
+  price_sold: number | null;
+  created_at: string;
+  attribution_source: string | null;
+}
+
+interface UnitOption { id: string; name: string; }
+
+interface DataHealth {
+  totalInPeriod: number;
+  txSemUnidade: number;
+  novoSemTelefone: number;
+  novaAdesaoSemTelefone: number;
+  novaAdesaoSemIsNewClient: number;
+}
+
+interface AdhesionRow {
+  phone: string | null;
+  name: string;
+  planName: string;
+  priceSold: number;
+  createdAt: string;
+  isNewClient: boolean;
+}
+
+interface BarberClientDrilldown {
+  barberId: string;
+  barberName: string;
+  unitId: string | null;
+  unitName: string;
+  opportunities: Array<{ phone: string; name: string; converted: boolean; attendances: number }>;
+  adhesions: AdhesionRow[];
+}
 
 interface BarberPerformance {
   barberId: string;
   barberName: string;
   unitName: string;
-  newClientsCount: number;
-  subscriptionsSold: number;
-  conversionRate: number;
+  opportunities: number;          // pessoas únicas com is_new_client=true
+  rawNewAttendances: number;      // total de lançamentos marcados como cliente novo (sem deduplicação por celular)
+  newClientAdhesions: number;     // assinaturas action='new' AND is_new_client=true
+  totalAdhesions: number;         // assinaturas action='new' (qualquer cliente)
+  strictConversion: number;       // newClientAdhesions / opportunities
+  penetration: number;            // totalAdhesions / opportunities
+  isReception?: boolean;
 }
 
 export default function SubscriptionPerformanceReport() {
   const manausNow = useMemo(() => getManausDate(), []);
+  const { organizationId } = useOrganization();
   const [selectedMonth, setSelectedMonth] = useState(manausNow.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(manausNow.getFullYear());
   const [loading, setLoading] = useState(true);
   const [performanceData, setPerformanceData] = useState<BarberPerformance[]>([]);
+  const [receptionRow, setReceptionRow] = useState<BarberPerformance | null>(null);
+  // Total geral DEDUPLICADO entre barbeiros (Set global)
+  const [globalOpportunities, setGlobalOpportunities] = useState(0);
+  const [globalNewClientAdhesions, setGlobalNewClientAdhesions] = useState(0);
+  const [globalTotalAdhesions, setGlobalTotalAdhesions] = useState(0);
+  // Filtro de unidade + saúde dos dados
+  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("all"); // "all" | "no_unit" | uuid
+  const [dataHealth, setDataHealth] = useState<DataHealth>({
+    totalInPeriod: 0,
+    txSemUnidade: 0,
+    novoSemTelefone: 0,
+    novaAdesaoSemTelefone: 0,
+    novaAdesaoSemIsNewClient: 0,
+  });
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [clientDrilldown, setClientDrilldown] = useState<Map<string, BarberClientDrilldown>>(new Map());
+  const [selectedDrilldownBarberId, setSelectedDrilldownBarberId] = useState<string | null>(null);
+  const [drilldownTab, setDrilldownTab] = useState<"adhesions" | "opportunities">("adhesions");
+  const [regularizationWizardOpen, setRegularizationWizardOpen] = useState(false);
+  const [regularizationPrefill, setRegularizationPrefill] = useState<{
+    phone: string;
+    name: string;
+    barberId: string;
+    unitId: string | null;
+  } | null>(null);
 
   const months = [
     { value: 1, label: "Janeiro" },
@@ -41,84 +141,374 @@ export default function SubscriptionPerformanceReport() {
 
   const years = Array.from({ length: 3 }, (_, i) => getManausDate().getFullYear() - 1 + i);
 
+  // Carrega lista de unidades para o filtro
   useEffect(() => {
-    fetchPerformanceData();
-  }, [selectedMonth, selectedYear]);
+    if (!organizationId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name");
+      if (data) setUnits(data);
+    })();
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (organizationId) fetchPerformanceData();
+  }, [selectedMonth, selectedYear, organizationId, selectedUnitId]);
 
   const fetchPerformanceData = async () => {
+    if (!organizationId) return;
     setLoading(true);
 
-    // Calculate date range for the selected month
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split("T")[0];
 
+    // Filtros com timezone Manaus (UTC-4) explícito para evitar bordas erradas
+    const startISO = `${startDate}T00:00:00-04:00`;
+    const endISO = `${endDate}T23:59:59-04:00`;
+    const debugPhone = "92984700424";
+
     try {
-      // Fetch ONLY manager transactions for the period (source='manager')
-      // This ensures we use the official reception/PDV data for conversion metrics
-      const { data: transactions, error: txError } = await supabase
-        .from("sale_transactions")
-        .select(`
-          barber_id,
-          is_new_client,
-          item_type,
-          barbers!sale_transactions_barber_id_fkey(name, units(name))
-        `)
-        .eq("source", "manager") // CRITICAL: Only manager data for accurate metrics
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${endDate}T23:59:59`)
-        .not("barber_id", "is", null);
+      // TODO(metrics-ssot): centralizar regra de "oportunidade de conversão" em hook/util único
+      // para evitar divergência entre relatórios (SubscriptionPerformance, UnitsComparison, etc).
+      // Regra atual: is_new_client=true + mobile_phone válido no período, com deduplicação por celular.
+      // Transações de barbeiros (filtra unit_id direto na tabela após backfill)
+      // Paginado: o mês inteiro passa de 1000 linhas e era truncado silenciosamente.
+      const transactions = await fetchAllRows<BarberTxRow>(() => {
+        let txQuery = supabase
+          .from("sale_transactions")
+          .select(
+            sel(
+              "barber_id, unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, barbers!sale_transactions_barber_id_fkey(name, units(name))"
+            )
+          )
+          .eq("organization_id", organizationId)
+          .gte("created_at", startISO)
+          .lte("created_at", endISO)
+          .not("barber_id", "is", null);
 
-      if (txError) throw txError;
+        if (selectedUnitId === "no_unit") {
+          txQuery = txQuery.is("unit_id", null);
+        } else if (selectedUnitId !== "all") {
+          txQuery = txQuery.eq("unit_id", selectedUnitId);
+        }
+        return txQuery.returns<BarberTxRow[]>();
+      });
 
-      // Group data by barber
+      // Transações da recepção (sem barber_id)
+      const receptionTx = await fetchAllRows<ReceptionTxRow>(() => {
+        let recQuery = supabase
+          .from("sale_transactions")
+          .select(
+            sel(
+              "unit_id, is_new_client, item_type, subscription_action, mobile_phone, client_name, item_name, price_sold, created_at, attribution_source"
+            )
+          )
+          .eq("organization_id", organizationId)
+          .gte("created_at", startISO)
+          .lte("created_at", endISO)
+          .is("barber_id", null);
+
+        if (selectedUnitId === "no_unit") {
+          recQuery = recQuery.is("unit_id", null);
+        } else if (selectedUnitId !== "all") {
+          recQuery = recQuery.eq("unit_id", selectedUnitId);
+        }
+        return recQuery.returns<ReceptionTxRow[]>();
+      });
+
+      // Telefones marcados como "Assinante Legado" (subscription_action='legacy_import') — sempre todo o histórico.
+      const legacyRows = await fetchAllRows<{ mobile_phone: string | null }>(() =>
+        supabase
+          .from("sale_transactions")
+          .select(sel("mobile_phone"))
+          .eq("organization_id", organizationId)
+          .eq("item_type", "subscription")
+          .eq("subscription_action", "legacy_import")
+          .not("mobile_phone", "is", null)
+          .returns<{ mobile_phone: string | null }[]>()
+      );
+      const legacyPhones = new Set<string>(
+        legacyRows.map((r) => r.mobile_phone || "").filter(Boolean)
+      );
+
+
+      // Agrupar por barbeiro
       const barberMap = new Map<string, {
         name: string;
+        unitId: string | null;
         unit: string;
-        newClients: number;
-        subscriptions: number;
+        allNewClientPhones: Set<string>;
+        opportunityPhones: Set<string>;
+        convertedPhones: Set<string>;
+        regularizedPhones: Set<string>;
+        newClientAdhesions: number;
+        totalAdhesions: number;
+        rawNewAttendances: number;
+        adhesions: AdhesionRow[];
       }>();
+
+      // Sets globais para deduplicar a visão organizacional
+      const globalOpportunityPhones = new Set<string>();
+      const globalRegularizedPhones = new Set<string>();
+      let globalNewClientAdh = 0;
+      let globalTotalAdh = 0;
 
       transactions?.forEach((tx) => {
         if (!tx.barber_id) return;
 
         const existing = barberMap.get(tx.barber_id) || {
           name: (tx.barbers as any)?.name || "Desconhecido",
+          unitId: tx.unit_id ?? null,
           unit: (tx.barbers as any)?.units?.name || "Sem unidade",
-          newClients: 0,
-          subscriptions: 0,
+          allNewClientPhones: new Set<string>(),
+          opportunityPhones: new Set<string>(),
+          convertedPhones: new Set<string>(),
+          regularizedPhones: new Set<string>(),
+          newClientAdhesions: 0,
+          totalAdhesions: 0,
+          rawNewAttendances: 0,
+          adhesions: [] as AdhesionRow[],
         };
 
-        // Count new clients (is_new_client = true)
+        const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+        if (normalizedPhone === debugPhone) {
+          console.info("[SubscriptionPerformanceReport][debug-phone][barber]", {
+            phone: normalizedPhone,
+            createdAt: (tx as any).created_at,
+            subscriptionAction: tx.subscription_action,
+            isNewClient: tx.is_new_client,
+            barberId: tx.barber_id,
+            unitId: tx.unit_id,
+            inRange: true,
+            startISO,
+            endISO,
+          });
+        }
         if (tx.is_new_client === true) {
-          existing.newClients++;
+          existing.rawNewAttendances++;
         }
 
-        // Count subscriptions (item_type = 'subscription')
-        if (tx.item_type === "subscription") {
-          existing.subscriptions++;
+        if (isValidOpportunity(tx) && normalizedPhone) {
+          existing.opportunityPhones.add(normalizedPhone);
+          globalOpportunityPhones.add(normalizedPhone);
+        }
+
+        if (isNewSubscription(tx)) {
+          existing.totalAdhesions++;
+          globalTotalAdh++;
+          existing.adhesions.push({
+            phone: normalizedPhone || null,
+            name: ((tx as any).client_name || "").trim() || "Cliente sem nome",
+            planName: ((tx as any).item_name || "").trim() || "Assinatura",
+            priceSold: Number((tx as any).price_sold) || 0,
+            createdAt: (tx as any).created_at || "",
+            isNewClient: tx.is_new_client === true,
+          });
+          if (tx.is_new_client === true) {
+            existing.newClientAdhesions++;
+            if (normalizedPhone) existing.convertedPhones.add(normalizedPhone);
+            globalNewClientAdh++;
+          }
+        }
+        if (
+          tx.item_type === "subscription" &&
+          tx.subscription_action === "legacy_import" &&
+          normalizedPhone
+        ) {
+          existing.regularizedPhones.add(normalizedPhone);
+          globalRegularizedPhones.add(normalizedPhone);
         }
 
         barberMap.set(tx.barber_id, existing);
       });
 
-      // Convert to array and calculate conversion rate
+      // drilldownMap é construído mais abaixo após processar receptionTx,
+      // para que legacy_import lançados pela recepção (barber_id NULL)
+      // também sejam considerados via globalRegularizedPhones.
+
       const performance: BarberPerformance[] = Array.from(barberMap.entries()).map(
-        ([barberId, data]) => ({
-          barberId,
-          barberName: data.name,
-          unitName: data.unit,
-          newClientsCount: data.newClients,
-          subscriptionsSold: data.subscriptions,
-          conversionRate: data.newClients > 0 
-            ? (data.subscriptions / data.newClients) * 100 
-            : 0,
-        })
+        ([barberId, data]) => {
+          const opp = data.opportunityPhones.size;
+          return {
+            barberId,
+            barberName: data.name,
+            unitName: data.unit,
+            opportunities: opp,
+            rawNewAttendances: data.rawNewAttendances,
+            newClientAdhesions: data.newClientAdhesions,
+            totalAdhesions: data.totalAdhesions,
+            strictConversion: opp > 0 ? (data.newClientAdhesions / opp) * 100 : 0,
+            penetration: opp > 0 ? (data.totalAdhesions / opp) * 100 : 0,
+          };
+        }
       );
 
-      // Sort by conversion rate descending
-      performance.sort((a, b) => b.conversionRate - a.conversionRate);
-
+      // Ordena por conversão estrita desc, com penetração como desempate
+      performance.sort((a, b) =>
+        b.strictConversion - a.strictConversion || b.penetration - a.penetration
+      );
       setPerformanceData(performance);
+
+      // Recepção
+      const receptionPhones = new Set<string>();
+      let receptionNewClientAdh = 0;
+      let receptionTotalAdh = 0;
+      const receptionAdhesions: AdhesionRow[] = [];
+
+      receptionTx?.forEach((tx) => {
+        const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+        if (normalizedPhone === debugPhone) {
+          console.info("[SubscriptionPerformanceReport][debug-phone][reception]", {
+            phone: normalizedPhone,
+            createdAt: (tx as any).created_at,
+            subscriptionAction: tx.subscription_action,
+            isNewClient: tx.is_new_client,
+            barberId: null,
+            unitId: tx.unit_id,
+            inRange: true,
+            startISO,
+            endISO,
+          });
+        }
+        if (
+          tx.item_type === "subscription" &&
+          tx.subscription_action === "legacy_import" &&
+          normalizedPhone
+        ) {
+          globalRegularizedPhones.add(normalizedPhone);
+        }
+        if (isValidOpportunity(tx) && normalizedPhone) {
+          receptionPhones.add(normalizedPhone);
+          globalOpportunityPhones.add(normalizedPhone);
+        }
+        if (isNewSubscription(tx)) {
+          receptionTotalAdh++;
+          globalTotalAdh++;
+          receptionAdhesions.push({
+            phone: normalizedPhone || null,
+            name: ((tx as any).client_name || "").trim() || "Cliente sem nome",
+            planName: ((tx as any).item_name || "").trim() || "Assinatura",
+            priceSold: Number((tx as any).price_sold) || 0,
+            createdAt: (tx as any).created_at || "",
+            isNewClient: tx.is_new_client === true,
+          });
+          if (tx.is_new_client === true) {
+            receptionNewClientAdh++;
+            globalNewClientAdh++;
+          }
+        }
+      });
+
+      const drilldownMap = new Map<string, BarberClientDrilldown>();
+      for (const [barberId, data] of barberMap.entries()) {
+        const phoneNameMap = new Map<string, string>();
+        const attendanceKeysMap = new Map<string, Set<string>>();
+        (transactions || []).forEach((tx) => {
+          const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+          if (tx.barber_id !== barberId || !normalizedPhone) return;
+          const safeName = ((tx as any).client_name || "").trim();
+          if (safeName && !phoneNameMap.has(normalizedPhone)) phoneNameMap.set(normalizedPhone, safeName);
+          if (tx.is_new_client === true) {
+            const key = (tx as any).created_at || "";
+            const set = attendanceKeysMap.get(normalizedPhone) || new Set<string>();
+            set.add(key);
+            attendanceKeysMap.set(normalizedPhone, set);
+          }
+        });
+
+        const opportunities = Array.from(data.opportunityPhones)
+          .sort()
+          .map((phone) => ({
+            phone,
+            name: phoneNameMap.get(phone) || "Cliente sem nome",
+            converted:
+              data.convertedPhones.has(phone) ||
+              data.regularizedPhones.has(phone) ||
+              globalRegularizedPhones.has(phone),
+            attendances: attendanceKeysMap.get(phone)?.size || 1,
+          }));
+        const adhesions = [...data.adhesions].sort(
+          (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+        );
+        drilldownMap.set(barberId, {
+          barberId,
+          barberName: data.name,
+          unitId: data.unitId,
+          unitName: data.unit,
+          opportunities,
+          adhesions,
+        });
+      }
+
+      // Drilldown da recepção (sem barber_id) — mesma estrutura, sem oportunidades por barbeiro
+      if (receptionPhones.size > 0 || receptionAdhesions.length > 0) {
+        drilldownMap.set("__reception__", {
+          barberId: "__reception__",
+          barberName: "Recepção",
+          unitId: null,
+          unitName: "Sem barbeiro atribuído",
+          opportunities: Array.from(receptionPhones).sort().map((phone) => ({
+            phone,
+            name: "Cliente sem nome",
+            converted: globalRegularizedPhones.has(phone),
+            attendances: 1,
+          })),
+          adhesions: [...receptionAdhesions].sort(
+            (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+          ),
+        });
+      }
+      setClientDrilldown(drilldownMap);
+
+      if (receptionPhones.size > 0 || receptionTotalAdh > 0) {
+        const opp = receptionPhones.size;
+        setReceptionRow({
+          barberId: "__reception__",
+          barberName: "Recepção",
+          unitName: "Sem barbeiro atribuído",
+          opportunities: opp,
+          rawNewAttendances: receptionNewClientAdh,
+          newClientAdhesions: receptionNewClientAdh,
+          totalAdhesions: receptionTotalAdh,
+          strictConversion: opp > 0 ? (receptionNewClientAdh / opp) * 100 : 0,
+          penetration: opp > 0 ? (receptionTotalAdh / opp) * 100 : 0,
+          isReception: true,
+        });
+      } else {
+        setReceptionRow(null);
+      }
+
+      setGlobalOpportunities(globalOpportunityPhones.size);
+      setGlobalNewClientAdhesions(globalNewClientAdh);
+      setGlobalTotalAdhesions(globalTotalAdh);
+
+      // Saúde dos dados — calculado a partir do mesmo conjunto exibido
+      const allTx = [
+        ...(transactions ?? []).map((t: any) => ({ ...t, _hasBarber: true })),
+        ...(receptionTx ?? []).map((t: any) => ({ ...t, _hasBarber: false })),
+      ];
+      const health: DataHealth = {
+        totalInPeriod: allTx.length,
+        txSemUnidade: allTx.filter((t) => !t.unit_id).length,
+        novoSemTelefone: allTx.filter(
+          (t) => t.is_new_client === true && !normalizePhoneForMetrics(t.mobile_phone || null)
+        ).length,
+        novaAdesaoSemTelefone: allTx.filter(
+          (t) =>
+            isNewSubscription(t) &&
+            (!t.mobile_phone || t.mobile_phone === "")
+        ).length,
+        novaAdesaoSemIsNewClient: allTx.filter(
+          (t) =>
+            isNewSubscription(t) &&
+            t.is_new_client !== true
+        ).length,
+      };
+      setDataHealth(health);
     } catch (error) {
       console.error("Erro ao buscar dados de performance:", error);
     } finally {
@@ -126,9 +516,17 @@ export default function SubscriptionPerformanceReport() {
     }
   };
 
-  const getConversionBadge = (rate: number, opportunities: number) => {
-    // If no opportunities, show N/A
+  // Badge para Conversão estrita (≤100%)
+  const getStrictBadge = (rate: number, opportunities: number, sales: number) => {
     if (opportunities === 0) {
+      if (sales > 0) {
+        return (
+          <Badge variant="destructive" className="text-xs gap-1 font-medium">
+            <AlertTriangle className="w-3 h-3" />
+            <span>Sem oport. ({sales} vendas)</span>
+          </Badge>
+        );
+      }
       return (
         <Badge variant="secondary" className="text-xs gap-1">
           <span>N/A</span>
@@ -136,7 +534,6 @@ export default function SubscriptionPerformanceReport() {
       );
     }
 
-    // Elite: > 30%
     if (rate >= 30) {
       return (
         <Badge className="bg-success text-white text-xs gap-1 font-semibold">
@@ -145,8 +542,6 @@ export default function SubscriptionPerformanceReport() {
         </Badge>
       );
     }
-
-    // Regular: 10-29%
     if (rate >= 10) {
       return (
         <Badge className="bg-warning text-warning-foreground text-xs gap-1 font-medium">
@@ -155,8 +550,6 @@ export default function SubscriptionPerformanceReport() {
         </Badge>
       );
     }
-
-    // Critical: < 10%
     return (
       <Badge variant="destructive" className="text-xs gap-1 font-medium">
         <AlertTriangle className="w-3 h-3" />
@@ -165,24 +558,18 @@ export default function SubscriptionPerformanceReport() {
     );
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
+  const getInitials = (name: string) =>
+    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  // Highlight critical cases: many opportunities, few sales
-  const isCriticalCase = (opportunities: number, sales: number) => {
-    return opportunities >= 5 && sales === 0;
-  };
+  const isCriticalCase = (opportunities: number, sales: number) =>
+    opportunities >= 5 && sales === 0;
 
-  // Summary stats
-  const totalNewClients = performanceData.reduce((sum, p) => sum + p.newClientsCount, 0);
-  const totalSubscriptions = performanceData.reduce((sum, p) => sum + p.subscriptionsSold, 0);
-  const overallConversion = totalNewClients > 0 ? (totalSubscriptions / totalNewClients) * 100 : 0;
+  const overallStrict = globalOpportunities > 0
+    ? (globalNewClientAdhesions / globalOpportunities) * 100
+    : 0;
+  const overallPenetration = globalOpportunities > 0
+    ? (globalTotalAdhesions / globalOpportunities) * 100
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -195,161 +582,533 @@ export default function SubscriptionPerformanceReport() {
             <div>
               <CardTitle>Relatório de Conversão de Assinaturas</CardTitle>
               <CardDescription>
-                Taxa de conversão: Clientes Novos → Assinantes
+                Conversão Estrita (cliente novo → assinou) e Penetração (todas adesões ÷ oportunidades)
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
+          <SubscriptionScopeBanner scope="conversion" />
+
           {/* Filters */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Mês
-              </label>
-              <Select
-                value={selectedMonth.toString()}
-                onValueChange={(v) => setSelectedMonth(Number(v))}
-              >
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Mês</label>
+              <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {months.map((month) => (
-                    <SelectItem key={month.value} value={month.value.toString()}>
-                      {month.label}
-                    </SelectItem>
+                    <SelectItem key={month.value} value={month.value.toString()}>{month.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Ano
-              </label>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(v) => setSelectedYear(Number(v))}
-              >
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Ano</label>
+              <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(Number(v))}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
+                    <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="col-span-2 lg:col-span-1">
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Unidade</label>
+              <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {units.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
+                  <SelectItem value="no_unit">⚠️ Sem unidade (legado)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Users className="w-4 h-4" />
-                  <span className="text-xs">🎯 Oportunidades</span>
-                </div>
-                <p className="text-2xl font-bold">{totalNewClients}</p>
-                <p className="text-xs text-muted-foreground">Clientes Novos</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Crown className="w-4 h-4" />
-                  <span className="text-xs">👑 Vendas</span>
-                </div>
-                <p className="text-2xl font-bold">{totalSubscriptions}</p>
-                <p className="text-xs text-muted-foreground">Assinaturas</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Target className="w-4 h-4" />
-                  <span className="text-xs">📉 Conversão Geral</span>
-                </div>
-                <p className="text-2xl font-bold">
-                  {overallConversion.toFixed(1)}%
-                </p>
-                <p className="text-xs text-muted-foreground">Vendas / Oportunidades</p>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Saúde dos dados — colapsável e discreto */}
+          {(() => {
+            const totalIssues =
+              dataHealth.txSemUnidade +
+              dataHealth.novoSemTelefone +
+              dataHealth.novaAdesaoSemTelefone +
+              dataHealth.novaAdesaoSemIsNewClient;
+            const hasIssues = totalIssues > 0;
+            return (
+              <div className="mb-6">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setHealthOpen((o) => !o)}
+                  className="w-full justify-between text-xs h-auto py-2 px-3 border border-border/50 bg-muted/30 hover:bg-muted/60"
+                >
+                  <span className="flex items-center gap-2">
+                    {hasIssues ? (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                        <span className="font-medium">
+                          Saúde dos dados — {totalIssues} {totalIssues === 1 ? "ponto de atenção" : "pontos de atenção"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-success" />
+                        <span className="font-medium">Saúde dos dados — tudo certo no período</span>
+                      </>
+                    )}
+                  </span>
+                  {healthOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </Button>
+                {healthOpen && (
+                  <div className="mt-2 rounded-md border border-border/50 bg-muted/20 p-3 space-y-2 text-xs">
+                    <p className="text-muted-foreground">
+                      Transações analisadas no período/filtro: <strong>{dataHealth.totalInPeriod}</strong>.
+                      Os itens abaixo não entram nos cálculos de Conversão/Penetração e indicam dados faltantes na origem.
+                      Também não entram neste relatório os lançamentos manuais de regularização (fora do Ao Vivo).
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Sem unidade vinculada</span>
+                        <Badge variant={dataHealth.txSemUnidade > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.txSemUnidade}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Cliente novo sem telefone</span>
+                        <Badge variant={dataHealth.novoSemTelefone > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novoSemTelefone}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Nova adesão sem telefone</span>
+                        <Badge variant={dataHealth.novaAdesaoSemTelefone > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novaAdesaoSemTelefone}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between bg-background/60 rounded px-2 py-1.5">
+                        <span>Nova adesão sem marcar "cliente novo"</span>
+                        <Badge variant={dataHealth.novaAdesaoSemIsNewClient > 0 ? "destructive" : "secondary"} className="text-[10px]">
+                          {dataHealth.novaAdesaoSemIsNewClient}
+                        </Badge>
+                      </div>
+                    </div>
+                    {hasIssues && (
+                      <p className="text-muted-foreground italic pt-1">
+                        Novos lançamentos já são bloqueados na origem. Os números acima representam
+                        registros antigos (legado) que ainda precisam ser corrigidos manualmente.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Summary Cards (4) */}
+          <TooltipProvider delayDuration={150}>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Users className="w-4 h-4" />
+                    <span className="text-xs">🎯 Oportunidades</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Oportunidades">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Pessoas únicas (por celular) marcadas como "cliente novo" no período. Total
+                        deduplicado: a mesma pessoa atendida por dois barbeiros conta uma única vez.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">{globalOpportunities}</p>
+                  <p className="text-xs text-muted-foreground">Clientes Novos únicos</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <UserPlus className="w-4 h-4" />
+                    <span className="text-xs">👤 Ades. Cliente Novo</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Adesões de Cliente Novo">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Assinaturas com ação = "nova" feitas para clientes marcados como novos,
+                        registradas no período selecionado, independentemente da origem do lançamento.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">{globalNewClientAdhesions}</p>
+                  <p className="text-xs text-muted-foreground">Novo cliente que assinou</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Crown className="w-4 h-4" />
+                    <span className="text-xs">👑 Ades. Totais</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Adesões Totais">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Toda assinatura com ação = "nova" no mês (barbeiros + recepção), independentemente da origem do lançamento. Clique no número da linha para ver a lista detalhada.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">{globalTotalAdhesions}</p>
+                  <p className="text-xs text-muted-foreground">Toda nova adesão</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Target className="w-4 h-4" />
+                    <span className="text-xs">📉 Conv. / Penetração</span>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label="Sobre Conversão e Penetração">
+                          <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        <strong>Conversão Estrita</strong>: Ades. Cliente Novo ÷ Oportunidades. Mede
+                        quantos novos viraram assinantes (sempre ≤100%).<br />
+                        <strong>Penetração</strong>: Ades. Totais ÷ Oportunidades. Pode passar de
+                        100% se vender muito para clientes da casa.
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                  <p className="text-2xl font-bold">
+                    <span className="text-success">{overallStrict.toFixed(1)}%</span>
+                    <span className="text-muted-foreground mx-1">/</span>
+                    <span className="text-primary">{overallPenetration.toFixed(1)}%</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">Estrita / Penetração</p>
+                </CardContent>
+              </Card>
+            </div>
+          </TooltipProvider>
 
           {/* Performance Table */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
-          ) : performanceData.length === 0 ? (
+          ) : performanceData.length === 0 && !receptionRow ? (
             <div className="text-center py-12 text-muted-foreground">
               <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p className="font-medium">Nenhum dado encontrado</p>
               <p className="text-sm">Selecione outro período ou registre atendimentos com clientes novos</p>
             </div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
+            <div className="rounded-lg border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Barbeiro</TableHead>
-                    <TableHead className="text-center">🎯 Oportunidades</TableHead>
-                    <TableHead className="text-center">👑 Vendas</TableHead>
-                    <TableHead className="text-center">📉 Taxa de Conversão</TableHead>
+                    <TableHead className="text-center">🎯 Oport.</TableHead>
+                    <TableHead className="text-center">👤 Ades. Cliente Novo</TableHead>
+                    <TableHead className="text-center">👑 Ades. Totais</TableHead>
+                    <TableHead className="text-center">📉 Conv. Estrita</TableHead>
+                    <TableHead className="text-center">📈 Penetração</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {performanceData.map((barber) => (
-                    <TableRow 
-                      key={barber.barberId}
-                      className={isCriticalCase(barber.newClientsCount, barber.subscriptionsSold) 
-                        ? "bg-destructive/10" 
-                        : ""
-                      }
+                  {performanceData.map((b) => {
+                    const openDrill = (tab: "adhesions" | "opportunities") => {
+                      setDrilldownTab(tab);
+                      setSelectedDrilldownBarberId(b.barberId);
+                    };
+                    return (
+                    <TableRow
+                      key={b.barberId}
+                      className={`cursor-pointer hover:bg-primary/5 ${isCriticalCase(b.opportunities, b.totalAdhesions) ? "bg-destructive/10" : ""}`}
+                      onClick={() => openDrill("opportunities")}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border-2 border-primary/20">
                             <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                              {getInitials(barber.barberName)}
+                              {getInitials(b.barberName)}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{barber.barberName}</p>
-                            <p className="text-xs text-muted-foreground">{barber.unitName}</p>
+                            <span className="font-medium underline underline-offset-2 decoration-dotted">{b.barberName}</span>
+                            <p className="text-xs text-muted-foreground">{b.unitName}</p>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className={`font-semibold text-lg ${
-                          isCriticalCase(barber.newClientsCount, barber.subscriptionsSold)
-                            ? "text-destructive"
-                            : ""
-                        }`}>
-                          {barber.newClientsCount}
-                        </span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("opportunities"); }}
+                        >
+                          <span className={isCriticalCase(b.opportunities, b.totalAdhesions) ? "text-destructive" : ""}>
+                            {b.opportunities}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground font-normal">{b.rawNewAttendances} lanç.</span>
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-semibold text-lg">{barber.subscriptionsSold}</span>
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("adhesions"); }}
+                        >
+                          {b.newClientAdhesions}
+                        </button>
                       </TableCell>
                       <TableCell className="text-center">
-                        {getConversionBadge(barber.conversionRate, barber.newClientsCount)}
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); openDrill("adhesions"); }}
+                          title="Clique para ver a lista detalhada das adesões"
+                        >
+                          {b.totalAdhesions}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {getStrictBadge(b.strictConversion, b.opportunities, b.totalAdhesions)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {b.opportunities > 0 ? (
+                          <span className={`font-semibold ${b.penetration > 100 ? "text-primary" : ""}`}>
+                            {b.penetration.toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
+                  {receptionRow && (
+                    <TableRow
+                      key="reception"
+                      className="bg-muted/30 border-t-2 cursor-pointer hover:bg-primary/5"
+                      onClick={() => { setDrilldownTab("opportunities"); setSelectedDrilldownBarberId("__reception__"); }}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 border-2 border-primary/20">
+                            <AvatarFallback className="bg-secondary text-secondary-foreground font-semibold">
+                              RC
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium underline underline-offset-2 decoration-dotted">{receptionRow.barberName}</p>
+                            <p className="text-xs text-muted-foreground">{receptionRow.unitName}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("opportunities"); setSelectedDrilldownBarberId("__reception__"); }}
+                        >
+                          {receptionRow.opportunities}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("adhesions"); setSelectedDrilldownBarberId("__reception__"); }}
+                        >
+                          {receptionRow.newClientAdhesions}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          type="button"
+                          className="font-semibold text-lg hover:underline focus:outline-none"
+                          onClick={(e) => { e.stopPropagation(); setDrilldownTab("adhesions"); setSelectedDrilldownBarberId("__reception__"); }}
+                          title="Clique para ver a lista detalhada das adesões"
+                        >
+                          {receptionRow.totalAdhesions}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {getStrictBadge(receptionRow.strictConversion, receptionRow.opportunities, receptionRow.totalAdhesions)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {receptionRow.opportunities > 0 ? (
+                          <span className={`font-semibold ${receptionRow.penetration > 100 ? "text-primary" : ""}`}>
+                            {receptionRow.penetration.toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
           )}
 
+
+          <Dialog open={!!selectedDrilldownBarberId} onOpenChange={(open) => !open && setSelectedDrilldownBarberId(null)}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              {(() => {
+                const drill = selectedDrilldownBarberId ? clientDrilldown.get(selectedDrilldownBarberId) : null;
+                const adhesionsCount = drill?.adhesions.length || 0;
+                const opportunitiesCount = drill?.opportunities.length || 0;
+                const isReception = selectedDrilldownBarberId === "__reception__";
+                return (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>
+                        Detalhamento — {drill?.barberName || ""}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Auditoria das adesões e oportunidades no período selecionado.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {drill && (
+                      <Tabs value={drilldownTab} onValueChange={(v) => setDrilldownTab(v as "adhesions" | "opportunities")}>
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="adhesions">
+                            👑 Adesões totais ({adhesionsCount})
+                          </TabsTrigger>
+                          <TabsTrigger value="opportunities" disabled={isReception && opportunitiesCount === 0}>
+                            🎯 Oportunidades ({opportunitiesCount})
+                          </TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="adhesions" className="mt-4">
+                          {adhesionsCount === 0 ? (
+                            <div className="text-sm text-muted-foreground text-center py-8">
+                              Nenhuma adesão "nova" registrada para este barbeiro no período.
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-sm text-muted-foreground mb-3">
+                                Toda assinatura com ação <strong>"nova"</strong> atribuída no período.
+                                Inclui cliente novo e cliente da casa.
+                              </div>
+                              <div className="space-y-2 pr-1">
+                                {drill.adhesions.map((a, idx) => (
+                                  <div
+                                    key={`${a.createdAt}-${idx}`}
+                                    className="flex items-start justify-between rounded border px-3 py-2 bg-background/60 gap-3"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-medium truncate">{a.name}</p>
+                                        {a.isNewClient ? (
+                                          <Badge className="bg-success text-white text-[10px] h-4">Cliente novo</Badge>
+                                        ) : (
+                                          <Badge variant="secondary" className="text-[10px] h-4">Cliente da casa</Badge>
+                                        )}
+                                      </div>
+                                      <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                                        {a.phone ? formatPhone(a.phone) : "sem telefone"}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {a.planName} •{" "}
+                                        {a.createdAt
+                                          ? new Date(a.createdAt).toLocaleString("pt-BR", {
+                                              timeZone: "America/Manaus",
+                                              day: "2-digit",
+                                              month: "2-digit",
+                                              year: "numeric",
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })
+                                          : "—"}
+                                      </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <p className="text-sm font-semibold">
+                                        {a.priceSold.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="opportunities" className="mt-4">
+                          <div className="text-sm text-muted-foreground mb-3">
+                            Total de oportunidades únicas (celular): <strong>{opportunitiesCount}</strong>
+                          </div>
+                          {opportunitiesCount === 0 ? (
+                            <div className="text-sm text-muted-foreground text-center py-8">
+                              Nenhum cliente novo registrado no período.
+                            </div>
+                          ) : (
+                            <div className="space-y-2 pr-1">
+                              {drill.opportunities.map((op) => (
+                                <div key={op.phone} className="flex items-center justify-between rounded border px-3 py-2 bg-background/60">
+                                  <div>
+                                    <p className="text-sm font-medium">{op.name}</p>
+                                    <p className="font-mono text-xs text-muted-foreground">{formatPhone(op.phone)} • {op.attendances} lançamento(s) como novo</p>
+                                  </div>
+                                  {op.converted ? (
+                                    <Badge className="bg-success text-white">Virou assinante</Badge>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="destructive">Não converteu</Badge>
+                                      {!isReception && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setRegularizationPrefill({
+                                              phone: op.phone,
+                                              name: op.name,
+                                              barberId: selectedDrilldownBarberId!,
+                                              unitId: drill.unitId ?? null,
+                                            });
+                                            setRegularizationWizardOpen(true);
+                                          }}
+                                        >
+                                          Dar baixa legado
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    )}
+                  </>
+                );
+              })()}
+            </DialogContent>
+          </Dialog>
+
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
+            <span className="text-xs font-medium uppercase tracking-wider">Conv. Estrita:</span>
             <div className="flex items-center gap-1">
               <Badge className="bg-success text-white text-xs gap-1">
                 <Trophy className="w-3 h-3" />
@@ -371,9 +1130,36 @@ export default function SubscriptionPerformanceReport() {
               </Badge>
               <span>&lt; 10%</span>
             </div>
+            <div className="flex items-center gap-1">
+              <Badge variant="destructive" className="text-xs gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Sem oport.
+              </Badge>
+              <span>vendeu sem registrar cliente novo</span>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      <SubscriptionWizardModal
+        open={regularizationWizardOpen}
+        onOpenChange={(o) => {
+          setRegularizationWizardOpen(o);
+          if (!o) setRegularizationPrefill(null);
+        }}
+        organizationId={organizationId || ""}
+        onComplete={fetchPerformanceData}
+        prefillPhone={regularizationPrefill?.phone}
+        prefillName={regularizationPrefill?.name}
+        prefillAction="legacy_import"
+        prefillIsNewClient={false}
+        prefillAttributionType="barber"
+        prefillBarberId={regularizationPrefill?.barberId}
+        prefillUnitId={regularizationPrefill?.unitId}
+        
+      />
+
+      <SubscriptionScopeFooter />
     </div>
   );
 }

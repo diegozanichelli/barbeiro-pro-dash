@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, Save, ShoppingBag, CalendarDays, Crown, Phone, User } from "lucide-react";
-import { formatPhone } from "@/lib/phoneUtils";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,6 +34,7 @@ interface ClientDetailModalProps {
     name: string;
     mobile_phone: string;
     subscription_plan_id: string | null;
+    subscription_started_at?: string | null;
     created_at: string;
   } | null;
   organizationId: string;
@@ -72,10 +73,12 @@ export default function ClientDetailModal({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [planId, setPlanId] = useState<string>("none");
+  const [subscriptionStartedAt, setSubscriptionStartedAt] = useState<string>("");
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -83,6 +86,7 @@ export default function ClientDetailModal({
       setName(client.name);
       setPhone(formatPhone(client.mobile_phone));
       setPlanId(client.subscription_plan_id || "none");
+      setSubscriptionStartedAt(client.subscription_started_at || "");
       fetchData();
     }
   }, [open, client]);
@@ -159,17 +163,49 @@ export default function ClientDetailModal({
 
   const handleSave = async () => {
     if (!client) return;
+
+    const phoneDigits = sanitizePhone(phone);
+    if (phoneDigits.length !== 11 || !isValidPhone(phone)) {
+      toast.error("Informe um celular válido com DDD (11 dígitos)");
+      return;
+    }
+
+    if (planId !== "none" && !subscriptionStartedAt) {
+      toast.error("Selecione a data de início do plano");
+      return;
+    }
+
     setSaving(true);
     try {
+      const oldPhone = sanitizePhone(client.mobile_phone || "");
+
       const { error } = await supabase
         .from("clients")
         .update({
           name: name.trim(),
+          mobile_phone: phoneDigits,
           subscription_plan_id: planId === "none" ? null : planId,
+          subscription_started_at: planId === "none" ? null : subscriptionStartedAt,
         } as any)
         .eq("id", client.id);
 
       if (error) throw error;
+
+      if (oldPhone && oldPhone !== phoneDigits) {
+        await Promise.allSettled([
+          supabase
+            .from("sale_transactions")
+            .update({ mobile_phone: phoneDigits })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", oldPhone),
+          supabase
+            .from("client_purchase_history")
+            .update({ mobile_phone: phoneDigits })
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", oldPhone),
+        ]);
+      }
+
       toast.success("Cliente atualizado com sucesso");
       onUpdated();
       onOpenChange(false);
@@ -181,6 +217,59 @@ export default function ClientDetailModal({
     }
   };
 
+
+  const handleDeleteClient = async () => {
+    if (!client) return;
+
+    const phoneDigits = sanitizePhone(client.mobile_phone || "");
+
+    try {
+      setDeleting(true);
+
+      const [{ count: txCount, error: txErr }, { count: phCount, error: phErr }] = await Promise.all([
+        supabase
+          .from("sale_transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", phoneDigits),
+        supabase
+          .from("client_purchase_history")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", phoneDigits),
+      ]);
+
+      if (txErr) throw txErr;
+      if (phErr) throw phErr;
+
+      const hasHistory = (txCount || 0) > 0 || (phCount || 0) > 0;
+
+      const baseConfirm = window.confirm("Tem certeza que deseja excluir permanentemente este cliente?");
+      if (!baseConfirm) return;
+
+      if (hasHistory) {
+        const historyConfirm = window.confirm(
+          `Este cliente já possui histórico de uso (${(txCount || 0) + (phCount || 0)} registro(s)). Deseja realmente excluir?`,
+        );
+        if (!historyConfirm) return;
+      }
+
+      const { error } = await supabase
+        .from("clients")
+        .delete()
+        .eq("id", client.id)
+        .eq("organization_id", organizationId);
+      if (error) throw error;
+
+      toast.success("Cliente excluído permanentemente");
+      onUpdated();
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao excluir cliente");
+    } finally {
+      setDeleting(false);
+    }
+  };
   const selectedPlan = plans.find((p) => p.id === planId);
 
   const formatCurrency = (v: number) =>
@@ -229,10 +318,16 @@ export default function ClientDetailModal({
             </div>
 
             <div className="space-y-2">
-              <Label>Celular</Label>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-md px-3 py-2">
-                <Phone className="w-4 h-4" />
-                {phone}
+              <Label htmlFor="client-phone">Celular</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  id="client-phone"
+                  value={phone}
+                  onChange={(e) => setPhone(formatPhone(e.target.value))}
+                  placeholder="(92) 99999-9999"
+                  className="pl-9"
+                />
               </div>
             </div>
 
@@ -261,11 +356,24 @@ export default function ClientDetailModal({
               )}
             </div>
 
+            {planId !== "none" && (
+              <div className="space-y-2">
+                <Label htmlFor="subscription-started-at">Data de início do plano</Label>
+                <Input
+                  id="subscription-started-at"
+                  type="date"
+                  value={subscriptionStartedAt}
+                  max={format(new Date(), "yyyy-MM-dd")}
+                  onChange={(e) => setSubscriptionStartedAt(e.target.value)}
+                />
+              </div>
+            )}
+
             <div className="text-xs text-muted-foreground">
               Cliente desde {format(new Date(client.created_at), "dd/MM/yyyy", { locale: ptBR })}
             </div>
 
-            <Button onClick={handleSave} disabled={saving || !name.trim()} className="w-full gap-2">
+            <Button onClick={handleSave} disabled={saving || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone) || (planId !== "none" && !subscriptionStartedAt)} className="w-full gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Salvar Alterações
             </Button>
@@ -340,6 +448,13 @@ export default function ClientDetailModal({
             </ScrollArea>
           </TabsContent>
         </Tabs>
+
+        <div className="pt-2 border-t">
+          <Button type="button" variant="destructive" onClick={handleDeleteClient} disabled={saving || deleting} className="w-full gap-2">
+            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Excluir cliente permanentemente
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
