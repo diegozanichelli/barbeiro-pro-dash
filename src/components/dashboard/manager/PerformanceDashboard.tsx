@@ -100,6 +100,49 @@ const shortDate = (dateKey: string) => {
   return `${d}/${m}`;
 };
 
+/**
+ * Deslocamento (em dias) que faz a fatia do mês anterior cair no mesmo dia da
+ * semana da fatia atual: sábado compara com sábado, segunda com segunda.
+ *
+ * Existem sempre dois deslocamentos válidos (um para frente e outro para trás,
+ * distantes 7 dias). Escolhemos o que mantém mais dias dentro do mês anterior —
+ * sem isso, fatias no fim do mês (S5) podiam jogar a janela inteira para fora e
+ * a linha de comparação desaparecia.
+ */
+const weekdayOffset = (
+  currentKey: string,
+  previousKey: string,
+  previousStartDay: number,
+  length: number,
+  previousTotalDays: number
+) => {
+  const diff = (weekdayOf(currentKey) - weekdayOf(previousKey) + 7) % 7;
+  if (diff === 0) return 0;
+
+  const daysInsideMonth = (offset: number) => {
+    let count = 0;
+    for (let i = 0; i <= length; i++) {
+      const day = previousStartDay + i + offset;
+      if (day >= 1 && day <= previousTotalDays) count++;
+    }
+    return count;
+  };
+
+  const forward = diff;
+  const backward = diff - 7;
+  const gain = daysInsideMonth(forward) - daysInsideMonth(backward);
+  if (gain !== 0) return gain > 0 ? forward : backward;
+  return Math.abs(forward) <= Math.abs(backward) ? forward : backward;
+};
+
+interface ChartRow {
+  label: string;
+  atual: number | null;
+  anterior: number | null;
+  /** Data do mês anterior pareada por dia da semana (dd/MM). */
+  anteriorLabel: string | null;
+}
+
 interface DayBucket {
   revenue: number;
   clients: number;
@@ -321,18 +364,23 @@ export default function PerformanceDashboard() {
   ];
 
   const chartData = useMemo(() => {
-    const rows: {
-      label: string;
-      atual: number | null;
-      anterior: number | null;
-    }[] = [];
+    const rows: ChartRow[] = [];
     const len = range.endDay - range.startDay;
+    const prevTotalDays = daysInMonth(prevYear, prevMonth);
+    const offset = weekdayOffset(
+      key(year, month, range.startDay),
+      key(prevYear, prevMonth, prevRange.startDay),
+      prevRange.startDay,
+      len,
+      prevTotalDays
+    );
     for (let i = 0; i <= len; i++) {
       const day = range.startDay + i;
-      const prevDay = prevRange.startDay + i;
+      const prevDay = prevRange.startDay + i + offset;
+      const hasPrev = prevDay >= 1 && prevDay <= prevTotalDays;
       const dk = key(year, month, day);
       const cb = scoped.cur.byDay[day];
-      const pb = prevDay <= prevRange.endDay ? scoped.prev.byDay[prevDay] : undefined;
+      const pb = hasPrev ? scoped.prev.byDay[prevDay] : undefined;
       const pick = (b?: DayBucket) => {
         if (!b) return 0;
         if (metric === "revenue") return b.revenue;
@@ -342,11 +390,12 @@ export default function PerformanceDashboard() {
       rows.push({
         label: slice === "month" ? shortDate(dk) : `${WEEKDAYS[weekdayOf(dk)]} ${day}`,
         atual: pick(cb),
-        anterior: prevDay <= prevRange.endDay ? pick(pb) : null,
+        anterior: hasPrev ? pick(pb) : null,
+        anteriorLabel: hasPrev ? shortDate(key(prevYear, prevMonth, prevDay)) : null,
       });
     }
     return rows;
-  }, [range, prevRange, scoped, metric, slice, year, month]);
+  }, [range, prevRange, scoped, metric, slice, year, month, prevYear, prevMonth]);
 
   const teamRanking = useMemo(() => {
     const rows = filterTx(current, null);
@@ -634,9 +683,17 @@ export default function PerformanceDashboard() {
                       borderRadius: 12,
                       color: "hsl(var(--popover-foreground))",
                     }}
-                    formatter={(value: number, name: string) => [
+                    formatter={(
+                      value: number,
+                      name: string,
+                      item: { payload?: ChartRow }
+                    ) => [
                       metricFormatter(Number(value)),
-                      name === "atual" ? "Período atual" : "Mês anterior",
+                      name === "atual"
+                        ? "Período atual"
+                        : item?.payload?.anteriorLabel
+                          ? `Mês anterior (${item.payload.anteriorLabel})`
+                          : "Mês anterior",
                     ]}
                   />
                   <Line
@@ -668,7 +725,8 @@ export default function PerformanceDashboard() {
               <span className="h-0.5 w-6 rounded-full bg-primary" /> Período atual
             </span>
             <span className="flex items-center gap-2">
-              <span className="h-0.5 w-6 rounded-full bg-muted-foreground/70" /> Mês anterior
+              <span className="h-0.5 w-6 rounded-full bg-muted-foreground/70" /> Mês
+              anterior <span className="text-muted-foreground/70">(mesmo dia da semana)</span>
             </span>
           </div>
 
