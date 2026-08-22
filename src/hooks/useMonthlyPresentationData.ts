@@ -1,5 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
+import { fetchAllRows } from "@/lib/supabasePagination";
+import { manausDayStart, manausDayEnd } from "@/lib/dateUtils";
+
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
 
 export interface MonthlyPresentationData {
   org_name: string;
@@ -39,6 +47,7 @@ export interface MonthlyPresentationData {
     ticket_curr: number; ticket_prev: number;
   }>;
   weekday_heatmap: Array<{ weekday: number; total_revenue: number; days_count: number; avg_revenue: number }>;
+  unit_weekday_heatmap: Array<{ unit_id: string; unit_name: string; weekday: number; total_revenue: number; days_count: number; avg_revenue: number }>;
   month_comparison: {
     revenue: { current: number; previous: number; delta_pct: number | null };
     clients: { current: number; previous: number; delta_pct: number | null };
@@ -63,7 +72,76 @@ export interface MonthlyPresentationData {
     best_streak: { barber: string | null; days: number };
     top_barber: { name: string | null; revenue: number };
   };
+  extras_sellers_ranking?: Array<{ barber_name: string; qty: number; revenue: number }>;
 }
+
+
+interface FunnelTxRow {
+  item_type: string;
+  subscription_action: string | null;
+  is_new_client: boolean | null;
+  mobile_phone: string | null;
+  unit_id: string | null;
+}
+
+interface ExtrasTxRow {
+  price_sold: number | null;
+  barbers: { name: string } | null;
+}
+
+async function computeSsoTFunnel(periodStart: string, periodEnd: string, unitId: string | null) {
+  // Paginado: o mês inteiro passa de 1000 linhas e era truncado silenciosamente.
+  const data = await fetchAllRows<FunnelTxRow>(() => {
+    let q = supabase
+      .from("sale_transactions")
+      .select(sel("item_type, subscription_action, is_new_client, mobile_phone, unit_id"))
+      .gte("created_at", manausDayStart(periodStart))
+      .lte("created_at", manausDayEnd(periodEnd));
+    if (unitId) q = q.eq("unit_id", unitId);
+    return q.returns<FunnelTxRow[]>();
+  });
+
+  const phones = new Set<string>();
+  let newSubscriptions = 0;
+
+  for (const tx of data) {
+    const normalized = normalizePhoneForMetrics(tx.mobile_phone || null);
+    if (isValidOpportunity(tx as any) && normalized) phones.add(normalized);
+    if (isNewSubscription(tx as any) && tx.is_new_client === true) newSubscriptions++;
+  }
+
+  const newClients = phones.size;
+  const conversionRate = newClients > 0 ? Number(((newSubscriptions / newClients) * 100).toFixed(1)) : 0;
+  return { new_clients: newClients, new_subscriptions: newSubscriptions, conversion_rate: conversionRate };
+}
+
+async function computeExtrasSellersRanking(periodStart: string, periodEnd: string, unitId: string | null) {
+  const data = await fetchAllRows<ExtrasTxRow>(() => {
+    let q = supabase
+      .from("sale_transactions")
+      .select(sel("price_sold, barbers!inner(name)"))
+      .eq("item_type", "service")
+      .eq("service_category", "extra")
+      .gte("created_at", manausDayStart(periodStart))
+      .lte("created_at", manausDayEnd(periodEnd));
+    if (unitId) q = q.eq("unit_id", unitId);
+    return q.returns<ExtrasTxRow[]>();
+  });
+
+  const map = new Map<string, { qty: number; revenue: number }>();
+  for (const row of data) {
+    const name = row.barbers?.name;
+    if (!name) continue;
+    const cur = map.get(name) || { qty: 0, revenue: 0 };
+    cur.qty += 1;
+    cur.revenue += Number(row.price_sold || 0);
+    map.set(name, cur);
+  }
+  return Array.from(map.entries())
+    .map(([barber_name, v]) => ({ barber_name, qty: v.qty, revenue: v.revenue }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
 
 interface RangeParams {
   periodStart: string;
@@ -95,8 +173,29 @@ export function useMonthlyPresentationData(params: RangeParams) {
       console.error("get_presentation_data_range error", rpcError);
       setError(rpcError.message);
       setData(null);
-    } else {
-      setData(rpcData as unknown as MonthlyPresentationData);
+      setLoading(false);
+      return;
+    }
+    const baseData = rpcData as unknown as MonthlyPresentationData;
+    try {
+      const [ssotFunnel, unitHeatmap, extrasSellers] = await Promise.all([
+        computeSsoTFunnel(periodStart, periodEnd, unitId),
+        supabase.rpc("get_unit_weekday_heatmap" as never, {
+          p_period_start: periodStart,
+          p_period_end: periodEnd,
+          p_unit_id: unitId,
+        } as never),
+        computeExtrasSellersRanking(periodStart, periodEnd, unitId),
+      ]);
+      setData({
+        ...baseData,
+        subscription_funnel: ssotFunnel,
+        unit_weekday_heatmap: (unitHeatmap.data ?? []) as unknown as MonthlyPresentationData["unit_weekday_heatmap"],
+        extras_sellers_ranking: extrasSellers,
+      });
+    } catch (err: any) {
+      console.error("Erro ao carregar dados complementares", err);
+      setData(baseData);
     }
     setLoading(false);
   }, [periodStart, periodEnd, compareStart, compareEnd, targetRatio, unitId]);

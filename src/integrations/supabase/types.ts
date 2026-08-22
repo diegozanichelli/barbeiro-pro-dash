@@ -226,6 +226,42 @@ export type Database = {
           },
         ]
       }
+      client_origin_recompute_logs: {
+        Row: {
+          duration_ms: number | null
+          errors: Json
+          id: string
+          no_history: number
+          organization_id: string | null
+          ran_at: string
+          scanned: number
+          unchanged: number
+          updated: number
+        }
+        Insert: {
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          no_history?: number
+          organization_id?: string | null
+          ran_at?: string
+          scanned?: number
+          unchanged?: number
+          updated?: number
+        }
+        Update: {
+          duration_ms?: number | null
+          errors?: Json
+          id?: string
+          no_history?: number
+          organization_id?: string | null
+          ran_at?: string
+          scanned?: number
+          unchanged?: number
+          updated?: number
+        }
+        Relationships: []
+      }
       client_purchase_history: {
         Row: {
           amount: number
@@ -628,6 +664,8 @@ export type Database = {
       }
       organizations: {
         Row: {
+          access_expires_at: string | null
+          auto_deactivate: boolean
           championship_name: string
           created_at: string
           has_subscription_module: boolean
@@ -638,6 +676,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          access_expires_at?: string | null
+          auto_deactivate?: boolean
           championship_name?: string
           created_at?: string
           has_subscription_module?: boolean
@@ -648,6 +688,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          access_expires_at?: string | null
+          auto_deactivate?: boolean
           championship_name?: string
           created_at?: string
           has_subscription_module?: boolean
@@ -1155,6 +1197,61 @@ export type Database = {
           },
         ]
       }
+      unit_seasonality_config: {
+        Row: {
+          created_at: string
+          id: string
+          manual_weights: number[] | null
+          organization_id: string
+          source: Database["public"]["Enums"]["seasonality_source"]
+          unit_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manual_weights?: number[] | null
+          organization_id: string
+          source?: Database["public"]["Enums"]["seasonality_source"]
+          unit_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manual_weights?: number[] | null
+          organization_id?: string
+          source?: Database["public"]["Enums"]["seasonality_source"]
+          unit_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_seasonality_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_seasonality_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_seasonality_config_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: true
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       units: {
         Row: {
           created_at: string
@@ -1375,6 +1472,52 @@ export type Database = {
         }
         Returns: string
       }
+      get_audit_finding_rows: {
+        Args: {
+          p_check_key: string
+          p_end: string
+          p_limit?: number
+          p_offset?: number
+          p_organization_id?: string
+          p_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
+      get_barber_deep_analysis: {
+        Args: {
+          p_barber_id: string
+          p_end: string
+          p_organization_id: string
+          p_start: string
+        }
+        Returns: Json
+      }
+      get_barber_report_range: {
+        Args: {
+          p_barber_id: string
+          p_end: string
+          p_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
+      get_inactive_clients: {
+        Args: { p_barber_id?: string; p_ref_date?: string; p_unit_id?: string }
+        Returns: {
+          bucket: string
+          client_name: string
+          days_inactive: number
+          is_subscriber: boolean
+          last_barber_name: string
+          last_unit_name: string
+          last_visit: string
+          mobile_phone: string
+          previous_visit: string
+          total_spent: number
+          visits: number
+        }[]
+      }
       get_manager_report_stats: {
         Args: {
           p_barber_id?: string
@@ -1421,6 +1564,15 @@ export type Database = {
         }
         Returns: Json
       }
+      get_report_audit_findings: {
+        Args: {
+          p_end: string
+          p_organization_id?: string
+          p_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
       get_subscription_intelligence: {
         Args: {
           p_end_date: string
@@ -1428,6 +1580,22 @@ export type Database = {
           p_start_date: string
           p_unit_id?: string
         }
+        Returns: Json
+      }
+      get_subscription_portfolio_overview: {
+        Args: { p_unit_id?: string }
+        Returns: Json
+      }
+      get_unit_weekday_heatmap: {
+        Args: {
+          p_period_end: string
+          p_period_start: string
+          p_unit_id?: string
+        }
+        Returns: Json
+      }
+      get_unit_weekly_weights: {
+        Args: { p_month: number; p_unit_id: string; p_year: number }
         Returns: Json
       }
       get_user_organization: { Args: { _user_id: string }; Returns: string }
@@ -1442,12 +1610,18 @@ export type Database = {
         Args: { p_barber_id: string; p_date: string }
         Returns: undefined
       }
+      recompute_all_client_origins: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
       suggest_client_origin_units: {
         Args: { p_organization_id: string }
         Returns: {
           basis: string
           client_id: string
-          confidence_count: number
+          recent_visits: number
+          suggested_barber_id: string
+          suggested_barber_name: string
           suggested_unit_id: string
           suggested_unit_name: string
         }[]
@@ -1455,6 +1629,12 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "manager" | "barber"
+      seasonality_source:
+        | "linear"
+        | "previous_year"
+        | "trailing_3m"
+        | "combined"
+        | "manual"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1583,6 +1763,13 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "manager", "barber"],
+      seasonality_source: [
+        "linear",
+        "previous_year",
+        "trailing_3m",
+        "combined",
+        "manual",
+      ],
     },
   },
 } as const

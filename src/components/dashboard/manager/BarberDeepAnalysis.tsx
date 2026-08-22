@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
-import { getManausDate } from "@/lib/dateUtils";
+import { getManausDate, manausDayStart, manausDayEnd } from "@/lib/dateUtils";
 import {
   PieChart,
   Pie,
@@ -90,17 +90,22 @@ interface ClientMetrics {
 
 interface VitalMetrics {
   uniqueClients: number;
-  ticketMedio: number;
-  recurringPct: number; // 0-100 (apenas considerando linhas com flag is_new_client preenchida)
-  newCount: number;
-  returningCount: number;
+  ticketOperacional: number;
+  ticketAssinatura: number;
   subscriptionCount: number;
   subscriptionRevenue: number;
-  // médias da casa por barbeiro ativo
   houseUniqueClientsAvg: number;
-  houseTicketMedioAvg: number;
+  houseTicketOpAvg: number;
   houseSubscriptionCountAvg: number;
   hasItemizedData: boolean;
+}
+
+interface RetentionMetrics {
+  networkPct: number;
+  barberPct: number;
+  networkCount: number;
+  barberCount: number;
+  totalWithPhone: number;
 }
 
 interface PortfolioQuality {
@@ -296,16 +301,21 @@ export default function BarberDeepAnalysis({
   >([]);
   const [vitalMetrics, setVitalMetrics] = useState<VitalMetrics>({
     uniqueClients: 0,
-    ticketMedio: 0,
-    recurringPct: 0,
-    newCount: 0,
-    returningCount: 0,
+    ticketOperacional: 0,
+    ticketAssinatura: 0,
     subscriptionCount: 0,
     subscriptionRevenue: 0,
     houseUniqueClientsAvg: 0,
-    houseTicketMedioAvg: 0,
+    houseTicketOpAvg: 0,
     houseSubscriptionCountAvg: 0,
     hasItemizedData: false,
+  });
+  const [retentionMetrics, setRetentionMetrics] = useState<RetentionMetrics>({
+    networkPct: 0,
+    barberPct: 0,
+    networkCount: 0,
+    barberCount: 0,
+    totalWithPhone: 0,
   });
   const [portfolioQuality, setPortfolioQuality] = useState<PortfolioQuality>({
     phoneCoveragePct: 0,
@@ -434,8 +444,8 @@ export default function BarberDeepAnalysis({
             "barber_id, created_at, mobile_phone, daily_production_id, item_type, is_new_client, price_sold"
           )
           .eq("organization_id", organizationId!)
-          .gte("created_at", start.toISOString())
-          .lte("created_at", new Date(end.getTime() + 24 * 3600 * 1000 - 1).toISOString())
+          .gte("created_at", manausDayStart(startIso))
+          .lte("created_at", manausDayEnd(endIso))
           .range(f, t)
       );
 
@@ -583,7 +593,7 @@ export default function BarberDeepAnalysis({
             .select("mobile_phone")
             .eq("organization_id", organizationId!)
             .eq("barber_id", barberId)
-            .lt("created_at", start.toISOString())
+            .lt("created_at", manausDayStart(startIso))
             .not("mobile_phone", "is", null)
             .range(f, t)
         );
@@ -610,7 +620,8 @@ export default function BarberDeepAnalysis({
         returningCount: number;
         subscriptionCount: number;
         subscriptionRevenue: number;
-        revenue: number; // soma de price_sold
+        // Regra do projeto: assinatura NÃO entra no faturamento operacional.
+        operationalRevenue: number;
       };
       const newAgg = (): Agg => ({
         phones: new Set(),
@@ -622,7 +633,7 @@ export default function BarberDeepAnalysis({
         returningCount: 0,
         subscriptionCount: 0,
         subscriptionRevenue: 0,
-        revenue: 0,
+        operationalRevenue: 0,
       });
       const perBarberVitals = new Map<string, Agg>();
       // marcar atendimentos com telefone usando set de created_at
@@ -640,8 +651,9 @@ export default function BarberDeepAnalysis({
         if (t.item_type === "subscription") {
           cur.subscriptionCount += 1;
           cur.subscriptionRevenue += Number(t.price_sold) || 0;
+        } else {
+          cur.operationalRevenue += Number(t.price_sold) || 0;
         }
-        cur.revenue += Number(t.price_sold) || 0;
 
         // telefone por atendimento (qualquer linha do mesmo created_at com phone marca true)
         let pmap = phoneByAtend.get(t.barber_id);
@@ -686,7 +698,7 @@ export default function BarberDeepAnalysis({
         : 0;
       const houseTicketAvg = (() => {
         const tickets = othersVitals
-          .map((a) => (a.atendimentosTotal > 0 ? a.revenue / a.atendimentosTotal : 0))
+          .map((a) => (a.atendimentosTotal > 0 ? a.operationalRevenue / a.atendimentosTotal : 0))
           .filter((v) => v > 0);
         return tickets.length ? tickets.reduce((s, v) => s + v, 0) / tickets.length : 0;
       })();
@@ -694,42 +706,91 @@ export default function BarberDeepAnalysis({
         ? othersVitals.reduce((s, a) => s + a.subscriptionCount, 0) / othersVitals.length
         : 0;
 
-      const selfTicket =
+      // Fallback local (usado se a RPC falhar) — mesmas definições, calculadas no cliente
+      const localTicketOp =
         selfVitals.atendimentosTotal > 0
-          ? selfVitals.revenue / selfVitals.atendimentosTotal
+          ? selfVitals.operationalRevenue / selfVitals.atendimentosTotal
           : 0;
-      const newPlusReturn = selfVitals.newCount + selfVitals.returningCount;
-      const recurringPct =
-        newPlusReturn > 0 ? (selfVitals.returningCount / newPlusReturn) * 100 : 0;
+      const localTicketSub =
+        selfVitals.subscriptionCount > 0
+          ? selfVitals.subscriptionRevenue / selfVitals.subscriptionCount
+          : 0;
+
+      // ===== Substituído pela RPC get_barber_deep_analysis (verdade única) =====
+      const { data: rpcData, error: rpcErr } = await supabase.rpc(
+        "get_barber_deep_analysis" as never,
+        {
+          p_organization_id: organizationId,
+          p_barber_id: barberId,
+          p_start: startIso,
+          p_end: endIso,
+        } as never
+      );
+      if (rpcErr) {
+        console.error("[BarberDeepAnalysis] RPC erro:", rpcErr);
+      }
+      const rpcOk = !rpcErr && !!rpcData;
+      const rpc: any = rpcData || {};
+      const volume = rpc.volume || {};
+      const subs = rpc.subscriptions || {};
+      const house = rpc.house || {};
+      const rpcRetention = rpc.retention || {};
+      const portfolio = rpc.portfolio || {};
+
+      // Sobrescreve clientMetrics com definições corretas (atendimento = phone+dia OU created_at anônimo)
+      const rpcAtend = Number(volume.atendimentos) || 0;
+      const rpcUniq = Number(volume.unique_clients) || 0;
+      const rpcServiceLines = Number(volume.service_lines) || 0;
+      const atendimentos = rpcAtend > 0 ? rpcAtend : selectedAtendimentos || selected.clients;
+      const unicos = rpcOk && rpcUniq > 0 ? rpcUniq : selfVitals.phones.size;
+      setClientMetrics({
+        atendimentos,
+        servicos: rpcServiceLines > 0 ? rpcServiceLines : selectedServicos,
+        unicos,
+      });
 
       setVitalMetrics({
-        uniqueClients: selfVitals.phones.size,
-        ticketMedio: selfTicket,
-        recurringPct,
-        newCount: selfVitals.newCount,
-        returningCount: selfVitals.returningCount,
-        subscriptionCount: selfVitals.subscriptionCount,
-        subscriptionRevenue: selfVitals.subscriptionRevenue,
-        houseUniqueClientsAvg: houseUniqueAvg,
-        houseTicketMedioAvg: houseTicketAvg,
-        houseSubscriptionCountAvg: houseSubsAvg,
-        hasItemizedData: selfVitals.atendimentosTotal > 0,
+        uniqueClients: unicos,
+        ticketOperacional: rpcOk ? Number(rpc.ticket_operacional) || 0 : localTicketOp,
+        ticketAssinatura: rpcOk ? Number(rpc.ticket_assinatura) || 0 : localTicketSub,
+        subscriptionCount: rpcOk ? Number(subs.count) || 0 : selfVitals.subscriptionCount,
+        subscriptionRevenue: rpcOk ? Number(subs.mrr) || 0 : selfVitals.subscriptionRevenue,
+        houseUniqueClientsAvg: rpcOk ? Number(house.unique_clients_avg) || 0 : houseUniqueAvg,
+        houseTicketOpAvg: rpcOk ? Number(house.ticket_operacional_avg) || 0 : houseTicketAvg,
+        houseSubscriptionCountAvg: rpcOk ? Number(house.sub_count_avg) || 0 : houseSubsAvg,
+        hasItemizedData: atendimentos > 0,
       });
 
-      setPortfolioQuality({
-        phoneCoveragePct:
-          selfVitals.atendimentosTotal > 0
-            ? (selfVitals.atendimentosComTelefone / selfVitals.atendimentosTotal) * 100
-            : 0,
-        visitsPerClient:
-          selfVitals.phones.size > 0
-            ? selfVitals.atendimentosTotal / selfVitals.phones.size
-            : 0,
-        productPenetrationPct:
-          selfVitals.atendimentosTotal > 0
-            ? (selfVitals.atendimentosComProduto.size / selfVitals.atendimentosTotal) * 100
-            : 0,
+      setRetentionMetrics({
+        networkPct: Number(rpcRetention.network_pct) || 0,
+        barberPct: Number(rpcRetention.barber_pct) || 0,
+        networkCount: Number(rpcRetention.network_count) || 0,
+        barberCount: Number(rpcRetention.barber_count) || 0,
+        totalWithPhone: Number(rpcRetention.total_with_phone) || 0,
       });
+
+      setPortfolioQuality(
+        rpcOk
+          ? {
+              phoneCoveragePct: Number(portfolio.phone_coverage_pct) || 0,
+              visitsPerClient: Number(portfolio.visits_per_client) || 0,
+              productPenetrationPct: Number(portfolio.product_penetration_pct) || 0,
+            }
+          : {
+              phoneCoveragePct:
+                selfVitals.atendimentosTotal > 0
+                  ? (selfVitals.atendimentosComTelefone / selfVitals.atendimentosTotal) * 100
+                  : 0,
+              visitsPerClient:
+                selfVitals.phones.size > 0
+                  ? selfVitals.atendimentosTotal / selfVitals.phones.size
+                  : 0,
+              productPenetrationPct:
+                selfVitals.atendimentosTotal > 0
+                  ? (selfVitals.atendimentosComProduto.size / selfVitals.atendimentosTotal) * 100
+                  : 0,
+            }
+      );
     } catch (err) {
       console.error("[BarberDeepAnalysis] erro geral:", err);
     } finally {
@@ -800,21 +861,29 @@ export default function BarberDeepAnalysis({
     vitalMetrics.uniqueClients,
     vitalMetrics.houseUniqueClientsAvg
   );
-  const ticketSem = getSemaphore(
-    vitalMetrics.ticketMedio,
-    vitalMetrics.houseTicketMedioAvg
+  const ticketOpSem = getSemaphore(
+    vitalMetrics.ticketOperacional,
+    vitalMetrics.houseTicketOpAvg
   );
-  const retentionSem: Semaphore =
-    vitalMetrics.recurringPct >= 60
-      ? "success"
-      : vitalMetrics.recurringPct >= 40
-        ? "warning"
-        : "destructive";
+  const ticketAssinaturaSem: Semaphore =
+    vitalMetrics.ticketAssinatura > 0 ? "success" : "warning";
   const subsSem = getSemaphore(
     vitalMetrics.subscriptionCount,
     vitalMetrics.houseSubscriptionCountAvg,
     { greenRatio: 1, yellowRatio: 0.5 }
   );
+  const retNetworkSem: Semaphore =
+    retentionMetrics.networkPct >= 60
+      ? "success"
+      : retentionMetrics.networkPct >= 40
+        ? "warning"
+        : "destructive";
+  const retBarberSem: Semaphore =
+    retentionMetrics.barberPct >= 40
+      ? "success"
+      : retentionMetrics.barberPct >= 20
+        ? "warning"
+        : "destructive";
 
   return (
     <div className="space-y-6">
@@ -849,26 +918,30 @@ export default function BarberDeepAnalysis({
           />
           <VitalCard
             icon={<Receipt className="w-5 h-5" />}
-            label="Ticket Médio"
-            value={formatBRL(vitalMetrics.ticketMedio)}
-            subtitle={`Média casa ${formatBRL(vitalMetrics.houseTicketMedioAvg)}`}
-            sem={ticketSem}
+            label="Ticket Operacional"
+            value={formatBRL(vitalMetrics.ticketOperacional)}
+            subtitle={`Serviços + produtos ÷ atendimentos · casa ${formatBRL(vitalMetrics.houseTicketOpAvg)}`}
+            sem={ticketOpSem}
             progress={Math.min(
               100,
-              vitalMetrics.houseTicketMedioAvg > 0
-                ? (vitalMetrics.ticketMedio / (vitalMetrics.houseTicketMedioAvg * 1.5)) * 100
-                : vitalMetrics.ticketMedio > 0
+              vitalMetrics.houseTicketOpAvg > 0
+                ? (vitalMetrics.ticketOperacional / (vitalMetrics.houseTicketOpAvg * 1.5)) * 100
+                : vitalMetrics.ticketOperacional > 0
                   ? 100
                   : 0
             )}
           />
           <VitalCard
-            icon={<UserCheck className="w-5 h-5" />}
-            label="Recorrência"
-            value={`${vitalMetrics.recurringPct.toFixed(0)}%`}
-            subtitle={`${vitalMetrics.returningCount} recorrentes · ${vitalMetrics.newCount} novos`}
-            sem={retentionSem}
-            progress={vitalMetrics.recurringPct}
+            icon={<BadgeDollarSign className="w-5 h-5" />}
+            label="Ticket Assinatura"
+            value={formatBRL(vitalMetrics.ticketAssinatura)}
+            subtitle={
+              vitalMetrics.subscriptionCount > 0
+                ? `${formatBRL(vitalMetrics.subscriptionRevenue)} ÷ ${vitalMetrics.subscriptionCount} adesões`
+                : "Sem assinaturas no período"
+            }
+            sem={ticketAssinaturaSem}
+            progress={vitalMetrics.ticketAssinatura > 0 ? 100 : 0}
           />
           <VitalCard
             icon={<BadgeDollarSign className="w-5 h-5" />}
@@ -948,21 +1021,8 @@ export default function BarberDeepAnalysis({
         </Card>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs: Atendidos + Retenção Rede + Retenção Barbeiro */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2">
-              <Receipt className="w-4 h-4" />
-              Ticket Médio
-            </CardDescription>
-            <CardTitle className="text-3xl">{formatBRL(ticketMedio)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Receita {formatBRL(barberTotals.total)} ÷ {clientMetrics.atendimentos} atendimentos
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
@@ -974,7 +1034,9 @@ export default function BarberDeepAnalysis({
           <CardContent className="text-sm text-muted-foreground space-y-0.5">
             <div>{clientMetrics.servicos} serviços vendidos</div>
             <div>{clientMetrics.unicos} clientes únicos (telefone)</div>
-            <div className="text-xs opacity-70">Período: {PERIOD_LABEL[period]}</div>
+            <div className="text-xs opacity-70">
+              Atendimento = cliente único por dia · Período: {PERIOD_LABEL[period]}
+            </div>
           </CardContent>
         </Card>
 
@@ -982,14 +1044,35 @@ export default function BarberDeepAnalysis({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <Repeat className="w-4 h-4" />
-              Taxa de Retenção
+              Retenção da Rede
             </CardDescription>
-            <CardTitle className="text-3xl">
-              {retention === null ? "—" : `${retention.toFixed(1)}%`}
+            <CardTitle className={`text-3xl ${semaphoreClasses(retNetworkSem).text}`}>
+              {retentionMetrics.totalWithPhone === 0 ? "—" : `${retentionMetrics.networkPct.toFixed(1)}%`}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Clientes do período já atendidos antes
+          <CardContent className="text-sm text-muted-foreground space-y-0.5">
+            <div>
+              {retentionMetrics.networkCount} de {retentionMetrics.totalWithPhone} clientes já eram da casa
+            </div>
+            <div className="text-xs opacity-70">Mede a fidelidade do salão (qualquer barbeiro)</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4" />
+              Retenção do Barbeiro
+            </CardDescription>
+            <CardTitle className={`text-3xl ${semaphoreClasses(retBarberSem).text}`}>
+              {retentionMetrics.totalWithPhone === 0 ? "—" : `${retentionMetrics.barberPct.toFixed(1)}%`}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-0.5">
+            <div>
+              {retentionMetrics.barberCount} de {retentionMetrics.totalWithPhone} já cortaram com ele antes
+            </div>
+            <div className="text-xs opacity-70">Mede a preferência pessoal pelo profissional</div>
           </CardContent>
         </Card>
       </div>

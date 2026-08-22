@@ -368,10 +368,16 @@ const [todayProduction, setTodayProduction] = useState<{
     const dailyTarget = daysToUse > 0 ? Math.max(0, remaining / daysToUse) : 0;
     setDailyTarget(dailyTarget);
 
-    // Calcular meta diária de serviços (mesma lógica proporcional)
-    const servicesTarget = monthlyGoal.target_commission > 0 
-      ? dailyTarget * (stats.total_services / Math.max(1, stats.accumulated_commission))
-      : 0;
+    // Calcular meta diária de faturamento (em serviços)
+    // Preferência 1: usar proporção real do mês (faturamento/comissão acumulada)
+    // Fallback: usar a % de comissão de serviços cadastrada no barbeiro
+    const servicesRate = Number((barber as any)?.services_commission) || 0;
+    let servicesTarget = 0;
+    if (stats.accumulated_commission > 0 && stats.total_services > 0) {
+      servicesTarget = dailyTarget * (stats.total_services / stats.accumulated_commission);
+    } else if (servicesRate > 0) {
+      servicesTarget = dailyTarget / (servicesRate / 100);
+    }
     setDailyTargetServices(servicesTarget);
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
 
@@ -937,20 +943,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </p>
             </div>
             {/* Alerta de Produções Pendentes */}
-            {/* Dias Pendentes de Conferência (AO VIVO) */}
-            <PendingDayReviews 
-              barberId={barber.id} 
-              onReview={(date) => setReviewingDate(date)} 
-            />
-            {/* Dias sem nenhum registro (sem vendas ao vivo) */}
-            <MissingProductionAlert
-              barberId={barber.id}
-              organizationId={barber.organization_id}
-              onStatusRegistered={() => {
-                fetchMonthlyStats();
-                fetchLivePanelData();
-              }}
-            />
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
@@ -989,6 +981,20 @@ const [todayProduction, setTodayProduction] = useState<{
                 </div>
               </CardContent>
             </Card>
+            {/* Dias Pendentes de Conferência (colapsável) */}
+            <PendingDayReviews
+              barberId={barber.id}
+              onReview={(date) => setReviewingDate(date)}
+            />
+            {/* Dias sem nenhum registro (colapsável) */}
+            <MissingProductionAlert
+              barberId={barber.id}
+              organizationId={barber.organization_id}
+              onStatusRegistered={() => {
+                fetchMonthlyStats();
+                fetchLivePanelData();
+              }}
+            />
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
@@ -1011,6 +1017,22 @@ const [todayProduction, setTodayProduction] = useState<{
                     <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
                       <p className="text-sm text-muted-foreground font-medium">
                         💡 <span className="font-bold">LEMBRETE:</span> Vender PRODUTOS ajuda a bater esta meta mais rápido!
+                      </p>
+                    </div>
+                  </>
+                ) : dailyTarget > 0 ? (
+                  <>
+                    <div className="text-center space-y-3">
+                      <p className="text-5xl font-bold text-primary">
+                        R$ {dailyTarget.toFixed(2)}
+                      </p>
+                      <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
+                        (EM COMISSÃO)
+                      </p>
+                    </div>
+                    <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
+                      <p className="text-xs text-muted-foreground">
+                        Assim que você registrar suas primeiras vendas no mês, vamos calcular também a meta em faturamento de serviços.
                       </p>
                     </div>
                   </>

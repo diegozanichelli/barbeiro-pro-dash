@@ -53,9 +53,14 @@ export default function WarPlanWizard({
 
   // Validação: meta de faturamento DEVE ser maior que meta de comissão.
   // Se vier 0 ou menor/igual à comissão, os campos foram trocados/estão errados.
+  // Só consideramos inconsistência real quando há meta de faturamento positiva
+  // que é menor que a de comissão (sinal de campos trocados pelo gerente).
+  // Se dailyTarget = 0, normalmente é apenas falta de histórico do mês para
+  // estimar o ticket — o assistente consegue usar a meta de comissão mesmo assim.
   const targetMismatch =
     dailyTargetCommission > 0 &&
-    (dailyTarget <= 0 || dailyTarget < dailyTargetCommission);
+    dailyTarget > 0 &&
+    dailyTarget < dailyTargetCommission;
 
   const generatePlan = async () => {
     if (targetMismatch) {

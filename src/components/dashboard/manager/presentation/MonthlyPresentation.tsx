@@ -16,7 +16,7 @@ import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 import { getManausDate } from "@/lib/dateUtils";
 import {
   monthNamesPt, PeriodMode, resolvePeriod, computeCompareRange,
-  countWorkingDays, toISODate, formatPeriodLabel, formatPeriodShort, isFullMonth, lastDayOfMonth,
+  countWorkingDays, toISODate, formatPeriodLabel, formatPeriodShort, isFullMonth, lastDayOfMonth, parseISODate,
 } from "./slideHelpers";
 import PresentationDeck, { buildSlides } from "./PresentationDeck";
 
@@ -65,8 +65,8 @@ export default function MonthlyPresentation() {
   }, [mode, month, year, customStart, customEnd, holidayDates, today]);
 
   const { compareStart, compareEnd } = useMemo(() => {
-    const s = new Date(periodStart);
-    const e = new Date(periodEnd);
+    const s = parseISODate(periodStart);
+    const e = parseISODate(periodEnd);
     const { compareStart, compareEnd } = computeCompareRange(s, e);
     return { compareStart: toISODate(compareStart), compareEnd: toISODate(compareEnd) };
   }, [periodStart, periodEnd]);
@@ -100,11 +100,11 @@ export default function MonthlyPresentation() {
   }, [data, organizationId, unitId, overrides, saveOverride, resetOverride]);
 
   const periodLabel = useMemo(() => {
-    return formatPeriodLabel(new Date(periodStart), new Date(periodEnd));
+    return formatPeriodLabel(parseISODate(periodStart), parseISODate(periodEnd));
   }, [periodStart, periodEnd]);
 
   const compareLabel = useMemo(() => {
-    return formatPeriodShort(new Date(compareStart), new Date(compareEnd));
+    return formatPeriodShort(parseISODate(compareStart), parseISODate(compareEnd));
   }, [compareStart, compareEnd]);
 
   if (presenting && data) {

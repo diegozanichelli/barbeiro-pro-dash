@@ -94,16 +94,23 @@ Deno.serve(async (req) => {
 
     console.log('Managers found:', managers?.length)
 
-    // Buscar emails dos usuários usando o admin client
-    const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin.listUsers()
-    
-    if (authError) throw authError
+    // Buscar emails dos usuários usando o admin client (paginado)
+    const allAuthUsers: { id: string; email?: string }[] = []
+    for (let page = 1; page <= 20; page++) {
+      const { data: pageData, error: authError } = await supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage: 1000,
+      })
+      if (authError) throw authError
+      allAuthUsers.push(...pageData.users)
+      if (pageData.users.length < 1000) break
+    }
 
-    console.log('Auth users fetched:', authUsers.users.length)
+    console.log('Auth users fetched:', allAuthUsers.length)
 
     // Mapear gerentes com seus emails
     const managersWithEmails = managers?.map((manager: any) => {
-      const authUser = authUsers.users.find((u) => u.id === manager.user_id)
+      const authUser = allAuthUsers.find((u) => u.id === manager.user_id)
       return {
         user_id: manager.user_id,
         email: authUser?.email || '',
@@ -112,12 +119,26 @@ Deno.serve(async (req) => {
       }
     }) || []
 
+    // Organizações sem gerente vinculado (contas órfãs)
+    const { data: allOrgs, error: orgsError } = await supabaseAdmin
+      .from('organizations')
+      .select('id, name')
+
+    if (orgsError) throw orgsError
+
+    const orgsWithManager = new Set(managersWithEmails.map((m) => m.organization_id))
+    const organizationsWithoutManager = (allOrgs || [])
+      .filter((org) => !orgsWithManager.has(org.id))
+      .map((org) => ({ organization_id: org.id, organization_name: org.name }))
+
+    console.log('Organizations without manager:', organizationsWithoutManager.length)
     console.log('=== List Managers - Success ===')
 
     return new Response(
-      JSON.stringify({ managers: managersWithEmails }),
+      JSON.stringify({ managers: managersWithEmails, organizations_without_manager: organizationsWithoutManager }),
       { 
         status: 200,
+
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     )

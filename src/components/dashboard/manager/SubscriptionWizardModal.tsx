@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   CreditCard,
+  Home,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -74,9 +75,12 @@ interface SubscriptionWizardModalProps {
   selectedDate?: string;
   prefillPhone?: string;
   prefillName?: string;
-  prefillAction?: "new" | "renew" | "upgrade" | "downgrade";
+  prefillAction?: "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
   prefillPlanId?: string | null;
   prefillIsNewClient?: boolean;
+  prefillAttributionType?: "reception" | "barber" | "manager_rescue" | "auto_recurring" | null;
+  prefillBarberId?: string | null;
+  prefillUnitId?: string | null;
   startStep?: "client_type" | "attribution";
 }
 
@@ -92,7 +96,7 @@ interface SubscriptionPlan {
 }
 
 type WizardStep = "client_type" | "attribution" | "details" | "success";
-type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
+type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
 
 export default function SubscriptionWizardModal({
   open,
@@ -106,6 +110,9 @@ export default function SubscriptionWizardModal({
   prefillAction,
   prefillPlanId,
   prefillIsNewClient,
+  prefillAttributionType,
+  prefillBarberId,
+  prefillUnitId,
   startStep,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
@@ -182,6 +189,9 @@ export default function SubscriptionWizardModal({
     }
     if (prefillAction) setSubscriptionAction(prefillAction);
     if (prefillPlanId) setSelectedPlanId(prefillPlanId);
+    if (typeof prefillAttributionType !== "undefined") setAttributionType(prefillAttributionType);
+    if (typeof prefillBarberId !== "undefined") setSelectedBarberId(prefillBarberId);
+    if (typeof prefillUnitId !== "undefined") setSelectedUnitId(prefillUnitId);
     if (startStep) setStep(startStep);
   }, [open]);
 
@@ -381,7 +391,7 @@ export default function SubscriptionWizardModal({
         }
       }
 
-      const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : "Downgrade";
+      const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : subscriptionAction === "downgrade" ? "Downgrade" : "Regularização Legado";
 
       // Resolve previous plan/price for upgrade/downgrade (so Δ MRR funciona mesmo sem histórico de vendas)
       let previousPlanId: string | null = null;
@@ -434,7 +444,7 @@ export default function SubscriptionWizardModal({
         description: registeredClient.clientName,
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
-        price_sold: selectedPlan?.price || 0,
+        price_sold: subscriptionAction === "legacy_import" ? 0 : (selectedPlan?.price || 0),
         service_category: null,
         catalog_service_id: null,
         catalog_product_id: null,
@@ -442,7 +452,7 @@ export default function SubscriptionWizardModal({
         commission_amount: 0,
         source: "manager",
         created_at: createdAt,
-        is_new_client: isNewClient,
+        is_new_client: subscriptionAction === "legacy_import" ? false : isNewClient,
         subscription_plan_id: selectedPlanId,
         subscription_action: subscriptionAction,
         downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
@@ -721,7 +731,7 @@ export default function SubscriptionWizardModal({
               {isNewClient === false && (
                 <div className="space-y-3 pt-2">
                   <Label className="text-sm font-medium text-muted-foreground">Qual a ação?</Label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-5 gap-2">
                     <Button
                       type="button"
                       variant={subscriptionAction === "new" ? "default" : "outline"}
@@ -770,6 +780,19 @@ export default function SubscriptionWizardModal({
                     >
                       <ArrowDownCircle className="w-5 h-5" />
                       <span className="font-medium">Downgrade</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={subscriptionAction === "legacy_import" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto py-3 flex flex-col items-center gap-1 text-xs",
+                        subscriptionAction === "legacy_import" && "ring-2 ring-primary ring-offset-2"
+                      )}
+                      onClick={() => handleSelectAction("legacy_import")}
+                    >
+                      <Home className="w-5 h-5" />
+                      <span className="font-medium">Legado</span>
+                      <span className="text-[10px] text-muted-foreground">Regularização</span>
                     </Button>
                   </div>
 
@@ -954,7 +977,7 @@ export default function SubscriptionWizardModal({
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Ação:</span>
                     <span className="font-medium">
-                      {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : "🔽 Downgrade"}
+                      {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : subscriptionAction === "downgrade" ? "🔽 Downgrade" : "📥 Regularização Legado"}
                     </span>
                   </div>
                   <div className="flex justify-between">

@@ -26,6 +26,12 @@ import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
 import SendNotificationsButton from "./manager/SendNotificationsButton";
 import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
+import BestSalesDays from "./manager/BestSalesDays";
+import BarberReportPage from "./manager/BarberReportPage";
+import InactiveClientsReport from "./manager/InactiveClientsReport";
+import ReportsAuditPanel from "./manager/ReportsAuditPanel";
+import PerformanceDashboard from "./manager/PerformanceDashboard";
+
 
 interface ManagerDashboardProps {
   user: User;
@@ -129,6 +135,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <ManagerReports />
           </TabsContent>
 
+          <TabsContent value="performance" className="mt-0">
+            <PerformanceDashboard />
+          </TabsContent>
+
           <TabsContent value="daily-goals" className="mt-0">
             <DailyGoalsTracking />
           </TabsContent>
@@ -165,13 +175,31 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <MonthlyPresentation />
           </TabsContent>
 
+          <TabsContent value="best-sales-days" className="mt-0">
+            <BestSalesDays />
+          </TabsContent>
+
+          <TabsContent value="barber-report" className="mt-0">
+            <BarberReportPage />
+          </TabsContent>
+
+          <TabsContent value="inactive-clients" className="mt-0">
+            <InactiveClientsReport />
+          </TabsContent>
+
+
           <TabsContent value="payroll" className="mt-0">
             <MonthlyPayroll />
+          </TabsContent>
+
+          <TabsContent value="reports-audit" className="mt-0">
+            <ReportsAuditPanel onNavigate={setActiveTab} />
           </TabsContent>
 
           <TabsContent value="ai-usage" className="mt-0">
             <AIUsageTracking />
           </TabsContent>
+
 
           <TabsContent value="subscriptions" className="mt-0">
             <SubscriptionsTracking />

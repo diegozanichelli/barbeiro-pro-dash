@@ -6,6 +6,32 @@ import { toZonedTime, formatInTimeZone } from "date-fns-tz";
  */
 export const TIMEZONE = "America/Manaus";
 
+/** Offset fixo de Manaus (não há horário de verão desde 2008). */
+export const MANAUS_OFFSET = "-04:00";
+
+/**
+ * Converte uma Date (campos locais) para a chave de dia puro yyyy-MM-dd.
+ * Use sempre isso para date pickers — nunca `toISOString()`.
+ */
+export function toDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Início do dia em Manaus, para comparar com colunas timestamptz. */
+export function manausDayStart(dateKey: string | Date): string {
+  const key = typeof dateKey === "string" ? dateKey : toDateKey(dateKey);
+  return `${key}T00:00:00${MANAUS_OFFSET}`;
+}
+
+/** Fim do dia em Manaus, para comparar com colunas timestamptz. */
+export function manausDayEnd(dateKey: string | Date): string {
+  const key = typeof dateKey === "string" ? dateKey : toDateKey(dateKey);
+  return `${key}T23:59:59.999${MANAUS_OFFSET}`;
+}
+
 /**
  * Retorna a data atual no fuso horário de Manaus
  * @returns Date object ajustado para Manaus

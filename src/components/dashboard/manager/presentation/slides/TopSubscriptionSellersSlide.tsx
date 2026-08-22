@@ -6,7 +6,7 @@ import { Crown } from "lucide-react";
 export default function TopSubscriptionSellersSlide({ data }: { data: MonthlyPresentationData }) {
   const items = (data.top_subscription_sellers ?? []).slice(0, 3);
   const colors = ["bg-gradient-to-b from-yellow-400/30 to-yellow-400/5 border-yellow-400/50", "bg-card/60 border-border", "bg-card/40 border-border/60"];
-  const heights = ["h-[360px]", "h-[300px]", "h-[250px]"];
+  const heights = ["h-[420px]", "h-[360px]", "h-[320px]"];
   const order = [items[1], items[0], items[2]];
   const orderIdx = [1, 0, 2];
   return (

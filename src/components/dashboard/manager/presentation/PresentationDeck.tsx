@@ -12,9 +12,11 @@ import RankingSlide from "./slides/RankingSlide";
 import IndividualEvolutionSlide from "./slides/IndividualEvolutionSlide";
 import UnitsSlide from "./slides/UnitsSlide";
 import WeekdayHeatmapSlide from "./slides/WeekdayHeatmapSlide";
+import UnitWeekdayHeatmapSlide from "./slides/UnitWeekdayHeatmapSlide";
 import TopServicesProductsSlide from "./slides/TopServicesProductsSlide";
 import ExtrasPenetrationSlide from "./slides/ExtrasPenetrationSlide";
 import ProductSellersSlide from "./slides/ProductSellersSlide";
+import ExtrasSellersSlide from "./slides/ExtrasSellersSlide";
 import ReceptionSalesSlide from "./slides/ReceptionSalesSlide";
 import NewClientsSlide from "./slides/NewClientsSlide";
 import ClientsNewVsReturningSlide from "./slides/ClientsNewVsReturningSlide";
@@ -82,11 +84,13 @@ export function buildSlides(
     { key: "evolution", title: "Evolução individual", el: <IndividualEvolutionSlide data={data} /> },
     { key: "units", title: "Por unidade", el: <UnitsSlide data={data} /> },
     { key: "weekday", title: "Heatmap dia da semana", el: <WeekdayHeatmapSlide data={data} /> },
+    { key: "unit-weekday", title: "Heatmap por unidade", el: <UnitWeekdayHeatmapSlide data={data} /> },
     { key: "ticket", title: "Ticket médio por unidade", el: <TicketByUnitSlide data={data} /> },
     { key: "mix", title: "Mix de receita", el: <RevenueMixSlide data={data} /> },
     { key: "top-services-products", title: "Top serviços & produtos", el: <TopServicesProductsSlide data={data} /> },
     { key: "extras-penetration", title: "Penetração de extras", el: <ExtrasPenetrationSlide data={data} /> },
     { key: "top-sellers", title: "Top vendedores (extras / produtos)", el: <TopSellersSlide data={data} /> },
+    { key: "extras-sellers", title: "Ranking de venda de extras", el: <ExtrasSellersSlide data={data} /> },
     { key: "product-sellers", title: "Ranking de venda de produtos", el: <ProductSellersSlide data={data} /> },
     { key: "reception", title: "Recepção vendedora", el: <ReceptionSalesSlide data={data} /> },
     { key: "new-clients", title: "Clientes novos", el: <NewClientsSlide data={data} /> },

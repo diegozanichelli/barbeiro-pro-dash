@@ -3,6 +3,9 @@ project_id = "pcszguaqnodzshekldgw"
 [functions.check-performance-alerts]
 verify_jwt = false
 
+[functions.recompute-client-origins]
+verify_jwt = false
+
 [functions.create-barber]
 verify_jwt = true
 
@@ -18,11 +21,9 @@ verify_jwt = false
 [functions.check-subscription-status]
 verify_jwt = true
 
-[functions.migrate-organization]
-verify_jwt = true
-
 [functions.complete-onboarding]
 verify_jwt = true
+
 
 [functions.create-free-account]
 verify_jwt = true
@@ -49,4 +50,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.delete-barber]
+verify_jwt = true
+
+[functions.auto-deactivate-expired]
+verify_jwt = false
+
+[functions.delete-organization]
 verify_jwt = true
