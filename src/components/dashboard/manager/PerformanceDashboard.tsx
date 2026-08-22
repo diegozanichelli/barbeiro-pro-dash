@@ -151,8 +151,13 @@ interface DayBucket {
 
 const emptyBucket = (): DayBucket => ({ revenue: 0, clients: 0, commission: 0 });
 
+/**
+ * Sem base no período anterior a variação é indefinida, não "+100%": fevereiro
+ * não tem quinta fatia, o mês anterior pode não ter lançamento nenhum. Nesses
+ * casos o card mostra "—" em vez de um crescimento que não existe.
+ */
 const variation = (current: number, previous: number) => {
-  if (!previous) return current > 0 ? 100 : null;
+  if (!previous) return null;
   return ((current - previous) / previous) * 100;
 };
 
@@ -365,17 +370,23 @@ export default function PerformanceDashboard() {
   const partialPeriod = curEndDay < range.endDay;
 
   /**
-   * Com a fatia atual incompleta, somar o mês anterior inteiro compararia 22
-   * dias com 31. A janela anterior passa a ter o mesmo tamanho e o mesmo dia da
-   * semana de início — assim os dois lados têm os mesmos sábados e domingos.
+   * Os cards usam a mesma janela que o gráfico desenha — deslocada para casar o
+   * dia da semana e com o mesmo tamanho da fatia atual — senão o total do card
+   * não fecha com a linha cinza logo abaixo dele.
+   *
+   * A exceção é o mês fechado: ali a pergunta do card é "agosto contra julho",
+   * então vale o mês anterior inteiro. O alinhamento por dia da semana serve à
+   * forma da curva, não ao total.
    */
-  const prevWindow = partialPeriod
+  const alignedStart = prevRange.startDay + prevOffset;
+  const useAlignedWindow = partialPeriod || slice !== "month";
+  const prevWindow = useAlignedWindow
     ? {
-        startDay: Math.max(1, prevRange.startDay + prevOffset),
+        startDay: Math.max(1, alignedStart),
         endDay: Math.min(
           prevTotalDays,
           prevLastDay,
-          prevRange.startDay + prevOffset + (curEndDay - range.startDay)
+          alignedStart + (curEndDay - range.startDay)
         ),
       }
     : { startDay: prevRange.startDay, endDay: Math.min(prevRange.endDay, prevLastDay) };
@@ -384,7 +395,7 @@ export default function PerformanceDashboard() {
   const prevTotals = sumRange(scoped.prev.byDay, prevWindow.startDay, prevWindow.endDay);
 
   const hasPrevWindow = prevWindow.endDay >= prevWindow.startDay;
-  const comparisonLabel = partialPeriod
+  const comparisonLabel = useAlignedWindow
     ? "mesmo período do mês anterior"
     : "período anterior";
   const comparisonRange = hasPrevWindow
@@ -624,7 +635,8 @@ export default function PerformanceDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {kpis.map((k) => {
           const Icon = k.icon;
-          const positive = (k.delta ?? 0) >= 0;
+          const delta = k.delta;
+          const positive = (delta ?? 0) >= 0;
           const DeltaIcon = positive ? TrendingUp : TrendingDown;
           return (
             <Card key={k.label} className="glass border-white/[0.06]">
@@ -649,19 +661,24 @@ export default function PerformanceDashboard() {
                   <span
                     className={cn(
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-                      positive
-                        ? "bg-success/15 text-success"
-                        : "bg-destructive/15 text-destructive"
+                      delta === null
+                        ? "bg-secondary text-muted-foreground"
+                        : positive
+                          ? "bg-success/15 text-success"
+                          : "bg-destructive/15 text-destructive"
                     )}
+                    title={delta === null ? "Sem base de comparação no período anterior" : undefined}
                   >
-                    <DeltaIcon className="w-3 h-3" />
-                    {k.delta === null ? "—" : `${k.delta >= 0 ? "+" : ""}${k.delta.toFixed(1)}%`}
+                    {delta !== null && <DeltaIcon className="w-3 h-3" />}
+                    {delta === null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`}
                   </span>
                   <span
                     className="text-xs text-muted-foreground/80"
                     title={comparisonRange ? `Comparando com ${comparisonRange}` : undefined}
                   >
-                    {comparisonLabel}: {k.previous}
+                    {hasPrevWindow
+                      ? `${comparisonLabel}: ${k.previous}`
+                      : "sem período equivalente no mês anterior"}
                   </span>
                 </div>
               </CardContent>
