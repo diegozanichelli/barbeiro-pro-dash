@@ -129,7 +129,7 @@ export default function UnitsComparison() {
       ] = await Promise.all([
         supabase
           .from("daily_productions")
-          .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
+          .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id, name)")
           .eq("organization_id", organizationId)
           .gte("date", startDate)
           .lte("date", endDate),
@@ -335,9 +335,29 @@ export default function UnitsComparison() {
       // Ordenar por receita (maior primeiro)
       const sortedMetrics = Array.from(metricsMap.values()).sort((a, b) => b.receita - a.receita);
       setUnitsMetrics(sortedMetrics);
+
+      // Top barbeiros por unidade (básico, extra, produtos)
+      const tops: UnitTopBarbers[] = sortedMetrics.map((u) => {
+        const barbersOfUnit = Array.from(barberAgg.values()).filter((b) => b.unitId === u.unitId);
+        const pickTop = (key: "basic" | "extra" | "products"): BarberLeader | null => {
+          const comValor = barbersOfUnit.filter((b) => b[key] > 0);
+          if (comValor.length === 0) return null;
+          const winner = comValor.reduce((a, b) => (b[key] > a[key] ? b : a));
+          return { barberId: winner.barberId, barberName: winner.barberName, value: winner[key] };
+        };
+        return {
+          unitId: u.unitId,
+          unitName: u.unitName,
+          topBasic: pickTop("basic"),
+          topExtra: pickTop("extra"),
+          topProducts: pickTop("products"),
+        };
+      });
+      setTopBarbersByUnit(tops);
     } catch (error) {
       console.error("Erro ao montar comparativo de unidades:", error);
       setUnitsMetrics([]);
+      setTopBarbersByUnit([]);
     } finally {
       setLoading(false);
     }
@@ -513,49 +533,6 @@ export default function UnitsComparison() {
                 {conversionLeader
                   ? `R$ ${conversionLeader.ticketMedio.toFixed(2)} por cliente · ${conversionLeader.clientes} atendimentos`
                   : 'Sem dados suficientes'}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {!loading && unitsMetrics.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="w-5 h-5 text-emerald-500" />
-                <p className="text-sm text-muted-foreground">Conversão Novos Clientes</p>
-              </div>
-              <p className="text-lg font-bold text-foreground">{newClientConversionLeader?.unitName}</p>
-              <p className="text-sm text-muted-foreground">
-                {newClientConversionLeader?.newClientConversionRate.toFixed(1)}% ({newClientConversionLeader?.newClientSubscriptions} / {newClientConversionLeader?.newClientOpportunities})
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border-cyan-500/20">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="w-5 h-5 text-cyan-500" />
-                <p className="text-sm text-muted-foreground">Conversão Clientes da Casa</p>
-              </div>
-              <p className="text-lg font-bold text-foreground">{existingClientConversionLeader?.unitName}</p>
-              <p className="text-sm text-muted-foreground">
-                {existingClientConversionLeader?.existingClientConversionRate.toFixed(1)}% ({existingClientConversionLeader?.existingClientSubscriptions} / {existingClientConversionLeader?.existingClientOpportunities})
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-2">
-                <Medal className="w-5 h-5 text-amber-500" />
-                <p className="text-sm text-muted-foreground">Mais Novos Assinantes</p>
-              </div>
-              <p className="text-lg font-bold text-foreground">{newSubscribersLeader?.unitName}</p>
-              <p className="text-sm text-muted-foreground">
-                {newSubscribersLeader?.totalNewSubscriptions ?? 0} novas assinaturas
               </p>
             </CardContent>
           </Card>
