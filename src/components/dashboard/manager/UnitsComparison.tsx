@@ -5,11 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { getManausDate, manausDayStart, manausDayEnd } from "@/lib/dateUtils";
-import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
-import { normalizePhoneForMetrics } from "@/lib/normalizers";
-import { fetchAllRows } from "@/lib/supabasePagination";
-import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
+import { getManausDate } from "@/lib/dateUtils";
+import { useOrganization } from "@/hooks/useOrganization";
 
 /** Evita que o TS parseie a select string (custo de typecheck). */
 const sel = (s: string): string => s;
@@ -50,20 +47,6 @@ interface UnitMetrics {
   existingClientConversionRate: number;
 }
 
-interface BarberLeader {
-  barberId: string;
-  barberName: string;
-  value: number;
-}
-
-interface UnitTopBarbers {
-  unitId: string;
-  unitName: string;
-  topBasic: BarberLeader | null;
-  topExtra: BarberLeader | null;
-  topProducts: BarberLeader | null;
-}
-
 const monthNames = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -72,6 +55,7 @@ const monthNames = [
 export default function UnitsComparison() {
   // Usar data de Manaus para inicializar ano e mês corretamente
   const manausNow = useMemo(() => getManausDate(), []);
+  const { organizationId } = useOrganization();
   const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(manausNow.getMonth() + 1);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -83,8 +67,10 @@ export default function UnitsComparison() {
   const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
   useEffect(() => {
-    fetchUnits();
-  }, []);
+    if (organizationId) {
+      fetchUnits();
+    }
+  }, [organizationId]);
 
   useEffect(() => {
     if (units.length > 0) {
@@ -93,9 +79,12 @@ export default function UnitsComparison() {
   }, [selectedYear, selectedMonth, units]);
 
   const fetchUnits = async () => {
+    if (!organizationId) return;
+
     const { data, error } = await supabase
       .from("units")
       .select("id, name")
+      .eq("organization_id", organizationId)
       .eq("status", "active")
       .order("name");
 
@@ -108,58 +97,53 @@ export default function UnitsComparison() {
   };
 
   const fetchUnitsComparison = async () => {
+    if (!organizationId) return;
     setLoading(true);
+    try {
+      // Calcular datas do mês
+      const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+      const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
+      const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${lastDay}`;
 
-    // Calcular datas do mês
-    const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
-    const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${lastDay}`;
+      const [
+        productionsResult,
+        goalsResult,
+        transactionsResult,
+      ] = await Promise.all([
+        supabase
+          .from("daily_productions")
+          .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
+          .eq("organization_id", organizationId)
+          .gte("date", startDate)
+          .lte("date", endDate),
+        supabase
+          .from("monthly_goals")
+          .select("month, target_commission, barber_id, barbers!inner(unit_id)")
+          .eq("organization_id", organizationId)
+          .eq("year", selectedYear)
+          .eq("month", selectedMonth),
+        supabase
+          .from("sale_transactions")
+          .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
+          .eq("organization_id", organizationId)
+          .eq("source", "manager")
+          .gte("created_at", `${startDate}T00:00:00`)
+          .lte("created_at", `${endDate}T23:59:59`)
+          .not("barber_id", "is", null),
+      ]);
 
-    // Buscar produções com paginação (Supabase tem limite default de 1000 linhas).
-    // Inclui campos tx_* (gestor) e manual_* (barbeiro) para aplicar a hierarquia oficial:
-    // tx (gestor) > manual (barbeiro) > legacy detalhado > services_total
-    const productions: any[] = [];
-    const PAGE_SIZE = 1000;
-    let from = 0;
-    let productionsError: any = null;
-    while (true) {
-      const { data: page, error } = await supabase
-        .from("daily_productions")
-        .select(`date, services_total, services_basic_total, services_extra_total, products_total,
-                 tx_basic_total, tx_extra_total, tx_products_total,
-                 manual_basic_total, manual_extra_total, manual_products_total,
-                 commission_earned, clients_count, barber_id, barbers!inner(unit_id, name)`)
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .order("date", { ascending: true })
-        .range(from, from + PAGE_SIZE - 1);
+      const { data: productions, error: productionsError } = productionsResult;
+      const { data: goals, error: goalsError } = goalsResult;
+      const { data: transactions, error: transactionsError } = transactionsResult;
 
-      if (error) {
-        productionsError = error;
-        break;
+      if (productionsError) {
+        console.error("Erro ao buscar produções:", productionsError);
+        return;
       }
-      if (!page || page.length === 0) break;
-      productions.push(...page);
-      if (page.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
-    }
 
-    if (productionsError) {
-      console.error("Erro ao buscar produções:", productionsError);
-      setLoading(false);
-      return;
-    }
-
-    // Buscar metas do mês
-    const { data: goals, error: goalsError } = await supabase
-      .from("monthly_goals")
-      .select("month, target_commission, barber_id, barbers!inner(unit_id)")
-      .eq("year", selectedYear)
-      .eq("month", selectedMonth);
-
-    if (goalsError) {
-      console.error("Erro ao buscar metas:", goalsError);
-    }
+      if (goalsError) {
+        console.error("Erro ao buscar metas:", goalsError);
+      }
 
     // Calcular métricas por unidade
     const metricsMap = new Map<string, UnitMetrics>();
@@ -188,21 +172,9 @@ export default function UnitsComparison() {
       });
     });
 
-    // Buscar transações para conversões e novos assinantes (paginado + fuso Manaus)
-    let transactions: TxRow[] = [];
-    try {
-      transactions = await fetchAllRows<TxRow>(() =>
-        supabase
-          .from("sale_transactions")
-          .select(sel("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)"))
-          .gte("created_at", manausDayStart(startDate))
-          .lte("created_at", manausDayEnd(endDate))
-          .not("barber_id", "is", null)
-          .returns<TxRow[]>()
-      );
-    } catch (transactionsError) {
-      console.error("Erro ao buscar transações de assinatura:", transactionsError);
-    }
+      if (transactionsError) {
+        console.error("Erro ao buscar transações de assinatura:", transactionsError);
+      }
 
 
     // Agregação por barbeiro (para top barbeiros por unidade)
@@ -343,30 +315,15 @@ export default function UnitsComparison() {
       metrics.existingClientConversionRate = existingOpp > 0 ? (newSubsFromExisting / existingOpp) * 100 : 0;
     });
 
-    // Ordenar por receita (maior primeiro)
-    const sortedMetrics = Array.from(metricsMap.values()).sort((a, b) => b.receita - a.receita);
-    setUnitsMetrics(sortedMetrics);
-
-    // Top barbeiros por unidade (básico, extra, produtos)
-    const tops: UnitTopBarbers[] = sortedMetrics.map((u) => {
-      const barbersOfUnit = Array.from(barberAgg.values()).filter((b) => b.unitId === u.unitId);
-      const pickTop = (key: 'basic' | 'extra' | 'products'): BarberLeader | null => {
-        const filtered = barbersOfUnit.filter((b) => b[key] > 0);
-        if (filtered.length === 0) return null;
-        const winner = filtered.reduce((a, b) => (b[key] > a[key] ? b : a));
-        return { barberId: winner.barberId, barberName: winner.barberName, value: winner[key] };
-      };
-      return {
-        unitId: u.unitId,
-        unitName: u.unitName,
-        topBasic: pickTop('basic'),
-        topExtra: pickTop('extra'),
-        topProducts: pickTop('products'),
-      };
-    });
-    setTopBarbersByUnit(tops);
-
-    setLoading(false);
+      // Ordenar por receita (maior primeiro)
+      const sortedMetrics = Array.from(metricsMap.values()).sort((a, b) => b.receita - a.receita);
+      setUnitsMetrics(sortedMetrics);
+    } catch (error) {
+      console.error("Erro ao montar comparativo de unidades:", error);
+      setUnitsMetrics([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Preparar dados para o gráfico
@@ -401,21 +358,6 @@ export default function UnitsComparison() {
   const newClientConversionLeader = getLeader('newClientConversionRate');
   const existingClientConversionLeader = getLeader('existingClientConversionRate');
   const newSubscribersLeader = getLeader('totalNewSubscriptions');
-
-  // "Melhor Performance" = unidade que melhor converte atendimentos em receita
-  // (maior ticket médio), exigindo volume mínimo (>=30% dos atendimentos da líder)
-  // para evitar que uma unidade pequena com 1 venda alta vença injustamente.
-  const conversionLeader = (() => {
-    if (unitsMetrics.length === 0) return null;
-    const maxClientes = Math.max(...unitsMetrics.map(u => u.clientes));
-    const piso = maxClientes * 0.3;
-    const candidatas = unitsMetrics.filter(u => u.clientes >= piso && u.clientes > 0);
-    const pool = candidatas.length > 0
-      ? candidatas
-      : unitsMetrics.filter(u => u.clientes > 0);
-    if (pool.length === 0) return null;
-    return pool.reduce((prev, cur) => (cur.ticketMedio > prev.ticketMedio ? cur : prev));
-  })();
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -542,6 +484,49 @@ export default function UnitsComparison() {
                 {conversionLeader
                   ? `R$ ${conversionLeader.ticketMedio.toFixed(2)} por cliente · ${conversionLeader.clientes} atendimentos`
                   : 'Sem dados suficientes'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {!loading && unitsMetrics.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                <p className="text-sm text-muted-foreground">Conversão Novos Clientes</p>
+              </div>
+              <p className="text-lg font-bold text-foreground">{newClientConversionLeader?.unitName}</p>
+              <p className="text-sm text-muted-foreground">
+                {newClientConversionLeader?.newClientConversionRate.toFixed(1)}% ({newClientConversionLeader?.newClientSubscriptions} / {newClientConversionLeader?.newClientOpportunities})
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border-cyan-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-5 h-5 text-cyan-500" />
+                <p className="text-sm text-muted-foreground">Conversão Clientes da Casa</p>
+              </div>
+              <p className="text-lg font-bold text-foreground">{existingClientConversionLeader?.unitName}</p>
+              <p className="text-sm text-muted-foreground">
+                {existingClientConversionLeader?.existingClientConversionRate.toFixed(1)}% ({existingClientConversionLeader?.existingClientSubscriptions} / {existingClientConversionLeader?.existingClientOpportunities})
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Medal className="w-5 h-5 text-amber-500" />
+                <p className="text-sm text-muted-foreground">Mais Novos Assinantes</p>
+              </div>
+              <p className="text-lg font-bold text-foreground">{newSubscribersLeader?.unitName}</p>
+              <p className="text-sm text-muted-foreground">
+                {newSubscribersLeader?.totalNewSubscriptions ?? 0} novas assinaturas
               </p>
             </CardContent>
           </Card>
