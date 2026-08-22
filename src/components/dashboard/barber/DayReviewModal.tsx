@@ -195,13 +195,6 @@ export default function DayReviewModal({
       }));
       setCart(cartFromLive);
 
-      // [AUDITORIA] Log de itens do gestor vs barbeiro
-      const totalGestor = live.reduce((s, t) => s + t.price_sold, 0);
-      const totalBarbeiro = cartFromLive.reduce((s, i) => s + (i.customPrice || 0), 0);
-      if (Math.abs(totalGestor - totalBarbeiro) > 0.01) {
-        console.warn('[AUDITORIA] DIVERGÊNCIA detectada:', { totalGestor, totalBarbeiro, diff: totalGestor - totalBarbeiro });
-      }
-
       // Prioritize saved clients count from daily production to keep consistency with AO VIVO launch
       const savedClientsCount =
         productionRes.data?.manual_clients_count ?? productionRes.data?.clients_count ?? 0;
@@ -368,14 +361,12 @@ export default function DayReviewModal({
       if (existingProd) {
         dailyProductionId = existingProd.id;
 
-        // Limpa quaisquer transações antigas source='barber' deste dia
-        // (resíduo do fluxo legado que duplicava lançamentos do gestor).
+        // Replace all previous transactions from the day with the reviewed cart
         await supabase
           .from("sale_transactions")
           .delete()
           .eq("daily_production_id", dailyProductionId)
-          .eq("barber_id", barberId)
-          .eq("source", "barber");
+          .eq("barber_id", barberId);
       } else {
         const { data: newProd, error: insertError } = await supabase
           .from("daily_productions")
