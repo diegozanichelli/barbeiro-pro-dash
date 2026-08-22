@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.clients_org_normalized_name_unique;
