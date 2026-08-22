@@ -564,24 +564,7 @@ const [todayProduction, setTodayProduction] = useState<{
   useEffect(() => {
     fetchLivePanelData();
   }, [fetchLivePanelData]);
-  useEffect(() => {
-    if (!barber) return;
 
-    const liveDailyChannel = supabase
-      .channel(`barber-live-daily-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "daily_productions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
 
     const liveSalesChannel = supabase
       .channel(`barber-live-sales-${barber.id}`)
@@ -1205,10 +1188,7 @@ const [todayProduction, setTodayProduction] = useState<{
                       <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
                     )}
                     {last3DaysProduction.map((day) => {
-                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
-                      const services = hasSplitServices
-                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
-                        : (Number(day.services_total) || 0);
+                      const services = (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0) + (Number(day.services_total) || 0);
                       const products = Number(day.products_total) || 0;
                       const total = services + products;
 
