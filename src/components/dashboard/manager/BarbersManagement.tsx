@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getEdgeFunctionErrorMessage } from "@/lib/edgeError";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,20 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Users, Plus, Pencil, Trash2 } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+
+function PasswordCheck({ label, met }: { label: string; met: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      {met ? (
+        <Check className="w-3.5 h-3.5 text-green-500" />
+      ) : (
+        <X className="w-3.5 h-3.5 text-destructive" />
+      )}
+      <span className={met ? "text-green-500" : "text-destructive"}>{label}</span>
+    </div>
+  );
+}
 
 export default function BarbersManagement() {
   const [barbers, setBarbers] = useState<any[]>([]);
@@ -34,6 +48,10 @@ export default function BarbersManagement() {
     email: "",
     password: "",
   });
+
+  const passwordRequired = !editingBarber || formData.password.length > 0;
+  const isPasswordValid = formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[a-z]/.test(formData.password) && /[0-9]/.test(formData.password);
+  const isPasswordInvalid = passwordRequired && !isPasswordValid;
 
   useEffect(() => {
     fetchBarbers();
@@ -77,7 +95,6 @@ export default function BarbersManagement() {
 
         // Se houver email ou senha para atualizar, chamar a Edge Function
         if (formData.email || formData.password) {
-          console.log("Atualizando dados de autenticação...");
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData.session?.access_token;
 
@@ -94,12 +111,12 @@ export default function BarbersManagement() {
             headers: { Authorization: `Bearer ${accessToken}` },
           });
 
-          console.log("Resposta da função:", { data, error: updateAuthError });
 
           if (updateAuthError) {
             console.error("Erro da edge function:", updateAuthError);
-            const errorMsg = data?.error || updateAuthError.message || "Falha ao atualizar dados de autenticação";
-            throw new Error(errorMsg);
+            throw new Error(
+              await getEdgeFunctionErrorMessage(updateAuthError, "Falha ao atualizar dados de autenticação")
+            );
           }
 
           if (data?.success) {
@@ -130,9 +147,9 @@ export default function BarbersManagement() {
         });
         
         if (error) {
-          const serverMsg = (error as any)?.context?.error || (error as any)?.message;
-          throw new Error(serverMsg || "Falha ao criar barbeiro");
+          throw new Error(await getEdgeFunctionErrorMessage(error, "Falha ao criar barbeiro"));
         }
+        if (data?.error) throw new Error(data.error);
         toast.success("Barbeiro criado com sucesso! Login: " + formData.email);
       }
 
@@ -163,15 +180,18 @@ export default function BarbersManagement() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este barbeiro?")) return;
+    if (!confirm("Tem certeza que deseja excluir este barbeiro? Todos os dados de login serão removidos permanentemente.")) return;
 
     try {
-      const { error } = await supabase.from("barbers").delete().eq("id", id);
-      if (error) throw error;
-      toast.success("Barbeiro excluído!");
+      const { data, error } = await supabase.functions.invoke("delete-barber", {
+        body: { barberId: id },
+      });
+      if (error) throw new Error(await getEdgeFunctionErrorMessage(error, "Erro ao excluir barbeiro"));
+      if (data?.error) throw new Error(data.error);
+      toast.success("Barbeiro e dados de login excluídos!");
       fetchBarbers();
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || "Erro ao excluir barbeiro");
     }
   };
 
@@ -254,18 +274,23 @@ export default function BarbersManagement() {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required={!editingBarber}
-                    minLength={6}
+                    minLength={8}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {editingBarber 
-                      ? "Preencha apenas se desejar redefinir a senha do barbeiro"
-                      : "O barbeiro usará este email e senha para fazer login"
-                    }
-                  </p>
+                  <div className="space-y-1 mt-2">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {editingBarber 
+                        ? "Preencha apenas se desejar redefinir a senha. A nova senha deve ter:" 
+                        : "A senha deve ter:"}
+                    </p>
+                    <PasswordCheck label="Mínimo 8 caracteres" met={formData.password.length >= 8} />
+                    <PasswordCheck label="Letra maiúscula (A-Z)" met={/[A-Z]/.test(formData.password)} />
+                    <PasswordCheck label="Letra minúscula (a-z)" met={/[a-z]/.test(formData.password)} />
+                    <PasswordCheck label="Número (0-9)" met={/[0-9]/.test(formData.password)} />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -321,7 +346,7 @@ export default function BarbersManagement() {
                 </div>
                 </div>
                 <div className="pt-4 border-t mt-4">
-                  <Button type="submit" className="w-full" disabled={loading}>
+                  <Button type="submit" className="w-full" disabled={loading || isPasswordInvalid}>
                     {loading ? "Salvando..." : "Salvar"}
                   </Button>
                 </div>

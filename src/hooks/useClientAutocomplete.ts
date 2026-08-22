@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizePhone } from "@/lib/phoneUtils";
+import { normalizeClientName } from "@/lib/clientName";
 
 let warnedMissingClientsSchema = false;
 
@@ -49,7 +50,8 @@ export function useClientAutocomplete({
       return;
     }
 
-    const normalizedNameQuery = nameQuery.trim();
+    const rawName = nameQuery.trim();
+    const normalizedNameQuery = normalizeClientName(rawName);
     const normalizedPhoneQuery = sanitizePhone(phoneQuery);
     const shouldQueryName = normalizedNameQuery.length >= 2;
     const shouldQueryPhone = normalizedPhoneQuery.length >= 3;
@@ -70,7 +72,7 @@ export function useClientAutocomplete({
                 .from("clients")
                 .select("id, name, mobile_phone")
                 .eq("organization_id", organizationId)
-                .ilike("name", `${normalizedNameQuery}%`)
+                .ilike("normalized_name", `${normalizedNameQuery}%`)
                 .limit(8)
             : Promise.resolve({ data: [], error: null }),
           shouldQueryPhone
