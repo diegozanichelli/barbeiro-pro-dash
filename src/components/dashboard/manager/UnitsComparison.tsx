@@ -7,6 +7,9 @@ import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Packag
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
+import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
+import { normalizePhoneForMetrics } from "@/lib/normalizers";
+import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
 
 /** Evita que o TS parseie a select string (custo de typecheck). */
 const sel = (s: string): string => s;
@@ -24,6 +27,20 @@ interface TxRow {
 interface Unit {
   id: string;
   name: string;
+}
+
+interface BarberLeader {
+  barberId: string;
+  barberName: string;
+  value: number;
+}
+
+interface UnitTopBarbers {
+  unitId: string;
+  unitName: string;
+  topBasic: BarberLeader | null;
+  topExtra: BarberLeader | null;
+  topProducts: BarberLeader | null;
 }
 
 interface UnitMetrics {
@@ -358,6 +375,18 @@ export default function UnitsComparison() {
   const newClientConversionLeader = getLeader('newClientConversionRate');
   const existingClientConversionLeader = getLeader('existingClientConversionRate');
   const newSubscribersLeader = getLeader('totalNewSubscriptions');
+
+  const conversionLeader = (() => {
+    if (unitsMetrics.length === 0) return null;
+    const maxClientes = Math.max(...unitsMetrics.map(u => u.clientes));
+    const piso = maxClientes * 0.3;
+    const candidatas = unitsMetrics.filter(u => u.clientes >= piso && u.clientes > 0);
+    const pool = candidatas.length > 0
+      ? candidatas
+      : unitsMetrics.filter(u => u.clientes > 0);
+    if (pool.length === 0) return null;
+    return pool.reduce((prev, cur) => (cur.ticketMedio > prev.ticketMedio ? cur : prev));
+  })();
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
