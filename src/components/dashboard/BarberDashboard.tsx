@@ -96,12 +96,7 @@ interface LiveSale {
   item_name: string;
   item_type: string;
   price_sold: number;
-}
-
-interface LiveTodayBreakdown {
-  services: number;
-  products: number;
-  total: number;
+  source?: string;
 }
 
 export default function BarberDashboard({ user }: BarberDashboardProps) {
@@ -136,14 +131,6 @@ const [todayProduction, setTodayProduction] = useState<{
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
-  const [liveTodayBreakdown, setLiveTodayBreakdown] = useState<LiveTodayBreakdown>({ services: 0, products: 0, total: 0 });
-  
-  const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
-  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
-  const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
-  const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
-  const [pacingStatus, setPacingStatus] = useState<"ahead" | "on-track" | "behind" | "critical" | null>(null);
-  const [expectedPercent, setExpectedPercent] = useState<number | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -548,6 +535,108 @@ const [todayProduction, setTodayProduction] = useState<{
     if (!barber) return;
 
     const todayStr = getTodayString();
+
+    const [daysResponse, salesResponse] = await Promise.all([
+      supabase
+        .from("daily_productions")
+        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
+        .eq("barber_id", barber.id)
+        .lte("date", todayStr)
+        .order("date", { ascending: false })
+        .limit(3),
+      supabase
+        .from("sale_transactions")
+        .select("id, created_at, client_name, item_name, item_type, price_sold, source")
+        .eq("barber_id", barber.id)
+        .gte("created_at", `${todayStr}T00:00:00-04:00`)
+        .lte("created_at", `${todayStr}T23:59:59-04:00`)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (!daysResponse.error) {
+      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
+    }
+
+    if (!salesResponse.error) {
+      const rawSales = (salesResponse.data || []) as LiveSale[];
+      const dedupedSales = rawSales.reduce<LiveSale[]>((acc, sale) => {
+        const minuteKey = format(new Date(sale.created_at), "yyyy-MM-dd HH:mm");
+        const fingerprint = [
+          sale.client_name?.trim().toLowerCase() || "cliente-nao-informado",
+          sale.item_name.trim().toLowerCase(),
+          sale.item_type.trim().toLowerCase(),
+          Number(sale.price_sold || 0).toFixed(2),
+          minuteKey,
+        ].join("|");
+
+        const alreadyExists = acc.some((existing) => {
+          const existingMinute = format(new Date(existing.created_at), "yyyy-MM-dd HH:mm");
+          const existingFingerprint = [
+            existing.client_name?.trim().toLowerCase() || "cliente-nao-informado",
+            existing.item_name.trim().toLowerCase(),
+            existing.item_type.trim().toLowerCase(),
+            Number(existing.price_sold || 0).toFixed(2),
+            existingMinute,
+          ].join("|");
+
+          return existingFingerprint === fingerprint;
+        });
+
+        if (!alreadyExists) {
+          acc.push(sale);
+        }
+
+        return acc;
+      }, []);
+
+      setLiveSales(dedupedSales);
+    }
+  }, [barber]);
+
+  useEffect(() => {
+    fetchLivePanelData();
+  }, [fetchLivePanelData]);
+  useEffect(() => {
+    if (!barber) return;
+
+    const liveDailyChannel = supabase
+      .channel(`barber-live-daily-${barber.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "daily_productions",
+          filter: `barber_id=eq.${barber.id}`,
+        },
+        () => {
+          fetchLivePanelData();
+        }
+      )
+      .subscribe();
+
+    const liveSalesChannel = supabase
+      .channel(`barber-live-sales-${barber.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sale_transactions",
+          filter: `barber_id=eq.${barber.id}`,
+        },
+        () => {
+          fetchLivePanelData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(liveDailyChannel);
+      supabase.removeChannel(liveSalesChannel);
+    };
+  }, [barber, fetchLivePanelData]);
+
 
     const [daysResponse, salesResponse, todayResponse] = await Promise.all([
       supabase
@@ -1377,7 +1466,7 @@ const [todayProduction, setTodayProduction] = useState<{
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Produção de hoje</p>
-                    <p className="text-2xl font-bold">R$ {liveTodayBreakdown.total.toFixed(2)}</p>
+                    <p className="text-2xl font-bold">R$ {todayProduction?.total.toFixed(2) ?? "0.00"}</p>
                   </div>
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Meta diária (comissão)</p>
@@ -1386,17 +1475,6 @@ const [todayProduction, setTodayProduction] = useState<{
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Meta diária (serviços)</p>
                     <p className="text-2xl font-bold">R$ {dailyTargetServices.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-border p-3">
-                    <p className="text-xs text-muted-foreground">Serviços hoje</p>
-                    <p className="text-xl font-bold">R$ {liveTodayBreakdown.services.toFixed(2)}</p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3">
-                    <p className="text-xs text-muted-foreground">Produtos hoje</p>
-                    <p className="text-xl font-bold">R$ {liveTodayBreakdown.products.toFixed(2)}</p>
                   </div>
                 </div>
 
