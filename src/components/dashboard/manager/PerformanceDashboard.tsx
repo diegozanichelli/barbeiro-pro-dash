@@ -56,7 +56,6 @@ interface Tx {
   daily_production_id: string | null;
   item_type: string;
   item_name: string;
-  service_category: string | null;
   price_sold: number;
   commission_amount: number;
   unit_id: string | null;
@@ -152,6 +151,15 @@ interface DayBucket {
 const emptyBucket = (): DayBucket => ({ revenue: 0, clients: 0, commission: 0 });
 
 /**
+ * Um atendimento é uma comanda, não uma linha de serviço: corte e barba na
+ * mesma venda contam como um cliente só. É a definição que o banco usa para
+ * alimentar tx_clients_count (COUNT DISTINCT created_at dentro da produção
+ * diária) e, por tabela, os relatórios do gestor. Agrupamos por barbeiro para
+ * não juntar duas comandas simultâneas de barbeiros diferentes.
+ */
+const visitKey = (t: Tx) => `${t.barber_id ?? "sem-barbeiro"}|${t.created_at}`;
+
+/**
  * Sem base no período anterior a variação é indefinida, não "+100%": fevereiro
  * não tem quinta fatia, o mês anterior pode não ter lançamento nenhum. Nesses
  * casos o card mostra "—" em vez de um crescimento que não existe.
@@ -217,7 +225,7 @@ export default function PerformanceDashboard() {
           supabase
             .from("sale_transactions")
             .select(
-              "barber_id, created_at, daily_production_id, item_type, item_name, service_category, price_sold, commission_amount, unit_id"
+              "barber_id, created_at, daily_production_id, item_type, item_name, price_sold, commission_amount, unit_id"
             )
             .eq("organization_id", organizationId)
             .in("item_type", ["service", "product"])
@@ -283,6 +291,7 @@ export default function PerformanceDashboard() {
       m: number
     ): { byDay: Record<number, DayBucket>; total: DayBucket } => {
       const byDay: Record<number, DayBucket> = {};
+      const visitsByDay: Record<number, Set<string>> = {};
       const total = emptyBucket();
       rows.forEach((t) => {
         const dk = dateOf(t);
@@ -294,11 +303,12 @@ export default function PerformanceDashboard() {
         bucket.commission += Number(t.commission_amount) || 0;
         total.revenue += Number(t.price_sold) || 0;
         total.commission += Number(t.commission_amount) || 0;
-        const isBase = t.item_type === "service" && t.service_category !== "extra";
-        if (isBase) {
-          bucket.clients += 1;
-          total.clients += 1;
-        }
+        (visitsByDay[day] ??= new Set()).add(visitKey(t));
+      });
+      // Cada comanda conta uma vez no dia em que aconteceu.
+      Object.entries(visitsByDay).forEach(([day, visits]) => {
+        byDay[Number(day)].clients = visits.size;
+        total.clients += visits.size;
       });
       return { byDay, total };
     },
@@ -394,15 +404,17 @@ export default function PerformanceDashboard() {
   const curTotals = sumRange(scoped.cur.byDay, range.startDay, curEndDay);
   const prevTotals = sumRange(scoped.prev.byDay, prevWindow.startDay, prevWindow.endDay);
 
+  /**
+   * O período comparado fica escrito no card, não só no title: em telefone não
+   * existe hover, e é esse intervalo que explica o número ao lado.
+   */
   const hasPrevWindow = prevWindow.endDay >= prevWindow.startDay;
-  const comparisonLabel = useAlignedWindow
-    ? "mesmo período do mês anterior"
-    : "período anterior";
-  const comparisonRange = hasPrevWindow
+  const comparisonLabel = useAlignedWindow ? "mesmo período" : "período anterior";
+  const comparisonRange = useAlignedWindow
     ? `${shortDate(key(prevYear, prevMonth, prevWindow.startDay))} a ${shortDate(
         key(prevYear, prevMonth, prevWindow.endDay)
       )}`
-    : null;
+    : MONTHS[prevMonth - 1];
 
   const curTicket = curTotals.clients ? curTotals.revenue / curTotals.clients : 0;
   const prevTicket = prevTotals.clients ? prevTotals.revenue / prevTotals.clients : 0;
@@ -476,6 +488,7 @@ export default function PerformanceDashboard() {
   const teamRanking = useMemo(() => {
     const rows = filterTx(current, null);
     const totals: Record<string, DayBucket> = {};
+    const visits: Record<string, Set<string>> = {};
     rows.forEach((t) => {
       if (!t.barber_id) return;
       const dk = dateOf(t);
@@ -485,8 +498,9 @@ export default function PerformanceDashboard() {
       const b = totals[t.barber_id];
       b.revenue += Number(t.price_sold) || 0;
       b.commission += Number(t.commission_amount) || 0;
-      if (t.item_type === "service" && t.service_category !== "extra") b.clients += 1;
+      (visits[t.barber_id] ??= new Set()).add(visitKey(t));
     });
+    Object.entries(visits).forEach(([id, set]) => (totals[id].clients = set.size));
     return Object.entries(totals)
       .map(([id, v]) => ({
         id,
@@ -512,9 +526,7 @@ export default function PerformanceDashboard() {
         items,
         revenue: items.reduce((s, t) => s + (Number(t.price_sold) || 0), 0),
         commission: items.reduce((s, t) => s + (Number(t.commission_amount) || 0), 0),
-        clients: items.filter(
-          (t) => t.item_type === "service" && t.service_category !== "extra"
-        ).length,
+        clients: new Set(items.map(visitKey)).size,
       }));
   }, [selectedBarber, scoped.curRows, dateOf, range]);
 
@@ -657,7 +669,7 @@ export default function PerformanceDashboard() {
                     <Icon className="w-5 h-5 text-primary" />
                   </span>
                 </div>
-                <div className="flex items-center gap-2 mt-3">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-3">
                   <span
                     className={cn(
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
@@ -672,12 +684,9 @@ export default function PerformanceDashboard() {
                     {delta !== null && <DeltaIcon className="w-3 h-3" />}
                     {delta === null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`}
                   </span>
-                  <span
-                    className="text-xs text-muted-foreground/80"
-                    title={comparisonRange ? `Comparando com ${comparisonRange}` : undefined}
-                  >
+                  <span className="text-xs text-muted-foreground/80">
                     {hasPrevWindow
-                      ? `${comparisonLabel}: ${k.previous}`
+                      ? `${comparisonLabel} (${comparisonRange}): ${k.previous}`
                       : "sem período equivalente no mês anterior"}
                   </span>
                 </div>
