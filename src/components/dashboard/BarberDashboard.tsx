@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { LogOut, Target, TrendingUp, TrendingDown, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, AlertTriangle, XCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
@@ -79,15 +80,6 @@ interface MonthlyStats {
   products_conversion: number;
 }
 
-interface LastDaysProduction {
-  id: string;
-  date: string;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  services_total: number | null;
-  products_total: number | null;
-  confirmed_presence: boolean | null;
-}
 
 interface LiveSale {
   id: string;
@@ -128,8 +120,13 @@ const [todayProduction, setTodayProduction] = useState<{
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("daily");
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
+  
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
+  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
+  const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
+  const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
+  const [pacingStatus, setPacingStatus] = useState<"ahead" | "on-track" | "behind" | "critical" | null>(null);
+  const [expectedPercent, setExpectedPercent] = useState<number | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -530,172 +527,49 @@ const [todayProduction, setTodayProduction] = useState<{
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
-  const fetchLivePanelData = useCallback(async () => {
-    if (!barber) return;
-
-    const todayStr = getTodayString();
-
-    const [daysResponse, salesResponse] = await Promise.all([
-      supabase
-        .from("daily_productions")
-        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
-        .eq("barber_id", barber.id)
-        .lte("date", todayStr)
-        .order("date", { ascending: false })
-        .limit(3),
-      supabase
-        .from("sale_transactions")
-        .select("id, created_at, client_name, item_name, item_type, price_sold")
-        .eq("barber_id", barber.id)
-        .gte("created_at", `${todayStr}T00:00:00-04:00`)
-        .lte("created_at", `${todayStr}T23:59:59-04:00`)
-        .order("created_at", { ascending: false }),
-    ]);
-
-    if (!daysResponse.error) {
-      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
-    }
-
-    if (!salesResponse.error) {
-      setLiveSales((salesResponse.data || []) as LiveSale[]);
-    }
-  }, [barber]);
-
+  // Buscar pacing (Crítico/Atenção/No Ritmo/Acima) — mesma lógica do painel do gestor
   useEffect(() => {
-    fetchLivePanelData();
-  }, [fetchLivePanelData]);
-  useEffect(() => {
-    if (!barber) return;
-
-    const liveDailyChannel = supabase
-      .channel(`barber-live-daily-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "daily_productions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
-
-    const liveSalesChannel = supabase
-      .channel(`barber-live-sales-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sale_transactions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(liveDailyChannel);
-      supabase.removeChannel(liveSalesChannel);
-    };
-  }, [barber, fetchLivePanelData]);
-
-
-    const [daysResponse, salesResponse, todayResponse] = await Promise.all([
-      supabase
-        .from("daily_productions")
-        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
-        .eq("barber_id", barber.id)
-        .lte("date", todayStr)
-        .order("date", { ascending: false })
-        .limit(3),
-      supabase
-        .from("sale_transactions")
-        .select("id, created_at, client_name, item_name, item_type, price_sold")
-        .eq("barber_id", barber.id)
-        .gte("created_at", `${todayStr}T00:00:00-04:00`)
-        .lte("created_at", `${todayStr}T23:59:59-04:00`)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("daily_productions")
-        .select("services_basic_total, services_extra_total, services_total, products_total")
-        .eq("barber_id", barber.id)
-        .eq("date", todayStr)
-        .maybeSingle(),
-    ]);
-
-    if (!daysResponse.error) {
-      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
+    if (!barber || !isCurrentMonth || !monthlyGoal || !stats) {
+      setPacingStatus(null);
+      setExpectedPercent(null);
+      return;
     }
-
-    if (!salesResponse.error) {
-      setLiveSales((salesResponse.data || []) as LiveSale[]);
-    }
-
-    if (!todayResponse.error) {
-      const todayData = todayResponse.data;
-      const hasSplitServices = (todayData?.services_basic_total ?? null) !== null || (todayData?.services_extra_total ?? null) !== null;
-      const services = hasSplitServices
-        ? (Number(todayData?.services_basic_total) || 0) + (Number(todayData?.services_extra_total) || 0)
-        : (Number(todayData?.services_total) || 0);
-      const products = Number(todayData?.products_total) || 0;
-      setLiveTodayBreakdown({
-        services,
-        products,
-        total: services + products,
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("calc_expected_pacing", {
+        p_barber_id: barber.id,
+        p_ref_date: getTodayString(),
       });
-    }
-  }, [barber]);
+      if (cancelled || error) return;
+      const pacing = Array.isArray(data) ? data[0] : data;
+      const expected = Number(pacing?.expected_percent ?? 0);
+      const progress = monthlyGoal.target_commission > 0
+        ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
+        : 0;
+      const diff = progress - expected;
+      let status: "ahead" | "on-track" | "behind" | "critical";
+      if (diff >= 10) status = "ahead";
+      else if (diff >= -5) status = "on-track";
+      else if (diff >= -20) status = "behind";
+      else status = "critical";
+      setExpectedPercent(expected);
+      setPacingStatus(status);
+    })();
+    return () => { cancelled = true; };
+  }, [barber, isCurrentMonth, monthlyGoal, stats]);
 
-  useEffect(() => {
-    fetchLivePanelData();
-  }, [fetchLivePanelData]);
+  // Check localStorage for existing war plan
   useEffect(() => {
     if (!barber) return;
-
-    const liveDailyChannel = supabase
-      .channel(`barber-live-daily-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "daily_productions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
-
-    const liveSalesChannel = supabase
-      .channel(`barber-live-sales-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sale_transactions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(liveDailyChannel);
-      supabase.removeChannel(liveSalesChannel);
-    };
-  }, [barber, fetchLivePanelData]);
-
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    const saved = localStorage.getItem(todayKey);
+    if (saved) {
+      setWarPlanMessage(saved);
+      setShowWarPlanWizard(false);
+    } else {
+      setShowWarPlanWizard(true);
+    }
+  }, [barber]);
 
   const handleWarPlanComplete = (planText: string) => {
     if (!barber) return;
@@ -1045,11 +919,11 @@ const [todayProduction, setTodayProduction] = useState<{
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="live" className="flex items-center gap-1">
               <Radio className="w-3 h-3" />
-              Ao vivo
+              <span className="hidden sm:inline">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
             <TabsTrigger value="strategies">Estratégias</TabsTrigger>
@@ -1187,71 +1061,22 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
-            {/* Histórico dos últimos 3 dias lançados */}
-            {isCurrentMonth && todayProduction !== null && (
+            {/* Confirmação de Presença standalone */}
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && !todayProduction.confirmed_presence && (
               <Card className="bg-card border-border shadow-card-custom">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-primary" />
-                    HISTÓRICO DOS ÚLTIMOS 3 DIAS
-                  </CardTitle>
-                  <CardDescription>
-                    Acompanhe seus últimos lançamentos e a confirmação de presença
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    {last3DaysProduction.length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
-                    )}
-                    {last3DaysProduction.map((day) => {
-                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
-                      const services = hasSplitServices
-                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
-                        : (Number(day.services_total) || 0);
-                      const products = Number(day.products_total) || 0;
-                      const total = services + products;
-
-                      return (
-                        <div key={day.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium">{format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {day.confirmed_presence ? "Presença confirmada" : "Sem confirmação de presença"}
-                            </p>
-                          </div>
-                          <p className="text-lg font-bold">R$ {total.toFixed(2)}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
-                  {todayProduction.total === 0 && !todayProduction.confirmed_presence && (
-                    <div className="pt-4 border-t border-border">
-                      <Button
-                        variant="outline"
-                        className="w-full border-primary/50 hover:bg-primary/10"
-                        onClick={handleOpenPresenceModal}
-                        disabled={confirmingPresence}
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
-                      </Button>
-                      <p className="text-xs text-muted-foreground text-center mt-2">
-                        Clique para informar que você compareceu, mesmo sem vendas.
-                        Isso contabiliza o dia na sua meta.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Se já confirmou presença */}
-                  {todayProduction.total === 0 && todayProduction.confirmed_presence && (
-                    <div className="flex items-center justify-center gap-2 text-success pt-4 border-t border-border">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Presença confirmada para hoje</span>
-                    </div>
-                  )}
+                <CardContent className="pt-6 space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full border-primary/50 hover:bg-primary/10"
+                    onClick={handleOpenPresenceModal}
+                    disabled={confirmingPresence}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Clique para informar que você compareceu, mesmo sem vendas.
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -1431,6 +1256,38 @@ const [todayProduction, setTodayProduction] = useState<{
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Barra de progresso do dia */}
+                {(() => {
+                  const todayTotal = todayProduction?.total ?? 0;
+                  const target = dailyTargetServices > 0 ? dailyTargetServices : dailyTarget;
+                  const dayProgress = target > 0 ? Math.min(100, (todayTotal / target) * 100) : 0;
+                  const faltaHoje = Math.max(0, target - todayTotal);
+                  const metaBatida = target > 0 && todayTotal >= target;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Progresso do dia</span>
+                        <span className={`font-bold ${metaBatida ? 'text-success' : 'text-foreground'}`}>
+                          {dayProgress.toFixed(1)}%
+                        </span>
+                      </div>
+                      <Progress value={dayProgress} className={`h-4 ${metaBatida ? '[&>div]:bg-success' : ''}`} />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>R$ {todayTotal.toFixed(2)} vendido</span>
+                        {target > 0 ? (
+                          metaBatida ? (
+                            <span className="text-success font-semibold">🏆 Meta batida!</span>
+                          ) : (
+                            <span>Falta R$ {faltaHoje.toFixed(2)}</span>
+                          )
+                        ) : (
+                          <span>Sem meta definida</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Produção de hoje</p>
