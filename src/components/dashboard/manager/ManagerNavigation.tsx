@@ -24,6 +24,7 @@ import {
   ChevronRight,
   ShieldCheck,
   UserX,
+  Gauge,
 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -90,6 +91,7 @@ export default function ManagerNavigation({
   const directLinks: NavItem[] = [
     { id: "live", label: "Ao Vivo", icon: Radio },
     { id: "overview", label: "Dashboard", icon: BarChart3 },
+    { id: "performance", label: "Performance", icon: Gauge },
   ];
 
   const gestaoItems: NavItem[] = [

@@ -30,6 +30,7 @@ import BestSalesDays from "./manager/BestSalesDays";
 import BarberReportPage from "./manager/BarberReportPage";
 import InactiveClientsReport from "./manager/InactiveClientsReport";
 import ReportsAuditPanel from "./manager/ReportsAuditPanel";
+import PerformanceDashboard from "./manager/PerformanceDashboard";
 
 
 interface ManagerDashboardProps {
@@ -132,6 +133,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <PerformanceAlerts />
             <MonthlyOccurrencesSummary />
             <ManagerReports />
+          </TabsContent>
+
+          <TabsContent value="performance" className="mt-0">
+            <PerformanceDashboard />
           </TabsContent>
 
           <TabsContent value="daily-goals" className="mt-0">
