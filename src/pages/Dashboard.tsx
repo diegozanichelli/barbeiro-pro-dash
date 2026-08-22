@@ -70,10 +70,43 @@ export default function Dashboard() {
     return () => subscription.unsubscribe();
   }, [fetchUserRole, navigate]);
 
-  if (loading || !user) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Carregando seu dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Redirecionando para login...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userRole) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="max-w-md w-full rounded-lg border border-border bg-card p-6 text-center space-y-3">
+          <h2 className="text-lg font-semibold">Não foi possível identificar seu perfil</h2>
+          <p className="text-sm text-muted-foreground">
+            Faça login novamente. Se o erro persistir, verifique o vínculo de papel do usuário.
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Tentar novamente
+            </Button>
+            <Button onClick={() => navigate("/auth")}>Ir para login</Button>
+          </div>
+        </div>
       </div>
     );
   }

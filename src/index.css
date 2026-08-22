@@ -2,107 +2,105 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/*
+  Performance Barber — Design System
+  Estética: dark glassmorphism + acentos neon âmbar/ciano
+  Todas as cores em HSL.
 */
 
 @layer base {
   :root {
-    /* Barbershop Premium Theme - Dark Mode Primary */
-    --background: 0 0% 7%;
-    --foreground: 36 100% 95%;
+    /* Superfícies profundas com leve viés azul-noite */
+    --background: 222 28% 5%;
+    --foreground: 40 30% 96%;
 
-    --card: 0 0% 10%;
-    --card-foreground: 36 100% 95%;
+    --card: 222 24% 8%;
+    --card-foreground: 40 30% 96%;
 
-    --popover: 0 0% 8%;
-    --popover-foreground: 36 100% 95%;
+    --popover: 222 30% 6%;
+    --popover-foreground: 40 30% 96%;
 
-    /* Gold/Amber Accent - Premium Achievement */
-    --primary: 38 92% 50%;
-    --primary-foreground: 0 0% 10%;
+    /* Acento principal — âmbar/ouro neon */
+    --primary: 38 100% 56%;
+    --primary-foreground: 222 30% 6%;
+    --primary-glow: 45 100% 65%;
 
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 36 100% 95%;
+    --secondary: 222 20% 13%;
+    --secondary-foreground: 40 30% 96%;
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 36 20% 70%;
+    --muted: 222 18% 12%;
+    --muted-foreground: 220 12% 65%;
 
-    --accent: 38 92% 50%;
-    --accent-foreground: 0 0% 10%;
+    /* Hover/elevação neutra (sem ciano) — leve viés âmbar quente */
+    --accent: 36 18% 18%;
+    --accent-foreground: 40 30% 96%;
 
-    /* Success Green for Goals */
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
+    /* Ciano elétrico fica disponível só para dados/realtime via utilitário */
+    --neon: 188 95% 55%;
+    --neon-foreground: 222 30% 6%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
+    --success: 152 76% 45%;
+    --success-foreground: 222 30% 6%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 38 92% 50%;
+    --warning: 32 95% 58%;
+    --warning-foreground: 222 30% 6%;
 
-    --radius: 0.75rem;
+    --destructive: 350 90% 58%;
+    --destructive-foreground: 0 0% 100%;
 
-    /* Custom Gradients */
-    --gradient-gold: linear-gradient(135deg, hsl(38 92% 50%), hsl(45 100% 60%));
-    --gradient-dark: linear-gradient(180deg, hsl(0 0% 10%), hsl(0 0% 7%));
-    --gradient-card: linear-gradient(135deg, hsl(0 0% 12%), hsl(0 0% 8%));
-    
+    /* Bordas finas translúcidas (usadas como hairlines) */
+    --border: 222 20% 18%;
+    --input: 222 20% 16%;
+    --ring: 38 100% 56%;
+
+    --radius: 1rem;
+
+    /* Gradientes */
+    --gradient-gold: linear-gradient(135deg, hsl(38 100% 56%), hsl(45 100% 65%));
+    --gradient-neon: linear-gradient(135deg, hsl(188 95% 55%), hsl(38 100% 56%));
+    --gradient-dark: linear-gradient(180deg, hsl(222 28% 7%), hsl(222 28% 4%));
+    --gradient-card: linear-gradient(
+      135deg,
+      hsl(222 24% 11% / 0.85),
+      hsl(222 24% 7% / 0.7)
+    );
+    --gradient-glow: radial-gradient(
+      circle at 30% 20%,
+      hsl(38 100% 56% / 0.18),
+      transparent 60%
+    );
+
     /* Shadows */
-    --shadow-gold: 0 10px 40px -10px hsl(38 92% 50% / 0.4);
-    --shadow-card: 0 4px 24px -6px hsl(0 0% 0% / 0.6);
-    
-    /* Animations */
+    --shadow-gold: 0 18px 60px -20px hsl(38 100% 56% / 0.45);
+    --shadow-neon: 0 18px 60px -20px hsl(188 95% 55% / 0.4);
+    --shadow-card: 0 8px 32px -12px hsl(222 80% 2% / 0.7);
+    --shadow-inset: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .dark {
-    --background: 0 0% 7%;
-    --foreground: 36 100% 95%;
-
-    --card: 0 0% 10%;
-    --card-foreground: 36 100% 95%;
-
-    --popover: 0 0% 8%;
-    --popover-foreground: 36 100% 95%;
-
-    --primary: 38 92% 50%;
-    --primary-foreground: 0 0% 10%;
-
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 36 100% 95%;
-
-    --muted: 0 0% 15%;
-    --muted-foreground: 36 20% 70%;
-
-    --accent: 38 92% 50%;
-    --accent-foreground: 0 0% 10%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 38 92% 50%;
-  }
-}
-
-@layer utilities {
-  @keyframes glow {
-    0%, 100% {
-      box-shadow: 0 0 5px hsl(38 92% 50% / 0.5);
-    }
-    50% {
-      box-shadow: 0 0 25px hsl(38 92% 50% / 0.8);
-    }
-  }
-  
-  .animate-glow {
-    animation: glow 1.5s ease-in-out infinite;
+    --background: 222 28% 5%;
+    --foreground: 40 30% 96%;
+    --card: 222 24% 8%;
+    --card-foreground: 40 30% 96%;
+    --popover: 222 30% 6%;
+    --popover-foreground: 40 30% 96%;
+    --primary: 38 100% 56%;
+    --primary-foreground: 222 30% 6%;
+    --secondary: 222 20% 13%;
+    --secondary-foreground: 40 30% 96%;
+    --muted: 222 18% 12%;
+    --muted-foreground: 220 12% 65%;
+    --accent: 36 18% 18%;
+    --accent-foreground: 40 30% 96%;
+    --success: 152 76% 45%;
+    --success-foreground: 222 30% 6%;
+    --destructive: 350 90% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 20% 18%;
+    --input: 222 20% 16%;
+    --ring: 38 100% 56%;
   }
 }
 
@@ -111,9 +109,81 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html {
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
+    background-image:
+      radial-gradient(circle at 15% 0%, hsl(38 100% 56% / 0.08), transparent 40%),
+      radial-gradient(circle at 85% 100%, hsl(188 95% 55% / 0.06), transparent 45%),
+      var(--gradient-dark);
+    background-attachment: fixed;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', 'Manrope', sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  /* Números e métricas com tipografia técnica */
+  .font-metric,
+  [data-metric] {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  /* Glassmorphism translúcido */
+  .glass {
+    background: hsl(222 24% 10% / 0.55);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid hsl(40 30% 96% / 0.06);
+    box-shadow: var(--shadow-card), var(--shadow-inset);
+  }
+
+  .glass-strong {
+    background: hsl(222 24% 8% / 0.78);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid hsl(40 30% 96% / 0.08);
+    box-shadow: var(--shadow-card), var(--shadow-inset);
+  }
+
+  .hairline {
+    border: 1px solid hsl(40 30% 96% / 0.07);
+  }
+
+  .text-gradient-gold {
+    background: var(--gradient-gold);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-gradient-neon {
+    background: var(--gradient-neon);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 8px hsl(38 100% 56% / 0.45); }
+    50%      { box-shadow: 0 0 28px hsl(38 100% 56% / 0.85); }
+  }
+  .animate-glow { animation: glow 1.8s ease-in-out infinite; }
+
+  @keyframes pulse-neon {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(188 95% 55% / 0.5); }
+    50%      { box-shadow: 0 0 0 8px hsl(188 95% 55% / 0); }
+  }
+  .animate-pulse-neon { animation: pulse-neon 2s ease-out infinite; }
 }

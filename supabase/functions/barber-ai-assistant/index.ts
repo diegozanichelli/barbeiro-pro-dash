@@ -64,7 +64,20 @@ interface SalesHelpRequest {
   scenario: string;
 }
 
-type RequestBody = DailyInsightRequest | SalesHelpRequest;
+interface WarPlanRequest {
+  type: 'war_plan';
+  barberId: string;
+  organizationId: string;
+  barberName: string;
+  monthlyGoal: number;
+  soldThisMonth: number;
+  dailyTarget: number;
+  todayRevenue: number;
+  daysRemaining: number;
+  clientsInAgenda: number;
+}
+
+type RequestBody = DailyInsightRequest | SalesHelpRequest | WarPlanRequest;
 
 interface DayStats {
   ticketMedio: number;
@@ -1162,14 +1175,64 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
       throw new Error("Missing Supabase credentials");
     }
-    
+
+    // === AUTH CHECK ===
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const token = authHeader.replace("Bearer ", "");
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData, error: userErr } = await userClient.auth.getUser(token);
+    if (userErr || !userData?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const authUserId = userData.user.id;
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const body: RequestBody = await req.json();
     const today = getManausDateString();
+
+    // Verify caller owns the requested barberId, or is a manager/super_admin in the same org
+    const { data: callerBarber } = await supabase
+      .from("barbers")
+      .select("id, organization_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+
+    const { data: callerRole } = await supabase
+      .from("user_roles")
+      .select("role, organization_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+
+    const ownsBarber =
+      callerBarber?.id === body.barberId &&
+      callerBarber?.organization_id === body.organizationId;
+    const sameOrgManager =
+      (callerRole?.role === "manager") &&
+      callerRole?.organization_id === body.organizationId;
+    const isSuperAdmin = callerRole?.role === "super_admin";
+
+    if (!ownsBarber && !sameOrgManager && !isSuperAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // ============================================
     // FLUXO PARA DAILY INSIGHT (COM CACHE + REGRAS)
@@ -1400,6 +1463,523 @@ IMPORTANTE:
       const aiMessage = data.choices?.[0]?.message?.content || "Não foi possível gerar uma resposta.";
 
       return new Response(JSON.stringify({ message: aiMessage, type: body.type, stats: dayStats }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
+    // ============================================
+    // FLUXO PARA WAR PLAN (BRIEFING EXECUTIVO DO DIA)
+    // ============================================
+    } else if (body.type === 'war_plan') {
+      const {
+        barberId,
+        organizationId,
+        barberName,
+        monthlyGoal,
+        soldThisMonth,
+        dailyTarget,
+        dailyTargetCommission = 0,
+        todayRevenue,
+        daysRemaining,
+        clientsInAgenda,
+      } = body;
+
+      // ============================================
+      // GUARDA: validar consistência entre meta de FATURAMENTO e COMISSÃO
+      // Faturamento bruto SEMPRE precisa ser >= comissão (comissão é % do faturamento).
+      // Se vier invertido/zerado, recusar para não gerar plano com cálculos errados.
+      // ============================================
+      if (dailyTargetCommission > 0 && (!dailyTarget || dailyTarget < dailyTargetCommission)) {
+        console.warn("[war_plan] Meta inválida:", { dailyTarget, dailyTargetCommission, barberId });
+        return new Response(
+          JSON.stringify({
+            error: `Meta de faturamento (R$ ${Number(dailyTarget || 0).toFixed(2)}) está menor que a meta de comissão (R$ ${dailyTargetCommission.toFixed(2)}). Peça ao gerente para revisar a meta mensal — o faturamento bruto precisa ser maior que a comissão.`,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+      // Coleta paralela de TODOS os dados reais do barbeiro
+      const monthStartDate = (() => {
+        const d = getManausDate();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      })();
+      const todayDate = getManausDateString();
+
+      const [
+        historicalStats,
+        dayStats,
+        subsRes,
+        newClientsRes,
+        storeAvgRes,
+      ] = await Promise.all([
+        fetchHistoricalStats(barberId, organizationId, supabase),
+        fetchDayStats(barberId, supabase),
+        supabase
+          .from("sale_transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("barber_id", barberId)
+          .eq("item_type", "subscription")
+          .gte("created_at", `${monthStartDate}T00:00:00`)
+          .lte("created_at", `${todayDate}T23:59:59`),
+        supabase
+          .from("sale_transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("barber_id", barberId)
+          .eq("is_new_client", true)
+          .gte("created_at", `${monthStartDate}T00:00:00`)
+          .lte("created_at", `${todayDate}T23:59:59`),
+        supabase
+          .from("sale_transactions")
+          .select("price_sold, client_name")
+          .eq("organization_id", organizationId)
+          .gte("created_at", `${monthStartDate}T00:00:00`)
+          .lte("created_at", `${todayDate}T23:59:59`)
+          .limit(2000),
+      ]);
+
+      const subscriptionsMonth = subsRes.count || 0;
+      const newClientsMonth = newClientsRes.count || 0;
+
+      // Ticket médio da loja no mês
+      let storeAvgTicket = 0;
+      if (storeAvgRes.data && storeAvgRes.data.length > 0) {
+        const totals: Record<string, number> = {};
+        for (const tx of storeAvgRes.data) {
+          const key = tx.client_name || `__anon_${Math.random()}`;
+          totals[key] = (totals[key] || 0) + Number(tx.price_sold || 0);
+        }
+        const tickets = Object.values(totals);
+        storeAvgTicket = tickets.reduce((a, b) => a + b, 0) / tickets.length;
+      }
+
+      // Top 3 serviços e produtos (do histórico itemizado)
+      const topServices = Object.entries(historicalStats.serviceCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+      const topProducts = Object.entries(historicalStats.productCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+
+      // Pontos cegos (top 3 esquecidos)
+      const blindServices = historicalStats.forgottenServices.slice(0, 3);
+      const blindProducts = historicalStats.forgottenProducts.slice(0, 3);
+
+      // Dia da semana fraco
+      const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const todayDow = getManausDate().getDay();
+      const dowEntries = Object.entries(historicalStats.dayOfWeekSales)
+        .map(([d, v]) => [Number(d), Number(v)] as [number, number])
+        .filter(([, v]) => v > 0);
+      let worstDow = -1;
+      if (dowEntries.length >= 3) {
+        worstDow = dowEntries.sort((a, b) => a[1] - b[1])[0][0];
+      }
+
+      // Métricas derivadas
+      const gapDaily = Math.max(0, dailyTarget - todayRevenue);
+      const goalPercent = monthlyGoal > 0 ? (soldThisMonth / monthlyGoal) * 100 : 0;
+      const monthGap = Math.max(0, monthlyGoal - soldThisMonth);
+      const ticketNeeded = clientsInAgenda > 0 ? gapDaily / clientsInAgenda : 0;
+      const myAvgTicket = historicalStats.avgTicket30d;
+      const ticketDelta = storeAvgTicket > 0
+        ? ((myAvgTicket - storeAvgTicket) / storeAvgTicket) * 100
+        : 0;
+
+      // Fallback determinístico (e também usado se IA falhar)
+      const buildDeterministicPlan = (): string => {
+        const lines: string[] = [];
+        lines.push(`🎯 BRIEFING DO DIA — ${barberName}`);
+        lines.push("");
+        lines.push(`📌 META`);
+        lines.push(`• Comissão diária alvo: R$ ${dailyTargetCommission.toFixed(2)}`);
+        lines.push(`• Faturamento de hoje: R$ ${todayRevenue.toFixed(2)} de R$ ${dailyTarget.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)} em vendas)`);
+        lines.push(`• Mês: ${goalPercent.toFixed(0)}% da meta — falta R$ ${monthGap.toFixed(2)} em ${daysRemaining} dia(s)`);
+        lines.push("");
+        lines.push(`📊 SEU PERFIL (últimos 30d)`);
+        lines.push(`• Ticket médio: R$ ${myAvgTicket.toFixed(2)} ${
+          storeAvgTicket > 0 ? `(${ticketDelta >= 0 ? '+' : ''}${ticketDelta.toFixed(0)}% vs loja R$ ${storeAvgTicket.toFixed(2)})` : ''
+        }`);
+        lines.push(`• Conversão produto: ${historicalStats.productConversionRate.toFixed(0)}% dos clientes`);
+        lines.push(`• Taxa de extras: ${historicalStats.extrasRatio.toFixed(0)}% dos serviços`);
+        lines.push(`• Assinaturas vendidas no mês: ${subscriptionsMonth}`);
+        lines.push(`• Clientes novos no mês: ${newClientsMonth}`);
+        lines.push("");
+        if (topServices.length > 0 || topProducts.length > 0) {
+          lines.push(`🔥 TOP ARMAS (o que MAIS vende pra você)`);
+          if (topServices.length > 0) {
+            lines.push(`• Serviços: ${topServices.map(([n, c]) => `${n} (${c}x)`).join(' · ')}`);
+          }
+          if (topProducts.length > 0) {
+            lines.push(`• Produtos: ${topProducts.map(([n, c]) => `${n} (${c}x)`).join(' · ')}`);
+          }
+          lines.push("");
+        }
+        if (blindServices.length > 0 || blindProducts.length > 0 || worstDow === todayDow) {
+          lines.push(`⚠️ PONTOS CEGOS`);
+          if (blindServices.length > 0) {
+            lines.push(`• Nunca vende: ${blindServices.join(', ')}`);
+          }
+          if (blindProducts.length > 0) {
+            lines.push(`• Produtos parados: ${blindProducts.join(', ')}`);
+          }
+          if (worstDow === todayDow) {
+            lines.push(`• Hoje é ${dayNames[todayDow]} — historicamente seu pior dia. Atenção redobrada!`);
+          }
+          lines.push("");
+        }
+        lines.push(`⚔️ MISSÃO TÁTICA`);
+        if (gapDaily <= 0) {
+          lines.push(`• Meta diária já batida. Tudo que vier agora é bônus — foque em assinatura e produto.`);
+        } else if (clientsInAgenda > 0) {
+          lines.push(`• Com ${clientsInAgenda} clientes na agenda, precisa de ticket médio R$ ${ticketNeeded.toFixed(2)} em FATURAMENTO (não comissão) para fechar o gap de hoje.`);
+          if (myAvgTicket > 0 && ticketNeeded > myAvgTicket * 1.1) {
+            lines.push(`• Sua média é R$ ${myAvgTicket.toFixed(2)}. Vai precisar de upsell em pelo menos ${Math.ceil(clientsInAgenda / 2)} clientes.`);
+          }
+          if (topServices[0]) {
+            lines.push(`• Oferece "${topServices[0][0]}" pra cada cliente — é sua arma campeã.`);
+          }
+          if (topProducts[0]) {
+            lines.push(`• Coloca "${topProducts[0][0]}" na mão de no mínimo ${Math.max(1, Math.ceil(clientsInAgenda * 0.3))} cliente(s).`);
+          }
+        } else {
+          lines.push(`• Sem clientes informados. Mensagem para 3 clientes inativos antes de abrir a cadeira.`);
+        }
+        lines.push(`• 1 assinatura nova hoje = ${subscriptionsMonth === 0 ? 'sua primeira do mês' : `+${subscriptionsMonth + 1}ª do mês`}.`);
+        lines.push("");
+        lines.push(`💪 Foco total. O dia é seu.`);
+        return lines.join('\n');
+      };
+
+      await logUsage(barberId, organizationId, 'war_plan');
+
+      // ===== CATÁLOGO DE ESTRATÉGIAS (a IA escolhe 1-2 baseada no contexto) =====
+      const STRATEGIES = [
+        {
+          id: "blitz_matinal",
+          nome: "Blitz Matinal",
+          quando: "Quando o gap diário é alto e há clientes cedo na agenda",
+          foco: "Atacar nos 3 primeiros atendimentos com combo cheio (corte + barba + sobrancelha) pra já garantir 60% da meta antes do almoço.",
+        },
+        {
+          id: "ticket_minimo_garantido",
+          nome: "Ticket Mínimo Garantido",
+          quando: "Quando o ticket médio do barbeiro está abaixo da loja",
+          foco: "Definir um piso de ticket (ex: R$ X) e NUNCA deixar cliente sair abaixo disso. Script: sempre oferecer 1 adicional barato (sobrancelha/pigmentação) que sobe R$ 10-15.",
+        },
+        {
+          id: "volume_terca_quarta",
+          nome: "Volume Inteligente (Ter/Qua)",
+          quando: "Quando hoje é terça ou quarta (dias historicamente lentos)",
+          foco: "Não é dia de ticket alto, é dia de VOLUME. Estratégia: corte básico rápido + 1 produto leve (pomada/balm R$ 25-35). Atender 1-2 clientes a mais que o normal. Mandar 5 mensagens pra inativos antes das 11h.",
+        },
+        {
+          id: "combo_express",
+          nome: "Combo Express R$ 10",
+          quando: "Ticket baixo + muitos clientes (modo fábrica)",
+          foco: "Vender APENAS um adicional de R$ 10-15 (sobrancelha na navalha, pigmentação básica, hidratação rápida). Não tenta upsell pesado — soma R$ 10 em 8 clientes = +R$ 80 no dia.",
+        },
+        {
+          id: "produto_carro_chefe",
+          nome: "Produto Carro-Chefe do Dia",
+          quando: "Quando a conversão de produto está abaixo de 30%",
+          foco: "Escolher UM produto só (o top do barbeiro) e oferecer pra 100% dos clientes. Script único, treinado. Meta: 3 vendas do mesmo produto.",
+        },
+        {
+          id: "assinatura_focada",
+          nome: "Caça à Assinatura",
+          quando: "Quando assinaturas do mês < 3 e há clientes recorrentes na agenda",
+          foco: "Identificar 2 clientes que vêm ≥2x no mês e fazer a conta pra eles: 'assinatura X paga em 2 cortes'. Meta: 1 nova adesão.",
+        },
+        {
+          id: "resgate_inativos",
+          nome: "Resgate de Inativos",
+          quando: "Quando a agenda está fraca (poucos clientes) ou é dia lento",
+          foco: "Antes de abrir cadeira, mandar mensagem personalizada pra 5-8 clientes que não voltam há 30+ dias. Oferta: 'separei horário hoje pra você'. Meta: encher 2 buracos da agenda.",
+        },
+        {
+          id: "captacao_novo_cliente",
+          nome: "Captação de Novo Cliente",
+          quando: "Quando clientes novos no mês < 5",
+          foco: "Pedir 1 indicação a cada cliente atendido. Script: 'manda meu contato pra 1 amigo seu — ganha R$ 10 de desconto na próxima'. Meta: 2 novos clientes na semana.",
+        },
+        {
+          id: "upsell_barba",
+          nome: "Operação Barba",
+          quando: "Quando a taxa de extras está baixa (<30%)",
+          foco: "Foco TOTAL em barba/acabamento. Toda vez que cortar cabelo, perguntar: 'fechamos o visual com a barba? sai por +R$ X'. Meta: barba em 50% dos cortes do dia.",
+        },
+        {
+          id: "ataque_pontos_cegos",
+          nome: "Ataque aos Pontos Cegos",
+          quando: "Quando há serviços/produtos com zero vendas no histórico",
+          foco: "Pegar UM item esquecido e oferecer pra 100% dos clientes do dia. Quebrar o tabu — 1 venda já vira hábito.",
+        },
+        {
+          id: "sprint_meta_proxima",
+          nome: "Sprint Final",
+          quando: "Quando faltam <= 5 dias no mês E meta está em 80-99%",
+          foco: "Esquece estratégia bonita. É hora de aceitar TUDO: encaixe, hora extra, atendimento rápido. Conta exata: 'faltam R$ X em Y dias = R$ Z/dia'.",
+        },
+        {
+          id: "consolidacao_fim_semana",
+          nome: "Consolidação de Fim de Semana",
+          quando: "Quando hoje é sexta ou sábado",
+          foco: "Dia de ticket alto. Foco em combo completo (corte+barba+produto) e venda de assinatura pra cliente que costuma vir todo sábado. Não desperdiça cadeira com básico.",
+        },
+        {
+          id: "recuperacao_segunda",
+          nome: "Recuperação de Segunda",
+          quando: "Quando hoje é segunda-feira",
+          foco: "Dia de organizar a semana. Atende quem chega + agenda os próximos 3 dias (Ter/Qua/Qui) com 5 ligações/mensagens. Meta: garantir 2 clientes pra terça.",
+        },
+        {
+          id: "qualidade_quinta",
+          nome: "Quinta Premium",
+          quando: "Quando hoje é quinta-feira",
+          foco: "Quinta é o ensaio do fim de semana. Foca em ticket: combo + produto. Ofereça serviços premium (pigmentação, hidratação) pra cliente que vai sair no fim de semana.",
+        },
+      ];
+
+      // Rotação leve por dia para evitar mesma cara sempre
+      const rotationSeed = parseInt(todayDate.replace(/-/g, '')) + (barberId.charCodeAt(0) || 0);
+      const shuffled = [...STRATEGIES].sort(() => 0.5 - ((rotationSeed * 9301 + 49297) % 233280) / 233280);
+      const strategiesForPrompt = shuffled.map(s =>
+        `- [${s.id}] ${s.nome} — QUANDO: ${s.quando}. FOCO: ${s.foco}`
+      ).join('\n');
+
+      // ===== HISTÓRICO DE EXECUÇÕES (últimos 30 dias) =====
+      const thirtyAgoDate = (() => {
+        const d = getManausDate();
+        d.setDate(d.getDate() - 30);
+        return formatManausDate(d);
+      })();
+      const yesterdayDate = (() => {
+        const d = getManausDate();
+        d.setDate(d.getDate() - 1);
+        return formatManausDate(d);
+      })();
+
+      // Recalcula resultado de ontem antes de ler histórico (mantém freshness)
+      try {
+        await supabase.rpc('recalc_war_plan_result', {
+          p_barber_id: barberId,
+          p_date: yesterdayDate,
+        });
+      } catch (e) {
+        console.error('[WAR_PLAN] recalc yesterday failed:', e);
+      }
+
+      const { data: pastExecutions } = await supabase
+        .from('war_plan_executions')
+        .select('strategy_id, strategy_name, date, result_avg_ticket, result_clients, result_extras_ratio, result_commission, result_vs_target_pct, result_calculated_at')
+        .eq('barber_id', barberId)
+        .gte('date', thirtyAgoDate)
+        .lt('date', todayDate)
+        .not('result_calculated_at', 'is', null);
+
+      const strategyAgg: Record<string, { name: string; n: number; ticket: number; vsTarget: number; extras: number }> = {};
+      for (const e of pastExecutions || []) {
+        const k = e.strategy_id as string;
+        if (!strategyAgg[k]) strategyAgg[k] = { name: e.strategy_name, n: 0, ticket: 0, vsTarget: 0, extras: 0 };
+        strategyAgg[k].n++;
+        strategyAgg[k].ticket += Number(e.result_avg_ticket || 0);
+        strategyAgg[k].vsTarget += Number(e.result_vs_target_pct || 0);
+        strategyAgg[k].extras += Number(e.result_extras_ratio || 0) * 100;
+      }
+      const aggList = Object.entries(strategyAgg).map(([id, v]) => ({
+        id,
+        name: v.name,
+        n: v.n,
+        avgTicket: v.ticket / v.n,
+        avgVsTarget: v.vsTarget / v.n,
+        avgExtras: v.extras / v.n,
+      })).sort((a, b) => b.avgVsTarget - a.avgVsTarget);
+
+      const winnerStrategy = aggList[0];
+      const loserStrategy = aggList.length >= 2 ? aggList[aggList.length - 1] : null;
+      const historyBlock = aggList.length === 0
+        ? '(sem histórico ainda — primeira execução ou sem resultados consolidados)'
+        : aggList.slice(0, 5).map(s =>
+            `- ${s.name}: usada ${s.n}x · ticket médio R$ ${s.avgTicket.toFixed(2)} · ${s.avgVsTarget.toFixed(0)}% da meta diária · extras ${s.avgExtras.toFixed(0)}%`
+          ).join('\n');
+
+      // ===== ESCOLHA DETERMINÍSTICA DA ESTRATÉGIA PRINCIPAL =====
+      const pickPrimaryStrategy = () => {
+        const find = (id: string) => STRATEGIES.find(s => s.id === id)!;
+        // 1) Sprint final
+        if (daysRemaining <= 5 && goalPercent >= 80 && goalPercent < 100) return find('sprint_meta_proxima');
+        // 2) Dia da semana — regras fortes
+        if (todayDow === 1) return find('recuperacao_segunda');
+        if (todayDow === 4) return find('qualidade_quinta');
+        if (todayDow === 5 || todayDow === 6) return find('consolidacao_fim_semana');
+        if (todayDow === 2 || todayDow === 3) return find('volume_terca_quarta');
+        // 3) Agenda fraca
+        if (clientsInAgenda > 0 && clientsInAgenda <= 3) return find('resgate_inativos');
+        // 4) Gaps específicos
+        if (subscriptionsMonth < 3) return find('assinatura_focada');
+        if (newClientsMonth < 5) return find('captacao_novo_cliente');
+        if (historicalStats.extrasRatio < 30) return find('upsell_barba');
+        if (historicalStats.productConversionRate < 30) return find('produto_carro_chefe');
+        if (storeAvgTicket > 0 && ticketDelta < -10) return find('ticket_minimo_garantido');
+        if (blindServices.length + blindProducts.length > 0) return find('ataque_pontos_cegos');
+        if (gapDaily > dailyTarget * 0.6 && clientsInAgenda >= 3) return find('blitz_matinal');
+        return find('combo_express');
+      };
+
+      let primary = pickPrimaryStrategy();
+      // Se a estratégia "campeã" do histórico bate com regra do dia E está performando bem, mantém.
+      // Se a candidata principal vem performando mal (<70% vs meta em pelo menos 3 usos), troca pela campeã.
+      if (winnerStrategy && winnerStrategy.n >= 3 && winnerStrategy.avgVsTarget >= 90) {
+        const primaryHist = strategyAgg[primary.id];
+        if (primaryHist && primaryHist.n >= 3 && (primaryHist.vsTarget / primaryHist.n) < 70) {
+          const swap = STRATEGIES.find(s => s.id === winnerStrategy.id);
+          if (swap) primary = swap;
+        }
+      }
+      const primaryStrategy = primary;
+
+      // Tentativa via IA (só se chave existir)
+      if (LOVABLE_API_KEY) {
+        const dataContext = `
+DADOS REAIS DO BARBEIRO (NÃO INVENTE NADA — use SOMENTE estes números):
+
+## METAS (ATENÇÃO: existem DUAS metas — comissão é o que o barbeiro ganha; faturamento é o que ele precisa vender)
+- Meta MENSAL de comissão: R$ ${monthlyGoal.toFixed(2)}
+- Comissão acumulada no mês: R$ ${soldThisMonth.toFixed(2)} (${goalPercent.toFixed(1)}%)
+- Falta no mês: R$ ${monthGap.toFixed(2)} de comissão em ${daysRemaining} dia(s)
+- Meta DIÁRIA de COMISSÃO (o que ele leva pra casa): R$ ${dailyTargetCommission.toFixed(2)}
+- Meta DIÁRIA de FATURAMENTO (vendas brutas necessárias hoje): R$ ${dailyTarget.toFixed(2)}
+- Já FATUROU hoje: R$ ${todayRevenue.toFixed(2)} (falta R$ ${gapDaily.toFixed(2)} em vendas)
+
+## AGENDA DE HOJE
+- Clientes confirmados: ${clientsInAgenda}
+- Ticket médio (FATURAMENTO) necessário p/ fechar a meta de hoje: R$ ${ticketNeeded.toFixed(2)}
+- Hoje é ${dayNames[todayDow]}
+
+## PERFIL (últimos 30 dias - DADOS ITEMIZADOS REAIS)
+- Dias trabalhados: ${historicalStats.daysWorked}
+- Clientes: ${historicalStats.totalClients30d}
+- Faturamento: R$ ${historicalStats.totalRevenue30d.toFixed(2)}
+- Ticket médio: R$ ${myAvgTicket.toFixed(2)}${storeAvgTicket > 0 ? ` (loja: R$ ${storeAvgTicket.toFixed(2)} — você está ${ticketDelta >= 0 ? '+' : ''}${ticketDelta.toFixed(0)}%)` : ''}
+- Conversão de produto: ${historicalStats.productConversionRate.toFixed(1)}% dos clientes
+- Taxa de extras: ${historicalStats.extrasRatio.toFixed(1)}% dos serviços
+- Assinaturas vendidas no MÊS: ${subscriptionsMonth}
+- Clientes novos captados no MÊS: ${newClientsMonth}
+
+## TOP ARMAS (mais vendidos em 30d)
+- Top serviços: ${topServices.length > 0 ? topServices.map(([n, c]) => `${n} (${c}x)`).join(', ') : 'sem dados'}
+- Top produtos: ${topProducts.length > 0 ? topProducts.map(([n, c]) => `${n} (${c}x)`).join(', ') : 'sem dados'}
+
+## PONTOS CEGOS (zero vendas em 30d)
+- Serviços nunca vendidos: ${blindServices.length > 0 ? blindServices.join(', ') : 'nenhum'}
+- Produtos parados: ${blindProducts.length > 0 ? blindProducts.join(', ') : 'nenhum'}
+- Pior dia da semana histórico: ${worstDow >= 0 ? dayNames[worstDow] : 'sem padrão'}${worstDow === todayDow ? ' ⚠️ (HOJE!)' : ''}
+
+## HISTÓRICO DE ESTRATÉGIAS (últimos 30 dias)
+${historyBlock}
+${winnerStrategy ? `→ Estratégia campeã do barbeiro: ${winnerStrategy.name} (${winnerStrategy.avgVsTarget.toFixed(0)}% da meta diária em ${winnerStrategy.n} usos).` : ''}
+${loserStrategy ? `→ Estratégia mais fraca: ${loserStrategy.name} (${loserStrategy.avgVsTarget.toFixed(0)}% em ${loserStrategy.n} usos) — evite repetir se possível.` : ''}
+
+## ESTRATÉGIA PRÉ-SELECIONADA PELO SISTEMA
+${primaryStrategy.nome} [${primaryStrategy.id}] — ${primaryStrategy.foco}
+`;
+
+        const systemPrompt = `Você é o estrategista de elite de um barbeiro brasileiro. Gere um PLANO DE GUERRA único e PERSONALIZADO para HOJE — baseado 100% em dados reais.
+
+# CATÁLOGO DE ESTRATÉGIAS DISPONÍVEIS (referência)
+${strategiesForPrompt}
+
+# REGRA DE ESCOLHA
+- Use OBRIGATORIAMENTE a "ESTRATÉGIA PRÉ-SELECIONADA PELO SISTEMA" indicada nos dados como sua estratégia principal. NÃO troque por outra.
+- O nome dessa estratégia DEVE aparecer literalmente no bloco "ESTRATÉGIA DE HOJE".
+- Se houver histórico, mencione brevemente como essa estratégia (ou similar) performou antes pra esse barbeiro.
+
+# FORMATO OBRIGATÓRIO (Markdown, 5 blocos, com emojis)
+
+🎯 META DO DIA
+• SEMPRE mostre as DUAS metas: comissão diária (R$ que o barbeiro leva) e faturamento diário (R$ em vendas brutas). Use os números exatos do bloco METAS. Cite gap em R$, % da meta MENSAL de comissão, dias restantes, dia da semana e se é dia fraco/forte.
+
+📊 LEITURA DO CENÁRIO
+• 3-4 bullets analisando: ticket vs loja, conversão produto, taxa extras, assinaturas/novos no mês. Destaque o MAIOR problema ou MAIOR oportunidade visível nos dados.
+
+🎯 ESTRATÉGIA DE HOJE: [NOME EXATO DA ESTRATÉGIA PRÉ-SELECIONADA]
+• 1 frase explicando POR QUE essa estratégia hoje (cite o dado que justifica).
+• Se houver histórico dessa estratégia, cite o resultado prévio em 1 frase.
+• 2-3 bullets aplicando a estratégia aos NÚMEROS REAIS (top serviço/produto, agenda dele).
+
+⚠️ ARMADILHAS A EVITAR HOJE
+• 1-2 alertas específicos baseados em pontos cegos OU no perfil.
+
+⚔️ MISSÃO TÁTICA (números exatos)
+• Conta matemática SEMPRE em FATURAMENTO: "Pra faturar R$ X com Y clientes, ticket precisa ser R$ Z." NUNCA confunda com comissão.
+• 3 metas concretas e MENSURÁVEIS para hoje, alinhadas com a estratégia.
+
+# REGRAS DURAS
+- USE APENAS os números fornecidos. NUNCA invente.
+- Bullets curtos. Trate o barbeiro pelo nome. Tom direto, parceiro técnico.
+- Máximo 280 palavras. Sem introdução nem despedida.`;
+
+        try {
+          const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `Barbeiro: ${barberName}\n\n${dataContext}\n\nGere o Plano de Guerra agora aplicando a estratégia pré-selecionada.` },
+              ],
+              max_tokens: 800,
+              temperature: 0.85,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const aiMessage = data.choices?.[0]?.message?.content;
+            if (aiMessage && aiMessage.trim().length > 50) {
+              await persistExecution(aiMessage);
+              return new Response(JSON.stringify({ message: aiMessage, type: body.type, source: "ai", strategy_id: primaryStrategy.id, strategy_name: primaryStrategy.nome }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+          } else {
+            console.error("[WAR_PLAN] AI gateway error:", response.status, await response.text());
+          }
+        } catch (err) {
+          console.error("[WAR_PLAN] AI call failed:", err);
+        }
+      }
+
+      // Persistência da execução escolhida (idempotente)
+      async function persistExecution(planText: string) {
+        try {
+          await supabase.from('war_plan_executions').upsert({
+            organization_id: organizationId,
+            barber_id: barberId,
+            date: todayDate,
+            strategy_id: primaryStrategy.id,
+            strategy_name: primaryStrategy.nome,
+            strategy_focus: primaryStrategy.foco,
+            clients_in_agenda: clientsInAgenda,
+            plan_text: planText,
+          }, { onConflict: 'barber_id,date' });
+          // Recalcula resultado de hoje (caso já tenham vendas registradas)
+          await supabase.rpc('recalc_war_plan_result', { p_barber_id: barberId, p_date: todayDate });
+        } catch (e) {
+          console.error('[WAR_PLAN] persist failed:', e);
+        }
+      }
+
+      // Fallback determinístico
+      const fallbackText = buildDeterministicPlan();
+      await persistExecution(fallbackText);
+      return new Response(JSON.stringify({ message: fallbackText, type: body.type, source: "rules_engine", strategy_id: primaryStrategy.id, strategy_name: primaryStrategy.nome }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
 

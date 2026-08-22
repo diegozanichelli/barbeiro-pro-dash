@@ -422,10 +422,10 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
     return (
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <CardTitle className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               {icon}
-              {displayTitle}
+              <span className="truncate">{displayTitle}</span>
             </div>
             {viewerRole === "manager" && (
               <Button
@@ -449,22 +449,22 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
             {data.map((item, index) => (
               <div
                 key={item.barber_id}
-                className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                className={`flex items-center justify-between gap-3 p-3 rounded-lg transition-colors ${
                   index < 3 
                     ? "bg-primary/10 border border-primary/20" 
                     : "bg-secondary/50 hover:bg-secondary"
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <span className={`${index < 3 ? "text-2xl" : "text-lg font-bold text-muted-foreground w-8 text-center"}`}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={`${index < 3 ? "text-2xl" : "text-lg font-bold text-muted-foreground w-8 text-center"} shrink-0`}>
                     {getPosition(index)}
                   </span>
-                  <div>
-                    <p className="font-bold">{item.barber_name}</p>
-                    <p className="text-sm text-muted-foreground">({item.unit_name})</p>
+                  <div className="min-w-0">
+                    <p className="truncate font-bold">{item.barber_name}</p>
+                    <p className="truncate text-sm text-muted-foreground">({item.unit_name})</p>
                   </div>
                 </div>
-                <p className={`font-bold ${index < 3 ? "text-xl text-primary" : "text-lg text-foreground"}`}>
+                <p className={`shrink-0 text-right font-bold ${index < 3 ? "text-xl text-primary" : "text-lg text-foreground"}`}>
                   {valuePrefix} {item.value.toFixed(2)}
                 </p>
               </div>
@@ -550,15 +550,15 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
       {/* View Mode Toggle */}
       <Card className="bg-card border-border shadow-card-custom">
         <CardContent className="py-4">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 md:w-auto">
               <span className="text-sm font-medium text-muted-foreground">Visualizar por:</span>
-              <div className="flex items-center gap-2 p-1 bg-secondary rounded-lg">
+              <div className="flex w-full items-center gap-2 rounded-lg bg-secondary p-1 sm:w-auto">
                 <Button
                   variant={viewMode === "financial" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("financial")}
-                  className="h-8"
+                  className="h-8 min-w-0 flex-1 sm:flex-none"
                 >
                   <DollarSign className="w-4 h-4 mr-1" />
                   Financeiro
@@ -567,15 +567,15 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
                   variant={viewMode === "championship" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("championship")}
-                  className="h-8"
+                  className="h-8 min-w-0 flex-1 sm:flex-none"
                 >
                   <Trophy className="w-4 h-4 mr-1" />
-                  🏆 {championshipName}
+                  <span className="truncate">🏆 {championshipName}</span>
                 </Button>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex w-full flex-col gap-4 sm:flex-row md:w-auto">
               <Select value={unitFilter} onValueChange={setUnitFilter}>
                 <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Filtrar por unidade" />

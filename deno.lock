@@ -93,6 +93,7 @@
         "npm:eslint-plugin-react-hooks@^5.2.0",
         "npm:eslint-plugin-react-refresh@~0.4.20",
         "npm:eslint@^9.32.0",
+        "npm:framer-motion@11",
         "npm:globals@^15.15.0",
         "npm:input-otp@^1.4.2",
         "npm:lovable-tagger@^1.1.11",

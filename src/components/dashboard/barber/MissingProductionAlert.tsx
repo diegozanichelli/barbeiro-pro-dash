@@ -1,69 +1,56 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle, Calendar } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { AlertCircle, Calendar, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getManausDate } from "@/lib/dateUtils";
+import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
+import { toast } from "sonner";
 
 interface MissingProductionAlertProps {
   barberId: string;
+  organizationId: string;
+  onStatusRegistered?: () => void;
 }
 
 interface ProductionStatusRow {
   date: string;
-  confirmed_presence: boolean | null;
   presence_type: string | null;
   services_basic_total: number | null;
   services_extra_total: number | null;
   products_total: number | null;
+  services_total: number | null;
   tx_basic_total: number | null;
   tx_extra_total: number | null;
   tx_products_total: number | null;
 }
 
-interface TransactionDateRow {
-  created_at: string;
-}
-
 const RESOLVED_PRESENCE_TYPES = new Set(["day_off", "absence", "optional_sunday", "holiday", "present"]);
 
-const toManausDateKey = (isoDateTime: string) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Manaus",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(isoDateTime));
-
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-
-  return `${year}-${month}-${day}`;
-};
-
-export default function MissingProductionAlert({ barberId }: MissingProductionAlertProps) {
+export default function MissingProductionAlert({ barberId, organizationId, onStatusRegistered }: MissingProductionAlertProps) {
   const [productions, setProductions] = useState<ProductionStatusRow[]>([]);
-  const [transactionDates, setTransactionDates] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [barberStartDate, setBarberStartDate] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchPendingContext = async () => {
+    const fetchProductions = async () => {
       if (!barberId) {
         if (isMounted) {
           setProductions([]);
-          setTransactionDates([]);
           setIsLoading(false);
         }
         return;
       }
 
-      if (isMounted) {
-        setIsLoading(true);
-      }
+      if (isMounted) setIsLoading(true);
 
       try {
         const today = getManausDate();
@@ -73,48 +60,40 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
         const yesterdayDate = new Date(today.getTime() - 86400000);
         const yesterdayStr = format(yesterdayDate, "yyyy-MM-dd");
 
-        const [productionsRes, transactionsRes] = await Promise.all([
-          supabase
-            .from("daily_productions")
-            .select("date, presence_type, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total")
-            .eq("barber_id", barberId)
-            .gte("date", startOfMonth)
-            .lte("date", yesterdayStr),
-          supabase
-            .from("sale_transactions")
-            .select("created_at")
-            .eq("barber_id", barberId)
-            .eq("source", "manager")
-            .gte("created_at", `${startOfMonth}T00:00:00-04:00`)
-            .lt("created_at", `${format(today, "yyyy-MM-dd")}T00:00:00-04:00`),
-        ]);
+        // Fetch barber created_at to know when they joined
+        const { data: barberData } = await supabase
+          .from("barbers")
+          .select("created_at")
+          .eq("id", barberId)
+          .maybeSingle();
 
-        if (productionsRes.error) throw productionsRes.error;
-        if (transactionsRes.error) throw transactionsRes.error;
+        if (barberData?.created_at && isMounted) {
+          const barberCreatedDate = format(new Date(barberData.created_at), "yyyy-MM-dd");
+          // Store for use in missingDays calculation
+          setBarberStartDate(barberCreatedDate);
+        }
+
+        const { data, error } = await supabase
+          .from("daily_productions")
+          .select("date, presence_type, services_basic_total, services_extra_total, products_total, services_total, tx_basic_total, tx_extra_total, tx_products_total")
+          .eq("barber_id", barberId)
+          .gte("date", startOfMonth)
+          .lte("date", yesterdayStr);
+
+        if (error) throw error;
 
         if (isMounted) {
-          const txDateSet = new Set(
-            ((transactionsRes.data || []) as TransactionDateRow[])
-              .map((transaction) => toManausDateKey(transaction.created_at))
-          );
-
-          setProductions((productionsRes.data || []) as ProductionStatusRow[]);
-          setTransactionDates(Array.from(txDateSet));
+          setProductions((data || []) as ProductionStatusRow[]);
         }
       } catch (error) {
         console.error("Erro ao verificar dias pendentes:", error);
-        if (isMounted) {
-          setProductions([]);
-          setTransactionDates([]);
-        }
+        if (isMounted) setProductions([]);
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       }
     };
 
-    fetchPendingContext();
+    fetchProductions();
 
     return () => {
       isMounted = false;
@@ -124,6 +103,7 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
   const currentDateKey = format(getManausDate(), "yyyy-MM-dd");
 
   const missingDays = useMemo(() => {
+    const safeProductions = productions || [];
     const currentDate = new Date(`${currentDateKey}T12:00:00`);
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
@@ -131,62 +111,165 @@ export default function MissingProductionAlert({ barberId }: MissingProductionAl
     const expectedDays: string[] = [];
     for (let day = 1; day < currentDate.getDate(); day++) {
       const date = new Date(currentYear, currentMonth, day);
-      expectedDays.push(format(date, "yyyy-MM-dd"));
+      const dateStr = format(date, "yyyy-MM-dd");
+      // Skip days before the barber was created
+      if (barberStartDate && dateStr < barberStartDate) continue;
+      expectedDays.push(dateStr);
     }
 
-    const resolvedFromTransactions = new Set(transactionDates);
-
-    const resolvedFromProduction = new Set(
-      productions
-        .filter((production) => {
-          const totalValue =
-            (Number(production.services_basic_total) || 0) +
-            (Number(production.services_extra_total) || 0) +
-            (Number(production.products_total) || 0);
-
-          const txTotalValue =
-            (Number(production.tx_basic_total) || 0) +
-            (Number(production.tx_extra_total) || 0) +
-            (Number(production.tx_products_total) || 0);
-
-          const hasResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(production.presence_type ?? "");
-
-          return totalValue > 0 || txTotalValue > 0 || hasResolvedPresenceType;
+    // Days that have production with revenue OR resolved presence type
+    const resolvedDays = new Set(
+      safeProductions
+        .filter((p) => {
+          const hasRevenue =
+            (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0) > 0 ||
+            (Number(p.services_basic_total) || 0) + (Number(p.services_extra_total) || 0) + (Number(p.products_total) || 0) > 0 ||
+            (Number(p.services_total) || 0) > 0;
+          const isResolvedPresenceType = RESOLVED_PRESENCE_TYPES.has(p.presence_type ?? "");
+          return hasRevenue || isResolvedPresenceType;
         })
-        .map((production) => production.date)
+        .map((p) => p.date)
     );
 
-    const resolvedDays = new Set([...resolvedFromTransactions, ...resolvedFromProduction]);
-
     return expectedDays.filter((day) => !resolvedDays.has(day));
-  }, [productions, transactionDates, currentDateKey]);
+  }, [productions, currentDateKey, barberStartDate]);
 
-  if (isLoading || missingDays.length === 0) {
-    return null;
-  }
+  const handleConfirmStatus = async (status: PresenceType) => {
+    if (!selectedDate) return;
+    setIsSaving(true);
+
+    try {
+      // Check if production exists for this date
+      const { data: existing } = await supabase
+        .from("daily_productions")
+        .select("id")
+        .eq("barber_id", barberId)
+        .eq("date", selectedDate)
+        .maybeSingle();
+
+      let error = null;
+
+      if (existing?.id) {
+        const result = await supabase
+          .from("daily_productions")
+          .update({
+            confirmed_presence: true,
+            presence_type: status,
+            clients_count: 0,
+            manual_clients_count: 0,
+          })
+          .eq("id", existing.id);
+        error = result.error;
+      } else {
+        const result = await supabase
+          .from("daily_productions")
+          .insert({
+            barber_id: barberId,
+            organization_id: organizationId,
+            date: selectedDate,
+            services_basic_total: 0,
+            services_extra_total: 0,
+            products_total: 0,
+            services_total: 0,
+            clients_count: 0,
+            manual_clients_count: 0,
+            services_count: 0,
+            products_count: 0,
+            confirmed_presence: true,
+            presence_type: status,
+          });
+        error = result.error;
+      }
+
+      if (error) throw error;
+
+      const dateLabel = selectedDate.split("-").reverse().join("/");
+      const statusLabels: Record<string, string> = {
+        present: "Presença registrada",
+        day_off: "Folga registrada",
+        absence: "Falta registrada",
+        optional_sunday: "Domingo opcional registrado",
+      };
+      toast.success(`${statusLabels[status] || "Status registrado"} em ${dateLabel}`);
+
+      // Remove the date from the list locally
+      setProductions((prev) => [
+        ...prev,
+        { date: selectedDate, presence_type: status, services_basic_total: 0, services_extra_total: 0, products_total: 0, services_total: 0, tx_basic_total: 0, tx_extra_total: 0, tx_products_total: 0 },
+      ]);
+
+      onStatusRegistered?.();
+    } catch (error) {
+      console.error("Erro ao registrar status:", error);
+      toast.error("Erro ao registrar status do dia");
+    } finally {
+      setIsSaving(false);
+      setSelectedDate(null);
+    }
+  };
+
+  if (isLoading || missingDays.length === 0) return null;
 
   return (
-    <Card className="bg-red-500/10 border-red-500/50 shadow-lg">
-      <CardContent className="py-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-red-500/20 rounded-full shrink-0">
-            <AlertCircle className="w-5 h-5 text-red-500" />
-          </div>
-          <div className="space-y-2 flex-1">
-            <h3 className="font-bold text-red-500 flex items-center gap-2">⚠️ Dias pendentes de conferência</h3>
-            <p className="text-sm text-foreground">Ainda existem dias sem lançamento da recepção ou sem status confirmado:</p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {missingDays.map((day) => (
-                <span key={day} className="inline-flex items-center gap-1 px-2 py-1 bg-red-500/20 text-red-500 rounded text-sm font-medium">
-                  <Calendar className="w-3 h-3" />
-                  {format(new Date(`${day}T12:00:00`), "dd/MM", { locale: ptBR })}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">A recepção deve lançar as vendas ou registrar folga/falta/presença sem venda nesses dias.</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <>
+      <Card className="border-destructive/30 bg-destructive/5 shadow-card-custom">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full text-left"
+          aria-expanded={open}
+        >
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <span>Dias sem Registro</span>
+              <Badge variant="destructive" className="ml-2">
+                {missingDays.length}
+              </Badge>
+              <ChevronDown
+                className={`w-5 h-5 ml-auto text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </button>
+        {open && (
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground mb-3">
+              Esses dias não têm vendas nem status registrado. Informe o que aconteceu.
+            </p>
+            {missingDays.map((day) => (
+              <div
+                key={day}
+                className="flex items-center justify-between rounded-lg border bg-background px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <p className="font-semibold">
+                    {format(new Date(`${day}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedDate(day)}
+                  className="gap-1.5"
+                >
+                  Registrar
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        )}
+      </Card>
+
+      <StatusDoDiaDialog
+        open={!!selectedDate}
+        onOpenChange={(open) => { if (!open) setSelectedDate(null); }}
+        barberId={barberId}
+        date={selectedDate || ""}
+        isLoading={isSaving}
+        onConfirm={handleConfirmStatus}
+      />
+    </>
   );
 }

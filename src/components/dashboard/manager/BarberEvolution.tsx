@@ -11,6 +11,8 @@ import UnitsComparison from "./UnitsComparison";
 import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
 import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
 import SubscriptionAnalytics from "./SubscriptionAnalytics";
+import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
+import { useOrganization } from "@/hooks/useOrganization";
 
 interface Barber {
   id: string;
@@ -25,9 +27,11 @@ interface MonthlyData {
 
 function BarberEvolutionChart() {
   const manausNow = useMemo(() => getManausDate(), []);
+  const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
+  const [period, setPeriod] = useState<DeepAnalysisPeriod>("current_month");
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -83,9 +87,10 @@ function BarberEvolutionChart() {
     }
 
     // Buscar comissões ganhas por mês
+    // Prioridade: tx_commission_earned (auditado pelo gestor) > commission_earned (calculado)
     const { data: productions, error: productionsError } = await supabase
       .from("daily_productions")
-      .select("date, commission_earned")
+      .select("date, commission_earned, tx_commission_earned")
       .eq("barber_id", selectedBarberId)
       .gte("date", `${selectedYear}-01-01`)
       .lte("date", `${selectedYear}-12-31`);
@@ -96,11 +101,14 @@ function BarberEvolutionChart() {
       return;
     }
 
-    // Agrupar comissões por mês
+    // Agrupar comissões por mês usando dado auditado quando disponível
     const commissionByMonth = new Array(12).fill(0);
-    productions?.forEach((prod) => {
+    productions?.forEach((prod: any) => {
       const month = new Date(prod.date).getMonth();
-      commissionByMonth[month] += Number(prod.commission_earned);
+      const txCommission = Number(prod.tx_commission_earned) || 0;
+      const baseCommission = Number(prod.commission_earned) || 0;
+      // Usar tx (gestor) se houver lançamento auditado, senão usar a comissão padrão
+      commissionByMonth[month] += txCommission > 0 ? txCommission : baseCommission;
     });
 
     // Criar dados do gráfico
@@ -152,7 +160,7 @@ function BarberEvolutionChart() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
                 Selecionar Barbeiro
@@ -173,7 +181,7 @@ function BarberEvolutionChart() {
 
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Selecionar Ano
+                Selecionar Ano (gráfico anual)
               </label>
               <Select
                 value={selectedYear.toString()}
@@ -188,6 +196,25 @@ function BarberEvolutionChart() {
                       {year}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">
+                Período (análise individual)
+              </label>
+              <Select
+                value={period}
+                onValueChange={(value) => setPeriod(value as DeepAnalysisPeriod)}
+              >
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current_month">Mês atual</SelectItem>
+                  <SelectItem value="last_3_months">Últimos 3 meses</SelectItem>
+                  <SelectItem value="year">Ano selecionado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -235,6 +262,15 @@ function BarberEvolutionChart() {
           )}
         </CardContent>
       </Card>
+
+      {selectedBarberId && (
+        <BarberDeepAnalysis
+          barberId={selectedBarberId}
+          organizationId={organizationId}
+          period={period}
+          selectedYear={selectedYear}
+        />
+      )}
     </div>
   );
 }
@@ -243,30 +279,30 @@ function BarberEvolutionChart() {
 export default function BarberEvolution() {
   return (
     <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full max-w-4xl grid-cols-6">
-        <TabsTrigger value="barbearia" className="flex items-center gap-1">
-          <Building2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Barbearia</span>
+      <TabsList className="grid w-full grid-cols-6 h-auto">
+        <TabsTrigger value="barbearia" title="Barbearia" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Building2 className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Barbearia</span>
         </TabsTrigger>
-        <TabsTrigger value="comparativo" className="flex items-center gap-1">
-          <GitCompare className="w-4 h-4" />
-          <span className="hidden sm:inline">Comparativo</span>
+        <TabsTrigger value="comparativo" title="Comparativo" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <GitCompare className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Comparativo</span>
         </TabsTrigger>
-        <TabsTrigger value="barbeiro" className="flex items-center gap-1">
-          <User className="w-4 h-4" />
-          <span className="hidden sm:inline">Barbeiro</span>
+        <TabsTrigger value="barbeiro" title="Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <User className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Barbeiro</span>
         </TabsTrigger>
-        <TabsTrigger value="assinaturas" className="flex items-center gap-1">
-          <Crown className="w-4 h-4" />
-          <span className="hidden sm:inline">Assinaturas</span>
+        <TabsTrigger value="assinaturas" title="Conversão por Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Crown className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Conversão</span>
         </TabsTrigger>
-        <TabsTrigger value="recepcao" className="flex items-center gap-1">
-          <Users2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Recepção</span>
+        <TabsTrigger value="recepcao" title="Vendas da Recepção" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Users2 className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Recepção</span>
         </TabsTrigger>
-        <TabsTrigger value="inteligencia" className="flex items-center gap-1">
-          <Brain className="w-4 h-4" />
-          <span className="hidden sm:inline">Inteligência</span>
+        <TabsTrigger value="inteligencia" title="Carteira de Assinaturas" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
+          <Brain className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline truncate">Carteira</span>
         </TabsTrigger>
       </TabsList>
       

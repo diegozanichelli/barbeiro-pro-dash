@@ -171,9 +171,8 @@ serve(async (req) => {
     const errorStack = error instanceof Error ? error.stack : "";
     logStep("CRITICAL ERROR", { message: errorMessage, stack: errorStack });
     return new Response(
-      JSON.stringify({ 
-        error: "Operação falhou. Tente novamente.",
-        details: errorMessage
+      JSON.stringify({
+        error: "Operação falhou. Tente novamente."
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

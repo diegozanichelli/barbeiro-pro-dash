@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import MissingProductionsAlert from "./MissingProductionsAlert";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+import { fetchUnitWeeklyWeights, weekSliceForDay, sliceRange, SeasonalitySource } from "@/hooks/useUnitSeasonality";
 interface GoalQueryRow {
   barber_id: string;
   target_commission: number;
@@ -48,6 +49,9 @@ interface BarberDailyGoal {
   status: "ahead" | "on-track" | "behind" | "critical";
   confirmedPresenceToday: boolean;
   presenceType: string | null;
+  weekSlice: number;
+  weekWeight: number;
+  seasonalitySource: SeasonalitySource;
 }
 
 export default function DailyGoalsTracking() {
@@ -76,6 +80,8 @@ export default function DailyGoalsTracking() {
   };
 
   const workingDaysPassed = getWorkingDaysPassed();
+
+  // useEffect moved after function declarations
 
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
@@ -125,8 +131,9 @@ export default function DailyGoalsTracking() {
 
       if (prodError) throw prodError;
 
-      // Calculate daily goals for each barber
-      const barberGoalsData: BarberDailyGoal[] = (goals || []).map((goal: GoalQueryRow) => {
+      // Calculate daily goals for each barber (with unified pacing RPC)
+      const barberGoalsData: BarberDailyGoal[] = await Promise.all(
+        (goals || []).map(async (goal: GoalQueryRow) => {
         const barberProductions = ((productions || []) as ProductionRow[]).filter(
           (p) => p.barber_id === goal.barber_id
         );
@@ -157,28 +164,61 @@ export default function DailyGoalsTracking() {
         
         // Calculate remaining commission to achieve
         const remainingCommission = Math.max(0, goal.target_commission - totalEarnedMonth);
-        
-        // Divisor dinâmico: dias restantes no mês - dias futuros marcados como ausência
-        const remainingCalendarDays = calculateRemainingWorkDays(getManausDate(), holidayDates);
-        const futureOffDays = barberProductions.filter(
-          (p) => p.date >= todayStr && ["day_off", "absence", "optional_sunday"].includes(p.presence_type ?? "")
-        ).length;
-        const daysToUse = Math.max(1, remainingCalendarDays - futureOffDays);
-        
-        // Daily commission target based on remaining amount / remaining days
-        const dailyCommissionTarget = remainingCommission / daysToUse;
-        
+
+        // --- Sazonalidade por unidade ---
+        const unitId = goal.barbers?.unit_id ?? "";
+        const seasonality = unitId
+          ? await fetchUnitWeeklyWeights(unitId, currentMonth, currentYear)
+          : { weights: [0.2,0.2,0.2,0.2,0.2], source_used: "linear" as SeasonalitySource, has_history: false };
+
+        const todayDay = today.getDate();
+        const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+        const currentSlice = weekSliceForDay(todayDay);
+
+        // Soma dos pesos das fatias restantes (atual + futuras), apenas para fatias que ainda têm dias no mês
+        let remainingWeightSum = 0;
+        for (let s = currentSlice; s <= 5; s++) {
+          const { start } = sliceRange(s);
+          if (start <= lastDay) remainingWeightSum += seasonality.weights[s - 1] ?? 0;
+        }
+        const currentSliceWeight = seasonality.weights[currentSlice - 1] ?? 0;
+
+        // Fatia da comissão restante alocada à semana atual
+        const weekTarget = remainingWeightSum > 0
+          ? remainingCommission * (currentSliceWeight / remainingWeightSum)
+          : remainingCommission;
+
+        // Dias restantes dentro da fatia atual e dentro do mês (excluindo feriados e folgas/faltas futuras)
+        const { end: sliceEnd } = sliceRange(currentSlice);
+        const sliceLastDay = Math.min(sliceEnd, lastDay);
+        let daysInSlice = 0;
+        for (let d = todayDay; d <= sliceLastDay; d++) {
+          const dateKey = `${currentYear}-${String(currentMonth).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+          if (holidayDates.includes(dateKey)) continue;
+          const prod = barberProductions.find(p => p.date === dateKey);
+          if (prod && ["day_off","absence","optional_sunday"].includes(prod.presence_type ?? "")) continue;
+          daysInSlice++;
+        }
+        const daysToUse = Math.max(1, daysInSlice);
+
+        // Daily commission target based on weekly slice
+        const dailyCommissionTarget = weekTarget / daysToUse;
+
         // Calculate daily revenue target based on services commission rate
         const servicesCommission = goal.barbers?.services_commission || 50;
-        const dailyRevenueTarget = servicesCommission > 0 
+        const dailyRevenueTarget = servicesCommission > 0
           ? dailyCommissionTarget / (servicesCommission / 100)
           : 0;
         
         const progressPercent = (totalEarnedMonth / goal.target_commission) * 100;
         
-        // Expected progress based on working days passed
-        const monthDays = new Date(currentYear, currentMonth, 0).getDate();
-        const expectedProgress = (workingDaysPassed / monthDays) * 100;
+        // Expected progress unificado via RPC (mesma fonte dos Alertas de Performance)
+        const { data: pacingRows } = await supabase.rpc('calc_expected_pacing', {
+          p_barber_id: goal.barber_id,
+          p_ref_date: todayStr,
+        });
+        const pacing = Array.isArray(pacingRows) ? pacingRows[0] : pacingRows;
+        const expectedProgress = Number(pacing?.expected_percent ?? 0);
         
         // Determine status
         let status: BarberDailyGoal["status"];
@@ -211,8 +251,11 @@ export default function DailyGoalsTracking() {
           status,
           confirmedPresenceToday,
           presenceType: todayPresenceType,
+          weekSlice: currentSlice,
+          weekWeight: currentSliceWeight,
+          seasonalitySource: seasonality.source_used,
         };
-      });
+      }));
 
       // Sort by status (critical first) then by progress
       barberGoalsData.sort((a, b) => {
@@ -366,6 +409,10 @@ export default function DailyGoalsTracking() {
                             {goal.barberName}
                           </h3>
                           {getStatusBadge(goal.status)}
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            Sem {goal.weekSlice} · {(goal.weekWeight * 100).toFixed(0)}%
+                            {goal.seasonalitySource === "linear" ? " · linear" : ""}
+                          </Badge>
                           {goal.confirmedPresenceToday && (
                             <TooltipProvider>
                               <Tooltip>

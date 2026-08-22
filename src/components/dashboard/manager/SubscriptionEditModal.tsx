@@ -7,7 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
+import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { assertPhoneForNewClient, translateSaleError } from "@/lib/saleGuards";
 
 const ACTION_OPTIONS = [
   { value: "new", label: "Nova" },
@@ -27,6 +29,7 @@ interface TransactionToEdit {
   subscription_action: string | null;
   subscription_plan_id?: string | null;
   downgrade_reason: string | null;
+  mobile_phone?: string | null;
   subscription_plans?: { name: string } | null;
 }
 
@@ -42,6 +45,7 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
   const [action, setAction] = useState("new");
   const [planId, setPlanId] = useState("");
   const [downgradeReason, setDowngradeReason] = useState("");
+  const [mobilePhone, setMobilePhone] = useState("");
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -51,6 +55,7 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
       setAction(transaction.subscription_action || "new");
       setPlanId(transaction.subscription_plan_id || "");
       setDowngradeReason(transaction.downgrade_reason || "");
+      setMobilePhone(transaction.mobile_phone ? formatPhone(transaction.mobile_phone) : "");
       fetchPlans();
     }
   }, [open, transaction]);
@@ -66,6 +71,16 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
 
   const handleSave = async () => {
     if (!transaction) return;
+
+    const guard = assertPhoneForNewClient({
+      subscriptionAction: action,
+      mobilePhone,
+    });
+    if (guard.ok === false) {
+      toast.error(guard.message);
+      return;
+    }
+
     setSaving(true);
 
     const selectedPlan = plans.find((p) => p.id === planId);
@@ -75,6 +90,11 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
       subscription_plan_id: planId || null,
       downgrade_reason: action === "downgrade" ? downgradeReason || null : null,
     };
+    if (action === "new") {
+      updateData.mobile_phone = sanitizePhone(mobilePhone);
+    } else if (mobilePhone && isValidPhone(mobilePhone)) {
+      updateData.mobile_phone = sanitizePhone(mobilePhone);
+    }
     if (selectedPlan) {
       updateData.item_name = `Assinatura ${selectedPlan.name}`;
     }
@@ -87,7 +107,7 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
     setSaving(false);
 
     if (error) {
-      toast.error("Erro ao salvar alterações");
+      toast.error(translateSaleError(error));
       return;
     }
 
@@ -95,6 +115,9 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
     onOpenChange(false);
     onSaved();
   };
+
+  const phoneRequired = action === "new";
+  const phoneMissing = phoneRequired && (!mobilePhone || !isValidPhone(mobilePhone));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,6 +130,25 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
           <div className="space-y-2">
             <Label>Nome do Cliente</Label>
             <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome do cliente" />
+          </div>
+
+          <div className="space-y-2">
+            <Label>
+              Telefone {phoneRequired && <span className="text-destructive">*</span>}
+            </Label>
+            <Input
+              value={mobilePhone}
+              onChange={(e) => setMobilePhone(formatPhone(e.target.value))}
+              placeholder="(11) 99999-9999"
+              inputMode="tel"
+              maxLength={15}
+            />
+            {phoneMissing && (
+              <p className="text-xs text-destructive flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Telefone obrigatório para nova adesão (11 dígitos com DDD).
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -148,7 +190,7 @@ export default function SubscriptionEditModal({ open, onOpenChange, transaction,
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || phoneMissing}>
             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Salvar
           </Button>
