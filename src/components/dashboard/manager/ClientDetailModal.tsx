@@ -179,22 +179,6 @@ export default function ClientDetailModal({
     try {
       const oldPhone = sanitizePhone(client.mobile_phone || "");
 
-      const { data: samePhoneClients, error: samePhoneErr } = await supabase
-        .from("clients")
-        .select("id, name")
-        .eq("organization_id", organizationId)
-        .eq("mobile_phone", phoneDigits)
-        .neq("id", client.id)
-        .limit(10);
-      if (samePhoneErr) throw samePhoneErr;
-
-      const normalizedTargetName = name.trim().toLowerCase();
-      const exactDuplicate = (samePhoneClients || []).find((c) => (c.name || "").trim().toLowerCase() === normalizedTargetName);
-      if (exactDuplicate) {
-        toast.error("Já existe cliente com este mesmo nome e telefone");
-        return;
-      }
-
       const { error } = await supabase
         .from("clients")
         .update({
@@ -389,13 +373,10 @@ export default function ClientDetailModal({
               Cliente desde {format(new Date(client.created_at), "dd/MM/yyyy", { locale: ptBR })}
             </div>
 
-            <div className="space-y-2">
-              <Button onClick={handleSave} disabled={saving || deleting || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone) || (planId !== "none" && !subscriptionStartedAt)} className="w-full gap-2">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Salvar Alterações
-              </Button>
-
-            </div>
+            <Button onClick={handleSave} disabled={saving || !name.trim() || sanitizePhone(phone).length !== 11 || !isValidPhone(phone) || (planId !== "none" && !subscriptionStartedAt)} className="w-full gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Salvar Alterações
+            </Button>
           </TabsContent>
 
           <TabsContent value="purchases" className="mt-4">
