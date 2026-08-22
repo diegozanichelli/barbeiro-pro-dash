@@ -279,8 +279,114 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ============================================================
+    // PASSO 3: Day-off check — alertar barbeiros com >4 folgas no mês
+    // ============================================================
+    const DAY_OFF_THRESHOLD = 4;
+    const lastDayDate = new Date(anoAtual, mesAtual, 0); // último dia do mês
+    const lastDayStr = formatDate(lastDayDate);
+
+    for (const orgId of orgIds) {
+      try {
+        const { data: activeBarbers, error: barbersError } = await supabaseClient
+          .from('barbers')
+          .select('id, name, organization_id')
+          .eq('organization_id', orgId)
+          .eq('status', 'active');
+
+        if (barbersError) {
+          otherErrors++;
+          pushError({ stage: 'dayoff_fetch_barbers', organizationId: orgId, message: barbersError.message });
+          continue;
+        }
+        if (!activeBarbers || activeBarbers.length === 0) continue;
+
+        const barberIds = activeBarbers.map((b: any) => b.id);
+        const { data: dayOffRows, error: dayOffError } = await supabaseClient
+          .from('daily_productions')
+          .select('barber_id')
+          .in('barber_id', barberIds)
+          .eq('presence_type', 'day_off')
+          .gte('date', mesReferenciaStr)
+          .lte('date', lastDayStr);
+
+        if (dayOffError) {
+          otherErrors++;
+          pushError({ stage: 'dayoff_fetch_productions', organizationId: orgId, message: dayOffError.message });
+          continue;
+        }
+
+        const countByBarber = new Map<string, number>();
+        for (const row of (dayOffRows ?? [])) {
+          countByBarber.set(row.barber_id, (countByBarber.get(row.barber_id) ?? 0) + 1);
+        }
+
+        for (const barber of activeBarbers) {
+          const count = countByBarber.get(barber.id) ?? 0;
+
+          if (count > DAY_OFF_THRESHOLD) {
+            const { data: existing } = await supabaseClient
+              .from('performance_alerts')
+              .select('id')
+              .eq('barber_id', barber.id)
+              .eq('mes_referencia', mesReferenciaStr)
+              .eq('alerta_tipo', 'Folgas em Excesso')
+              .eq('status', 'ativo')
+              .maybeSingle();
+
+            if (existing) {
+              const { error: updErr } = await supabaseClient
+                .from('performance_alerts')
+                .update({
+                  dias_restantes: count,
+                  valor_deficit_r$: 0,
+                  percentual_atingido: 0,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', existing.id);
+              if (!updErr) alertsUpdated++;
+            } else {
+              const { error: insErr } = await supabaseClient
+                .from('performance_alerts')
+                .insert({
+                  organization_id: barber.organization_id,
+                  barber_id: barber.id,
+                  mes_referencia: mesReferenciaStr,
+                  alerta_tipo: 'Folgas em Excesso',
+                  valor_deficit_r$: 0,
+                  percentual_atingido: 0,
+                  dias_restantes: count,
+                  status: 'ativo',
+                });
+              if (!insErr) {
+                alertsCreated++;
+                logStep('Day-off alert created', { barberId: barber.id, count });
+              } else {
+                otherErrors++;
+                pushError({ stage: 'dayoff_insert', barberId: barber.id, message: insErr.message });
+              }
+            }
+          } else {
+            // Auto-resolver se voltou ao normal
+            await supabaseClient
+              .from('performance_alerts')
+              .update({ status: 'resolvido' })
+              .eq('barber_id', barber.id)
+              .eq('mes_referencia', mesReferenciaStr)
+              .eq('alerta_tipo', 'Folgas em Excesso')
+              .eq('status', 'ativo');
+          }
+        }
+      } catch (orgErr) {
+        otherErrors++;
+        const msg = orgErr instanceof Error ? orgErr.message : String(orgErr);
+        pushError({ stage: 'dayoff_org_exception', organizationId: orgId, message: msg });
+      }
+    }
+
     const durationMs = Date.now() - startedAt;
     logStep('Job completed', { alertsCreated, alertsUpdated, pacingErrors, otherErrors, durationMs });
+
 
     // Auditoria: persistir resumo + erros
     const { error: auditError } = await supabaseClient

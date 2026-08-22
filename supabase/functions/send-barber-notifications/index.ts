@@ -16,11 +16,51 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
+    const cronSecret = Deno.env.get("CRON_SECRET");
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    // === AUTH CHECK ===
+    // Allow either (a) cron call with x-cron-secret header, or (b) authenticated manager/super_admin
+    const providedCronSecret = req.headers.get("x-cron-secret");
+    const isCronCall =
+      !!cronSecret && !!providedCronSecret && providedCronSecret === cronSecret;
+
+    if (!isCronCall) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const token = authHeader.replace("Bearer ", "");
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData, error: userErr } = await userClient.auth.getUser(token);
+      if (userErr || !userData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: role } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userData.user.id)
+        .maybeSingle();
+      if (role?.role !== "manager" && role?.role !== "super_admin") {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const cleanPrivateKey = vapidPrivateKey.trim().replace(/^["']|["']$/g, '').replace(/=+$/, '');
-    
+
     webpush.setVapidDetails(
       'mailto:noreply@performancebarber.com',
       VAPID_PUBLIC_KEY,

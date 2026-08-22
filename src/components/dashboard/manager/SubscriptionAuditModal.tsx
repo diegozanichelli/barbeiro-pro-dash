@@ -24,8 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pencil, Check, X, Loader2, Building2 } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatManausDateTime } from "@/lib/dateUtils";
+
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,7 @@ interface AuditTransaction {
   id: string;
   created_at: string;
   description: string | null;
+  client_name: string | null;
   item_name: string;
   price_sold: number;
   barber_id: string | null;
@@ -112,7 +113,7 @@ export default function SubscriptionAuditModal({
     try {
       const { data, error } = await supabase
         .from("sale_transactions")
-        .select("id, created_at, description, item_name, price_sold, barber_id, subscription_plan_id, unit_id, subscription_action, mobile_phone, barbers(name), subscription_plans(name, price), units(name)")
+        .select("id, created_at, description, client_name, item_name, price_sold, barber_id, subscription_plan_id, unit_id, subscription_action, mobile_phone, barbers(name), subscription_plans(name, price), units(name)")
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
         .order("created_at", { ascending: false })
@@ -378,11 +379,11 @@ export default function SubscriptionAuditModal({
                   return (
                     <TableRow key={tx.id} className="bg-muted/30">
                       <TableCell className="text-xs text-muted-foreground">
-                        {format(new Date(tx.created_at), "HH:mm")}
+                        {formatManausDateTime(tx.created_at, "HH:mm")}
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="space-y-1">
-                          <div>{tx.description || "—"}</div>
+                          <div>{tx.client_name || tx.description || "—"}</div>
                           <Input
                             value={editPhone}
                             onChange={(e) => setEditPhone(formatPhone(e.target.value))}
@@ -475,11 +476,11 @@ export default function SubscriptionAuditModal({
                 return (
                   <TableRow key={tx.id}>
                     <TableCell className="text-xs text-muted-foreground">
-                      {format(new Date(tx.created_at), "dd/MM HH:mm")}
+                      {formatManausDateTime(tx.created_at, "dd/MM HH:mm")}
                     </TableCell>
                     <TableCell className="text-sm font-medium">
                       <div className="flex flex-col gap-0.5">
-                        <span>{tx.description || "—"}</span>
+                        <span>{tx.client_name || tx.description || "—"}</span>
                         {tx.subscription_action === "new" && !tx.mobile_phone && (
                           <Badge variant="outline" className="self-start text-[10px] font-normal bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-400">
                             ⚠️ sem telefone

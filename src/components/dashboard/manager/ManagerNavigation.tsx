@@ -13,13 +13,19 @@ import {
   Bot,
   Repeat,
   CalendarDays,
+  Flame,
   Menu,
   Briefcase,
   FileText,
+  Presentation,
   DollarSign,
   Calculator,
   UserRound,
   ChevronRight,
+  ShieldCheck,
+  UserX,
+  Gauge,
+
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +91,7 @@ export default function ManagerNavigation({
   const directLinks: NavItem[] = [
     { id: "live", label: "Ao Vivo", icon: Radio },
     { id: "overview", label: "Dashboard", icon: BarChart3 },
+    { id: "performance", label: "Performance", icon: Gauge },
   ];
 
   const gestaoItems: NavItem[] = [
@@ -103,19 +110,19 @@ export default function ManagerNavigation({
     { id: "daily-goals", label: "Dia a Dia", icon: CalendarDays },
   ];
 
-  if (hasSubscriptionModule) {
-    financeiroItems.push(
-      { id: "comparison", label: "Money", icon: DollarSign },
-      { id: "subscription", label: "Assinaturas", icon: Repeat }
-    );
-  }
 
   const relatoriosItems: NavItem[] = [
+    { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
+    { id: "barber-report", label: "Relatório do Barbeiro", icon: FileText },
+    { id: "inactive-clients", label: "Clientes Inativos", icon: UserX },
     { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
     { id: "evolution", label: "Evolução", icon: TrendingUp },
+    { id: "best-sales-days", label: "Melhores Dias", icon: Flame },
     { id: "leaderboard", label: "Rankings", icon: Trophy },
     { id: "subscriptions", label: "Assinaturas", icon: Repeat },
+    { id: "reports-audit", label: "Auditoria", icon: ShieldCheck },
     { id: "ai-usage", label: "Uso IA", icon: Bot },
+
   ];
 
   const groups: NavGroup[] = [

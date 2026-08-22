@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { isOperationalRevenueTx, isSubscriptionRevenue } from "@/lib/metricsRules";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ import QuickSaleModal from "./QuickSaleModal";
 import TransactionManagerModal from "./TransactionManagerModal";
 import SubscriptionWizardModal from "./SubscriptionWizardModal";
 import SubscriptionAuditModal from "./SubscriptionAuditModal";
+import ReceptionTransactionsModal from "./ReceptionTransactionsModal";
 import { calculateRemainingWorkDays, getTodayString, getManausDate } from "@/lib/dateUtils";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 
@@ -53,6 +55,10 @@ interface ManagerTransaction {
   price_sold: number;
   item_type: string;
   service_category: string | null;
+  unit_id: string | null;
+  mobile_phone: string | null;
+  created_at: string;
+  subscription_action?: string | null;
 }
 
 interface Barber {
@@ -154,6 +160,11 @@ export default function LiveDashboard() {
   // Subscription wizard modal
   const [subscriptionWizardOpen, setSubscriptionWizardOpen] = useState(false);
   const [subscriptionAuditOpen, setSubscriptionAuditOpen] = useState(false);
+  const [receptionEditModal, setReceptionEditModal] = useState<{
+    open: boolean;
+    unitId: string;
+    unitName: string;
+  }>({ open: false, unitId: "", unitName: "" });
   const [currentPage, setCurrentPage] = useState(1);
   const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
   const [teamPacing, setTeamPacing] = useState<{
@@ -222,13 +233,17 @@ export default function LiveDashboard() {
 
       // Fetch manager transactions directly from sale_transactions for the selected day
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
-      const { data: managerTxData } = await supabase
+      let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category")
+        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at, subscription_action")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
         .lt("created_at", nextDay + "T00:00:00-04:00");
+      if (selectedUnit !== "all") {
+        mgrTxQuery = mgrTxQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: managerTxData } = await mgrTxQuery;
 
       setManagerTransactions(managerTxData || []);
 
@@ -282,19 +297,23 @@ export default function LiveDashboard() {
         setUnits(unitsData);
       }
 
-      // Fetch yesterday's revenue for comparison
+      // Fetch yesterday's revenue for comparison (respeita filtro de unidade)
       const yesterday = format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       const dayAfterYesterday = selectedDate;
-      const { data: yesterdayTxData } = await supabase
+      let ydayQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type")
+        .select("barber_id, price_sold, item_type, unit_id")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", yesterday + "T00:00:00-04:00")
         .lt("created_at", dayAfterYesterday + "T00:00:00-04:00");
+      if (selectedUnit !== "all") {
+        ydayQuery = ydayQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: yesterdayTxData } = await ydayQuery;
 
       const yRevenue = (yesterdayTxData || [])
-        .filter(t => t.item_type !== 'subscription')
+        .filter(isOperationalRevenueTx)
         .reduce((sum, t) => sum + (t.price_sold || 0), 0);
       setYesterdayRevenue(yRevenue);
     } catch (error) {
@@ -302,7 +321,7 @@ export default function LiveDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, selectedDate, currentMonth, currentYear]);
+  }, [organizationId, selectedDate, currentMonth, currentYear, selectedUnit]);
 
   useEffect(() => {
     fetchData();
@@ -329,6 +348,41 @@ export default function LiveDashboard() {
   // State for manager transactions read directly from sale_transactions
   const [managerTransactions, setManagerTransactions] = useState<ManagerTransaction[]>([]);
 
+  // Reception rows: vendas com barber_id NULL agrupadas por unit_id
+  // Quando "Todas as Unidades" mostra 1 linha por unidade que teve recepção
+  // Quando filtrando uma unidade, managerTransactions já vem filtrado
+  const receptionRows = useMemo(() => {
+    const map = new Map<string, { unitId: string; unitName: string; revenue: number; clientKeys: Set<string> }>();
+    managerTransactions.forEach((t) => {
+      if (t.barber_id !== null) return;
+      if (!t.unit_id) return;
+      if (!isOperationalRevenueTx(t)) return;
+      const unit = units.find((u) => u.id === t.unit_id);
+      if (!unit) return;
+      const existing =
+        map.get(t.unit_id) ||
+        { unitId: t.unit_id, unitName: unit.name, revenue: 0, clientKeys: new Set<string>() };
+      existing.revenue += Number(t.price_sold) || 0;
+      // 1 atendimento = 1 checkout de cliente distinto (telefone, ou timestamp como fallback)
+      const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+      existing.clientKeys.add(key);
+      map.set(t.unit_id, existing);
+    });
+    return Array.from(map.values())
+      .filter((r) => r.revenue > 0)
+      .map((r) => ({ unitId: r.unitId, unitName: r.unitName, revenue: r.revenue, clients: r.clientKeys.size }));
+  }, [managerTransactions, units]);
+
+  const receptionRevenueTotal = useMemo(
+    () => receptionRows.reduce((s, r) => s + r.revenue, 0),
+    [receptionRows]
+  );
+
+  const receptionClientsTotal = useMemo(
+    () => receptionRows.reduce((s, r) => s + r.clients, 0),
+    [receptionRows]
+  );
+
   // Calculate total revenue from managerTransactions (Ao Vivo)
   // Calculate total revenue combining confirmed barber data + unconfirmed manager transactions
   useEffect(() => {
@@ -336,16 +390,17 @@ export default function LiveDashboard() {
       ? barbers
       : barbers.filter((b) => b.unit_id === selectedUnit);
 
-    const newTotal = relevantBarbers.reduce((sum, barber) => {
+    const barbersTotal = relevantBarbers.reduce((sum, barber) => {
       return sum + getBarberRevenue(barber.id);
     }, 0);
+    const newTotal = barbersTotal + receptionRevenueTotal;
 
     if (newTotal !== totalRevenue && totalRevenue > 0) {
       setIsGlowing(true);
       setTimeout(() => setIsGlowing(false), 2000);
     }
     setTotalRevenue(newTotal);
-  }, [managerTransactions, productions, selectedUnit, barbers]);
+  }, [managerTransactions, productions, selectedUnit, barbers, receptionRevenueTotal]);
 
   // Realtime subscription for productions and transactions (only when viewing today)
   useEffect(() => {
@@ -392,8 +447,10 @@ export default function LiveDashboard() {
       return 0;
     }
     // AO VIVO é sempre a fonte de verdade - usar transações do gestor
+    // Assinaturas (item_type='subscription') NÃO contam para a meta diária —
+    // ficam apenas no card "Ranking de Assinaturas".
     return managerTransactions
-      .filter(t => t.barber_id === barberId && t.item_type !== 'subscription')
+      .filter(t => t.barber_id === barberId && isOperationalRevenueTx(t))
       .reduce((sum, t) => sum + (t.price_sold || 0), 0);
   };
 
@@ -652,6 +709,13 @@ export default function LiveDashboard() {
       .slice(0, 2);
   };
 
+  // "Gabriel Peter Silva" -> "Gabriel P."
+  const abbreviateName = (name: string) => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return name;
+    return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
+  };
+
   const filteredBarbers = selectedUnit === "all"
     ? barbers
     : barbers.filter((b) => b.unit_id === selectedUnit);
@@ -719,19 +783,76 @@ export default function LiveDashboard() {
     return prods.reduce((sum, p) => sum + (p.clients_count || 0), 0);
   }, [monthProductions, selectedUnit, barbers]);
 
-  // Unit rankings (today's revenue per unit)
+  // Unit rankings (today's revenue per unit) — agora baseado no unit_id da transação
+  // Reflete corretamente cross-unit work + recepção
   const unitRankingData = useMemo(() => {
     const unitMap = new Map<string, { name: string; revenue: number }>();
     units.forEach(u => unitMap.set(u.id, { name: u.name, revenue: 0 }));
-    barbers.forEach(b => {
-      const rev = getBarberRevenue(b.id);
-      const existing = unitMap.get(b.unit_id);
-      if (existing) existing.revenue += rev;
+    managerTransactions.forEach(t => {
+      if (!isOperationalRevenueTx(t)) return;
+      if (!t.unit_id) return;
+      const existing = unitMap.get(t.unit_id);
+      if (existing) existing.revenue += Number(t.price_sold) || 0;
     });
     return Array.from(unitMap.entries())
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.revenue - a.revenue);
-  }, [units, barbers, managerTransactions, productions]);
+  }, [units, managerTransactions]);
+
+  // Subscription sales ranking (today) — por barbeiro + recepção por unidade
+  const subscriptionRankingData = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; isReception: boolean; count: number; revenue: number }>();
+    managerTransactions.forEach((t) => {
+      if (t.item_type !== "subscription") return;
+      if (t.barber_id) {
+        const barber = barbers.find((b) => b.id === t.barber_id);
+        if (!barber) return;
+        const key = `b:${barber.id}`;
+        const existing = map.get(key) || { id: barber.id, name: barber.name, isReception: false, count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += Number(t.price_sold) || 0;
+        map.set(key, existing);
+      } else if (t.unit_id) {
+        const unit = units.find((u) => u.id === t.unit_id);
+        if (!unit) return;
+        const key = `r:${unit.id}`;
+        const existing = map.get(key) || { id: unit.id, name: `Recepção · ${unit.name}`, isReception: true, count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += Number(t.price_sold) || 0;
+        map.set(key, existing);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || b.revenue - a.revenue);
+  }, [managerTransactions, barbers, units]);
+
+  const subscriptionTotalCount = useMemo(
+    () => subscriptionRankingData.reduce((s, r) => s + r.count, 0),
+    [subscriptionRankingData]
+  );
+  const subscriptionTotalRevenue = useMemo(
+    () => subscriptionRankingData.reduce((s, r) => s + r.revenue, 0),
+    [subscriptionRankingData]
+  );
+
+  // Breakdown novas adesões vs recorrentes (renew/upgrade/downgrade)
+  const subscriptionBreakdown = useMemo(() => {
+    let newCount = 0, newRevenue = 0;
+    let recCount = 0, recRevenue = 0;
+    managerTransactions.forEach((t) => {
+      if (t.item_type !== "subscription") return;
+      const price = Number(t.price_sold) || 0;
+      if (t.subscription_action === "new") {
+        newCount += 1;
+        newRevenue += price;
+      } else {
+        // renew, upgrade, downgrade, ou sem ação definida → trata como recorrente
+        recCount += 1;
+        recRevenue += price;
+      }
+    });
+    return { newCount, newRevenue, recCount, recRevenue };
+  }, [managerTransactions]);
+
 
   // Monthly team goal progress
   const teamMonthlyGoal = useMemo(() => {
@@ -839,13 +960,14 @@ export default function LiveDashboard() {
     );
   }
 
-  // KPI calculations
-  const totalClientsToday = filteredBarbers.reduce((sum, b) => {
+  // KPI calculations (inclui clientes da recepção)
+  const barberClientsToday = filteredBarbers.reduce((sum, b) => {
     const txCount = managerTransactions
       .filter(t => t.barber_id === b.id && t.item_type === "service" && t.service_category === "basic")
       .length;
     return sum + txCount;
   }, 0);
+  const totalClientsToday = barberClientsToday + receptionClientsTotal;
 
   const averageTicketToday = totalClientsToday > 0 ? totalRevenue / totalClientsToday : 0;
   const monthAvgTicket = monthClientsTotal > 0 ? monthRevenueTotal / monthClientsTotal : 0;
@@ -1012,23 +1134,33 @@ export default function LiveDashboard() {
                   );
                 })()}
               </div>
-              <span
-                className={`text-sm font-bold cursor-help ${teamMonthlyGoal.pct >= 80 ? "text-green-500" : teamMonthlyGoal.pct >= 50 ? "text-amber-500" : "text-red-500"}`}
-                title={`% de Vendas atingido sobre a Meta de Vendas do mês.\n\nVendas: ${teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}\nMeta: ${teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
-              >
-                {teamMonthlyGoal.pct.toFixed(0)}%
-              </span>
+              {(() => {
+                const displayPct = teamPacing ? teamPacing.actualPct : teamMonthlyGoal.pct;
+                return (
+                  <span
+                    className={`text-sm font-bold cursor-help ${displayPct >= 80 ? "text-green-500" : displayPct >= 50 ? "text-amber-500" : "text-red-500"}`}
+                    title={`% de Comissão Real acumulada sobre a Meta de Comissão do mês (mesma base do marcador "Esperado para hoje").\n\nVendas: ${teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}\nMeta Vendas: ${teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
+                  >
+                    {displayPct.toFixed(0)}%
+                  </span>
+                );
+              })()}
             </div>
             <div
               className="relative h-3 bg-muted/50 rounded-full overflow-hidden mb-2"
-              title="Barra colorida = % de Vendas realizado. Linha vertical = % de Comissão Esperada para hoje (com base nos dias úteis decorridos)."
+              title="Barra colorida = % de Comissão Real acumulada. Linha vertical = % de Comissão Esperada para hoje (com base nos dias úteis decorridos)."
             >
-              <motion.div
-                className={`h-full rounded-full ${teamMonthlyGoal.pct >= 80 ? "bg-green-500" : teamMonthlyGoal.pct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                initial={{ width: 0 }}
-                animate={{ width: `${teamMonthlyGoal.pct}%` }}
-                transition={{ duration: 1, ease: "easeOut" }}
-              />
+              {(() => {
+                const barPct = teamPacing ? teamPacing.actualPct : teamMonthlyGoal.pct;
+                return (
+                  <motion.div
+                    className={`h-full rounded-full ${barPct >= 80 ? "bg-green-500" : barPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(barPct, 100)}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                  />
+                );
+              })()}
               {teamPacing && teamPacing.expectedPct > 0 && teamPacing.expectedPct <= 100 && (
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-foreground/70"
@@ -1065,10 +1197,12 @@ export default function LiveDashboard() {
         {/* Barber Table */}
         <div className="flex-1 min-w-0">
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-            <div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[860px]">
               {/* Table Header */}
-              <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+              <div className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-b border-border/30 bg-muted/20 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 <div>Barbeiro</div>
+                <div className="text-center">Comandas</div>
                 <div className="text-right">Meta</div>
                 <div className="text-right">Vendido</div>
                 <div className="text-right">Ticket</div>
@@ -1087,9 +1221,20 @@ export default function LiveDashboard() {
                   const cutsRemaining = getCutsRemaining(barber.id, barber);
                   const progressColor = getProgressColor(percentage);
 
-                  // Calculate today's ticket for this barber
+                  // 1 atendimento = 1 checkout de cliente distinto (telefone, ou timestamp como fallback).
+                  // Ignora assinaturas (já contabilizadas à parte).
                   const barberTxToday = managerTransactions.filter(t => t.barber_id === barber.id);
-                  const barberClientsToday = barberTxToday.filter(t => t.item_type === "service" && t.service_category === "basic").length;
+                  const barberClientKeys = new Set<string>();
+                  let barberSubscriptionsToday = 0;
+                  barberTxToday.forEach((t) => {
+                    if (isSubscriptionRevenue(t)) {
+                      barberSubscriptionsToday += 1;
+                      return;
+                    }
+                    const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+                    barberClientKeys.add(key);
+                  });
+                  const barberClientsToday = barberClientKeys.size;
                   const barberTicketToday = barberClientsToday > 0 ? revenue / barberClientsToday : 0;
 
                   const remaining = Math.max(0, target - revenue);
@@ -1105,7 +1250,7 @@ export default function LiveDashboard() {
                   return (
                     <motion.div
                       key={barber.id}
-                      className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
+                      className={`grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center transition-colors hover:bg-muted/10 ${
                         isGoalMet ? "bg-green-500/5" : isIdle ? "bg-red-500/5 border-l-2 border-l-red-500/50" : ""
                       }`}
                       initial={{ opacity: 0, x: -10 }}
@@ -1119,15 +1264,33 @@ export default function LiveDashboard() {
                             {getInitials(barber.name)}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{barber.name}</p>
-                          {hasPendingManualEntry(barber.id) && (
-                            <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30 mt-0.5">
-                              <FileText className="w-2.5 h-2.5 mr-0.5" />
-                              Aguardando
-                            </Badge>
-                          )}
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <p className="text-sm font-semibold text-foreground truncate leading-tight" title={barber.name}>{abbreviateName(barber.name)}</p>
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {hasPendingManualEntry(barber.id) && (
+                              <Badge variant="outline" className="text-[10px] h-4 bg-warning/10 text-warning border-warning/30">
+                                <FileText className="w-2.5 h-2.5 mr-0.5" />
+                                Aguardando
+                              </Badge>
+                            )}
+                            {barberSubscriptionsToday > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] h-4 bg-primary/10 text-primary border-primary/30"
+                                title="Assinaturas não contam na meta diária. Veja o card 'Ranking de Assinaturas'."
+                              >
+                                {barberSubscriptionsToday} {barberSubscriptionsToday === 1 ? "assinatura" : "assinaturas"}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Comandas */}
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${barberClientsToday > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {barberClientsToday}
+                        </span>
                       </div>
 
                       {/* Meta */}
@@ -1280,12 +1443,108 @@ export default function LiveDashboard() {
                     </motion.div>
                   );
                 })}
+
+                {/* Reception rows: vendas sem barbeiro (balcão) por unidade */}
+                {receptionRows.map((r) => {
+                  const ticket = r.clients > 0 ? r.revenue / r.clients : 0;
+                  return (
+                    <div
+                      key={`reception-${r.unitId}`}
+                      className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 items-center bg-blue-500/5 border-l-2 border-l-blue-500/40"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="h-9 w-9 shrink-0 border border-blue-500/40">
+                          <AvatarFallback className="bg-blue-500/20 text-blue-500 text-xs font-bold">
+                            🛎️
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <p className="text-sm font-semibold text-foreground truncate leading-tight">
+                            Recepção
+                          </p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {r.unitName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${r.clients > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {r.clients}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">—</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-primary">
+                          {r.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                        {r.clients > 0 && (
+                          <p className="text-[10px] text-muted-foreground">({r.clients} atd)</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-foreground font-medium">
+                          {ticket > 0
+                            ? ticket.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">—</span>
+                      </div>
+                      <div />
+                      <div className="flex justify-center">
+                        <Badge className="text-[10px] bg-blue-500/20 text-blue-500 border-blue-500/30 whitespace-nowrap">
+                          BALCÃO
+                        </Badge>
+                      </div>
+                      <div className="flex justify-end">
+                        {r.clients > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Mais opções">
+                                <EllipsisVertical className="w-3.5 h-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setReceptionEditModal({
+                                    open: true,
+                                    unitId: r.unitId,
+                                    unitName: r.unitName,
+                                  })
+                                }
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-2" />
+                                Corrigir / excluir venda
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Total Row */}
-              {sortedBarbers.length > 0 && (
-                <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
+              {sortedBarbers.length > 0 && (() => {
+                const totalCommands = sortedBarbers.reduce((sum, b) => {
+                  const keys = new Set<string>();
+                  managerTransactions
+                    .filter(t => t.barber_id === b.id && !isSubscriptionRevenue(t))
+                    .forEach(t => {
+                      const key = (t.mobile_phone && t.mobile_phone.trim()) || `ts:${t.created_at}`;
+                      keys.add(key);
+                    });
+                  return sum + keys.size;
+                }, 0) + receptionRows.reduce((s, r) => s + r.clients, 0);
+                return (
+                <div className="grid grid-cols-[1.8fr_0.7fr_1fr_1fr_1fr_1fr_1.3fr_1fr_80px] gap-x-3 px-4 py-3 border-t border-border/50 bg-muted/30">
                   <div className="text-sm font-bold text-foreground">TOTAL</div>
+                  <div className="text-center text-sm font-bold text-foreground">{totalCommands}</div>
                   <div className="text-right text-sm font-bold text-muted-foreground">
                     {sortedBarbers.reduce((s, b) => s + getBarberDailyTarget(b), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
@@ -1300,7 +1559,9 @@ export default function LiveDashboard() {
                   <div />
                   <div />
                 </div>
-              )}
+                );
+              })()}
+              </div>
             </div>
 
             {/* Pagination */}
@@ -1344,28 +1605,28 @@ export default function LiveDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-3 pb-3 space-y-2">
-                {/* Hoje + Este Mês */}
+                {/* Hoje (Total) + Este Mês */}
                 <div className="grid grid-cols-2 gap-1.5">
                   <div className={`rounded-lg border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-2 transition-all duration-500 ${
                     isGlowing && isViewingToday ? "animate-glow shadow-[0_0_20px_hsl(38_92%_50%/0.5)]" : ""
                   }`}>
                     <div className="flex items-center gap-1 mb-0.5">
                       <span className="text-[10px]">📅</span>
-                      <p className="text-[9px] text-primary font-bold uppercase">HOJE</p>
+                      <p className="text-[9px] text-primary font-bold uppercase">TOTAL HOJE</p>
                     </div>
                     <motion.p
                       className="text-sm font-extrabold text-primary leading-tight truncate"
-                      key={totalRevenue}
+                      key={totalRevenue + subscriptionTotalRevenue}
                       initial={{ scale: 1.05, opacity: 0.7 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ type: "spring", stiffness: 300 }}
                     >
-                      {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      {(totalRevenue + subscriptionTotalRevenue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </motion.p>
                     <div className="flex items-center gap-1 mt-0.5">
                       <p className="text-[9px] text-muted-foreground">{totalClientsToday} atd</p>
                       {revenueComparison && (
-                        <span className={`text-[9px] font-bold ${revenueComparison.isUp ? "text-green-500" : "text-red-500"}`}>
+                        <span className={`text-[9px] font-bold ${revenueComparison.isUp ? "text-green-500" : "text-red-500"}`} title="Comparativo vs ontem (operacional)">
                           {revenueComparison.isUp ? "▲" : "▼"} {Math.abs(revenueComparison.pct).toFixed(0)}%
                         </span>
                       )}
@@ -1381,6 +1642,48 @@ export default function LiveDashboard() {
                     </p>
                     <p className="text-[9px] text-muted-foreground mt-0.5">{monthClientsTotal} atd</p>
                   </div>
+                </div>
+
+                {/* Breakdown: Vendas (operacional) + Assinaturas */}
+                <div className="rounded-lg border border-border/30 bg-muted/20 p-2 space-y-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <span className="text-foreground">▸</span> Vendas <span className="text-muted-foreground/70">(serviços + produtos)</span>
+                    </span>
+                    <span className="font-bold text-foreground tabular-nums">
+                      {totalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <span className="text-amber-600">▸</span> Assinaturas <span className="text-muted-foreground/70">(MRR do dia)</span>
+                    </span>
+                    <span className="font-bold text-amber-600 tabular-nums">
+                      {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                  {(subscriptionBreakdown.newCount + subscriptionBreakdown.recCount) > 0 && (
+                    <div className="pl-3 space-y-0.5 border-l border-amber-600/30 ml-1">
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground">
+                          <span className="text-emerald-600">•</span> Novas adesões
+                          <span className="text-muted-foreground/70"> ({subscriptionBreakdown.newCount})</span>
+                        </span>
+                        <span className="font-semibold text-emerald-600 tabular-nums">
+                          {subscriptionBreakdown.newRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground">
+                          <span className="text-blue-500">•</span> Recorrentes
+                          <span className="text-muted-foreground/70"> (renov/upg/down · {subscriptionBreakdown.recCount})</span>
+                        </span>
+                        <span className="font-semibold text-blue-500 tabular-nums">
+                          {subscriptionBreakdown.recRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Ticket Médio */}
@@ -1402,6 +1705,66 @@ export default function LiveDashboard() {
                     </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Ranking ASSINATURAS — prioridade máxima do negócio */}
+            <Card className="overflow-hidden border-2 border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 backdrop-blur-sm shadow-[0_0_20px_hsl(38_92%_50%/0.15)]">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    👑 ASSINATURAS
+                  </CardTitle>
+                  <Badge variant="outline" className="border-amber-500/60 text-amber-600 bg-amber-500/10 text-[9px] px-1.5 py-0">
+                    PRIORIDADE
+                  </Badge>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-medium">
+                  Hoje: <span className="text-amber-600 font-bold">{subscriptionTotalCount}</span> {subscriptionTotalCount === 1 ? "venda" : "vendas"} · {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </p>
+              </CardHeader>
+              <CardContent className="px-3 pb-3">
+                {subscriptionRankingData.length === 0 ? (
+                  <div className="text-center py-3 text-[11px] text-muted-foreground">
+                    Nenhuma assinatura vendida hoje
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {subscriptionRankingData.map((row, index) => {
+                      const medals = ["🥇", "🥈", "🥉"];
+                      return (
+                        <motion.div
+                          key={`sub-${row.id}`}
+                          className={`flex items-center justify-between px-2 py-2 rounded-lg ${
+                            index === 0 ? "bg-amber-500/15 border border-amber-500/40" : index < 3 ? "bg-card/60 border border-border/20" : ""
+                          }`}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05, duration: 0.3 }}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {index < 3 ? (
+                              <span className="text-sm shrink-0">{medals[index]}</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-muted-foreground w-4 text-center shrink-0">{index + 1}º</span>
+                            )}
+                            <span className={`text-xs truncate ${index < 3 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                              {row.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`text-xs font-bold ${index === 0 ? "text-amber-600" : "text-foreground"}`}>
+                              {row.count}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground">
+                              {row.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1529,8 +1892,19 @@ export default function LiveDashboard() {
         dailyProductionId={viewTransactionsModal.dailyProductionId}
         date={viewTransactionsModal.date}
         onSuccess={fetchData}
-        sourceFilter="manager"
         readOnly
+      />
+
+      {/* Reception Transactions Editor */}
+      <ReceptionTransactionsModal
+        open={receptionEditModal.open}
+        onOpenChange={(open) => setReceptionEditModal((prev) => ({ ...prev, open }))}
+        organizationId={organizationId || ""}
+        unitId={receptionEditModal.unitId}
+        unitName={receptionEditModal.unitName}
+        date={selectedDate}
+        barbers={barbers.map((b) => ({ id: b.id, name: b.name, unit_id: b.unit_id }))}
+        onSuccess={fetchData}
       />
     </div>
   );

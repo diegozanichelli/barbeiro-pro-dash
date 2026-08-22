@@ -35,6 +35,11 @@ import {
   ArrowDownCircle,
   Phone,
   Smartphone,
+  CalendarIcon,
+  AlertTriangle,
+  ShieldAlert,
+  CreditCard,
+  Home,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +51,10 @@ import { useClientHistory } from "@/hooks/useClientHistory";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
@@ -64,6 +73,15 @@ interface SubscriptionWizardModalProps {
   onComplete: () => void;
   onBridgeToService?: (barberId: string | null, barberName: string) => void;
   selectedDate?: string;
+  prefillPhone?: string;
+  prefillName?: string;
+  prefillAction?: "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
+  prefillPlanId?: string | null;
+  prefillIsNewClient?: boolean;
+  prefillAttributionType?: "reception" | "barber" | "manager_rescue" | "auto_recurring" | null;
+  prefillBarberId?: string | null;
+  prefillUnitId?: string | null;
+  startStep?: "client_type" | "attribution";
 }
 
 interface Unit {
@@ -78,7 +96,7 @@ interface SubscriptionPlan {
 }
 
 type WizardStep = "client_type" | "attribution" | "details" | "success";
-type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade";
+type SubscriptionAction = "new" | "renew" | "upgrade" | "downgrade" | "legacy_import";
 
 export default function SubscriptionWizardModal({
   open,
@@ -87,6 +105,15 @@ export default function SubscriptionWizardModal({
   onComplete,
   onBridgeToService,
   selectedDate,
+  prefillPhone,
+  prefillName,
+  prefillAction,
+  prefillPlanId,
+  prefillIsNewClient,
+  prefillAttributionType,
+  prefillBarberId,
+  prefillUnitId,
+  startStep,
 }: SubscriptionWizardModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<WizardStep>("client_type");
@@ -102,12 +129,15 @@ export default function SubscriptionWizardModal({
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   // Step 2 - Attribution
-  const [attributionType, setAttributionType] = useState<"reception" | "barber" | null>(null);
+  const [attributionType, setAttributionType] = useState<"reception" | "barber" | "manager_rescue" | "auto_recurring" | null>(null);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [selectedBarberUnitName, setSelectedBarberUnitName] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+
+  // Retroactive payment date (optional). Defaults to undefined (= today via getTodayString or selectedDate prop)
+  const [paymentDate, setPaymentDate] = useState<Date | undefined>(undefined);
 
   // Client history
   const clientHistory = useClientHistory(organizationId);
@@ -145,8 +175,24 @@ export default function SubscriptionWizardModal({
       setSelectedBarberId(null);
       setSelectedBarberUnitName(null);
       setSelectedUnitId(null);
+      setPaymentDate(undefined);
       clientHistory.reset();
+      return;
     }
+
+    // Apply prefills when opening (only if provided)
+    if (prefillPhone) setMobilePhone(formatPhone(prefillPhone));
+    if (prefillName) setClientName(prefillName);
+    if (typeof prefillIsNewClient === "boolean") {
+      setIsNewClient(prefillIsNewClient);
+      setManualOverride(true);
+    }
+    if (prefillAction) setSubscriptionAction(prefillAction);
+    if (prefillPlanId) setSelectedPlanId(prefillPlanId);
+    if (typeof prefillAttributionType !== "undefined") setAttributionType(prefillAttributionType);
+    if (typeof prefillBarberId !== "undefined") setSelectedBarberId(prefillBarberId);
+    if (typeof prefillUnitId !== "undefined") setSelectedUnitId(prefillUnitId);
+    if (startStep) setStep(startStep);
   }, [open]);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
@@ -238,6 +284,8 @@ export default function SubscriptionWizardModal({
     if (step === "attribution") {
       if (attributionType === "reception") return !!selectedUnitId;
       if (attributionType === "barber") return !!selectedBarberId;
+      if (attributionType === "manager_rescue") return !!selectedUnitId;
+      if (attributionType === "auto_recurring") return !!selectedUnitId;
       return false;
     }
     if (step === "details") {
@@ -265,7 +313,8 @@ export default function SubscriptionWizardModal({
   const handleSubmit = async () => {
     if (!selectedPlanId || !clientName.trim()) return;
     setLoading(true);
-    const dateStr = selectedDate || getTodayString();
+    const effectiveDate = paymentDate ? format(paymentDate, "yyyy-MM-dd") : (selectedDate || getTodayString());
+    const dateStr = effectiveDate;
     const phoneSanitized = sanitizePhone(mobilePhone) || null;
 
     try {
@@ -342,9 +391,49 @@ export default function SubscriptionWizardModal({
         }
       }
 
-      const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : "Downgrade";
+      const actionLabel = subscriptionAction === "new" ? "Nova" : subscriptionAction === "renew" ? "Renovação" : subscriptionAction === "upgrade" ? "Upgrade" : subscriptionAction === "downgrade" ? "Downgrade" : "Regularização Legado";
 
-      const createdAt = selectedDate ? `${selectedDate}T12:00:00-04:00` : new Date().toISOString();
+      // Resolve previous plan/price for upgrade/downgrade (so Δ MRR funciona mesmo sem histórico de vendas)
+      let previousPlanId: string | null = null;
+      let previousPrice: number | null = null;
+      if (subscriptionAction === "upgrade" || subscriptionAction === "downgrade") {
+        const { data: clientRow } = await (supabase
+          .from("clients") as any)
+          .select("subscription_plan_id")
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", registeredClient.mobilePhone)
+          .maybeSingle();
+        const currentPlanId: string | null = clientRow?.subscription_plan_id ?? null;
+        if (currentPlanId && currentPlanId !== selectedPlanId) {
+          previousPlanId = currentPlanId;
+          const prevPlan = plans.find((p) => p.id === currentPlanId);
+          if (prevPlan) previousPrice = Number(prevPlan.price);
+        }
+        if (!previousPlanId) {
+          // Fallback: query the most recent subscription transaction of this phone
+          const { data: prevTx } = await supabase
+            .from("sale_transactions")
+            .select("subscription_plan_id, price_sold")
+            .eq("organization_id", organizationId)
+            .eq("item_type", "subscription")
+            .eq("mobile_phone", registeredClient.mobilePhone)
+            .not("subscription_plan_id", "is", null)
+            .neq("subscription_plan_id", selectedPlanId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (prevTx?.subscription_plan_id) {
+            previousPlanId = prevTx.subscription_plan_id as string;
+            previousPrice = Number(prevTx.price_sold);
+          }
+        }
+        if (!previousPlanId) {
+          toast.warning("Sem assinatura anterior registrada para este celular — Δ MRR não será calculado. Confirme se a ação correta não é 'Nova adesão'.");
+        }
+      }
+
+      const isRetro = !!paymentDate || !!selectedDate;
+      const createdAt = isRetro ? `${effectiveDate}T12:00:00-04:00` : new Date().toISOString();
       const { error } = await supabase.from("sale_transactions").insert({
         barber_id: selectedBarberId,
         organization_id: organizationId,
@@ -355,7 +444,7 @@ export default function SubscriptionWizardModal({
         description: registeredClient.clientName,
         client_name: registeredClient.clientName,
         mobile_phone: registeredClient.mobilePhone,
-        price_sold: selectedPlan?.price || 0,
+        price_sold: subscriptionAction === "legacy_import" ? 0 : (selectedPlan?.price || 0),
         service_category: null,
         catalog_service_id: null,
         catalog_product_id: null,
@@ -363,10 +452,13 @@ export default function SubscriptionWizardModal({
         commission_amount: 0,
         source: "manager",
         created_at: createdAt,
-        is_new_client: isNewClient,
+        is_new_client: subscriptionAction === "legacy_import" ? false : isNewClient,
         subscription_plan_id: selectedPlanId,
         subscription_action: subscriptionAction,
         downgrade_reason: subscriptionAction === "downgrade" ? downgradeReason.trim() : null,
+        previous_plan_id: previousPlanId,
+        previous_price: previousPrice,
+        attribution_source: attributionType,
       } as any);
 
       if (error) throw error;
@@ -386,10 +478,21 @@ export default function SubscriptionWizardModal({
         ],
       });
 
-      const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
-      toast.success(`Assinatura registrada!`, {
-        description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
-      });
+      if (attributionType === "manager_rescue") {
+        toast.success("Assinatura registrada como recuperação do gestor", {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
+        });
+      } else if (attributionType === "auto_recurring") {
+        toast.success("Renovação automática registrada", {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Cobrança automática no cartão (sem pontuação) 💳`,
+        });
+      } else {
+        const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
+        toast.success(`Assinatura registrada!`, {
+          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
+        });
+      }
+
 
       onComplete();
       setStep("success");
@@ -628,7 +731,7 @@ export default function SubscriptionWizardModal({
               {isNewClient === false && (
                 <div className="space-y-3 pt-2">
                   <Label className="text-sm font-medium text-muted-foreground">Qual a ação?</Label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-5 gap-2">
                     <Button
                       type="button"
                       variant={subscriptionAction === "new" ? "default" : "outline"}
@@ -677,6 +780,19 @@ export default function SubscriptionWizardModal({
                     >
                       <ArrowDownCircle className="w-5 h-5" />
                       <span className="font-medium">Downgrade</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={subscriptionAction === "legacy_import" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto py-3 flex flex-col items-center gap-1 text-xs",
+                        subscriptionAction === "legacy_import" && "ring-2 ring-primary ring-offset-2"
+                      )}
+                      onClick={() => handleSelectAction("legacy_import")}
+                    >
+                      <Home className="w-5 h-5" />
+                      <span className="font-medium">Legado</span>
+                      <span className="text-[10px] text-muted-foreground">Regularização</span>
                     </Button>
                   </div>
 
@@ -736,11 +852,52 @@ export default function SubscriptionWizardModal({
                   <span className="font-medium">Barbeiro</span>
                   <span className="text-xs text-muted-foreground">Indicou/vendeu</span>
                 </Button>
+                <Button
+                  type="button"
+                  variant={attributionType === "manager_rescue" ? "destructive" : "outline"}
+                  className={cn(
+                    "h-auto py-4 flex flex-col items-center gap-2",
+                    attributionType === "manager_rescue" && "ring-2 ring-destructive ring-offset-2"
+                  )}
+                  onClick={() => {
+                    setAttributionType("manager_rescue");
+                    setSelectedBarberId(null);
+                  }}
+                >
+                  <ShieldAlert className="w-6 h-6" />
+                  <span className="font-medium">Gestor</span>
+                  <span className="text-xs text-muted-foreground">Recuperação / falha</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={attributionType === "auto_recurring" ? "default" : "outline"}
+                  disabled={subscriptionAction === "new"}
+                  title={subscriptionAction === "new" ? "Cobrança automática só se aplica a renovações/upgrades" : undefined}
+                  className={cn(
+                    "h-auto py-4 flex flex-col items-center gap-2",
+                    attributionType === "auto_recurring" && "ring-2 ring-primary ring-offset-2 bg-blue-600 hover:bg-blue-700 text-white"
+                  )}
+                  onClick={() => {
+                    setAttributionType("auto_recurring");
+                    setSelectedBarberId(null);
+                  }}
+                >
+                  <CreditCard className="w-6 h-6" />
+                  <span className="font-medium">Cobrança automática</span>
+                  <span className="text-xs text-muted-foreground">Recorrência no cartão</span>
+                </Button>
               </div>
 
-              {attributionType === "reception" && (
+              {(attributionType === "reception" || attributionType === "manager_rescue" || attributionType === "auto_recurring") && (
                 <div className="space-y-2 pt-2">
-                  <Label>Selecione a unidade: <span className="text-destructive">*</span></Label>
+                  <Label>
+                    {attributionType === "manager_rescue"
+                      ? "Unidade onde houve a falha:"
+                      : attributionType === "auto_recurring"
+                      ? "Unidade do cliente:"
+                      : "Selecione a unidade:"}{" "}
+                    <span className="text-destructive">*</span>
+                  </Label>
                   <select
                     value={selectedUnitId || ""}
                     onChange={(e) => setSelectedUnitId(e.target.value || null)}
@@ -751,6 +908,27 @@ export default function SubscriptionWizardModal({
                       <option key={unit.id} value={unit.id}>{unit.name}</option>
                     ))}
                   </select>
+                  {attributionType === "manager_rescue" && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2 mt-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Esta venda será marcada como <strong>Recuperação do Gestor</strong>.
+                        Nenhum ponto será distribuído à recepção ou barbeiro, e a unidade
+                        aparecerá no relatório <strong>Recuperações do Gestor</strong> como falha operacional.
+                      </span>
+                    </div>
+                  )}
+                  {attributionType === "auto_recurring" && (
+                    <div className="rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2 mt-2">
+                      <CreditCard className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Renovação cobrada <strong>automaticamente pelo gateway de cartão</strong>.
+                        Nenhum ponto será distribuído (não é mérito de barbeiro nem recepção) e
+                        <strong> não conta como falha operacional</strong>. Aparece no relatório
+                        de <strong>Renovações Automáticas</strong>.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -799,12 +977,20 @@ export default function SubscriptionWizardModal({
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Ação:</span>
                     <span className="font-medium">
-                      {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : "🔽 Downgrade"}
+                      {subscriptionAction === "new" ? "🆕 Nova Assinatura" : subscriptionAction === "renew" ? "🔄 Renovação" : subscriptionAction === "upgrade" ? "🔼 Upgrade" : subscriptionAction === "downgrade" ? "🔽 Downgrade" : "📥 Regularização Legado"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Pontos para:</span>
-                    <span className="font-medium">{selectedBarberId ? "💈 Barbeiro" : "🏢 Recepção"}</span>
+                    <span className="font-medium">
+                      {attributionType === "manager_rescue"
+                        ? "⚠️ Nenhum (Recuperação do Gestor)"
+                        : attributionType === "auto_recurring"
+                        ? "💳 Nenhum (Cobrança automática)"
+                        : selectedBarberId
+                        ? "💈 Barbeiro"
+                        : "🏢 Recepção"}
+                    </span>
                   </div>
                   {subscriptionAction === "downgrade" && downgradeReason && (
                     <div className="flex justify-between">
@@ -814,6 +1000,61 @@ export default function SubscriptionWizardModal({
                   )}
                 </div>
               </div>
+
+              {/* Data do pagamento (retroativa) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Data do pagamento <span className="text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !paymentDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {paymentDate
+                        ? format(paymentDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                        : "Hoje (padrão)"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={paymentDate}
+                      onSelect={setPaymentDate}
+                      disabled={(d) => d > new Date() || d < subDays(new Date(), 90)}
+                      initialFocus
+                      locale={ptBR}
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+                {paymentDate && (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      Lançamento retroativo: será gravado em{" "}
+                      <strong>{format(paymentDate, "dd/MM/yyyy", { locale: ptBR })}</strong>.
+                      Confira antes de salvar.
+                    </span>
+                  </div>
+                )}
+                {paymentDate && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentDate(undefined)}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    Limpar e usar hoje
+                  </button>
+                )}
+              </div>
+
               {renderClientBadge() && (
                 <div>{renderClientBadge()}</div>
               )}

@@ -16,6 +16,7 @@ import Leaderboard from "./Leaderboard";
 
 import AITipsTab from "./barber/AITipsTab";
 import WarPlanWizard from "./barber/WarPlanWizard";
+import StrategyHistoryCard from "./barber/StrategyHistoryCard";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
@@ -367,10 +368,16 @@ const [todayProduction, setTodayProduction] = useState<{
     const dailyTarget = daysToUse > 0 ? Math.max(0, remaining / daysToUse) : 0;
     setDailyTarget(dailyTarget);
 
-    // Calcular meta diária de serviços (mesma lógica proporcional)
-    const servicesTarget = monthlyGoal.target_commission > 0 
-      ? dailyTarget * (stats.total_services / Math.max(1, stats.accumulated_commission))
-      : 0;
+    // Calcular meta diária de faturamento (em serviços)
+    // Preferência 1: usar proporção real do mês (faturamento/comissão acumulada)
+    // Fallback: usar a % de comissão de serviços cadastrada no barbeiro
+    const servicesRate = Number((barber as any)?.services_commission) || 0;
+    let servicesTarget = 0;
+    if (stats.accumulated_commission > 0 && stats.total_services > 0) {
+      servicesTarget = dailyTarget * (stats.total_services / stats.accumulated_commission);
+    } else if (servicesRate > 0) {
+      servicesTarget = dailyTarget / (servicesRate / 100);
+    }
     setDailyTargetServices(servicesTarget);
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
 
@@ -912,18 +919,18 @@ const [todayProduction, setTodayProduction] = useState<{
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="live" className="flex items-center gap-1">
               <Radio className="w-3 h-3" />
-              Ao vivo
+              <span className="hidden sm:inline">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
+            <TabsTrigger value="strategies">Estratégias</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
             <TabsTrigger value="ai-tips" className="flex items-center gap-1">
-              <Sparkles className="w-3 h-3" />
-              <span className="hidden sm:inline">Dicas da IA</span>
-              <span className="sm:hidden">IA</span>
+              <Bot className="w-3 h-3" />
+              <span className="hidden sm:inline">IA</span>
             </TabsTrigger>
           </TabsList>
 
@@ -936,20 +943,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </p>
             </div>
             {/* Alerta de Produções Pendentes */}
-            {/* Dias Pendentes de Conferência (AO VIVO) */}
-            <PendingDayReviews 
-              barberId={barber.id} 
-              onReview={(date) => setReviewingDate(date)} 
-            />
-            {/* Dias sem nenhum registro (sem vendas ao vivo) */}
-            <MissingProductionAlert
-              barberId={barber.id}
-              organizationId={barber.organization_id}
-              onStatusRegistered={() => {
-                fetchMonthlyStats();
-                fetchLivePanelData();
-              }}
-            />
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
@@ -988,6 +981,20 @@ const [todayProduction, setTodayProduction] = useState<{
                 </div>
               </CardContent>
             </Card>
+            {/* Dias Pendentes de Conferência (colapsável) */}
+            <PendingDayReviews
+              barberId={barber.id}
+              onReview={(date) => setReviewingDate(date)}
+            />
+            {/* Dias sem nenhum registro (colapsável) */}
+            <MissingProductionAlert
+              barberId={barber.id}
+              organizationId={barber.organization_id}
+              onStatusRegistered={() => {
+                fetchMonthlyStats();
+                fetchLivePanelData();
+              }}
+            />
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
@@ -1010,6 +1017,22 @@ const [todayProduction, setTodayProduction] = useState<{
                     <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
                       <p className="text-sm text-muted-foreground font-medium">
                         💡 <span className="font-bold">LEMBRETE:</span> Vender PRODUTOS ajuda a bater esta meta mais rápido!
+                      </p>
+                    </div>
+                  </>
+                ) : dailyTarget > 0 ? (
+                  <>
+                    <div className="text-center space-y-3">
+                      <p className="text-5xl font-bold text-primary">
+                        R$ {dailyTarget.toFixed(2)}
+                      </p>
+                      <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
+                        (EM COMISSÃO)
+                      </p>
+                    </div>
+                    <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
+                      <p className="text-xs text-muted-foreground">
+                        Assim que você registrar suas primeiras vendas no mês, vamos calcular também a meta em faturamento de serviços.
                       </p>
                     </div>
                   </>
@@ -1313,6 +1336,10 @@ const [todayProduction, setTodayProduction] = useState<{
             />
           </TabsContent>
 
+          <TabsContent value="strategies" className="space-y-6">
+            {barber && <StrategyHistoryCard barberId={barber.id} />}
+          </TabsContent>
+
           <TabsContent value="leaderboard">
             <Leaderboard viewerRole="barber" />
           </TabsContent>
@@ -1372,8 +1399,17 @@ const [todayProduction, setTodayProduction] = useState<{
             open={showWarPlanWizard}
             onOpenChange={setShowWarPlanWizard}
             organizationId={barber.organization_id}
-            dailyTarget={dailyTargetServices > 0 ? dailyTargetServices : dailyTarget}
+            barberId={barber.id}
+            barberName={barber.name}
+            monthlyGoal={monthlyGoal.target_commission}
+            soldThisMonth={stats?.accumulated_commission || 0}
+            dailyTarget={dailyTargetServices}
+            dailyTargetCommission={dailyTarget}
             todayRevenue={todayProduction?.total || 0}
+            daysRemaining={Math.max(
+              0,
+              new Date(currentYearNow, currentMonthNow, 0).getDate() - today.getDate() + 1,
+            )}
             onComplete={handleWarPlanComplete}
           />
         )}

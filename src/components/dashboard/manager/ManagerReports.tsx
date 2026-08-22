@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parse } from "date-fns";
-import { getManausDate } from "@/lib/dateUtils";
+import { getManausDate, toDateKey } from "@/lib/dateUtils";
+import { fetchAllRows } from "@/lib/supabasePagination";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,6 +14,8 @@ import { toast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import TransactionManagerModal from "./TransactionManagerModal";
+import ManagerRescueReport from "./ManagerRescueReport";
+import AutoRecurringReport from "./AutoRecurringReport";
 import { useOrganization } from "@/hooks/useOrganization";
 
 interface DailyProduction {
@@ -89,10 +92,10 @@ export default function ManagerReports() {
 
   const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
+    if (!organizationId) return;
 
-    const goalReferenceDate = dateRange.from;
-    const startDate = format(dateRange.from, "yyyy-MM-dd");
-    const endDate = format(dateRange.to, "yyyy-MM-dd");
+    const startDate = toDateKey(dateRange.from);
+    const endDate = toDateKey(dateRange.to);
 
     // Stats consolidados via RPC (substitui view inexistente v_consolidated_daily_production)
     const { data: statsData, error: statsError } = await supabase.rpc(
@@ -121,50 +124,71 @@ export default function ManagerReports() {
     const averageTicket = Number(statsRow.average_ticket) || 0;
 
     // Buscar comissões por barbeiro no período (necessário para metas batidas)
-    let commissionsQuery = supabase
-      .from("daily_productions")
-      .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
-      .gte("date", startDate)
-      .lte("date", endDate);
+    const commissionRows = await fetchAllRows<{ barber_id: string; commission_earned: number | null }>(() => {
+      let q = supabase
+        .from("daily_productions")
+        .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
 
-    if (selectedUnit !== "all") {
-      commissionsQuery = commissionsQuery.eq("barbers.unit_id", selectedUnit);
+      if (selectedUnit !== "all") q = q.eq("barbers.unit_id", selectedUnit);
+      if (selectedBarber !== "all") q = q.eq("barber_id", selectedBarber);
+      return q as any;
+    });
+
+    // Metas: o intervalo pode cruzar meses, então somamos a meta de cada mês do período
+    const monthKeys: Array<{ month: number; year: number }> = [];
+    {
+      const cursor = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), 1);
+      const last = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), 1);
+      while (cursor <= last) {
+        monthKeys.push({ month: cursor.getMonth() + 1, year: cursor.getFullYear() });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
     }
 
-    if (selectedBarber !== "all") {
-      commissionsQuery = commissionsQuery.eq("barber_id", selectedBarber);
-    }
+    const goals = await fetchAllRows<{ barber_id: string; target_commission: number | null; month: number; year: number }>(() => {
+      let q = supabase
+        .from("monthly_goals")
+        .select("barber_id, target_commission, month, year, barbers!inner(id, unit_id)")
+        .eq("organization_id", organizationId)
+        .in("month", monthKeys.map((k) => k.month))
+        .in("year", monthKeys.map((k) => k.year));
 
-    const { data: commissionRows } = await commissionsQuery;
+      if (selectedUnit !== "all") q = q.eq("barbers.unit_id", selectedUnit);
+      if (selectedBarber !== "all") q = q.eq("barber_id", selectedBarber);
+      return q as any;
+    });
 
-    // Buscar metas do mês
-    let goalsQuery = supabase
-      .from("monthly_goals")
-      .select("*, barbers!inner(id, unit_id)")
-      .eq("month", goalReferenceDate.getMonth() + 1)
-      .eq("year", goalReferenceDate.getFullYear());
-
-    if (selectedUnit !== "all") {
-      goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
-    }
-
-    const { data: goals } = await goalsQuery;
+    const monthKeySet = new Set(monthKeys.map((k) => `${k.year}-${k.month}`));
 
     const barberCommissions = new Map<string, number>();
-    (commissionRows || []).forEach((row: { barber_id: string; commission_earned: number | null }) => {
+    commissionRows.forEach((row) => {
       const current = barberCommissions.get(row.barber_id) || 0;
       barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
     });
 
+    // Meta acumulada do período por barbeiro (soma dos meses abrangidos)
+    const barberTargets = new Map<string, number>();
+    goals.forEach((goal) => {
+      if (!monthKeySet.has(`${goal.year}-${goal.month}`)) return;
+      const current = barberTargets.get(goal.barber_id) || 0;
+      barberTargets.set(goal.barber_id, current + (Number(goal.target_commission) || 0));
+    });
+
     let goalsAchieved = 0;
-    if (goals) {
-      goals.forEach((goal) => {
-        const earned = barberCommissions.get(goal.barber_id) || 0;
-        if (earned >= goal.target_commission) {
-          goalsAchieved++;
-        }
-      });
-    }
+    barberTargets.forEach((target, barberId) => {
+      const earned = barberCommissions.get(barberId) || 0;
+      if (target > 0 && earned >= target) goalsAchieved++;
+    });
+
+    // Denominador respeita os filtros ativos (unidade / barbeiro)
+    const scopedBarbers = (allBarbers || []).filter((b) => {
+      if (selectedBarber !== "all") return b.id === selectedBarber;
+      if (selectedUnit !== "all") return b.unit_id === selectedUnit;
+      return true;
+    });
 
     setStats({
       totalRevenue,
@@ -172,26 +196,30 @@ export default function ManagerReports() {
       totalClients,
       averageTicket,
       goalsAchieved,
-      totalBarbers: allBarbers?.length || 0,
+      totalBarbers: scopedBarbers.length,
     });
-  }, [dateRange, selectedBarber, selectedUnit, allBarbers]);
+  }, [dateRange, selectedBarber, selectedUnit, allBarbers, organizationId]);
 
   const fetchUnits = useCallback(async () => {
+    if (!organizationId) return;
     const { data } = await supabase
       .from("units")
       .select("id, name")
+      .eq("organization_id", organizationId)
       .eq("status", "active")
       .order("name");
     
     if (data) {
       setUnits(data);
     }
-  }, []);
+  }, [organizationId]);
 
   const fetchBarbers = useCallback(async () => {
+    if (!organizationId) return;
     const { data } = await supabase
       .from("barbers")
       .select("id, name, unit_id")
+      .eq("organization_id", organizationId)
       .eq("status", "active")
       .order("name");
     
@@ -199,33 +227,40 @@ export default function ManagerReports() {
       setAllBarbers(data);
       setBarbers(data);
     }
-  }, []);
+  }, [organizationId]);
 
   const fetchProductions = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
-    
-    let query = supabase
-      .from("daily_productions")
-      .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
-      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-      .lte("date", format(dateRange.to, "yyyy-MM-dd"))
-      .order("date", { ascending: false });
+    if (!organizationId) return;
 
-    // Aplicar filtro de unidade
-    if (selectedUnit !== "all") {
-      query = query.eq("barbers.unit_id", selectedUnit);
-    }
+    const startDate = toDateKey(dateRange.from);
+    const endDate = toDateKey(dateRange.to);
 
-    // Aplicar filtro de barbeiro
-    if (selectedBarber !== "all") {
-      query = query.eq("barber_id", selectedBarber);
-    }
+    const data = await fetchAllRows<DailyProduction>(() => {
+      let query = supabase
+        .from("daily_productions")
+        .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false });
 
-    const { data } = await query;
-    if (data) {
-      setProductions((data ?? []) as DailyProduction[]);
-    }
-  }, [dateRange, selectedBarber, selectedUnit]);
+      // Aplicar filtro de unidade
+      if (selectedUnit !== "all") {
+        query = query.eq("barbers.unit_id", selectedUnit);
+      }
+
+      // Aplicar filtro de barbeiro
+      if (selectedBarber !== "all") {
+        query = query.eq("barber_id", selectedBarber);
+      }
+
+      return query as any;
+    });
+
+    setProductions(data as DailyProduction[]);
+  }, [dateRange, selectedBarber, selectedUnit, organizationId]);
+
 
   useEffect(() => {
     fetchUnits();
@@ -449,6 +484,21 @@ export default function ManagerReports() {
           </CardContent>
         </Card>
       </div>
+
+      {organizationId && dateRange?.from && dateRange?.to && (
+        <>
+          <ManagerRescueReport
+            organizationId={organizationId}
+            from={dateRange.from}
+            to={dateRange.to}
+          />
+          <AutoRecurringReport
+            organizationId={organizationId}
+            from={dateRange.from}
+            to={dateRange.to}
+          />
+        </>
+      )}
 
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>

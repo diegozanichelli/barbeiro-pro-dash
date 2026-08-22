@@ -8,6 +8,19 @@ import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
 
+/** Evita que o TS parseie a select string (custo de typecheck). */
+const sel = (s: string): string => s;
+
+interface TxRow {
+  barber_id: string | null;
+  is_new_client: boolean | null;
+  item_type: string;
+  subscription_action: string | null;
+  mobile_phone: string | null;
+  barbers: { unit_id: string } | null;
+}
+
+
 interface Unit {
   id: string;
   name: string;
@@ -163,6 +176,10 @@ export default function UnitsComparison() {
         console.error("Erro ao buscar transações de assinatura:", transactionsError);
       }
 
+
+    // Agregação por barbeiro (para top barbeiros por unidade)
+    const barberAgg = new Map<string, { barberId: string; barberName: string; unitId: string; basic: number; extra: number; products: number }>();
+
     // Agregar produções por unidade
     productions?.forEach((prod: any) => {
       const unitId = prod.barbers?.unit_id;
@@ -265,13 +282,13 @@ export default function UnitsComparison() {
 
       const conversion = conversionMap.get(unitId)!;
 
-      if (tx.mobile_phone) {
-        if (tx.is_new_client === true) conversion.newPhones.add(tx.mobile_phone);
-        if (tx.is_new_client === false) conversion.existingPhones.add(tx.mobile_phone);
+      const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
+      if (normalizedPhone) {
+        if (isValidOpportunity(tx)) conversion.newPhones.add(normalizedPhone);
+        if (tx.is_new_client === false) conversion.existingPhones.add(normalizedPhone);
       }
 
-      const isNewSubscription = tx.item_type === "subscription" && tx.subscription_action === "new";
-      if (isNewSubscription) {
+      if (isNewSubscription(tx)) {
         conversion.totalNewSubs += 1;
         if (tx.is_new_client === true) conversion.newSubsFromNewClients += 1;
         if (tx.is_new_client === false) conversion.newSubsFromExistingClients += 1;

@@ -14,8 +14,6 @@ import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
 import BarberEvolution from "./manager/BarberEvolution";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
-import SubscriptionEarningsForm from "./manager/SubscriptionEarningsForm";
-import EarningsComparison from "./manager/EarningsComparison";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
 import AIUsageTracking from "./manager/AIUsageTracking";
@@ -27,6 +25,13 @@ import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
 import SendNotificationsButton from "./manager/SendNotificationsButton";
+import MonthlyPresentation from "./manager/presentation/MonthlyPresentation";
+import BestSalesDays from "./manager/BestSalesDays";
+import BarberReportPage from "./manager/BarberReportPage";
+import InactiveClientsReport from "./manager/InactiveClientsReport";
+import ReportsAuditPanel from "./manager/ReportsAuditPanel";
+import PerformanceDashboard from "./manager/PerformanceDashboard";
+
 
 interface ManagerDashboardProps {
   user: User;
@@ -130,6 +135,10 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <ManagerReports />
           </TabsContent>
 
+          <TabsContent value="performance" className="mt-0">
+            <PerformanceDashboard />
+          </TabsContent>
+
           <TabsContent value="daily-goals" className="mt-0">
             <DailyGoalsTracking />
           </TabsContent>
@@ -162,13 +171,35 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <Leaderboard />
           </TabsContent>
 
+          <TabsContent value="monthly-presentation" className="mt-0">
+            <MonthlyPresentation />
+          </TabsContent>
+
+          <TabsContent value="best-sales-days" className="mt-0">
+            <BestSalesDays />
+          </TabsContent>
+
+          <TabsContent value="barber-report" className="mt-0">
+            <BarberReportPage />
+          </TabsContent>
+
+          <TabsContent value="inactive-clients" className="mt-0">
+            <InactiveClientsReport />
+          </TabsContent>
+
+
           <TabsContent value="payroll" className="mt-0">
             <MonthlyPayroll />
+          </TabsContent>
+
+          <TabsContent value="reports-audit" className="mt-0">
+            <ReportsAuditPanel onNavigate={setActiveTab} />
           </TabsContent>
 
           <TabsContent value="ai-usage" className="mt-0">
             <AIUsageTracking />
           </TabsContent>
+
 
           <TabsContent value="subscriptions" className="mt-0">
             <SubscriptionsTracking />
@@ -180,17 +211,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             </TabsContent>
           )}
 
-          {hasSubscriptionModule && (
-            <>
-              <TabsContent value="subscription" className="mt-0">
-                <SubscriptionEarningsForm />
-              </TabsContent>
-
-              <TabsContent value="comparison" className="mt-0">
-                <EarningsComparison />
-              </TabsContent>
-            </>
-          )}
         </Tabs>
       </div>
     </div>

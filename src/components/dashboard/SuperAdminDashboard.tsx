@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban } from "lucide-react";
+import { LogOut, Building2, Users, DollarSign, TrendingUp, UserPlus, XCircle, Edit, Pencil, Repeat, Loader2, Ban, Gift, Clock, Sparkles, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +37,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { managerAuthSchema, type ManagerAuthFormData } from "@/lib/validations/manager";
 import { organizationEditSchema, type OrganizationEditFormData } from "@/lib/validations/organization";
+import { getEdgeFunctionErrorMessage } from "@/lib/edgeError";
+
 import {
   Form,
   FormControl,
@@ -57,13 +59,141 @@ interface Organization {
   subscription_status: string;
   created_at: string;
   has_subscription_module: boolean;
+  access_expires_at: string | null;
+  auto_deactivate: boolean;
 }
 
 interface OrganizationStats {
   total_organizations: number;
   active_subscriptions: number;
   trial_subscriptions: number;
+  free_subscriptions: number;
   monthly_revenue: number;
+}
+
+type OrgFilter = "all" | "trial" | "gratuita";
+
+const TRIAL_DAYS = 7;
+
+const isoToBrazilianDate = (value: string | null): string => {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return "";
+  return `${day}/${month}/${year}`;
+};
+
+const maskBrazilianDate = (value: string): string => {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+};
+
+const brazilianDateToIso = (value: string): string | null => {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  const parsed = new Date(year, month - 1, day);
+
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${yearText}-${monthText}-${dayText}`;
+};
+
+function getTrialDaysLeft(createdAt: string): number {
+  const created = new Date(createdAt).getTime();
+  const expires = created + TRIAL_DAYS * 24 * 60 * 60 * 1000;
+  const diffMs = expires - Date.now();
+  return Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+}
+
+interface ExpiryControlProps {
+  org: Organization;
+  onSave: (orgId: string, fields: { access_expires_at?: string | null; auto_deactivate?: boolean }) => void;
+}
+
+function ExpiryControl({ org, onSave }: ExpiryControlProps) {
+  const [draftDate, setDraftDate] = useState(() => isoToBrazilianDate(org.access_expires_at));
+
+  useEffect(() => {
+    setDraftDate(isoToBrazilianDate(org.access_expires_at));
+  }, [org.access_expires_at]);
+
+  const exp = org.access_expires_at;
+  const today = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const daysLeft = exp ? Math.ceil((new Date(exp + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : null;
+  const isSoon = daysLeft !== null && daysLeft <= 3 && daysLeft >= 0;
+  const isExpired = daysLeft !== null && daysLeft < 0;
+  const normalizedDraft = draftDate.trim();
+  const hasDraftChanged = normalizedDraft !== isoToBrazilianDate(org.access_expires_at);
+  const isComplete = normalizedDraft.length === 10;
+  const parsedDraftDate = isComplete ? brazilianDateToIso(normalizedDraft) : null;
+  const canSave = hasDraftChanged && (normalizedDraft === "" || Boolean(parsedDraftDate));
+
+  const handleSaveDate = () => {
+    if (normalizedDraft === "") {
+      onSave(org.id, { access_expires_at: null });
+      return;
+    }
+
+    const isoDate = parsedDraftDate;
+    if (!isoDate) return;
+
+    onSave(org.id, { access_expires_at: isoDate });
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 min-w-[220px]">
+      <div className="flex items-center gap-2">
+        <Input
+          type="text"
+          inputMode="numeric"
+          placeholder="dd/mm/aaaa"
+          value={draftDate}
+          onChange={(e) => setDraftDate(maskBrazilianDate(e.target.value))}
+          className={`h-8 text-xs ${isExpired ? "border-destructive text-destructive" : isSoon ? "border-amber-500 text-amber-600" : ""}`}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 px-2 text-xs"
+          onClick={handleSaveDate}
+          disabled={!canSave}
+        >
+          Salvar
+        </Button>
+      </div>
+      {normalizedDraft !== "" && !isComplete && (
+        <span className="text-[10px] text-muted-foreground">Digite a data completa antes de salvar</span>
+      )}
+      {normalizedDraft !== "" && isComplete && hasDraftChanged && !parsedDraftDate && (
+        <span className="text-[10px] text-destructive">Data inválida</span>
+      )}
+      <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <Switch
+          checked={org.auto_deactivate}
+          onCheckedChange={(checked) => onSave(org.id, { auto_deactivate: checked })}
+        />
+        Auto-desativar
+      </label>
+      {exp && daysLeft !== null && (
+        <span className={`text-[10px] font-medium ${isExpired ? "text-destructive" : isSoon ? "text-amber-600" : "text-muted-foreground"}`}>
+          {isExpired ? `Venceu há ${Math.abs(daysLeft)}d` : daysLeft === 0 ? "Vence hoje" : `${daysLeft}d restantes`}
+        </span>
+      )}
+    </div>
+  );
 }
 
 interface Manager {
@@ -81,8 +211,10 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     total_organizations: 0,
     active_subscriptions: 0,
     trial_subscriptions: 0,
+    free_subscriptions: 0,
     monthly_revenue: 0,
   });
+  const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -95,6 +227,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   });
   const [creating, setCreating] = useState(false);
   const [managers, setManagers] = useState<Manager[]>([]);
+  const [orgsWithoutManager, setOrgsWithoutManager] = useState<string[]>([]);
+
   const [showEditManagerDialog, setShowEditManagerDialog] = useState(false);
   const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -102,6 +236,9 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [editingOrg, setEditingOrg] = useState(false);
   const [cancelingOrg, setCancelingOrg] = useState(false);
+  const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deletingOrg, setDeletingOrg] = useState(false);
 
   const form = useForm<ManagerAuthFormData>({
     resolver: zodResolver(managerAuthSchema),
@@ -157,6 +294,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
         total_organizations: data?.length || 0,
         active_subscriptions: data?.filter(org => org.subscription_status === "active").length || 0,
         trial_subscriptions: data?.filter(org => org.subscription_status === "trial").length || 0,
+        free_subscriptions: data?.filter(org => org.subscription_status === "gratuita").length || 0,
         monthly_revenue: (data?.filter(org => org.subscription_status === "active").length || 0) * 99,
       };
       setStats(stats);
@@ -196,6 +334,24 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
         description: "Erro ao alterar status",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleUpdateExpiry = async (
+    orgId: string,
+    fields: { access_expires_at?: string | null; auto_deactivate?: boolean }
+  ) => {
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update(fields)
+        .eq("id", orgId);
+      if (error) throw error;
+      toast({ title: "Atualizado", description: "Vencimento salvo com sucesso" });
+      fetchOrganizations();
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Erro", description: "Falha ao salvar vencimento", variant: "destructive" });
     }
   };
 
@@ -329,6 +485,38 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     }
   };
 
+  const handleDeleteOrganization = async () => {
+    if (!orgToDelete) return;
+    setDeletingOrg(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-organization", {
+        body: { organizationId: orgToDelete.id, confirmationName: deleteConfirmName },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Barbearia excluída",
+        description: data?.message || "Conta excluída definitivamente",
+      });
+
+      setOrgToDelete(null);
+      setDeleteConfirmName("");
+      fetchOrganizations();
+      fetchManagers();
+    } catch (error) {
+      console.error("Error deleting organization:", error);
+      toast({
+        title: "Erro",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao excluir barbearia"),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingOrg(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
@@ -346,15 +534,21 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       if (error) throw error;
 
       setManagers(data?.managers || []);
+      setOrgsWithoutManager(
+        (data?.organizations_without_manager || []).map(
+          (org: { organization_id: string }) => org.organization_id
+        )
+      );
     } catch (error) {
       console.error("Error fetching managers:", error);
       toast({
         title: "Erro",
-        description: "Erro ao carregar gerentes",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao carregar gerentes"),
         variant: "destructive",
       });
     }
   };
+
 
   const handleEditManager = (manager: Manager) => {
     setSelectedManager(manager);
@@ -394,7 +588,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error updating manager:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao atualizar gerente",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao atualizar gerente"),
         variant: "destructive",
       });
     } finally {
@@ -470,7 +664,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
     try {
       setEditingOrg(true);
 
-      const { error } = await supabase.functions.invoke("admin-update-manager", {
+      const { data: result, error } = await supabase.functions.invoke("admin-update-manager", {
         body: {
           organization_id: selectedOrganization.id,
           organization_name: data.organizationName,
@@ -481,10 +675,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       });
 
       if (error) throw error;
+      if (result?.error) throw new Error(result.error);
 
       toast({
         title: "Sucesso",
-        description: "Organização e gerente atualizados com sucesso",
+        description: result?.created
+          ? "Gerente criado e vinculado à barbearia com sucesso"
+          : "Organização e gerente atualizados com sucesso",
       });
 
       setShowEditOrgDialog(false);
@@ -496,7 +693,8 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
       console.error("Error updating organization:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao atualizar organização",
+        description: await getEdgeFunctionErrorMessage(error, "Erro ao atualizar organização"),
+
         variant: "destructive",
       });
     } finally {
@@ -668,7 +866,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
           </TabsList>
 
           <TabsContent value="organizations">
-            <div className="grid gap-4 md:grid-cols-4 mb-6">
+            <div className="grid gap-4 md:grid-cols-5 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -693,15 +891,37 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            className={`cursor-pointer transition-all border-2 ${orgFilter === "trial" ? "border-primary ring-2 ring-primary/30" : "border-primary/40 hover:border-primary"}`}
+            onClick={() => setOrgFilter(orgFilter === "trial" ? "all" : "trial")}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Em Trial
+              <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-primary" />
+                Em Trial (7 dias grátis)
               </CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-primary">{stats.trial_subscriptions}</div>
+              <p className="text-xs text-muted-foreground mt-1">Clique para filtrar</p>
+            </CardContent>
+          </Card>
+
+          <Card
+            className={`cursor-pointer transition-all border-2 ${orgFilter === "gratuita" ? "border-amber-500 ring-2 ring-amber-500/30" : "border-amber-500/40 hover:border-amber-500"}`}
+            onClick={() => setOrgFilter(orgFilter === "gratuita" ? "all" : "gratuita")}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+                <Gift className="h-4 w-4 text-amber-500" />
+                Criadas por Você
+              </CardTitle>
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-500">{stats.free_subscriptions}</div>
+              <p className="text-xs text-muted-foreground mt-1">Contas gratuitas (mentoria)</p>
             </CardContent>
           </Card>
 
@@ -718,6 +938,17 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
           </Card>
         </div>
 
+        {orgFilter !== "all" && (
+          <div className="mb-4 flex items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              Filtro ativo: {orgFilter === "trial" ? "Em Trial (7 dias grátis)" : "Criadas por você (Gratuitas)"}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={() => setOrgFilter("all")}>
+              Limpar filtro
+            </Button>
+          </div>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>Todas as Organizações</CardTitle>
@@ -733,14 +964,49 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   <TableHead>Status</TableHead>
                   <TableHead>Módulo Assinatura</TableHead>
                   <TableHead>Data de Cadastro</TableHead>
+                  <TableHead>Vencimento</TableHead>
                   <TableHead>Customer ID</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {organizations.map((org) => (
-                  <TableRow key={org.id}>
-                    <TableCell className="font-medium">{org.name}</TableCell>
+                {organizations
+                  .filter((org) => orgFilter === "all" ? true : org.subscription_status === orgFilter)
+                  .map((org) => {
+                  const isTrial = org.subscription_status === "trial";
+                  const isFree = org.subscription_status === "gratuita";
+                  const trialDaysLeft = isTrial ? getTrialDaysLeft(org.created_at) : 0;
+                  const rowClass = isTrial
+                    ? "bg-primary/5 hover:bg-primary/10"
+                    : isFree
+                    ? "bg-amber-500/5 hover:bg-amber-500/10"
+                    : "";
+                  return (
+                  <TableRow key={org.id} className={rowClass}>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col gap-1">
+                        <span>{org.name}</span>
+                        {isFree && (
+                          <Badge variant="outline" className="w-fit border-amber-500/60 text-amber-600 bg-amber-500/10 text-[10px]">
+                            <Gift className="w-3 h-3 mr-1" />
+                            Criada por você
+                          </Badge>
+                        )}
+                        {isTrial && (
+                          <Badge variant="outline" className="w-fit border-primary/60 text-primary bg-primary/10 text-[10px]">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {trialDaysLeft > 0 ? `${trialDaysLeft} ${trialDaysLeft === 1 ? "dia restante" : "dias restantes"}` : "Trial expirado"}
+                          </Badge>
+                        )}
+                        {orgsWithoutManager.includes(org.id) && (
+                          <Badge variant="outline" className="w-fit border-destructive/60 text-destructive bg-destructive/10 text-[10px]">
+                            <Ban className="w-3 h-3 mr-1" />
+                            Sem gerente
+                          </Badge>
+                        )}
+                      </div>
+
+                    </TableCell>
                     <TableCell>{getStatusBadge(org.subscription_status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -774,6 +1040,9 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                     </TableCell>
                     <TableCell>
                       {new Date(org.created_at).toLocaleDateString("pt-BR")}
+                    </TableCell>
+                    <TableCell>
+                      <ExpiryControl org={org} onSave={handleUpdateExpiry} />
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {org.stripe_customer_id || "N/A"}
@@ -836,14 +1105,94 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                             )}
                           </>
                         )}
+                        {isSuperAdmin && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setOrgToDelete(org);
+                              setDeleteConfirmName("");
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Excluir
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
             </CardContent>
           </Card>
+
+          {/* Exclusão definitiva de barbearia */}
+          <Dialog
+            open={!!orgToDelete}
+            onOpenChange={(open) => {
+              if (!open && !deletingOrg) {
+                setOrgToDelete(null);
+                setDeleteConfirmName("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Excluir barbearia definitivamente</DialogTitle>
+                <DialogDescription>
+                  Esta ação é irreversível. Todos os dados de{" "}
+                  <strong>{orgToDelete?.name}</strong> serão apagados: unidades, barbeiros,
+                  clientes, vendas, produções, metas, planos e os acessos de login. Assinaturas
+                  ativas de cobrança também serão canceladas.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="delete-confirm">
+                  Digite o nome da barbearia para confirmar
+                </Label>
+                <Input
+                  id="delete-confirm"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  placeholder={orgToDelete?.name || ""}
+                  autoComplete="off"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setOrgToDelete(null);
+                    setDeleteConfirmName("");
+                  }}
+                  disabled={deletingOrg}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteOrganization}
+                  disabled={
+                    deletingOrg ||
+                    deleteConfirmName.trim().toLowerCase() !==
+                      (orgToDelete?.name || "").trim().toLowerCase()
+                  }
+                >
+                  {deletingOrg ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    "Excluir definitivamente"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
 
           {/* Modal de Edição de Organização */}
           <Dialog open={showEditOrgDialog} onOpenChange={setShowEditOrgDialog}>
@@ -854,6 +1203,13 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
                   Atualize as informações da barbearia e do gerente responsável
                 </DialogDescription>
               </DialogHeader>
+              {selectedOrganization && orgsWithoutManager.includes(selectedOrganization.id) && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  Esta barbearia não possui gerente vinculado. Informe email e senha para criar o
+                  acesso do gerente.
+                </div>
+              )}
+
               <Form {...orgForm}>
                 <form onSubmit={orgForm.handleSubmit(handleUpdateOrganization)} className="space-y-4">
                   <FormField

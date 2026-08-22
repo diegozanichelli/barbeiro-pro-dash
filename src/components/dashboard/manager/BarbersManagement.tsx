@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getEdgeFunctionErrorMessage } from "@/lib/edgeError";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,8 +114,9 @@ export default function BarbersManagement() {
 
           if (updateAuthError) {
             console.error("Erro da edge function:", updateAuthError);
-            const errorMsg = data?.error || updateAuthError.message || "Falha ao atualizar dados de autenticação";
-            throw new Error(errorMsg);
+            throw new Error(
+              await getEdgeFunctionErrorMessage(updateAuthError, "Falha ao atualizar dados de autenticação")
+            );
           }
 
           if (data?.success) {
@@ -145,9 +147,9 @@ export default function BarbersManagement() {
         });
         
         if (error) {
-          const serverMsg = (error as any)?.context?.error || (error as any)?.message;
-          throw new Error(serverMsg || "Falha ao criar barbeiro");
+          throw new Error(await getEdgeFunctionErrorMessage(error, "Falha ao criar barbeiro"));
         }
+        if (data?.error) throw new Error(data.error);
         toast.success("Barbeiro criado com sucesso! Login: " + formData.email);
       }
 
@@ -184,7 +186,7 @@ export default function BarbersManagement() {
       const { data, error } = await supabase.functions.invoke("delete-barber", {
         body: { barberId: id },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getEdgeFunctionErrorMessage(error, "Erro ao excluir barbeiro"));
       if (data?.error) throw new Error(data.error);
       toast.success("Barbeiro e dados de login excluídos!");
       fetchBarbers();
