@@ -42,6 +42,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
 import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
+import { translateSaleError } from "@/lib/saleGuards";
 
 interface DayReviewModalProps {
   open: boolean;
@@ -66,6 +67,9 @@ interface CartItem extends CatalogItem {
   customPrice: number;
   catalogRefId: string | null;
   fromLive: boolean; // true = veio do AO VIVO
+  clientName: string | null;
+  mobilePhone: string | null;
+  description: string | null;
 }
 
 interface LiveTransaction {
@@ -76,6 +80,9 @@ interface LiveTransaction {
   catalog_service_id: string | null;
   catalog_product_id: string | null;
   price_sold: number;
+  client_name: string | null;
+  mobile_phone: string | null;
+  description: string | null;
 }
 
 type CategoryTab = "services" | "products";
@@ -137,11 +144,11 @@ export default function DayReviewModal({
           .order("name"),
         supabase
           .from("sale_transactions")
-          .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold")
+          .select("id, item_name, item_type, service_category, catalog_service_id, catalog_product_id, price_sold, client_name, mobile_phone, description")
           .eq("barber_id", barberId)
           .eq("source", "manager")
-          .gte("created_at", `${date}T00:00:00`)
-          .lt("created_at", `${nextDay}T00:00:00`)
+          .gte("created_at", `${date}T00:00:00-04:00`)
+          .lt("created_at", `${nextDay}T00:00:00-04:00`)
           .order("created_at", { ascending: true }),
         supabase
           .from("daily_productions")
@@ -182,6 +189,9 @@ export default function DayReviewModal({
             ? tx.catalog_service_id
             : tx.catalog_product_id,
         fromLive: true,
+        clientName: tx.client_name ?? null,
+        mobilePhone: tx.mobile_phone ?? null,
+        description: tx.description ?? null,
       }));
       setCart(cartFromLive);
 
@@ -236,6 +246,9 @@ export default function DayReviewModal({
         customPrice: item.default_price,
         catalogRefId: item.id,
         fromLive: false,
+        clientName: null,
+        mobilePhone: null,
+        description: null,
       },
     ]);
   };
@@ -319,9 +332,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar status:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar status"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsSavingPresence(false);
     }
@@ -336,7 +347,9 @@ export default function DayReviewModal({
 
     setIsLoading(true);
     try {
-      // 1. Get or create daily_production
+      // 1. Get or create daily_production (sem inserir transações duplicadas).
+      // A "Conferência do Dia" é APENAS leitura/confirmação: marca confirmed_presence=true.
+      // As vendas verdadeiras já estão em sale_transactions com source='manager' (recepção).
       let dailyProductionId: string;
       const { data: existingProd } = await supabase
         .from("daily_productions")
@@ -376,36 +389,13 @@ export default function DayReviewModal({
         dailyProductionId = newProd.id;
       }
 
-      // 2. Insert barber transactions from cart
-      const transactions = cart.map((item) => ({
-        organization_id: organizationId,
-        barber_id: barberId,
-        daily_production_id: dailyProductionId,
-        item_name: item.name,
-        item_type: item.type,
-        service_category: item.category || null,
-        catalog_service_id:
-          item.type === "service" ? item.catalogRefId : null,
-        catalog_product_id:
-          item.type === "product" ? item.catalogRefId : null,
-        price_sold: item.customPrice,
-        commission_rate_used: 0,
-        commission_amount: 0,
-        source: "barber",
-        created_at: `${date}T12:00:00`,
-      }));
-
-      const { error: insertError } = await supabase
-        .from("sale_transactions")
-        .insert(transactions);
-      if (insertError) throw insertError;
-
-      // 3. Update clients_count
+      // 2. Marcar conferência sem reinserir transações.
+      // O total de clientes_count vem da prioridade gestor (tx_clients_count) > barbeiro,
+      // gerenciada pelo trigger recalculate_daily_production_from_transactions.
       await supabase
         .from("daily_productions")
         .update({
           manual_clients_count: clientsCount,
-          clients_count: clientsCount,
           confirmed_presence: true,
           presence_type: "present",
         })
@@ -451,9 +441,7 @@ export default function DayReviewModal({
       onSuccess();
     } catch (error: unknown) {
       console.error("Erro ao confirmar produção:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Erro ao confirmar produção"
-      );
+      toast.error(translateSaleError(error));
     } finally {
       setIsLoading(false);
     }

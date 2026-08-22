@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.create_sale_and_ensure_production(uuid, uuid, date, jsonb, text);

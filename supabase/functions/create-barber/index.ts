@@ -178,17 +178,79 @@ serve(async (req: Request) => {
     console.log("[CREATE-BARBER] Creating user:", email);
 
     // 1) Create auth user (email confirmed so they can login immediately)
+    let newUser: any = null;
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email: trimmedEmail,
       password: passwordStr,
       email_confirm: true,
       user_metadata: { full_name: trimmedName, role: "barber" },
     });
+
     if (createErr) {
-      console.error("[CREATE-BARBER] Auth user creation failed:", createErr);
-      return new Response(JSON.stringify({ error: "Falha ao criar usuário. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const isExists = (createErr as any)?.code === "email_exists" ||
+        createErr.message?.includes("already been registered");
+
+      if (!isExists) {
+        console.error("[CREATE-BARBER] Auth user creation failed:", createErr);
+        return new Response(JSON.stringify({ error: "Falha ao criar usuário. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Email já existe no Auth: verificar se é um usuário órfão (sem role e sem barbeiro)
+      console.log("[CREATE-BARBER] Email exists, checking for orphan auth user");
+      let existing: any = null;
+      for (let page = 1; page <= 10 && !existing; page++) {
+        const { data: listed, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+        if (listErr) {
+          console.error("[CREATE-BARBER] listUsers failed:", listErr);
+          break;
+        }
+        existing = listed.users.find((u) => u.email?.toLowerCase() === trimmedEmail.toLowerCase()) ?? null;
+        if (listed.users.length < 1000) break;
+      }
+
+      if (!existing) {
+        return new Response(
+          JSON.stringify({ error: "Este email já está cadastrado no sistema. Use outro email." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: existingRole } = await supabaseAdmin
+        .from("user_roles")
+        .select("id, role, organization_id")
+        .eq("user_id", existing.id)
+        .maybeSingle();
+
+      const { data: existingBarber } = await supabaseAdmin
+        .from("barbers")
+        .select("id")
+        .eq("user_id", existing.id)
+        .maybeSingle();
+
+      if (existingRole || existingBarber) {
+        console.error("[CREATE-BARBER] Email already linked to an account");
+        return new Response(
+          JSON.stringify({ error: "Este email já está em uso por outro usuário do sistema. Use outro email." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Reaproveitar usuário órfão: redefinir senha e metadados
+      const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+        password: passwordStr,
+        email_confirm: true,
+        user_metadata: { full_name: trimmedName, role: "barber" },
+      });
+      if (updErr) {
+        console.error("[CREATE-BARBER] Failed to recycle orphan user:", updErr);
+        return new Response(JSON.stringify({ error: "Falha ao reaproveitar o acesso existente. Tente novamente." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      console.log("[CREATE-BARBER] Orphan auth user recycled:", existing.id);
+      newUser = existing;
+    } else {
+      newUser = created.user;
     }
-    const newUser = created.user;
+
     if (!newUser) {
       console.error("[CREATE-BARBER] No user returned from auth");
       return new Response(JSON.stringify({ error: "Falha ao criar usuário" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -197,7 +259,7 @@ serve(async (req: Request) => {
     console.log("[CREATE-BARBER] Auth user created:", newUser.id);
 
     // 2) Ensure profile exists
-    const { error: profileErr } = await supabaseAdmin.from("profiles").insert({
+    const { error: profileErr } = await supabaseAdmin.from("profiles").upsert({
       id: newUser.id,
       full_name: trimmedName,
     });

@@ -32,15 +32,20 @@ export default function StatusDoDiaDialog({
   onConfirm,
 }: StatusDoDiaDialogProps) {
   void barberId;
-  void date;
+
+  const isSunday = (() => {
+    if (!date) return false;
+    const d = new Date(`${date}T12:00:00`);
+    return d.getDay() === 0;
+  })();
 
   const [selectedValue, setSelectedValue] = useState<PresenceType>("present");
 
   useEffect(() => {
     if (open) {
-      setSelectedValue("present");
+      setSelectedValue(isSunday ? "optional_sunday" : "present");
     }
-  }, [open]);
+  }, [open, isSunday]);
 
   const handleConfirm = async () => {
     await onConfirm(selectedValue);
@@ -80,6 +85,15 @@ export default function StatusDoDiaDialog({
                 Falta / Atestado
               </Label>
             </div>
+
+            {isSunday && (
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="optional_sunday" id="status-optional-sunday" />
+                <Label htmlFor="status-optional-sunday" className="cursor-pointer">
+                  Domingo opcional (não conta como folga/falta)
+                </Label>
+              </div>
+            )}
           </RadioGroup>
         </div>
 

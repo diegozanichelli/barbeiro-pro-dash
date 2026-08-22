@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target, MapPin } from "lucide-react";
 import { getManausDate } from "@/lib/dateUtils";
+import { isSubscriptionRevenue } from "@/lib/metricsRules";
 
 interface Unit {
   id: string;
@@ -69,14 +70,35 @@ export default function ShopEvolution() {
   const fetchShopEvolutionData = async () => {
     setLoading(true);
 
-    // Buscar todas as produções do ano com dados do barbeiro para filtrar por unidade
-    let productionsQuery = supabase
-      .from("daily_productions")
-      .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id)")
-      .gte("date", `${selectedYear}-01-01`)
-      .lte("date", `${selectedYear}-12-31`);
+    // Buscar todas as produções do ano com paginação (Supabase tem limite default de 1000 linhas).
+    // Inclui campos tx_* (gestor) e manual_* (barbeiro) para aplicar a hierarquia oficial:
+    // tx (gestor) > manual (barbeiro) > legacy (services_basic/extra/products) > services_total
+    const productions: any[] = [];
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let productionsError: any = null;
+    // Loop de paginação: continua até receber menos linhas que o tamanho da página
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("daily_productions")
+        .select(`date, services_total, services_basic_total, services_extra_total, products_total,
+                 tx_basic_total, tx_extra_total, tx_products_total,
+                 manual_basic_total, manual_extra_total, manual_products_total,
+                 commission_earned, clients_count, barber_id, barbers!inner(unit_id)`)
+        .gte("date", `${selectedYear}-01-01`)
+        .lte("date", `${selectedYear}-12-31`)
+        .order("date", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
 
-    const { data: productions, error: productionsError } = await productionsQuery;
+      if (error) {
+        productionsError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      productions.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
 
     if (productionsError) {
       console.error("Erro ao buscar produções:", productionsError);
@@ -101,20 +123,40 @@ export default function ShopEvolution() {
       console.error("Erro ao buscar metas:", goalsError);
     }
 
-    // Buscar faturamento de assinaturas do ano
-    const { data: subscriptionEarnings, error: subError } = await supabase
-      .from("barber_subscription_earnings")
-      .select("month, total_revenue, barber_id, barbers!inner(unit_id)")
-      .eq("year", selectedYear);
+    // Buscar receita de assinaturas direto de sale_transactions (fonte única de verdade)
+    // Filtra por source='manager' para alinhar com o princípio "Gestão como Fonte de Verdade"
+    // Paginação para evitar o limite default de 1000 linhas do Supabase
+    const subscriptionTxs: any[] = [];
+    let subFrom = 0;
+    let subError: any = null;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("sale_transactions")
+        .select("created_at, price_sold, barber_id, barbers!inner(unit_id)")
+        .eq("item_type", "subscription")
+        .gte("created_at", `${selectedYear}-01-01T00:00:00`)
+        .lte("created_at", `${selectedYear}-12-31T23:59:59`)
+        .order("created_at", { ascending: true })
+        .range(subFrom, subFrom + PAGE_SIZE - 1);
+
+      if (error) {
+        subError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      subscriptionTxs.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      subFrom += PAGE_SIZE;
+    }
 
     if (subError) {
-      console.error("Erro ao buscar ganhos de assinatura:", subError);
+      console.error("Erro ao buscar transações de assinatura:", subError);
     }
 
     // Filtrar assinaturas por unidade se selecionada
-    const filteredSubEarnings = selectedUnit === "all"
-      ? subscriptionEarnings
-      : subscriptionEarnings?.filter((s: any) => s.barbers?.unit_id === selectedUnit);
+    const filteredSubTxs = selectedUnit === "all"
+      ? subscriptionTxs
+      : subscriptionTxs?.filter((s: any) => s.barbers?.unit_id === selectedUnit);
 
     // Filtrar metas por unidade se selecionada
     const filteredGoals = selectedUnit === "all"
@@ -134,26 +176,66 @@ export default function ShopEvolution() {
 
     filteredProductions?.forEach((prod: any) => {
       const month = new Date(prod.date).getMonth();
-      
-      const servicesBasic = prod.services_basic_total ?? 0;
-      const servicesExtra = prod.services_extra_total ?? 0;
-      const servicesTotal = servicesBasic > 0 || servicesExtra > 0 
-        ? servicesBasic + servicesExtra 
-        : (prod.services_total ?? 0);
-      
-      monthlyAggregates[month].receitaBasica += servicesBasic > 0 ? servicesBasic : (prod.services_total ?? 0);
-      monthlyAggregates[month].receitaExtra += servicesExtra;
-      monthlyAggregates[month].receitaProdutos += prod.products_total ?? 0;
-      monthlyAggregates[month].receita += servicesTotal + (prod.products_total ?? 0);
-      monthlyAggregates[month].comissaoTotal += prod.commission_earned ?? 0;
-      monthlyAggregates[month].clientes += prod.clients_count ?? 0;
+
+      // Hierarquia oficial: tx (gestor) > manual (barbeiro) > legacy detalhado > services_total
+      const txBasic = Number(prod.tx_basic_total) || 0;
+      const txExtra = Number(prod.tx_extra_total) || 0;
+      const txProducts = Number(prod.tx_products_total) || 0;
+      const txTotal = txBasic + txExtra + txProducts;
+
+      const mBasic = Number(prod.manual_basic_total) || 0;
+      const mExtra = Number(prod.manual_extra_total) || 0;
+      const mProducts = Number(prod.manual_products_total) || 0;
+      const manualTotal = mBasic + mExtra + mProducts;
+
+      const legacyBasic = Number(prod.services_basic_total) || 0;
+      const legacyExtra = Number(prod.services_extra_total) || 0;
+      const legacyProducts = Number(prod.products_total) || 0;
+      const servicesTotalLegacy = Number(prod.services_total) || 0;
+
+      let receitaBasicaItem = 0;
+      let receitaExtraItem = 0;
+      let receitaProdutosItem = 0;
+
+      if (txTotal > 0) {
+        receitaBasicaItem = txBasic;
+        receitaExtraItem = txExtra;
+        receitaProdutosItem = txProducts;
+      } else if (manualTotal > 0) {
+        receitaBasicaItem = mBasic;
+        receitaExtraItem = mExtra;
+        receitaProdutosItem = mProducts;
+      } else if (prod.services_basic_total != null || prod.services_extra_total != null) {
+        receitaExtraItem = legacyExtra;
+        // Se basic = 0 mas há extras, derivar do total legado para não duplicar
+        if (legacyBasic === 0 && legacyExtra > 0) {
+          receitaBasicaItem = Math.max(0, servicesTotalLegacy - legacyExtra);
+        } else {
+          receitaBasicaItem = legacyBasic;
+        }
+        receitaProdutosItem = legacyProducts;
+      } else {
+        // Fallback final: tudo no services_total legado, sem split
+        receitaBasicaItem = servicesTotalLegacy;
+        receitaExtraItem = 0;
+        receitaProdutosItem = legacyProducts;
+      }
+
+      const servicesTotal = receitaBasicaItem + receitaExtraItem;
+
+      monthlyAggregates[month].receitaBasica += receitaBasicaItem;
+      monthlyAggregates[month].receitaExtra += receitaExtraItem;
+      monthlyAggregates[month].receitaProdutos += receitaProdutosItem;
+      monthlyAggregates[month].receita += servicesTotal + receitaProdutosItem;
+      monthlyAggregates[month].comissaoTotal += Number(prod.commission_earned) || 0;
+      monthlyAggregates[month].clientes += Number(prod.clients_count) || 0;
     });
 
-    // Agregar faturamento de assinaturas por mês
-    filteredSubEarnings?.forEach((sub: any) => {
-      const monthIndex = sub.month - 1;
+    // Agregar receita de assinaturas por mês (usando created_at da transação)
+    filteredSubTxs?.forEach((tx: any) => {
+      const monthIndex = new Date(tx.created_at).getMonth();
       if (monthIndex >= 0 && monthIndex < 12) {
-        const revenue = Number(sub.total_revenue) || 0;
+        const revenue = Number(tx.price_sold) || 0;
         monthlyAggregates[monthIndex].receitaAssinaturas += revenue;
         monthlyAggregates[monthIndex].receita += revenue;
       }
@@ -208,6 +290,30 @@ export default function ShopEvolution() {
   const totalAnual = chartData.length > 0 ? chartData.reduce((acc, m) => acc + m.receita, 0) : 0;
   const totalClientes = chartData.length > 0 ? chartData.reduce((acc, m) => acc + m.clientes, 0) : 0;
   const ticketMedioAnual = totalClientes > 0 ? totalAnual / totalClientes : 0;
+
+  const visibleChartData = useMemo(() => {
+    if (chartData.length === 0) return [];
+
+    if (selectedYear === manausNow.getFullYear()) {
+      return chartData.slice(0, manausNow.getMonth() + 1);
+    }
+
+    const lastMonthWithData = [...chartData]
+      .map((month, index) => ({ month, index }))
+      .reverse()
+      .find(({ month }) =>
+        month.receita > 0 ||
+        month.receitaBasica > 0 ||
+        month.receitaExtra > 0 ||
+        month.receitaProdutos > 0 ||
+        month.receitaAssinaturas > 0 ||
+        month.comissaoTotal > 0 ||
+        month.metaTotal > 0 ||
+        month.clientes > 0
+      )?.index;
+
+    return lastMonthWithData != null ? chartData.slice(0, lastMonthWithData + 1) : chartData;
+  }, [chartData, selectedYear, manausNow]);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -373,7 +479,7 @@ export default function ShopEvolution() {
             <div className="w-full h-96">
               <ResponsiveContainer width="100%" height="100%">
                 {viewMode === 'receita' ? (
-                  <BarChart data={chartData}>
+                  <BarChart data={visibleChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }} barCategoryGap="18%">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} />
                     <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
@@ -385,7 +491,7 @@ export default function ShopEvolution() {
                     <Bar dataKey="receitaAssinaturas" name="Assinaturas" stackId="a" fill="hsl(280, 70%, 55%)" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 ) : viewMode === 'ticket' ? (
-                  <LineChart data={chartData}>
+                  <LineChart data={visibleChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} />
                     <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${v.toFixed(0)}`} />
@@ -394,7 +500,7 @@ export default function ShopEvolution() {
                     <Line type="monotone" dataKey="ticketMedio" name="Ticket Médio" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ fill: "hsl(var(--primary))", strokeWidth: 2 }} />
                   </LineChart>
                 ) : (
-                  <BarChart data={chartData}>
+                  <BarChart data={visibleChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }} barCategoryGap="18%">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} />
                     <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />

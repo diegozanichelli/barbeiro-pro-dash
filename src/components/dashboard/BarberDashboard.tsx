@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -7,21 +7,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { LogOut, Target, TrendingUp, TrendingDown, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, AlertTriangle, XCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import ProductionHistory from "./barber/ProductionHistory";
 import Leaderboard from "./Leaderboard";
-import SubscriptionEarningsCard from "./barber/SubscriptionEarningsCard";
+
 import AITipsTab from "./barber/AITipsTab";
+import WarPlanWizard from "./barber/WarPlanWizard";
+import StrategyHistoryCard from "./barber/StrategyHistoryCard";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
+import MissingProductionAlert from "./barber/MissingProductionAlert";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
+import PushNotificationToggle from "./barber/PushNotificationToggle";
 
 interface BarberDashboardProps {
   user: User;
@@ -39,6 +44,10 @@ interface MonthlyGoal {
   target_commission: number;
 }
 
+interface EditingProduction {
+  id: string;
+  date: string;
+}
 
 interface DailyProductionRow {
   id: string;
@@ -56,6 +65,8 @@ interface DailyProductionRow {
   tx_basic_total: number | null;
   tx_extra_total: number | null;
   tx_products_total: number | null;
+  tx_clients_count: number | null;
+  tx_services_count: number | null;
 }
 
 interface MonthlyStats {
@@ -69,15 +80,6 @@ interface MonthlyStats {
   products_conversion: number;
 }
 
-interface LastDaysProduction {
-  id: string;
-  date: string;
-  services_basic_total: number | null;
-  services_extra_total: number | null;
-  services_total: number | null;
-  products_total: number | null;
-  confirmed_presence: boolean | null;
-}
 
 interface LiveSale {
   id: string;
@@ -107,8 +109,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [dailyTargetServices, setDailyTargetServices] = useState(0);
   const [scheduledOffDates, setScheduledOffDates] = useState<string[]>([]);
   const [missingLink, setMissingLink] = useState(false);
-  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
-  const [todayProduction, setTodayProduction] = useState<{
+  const [editingProduction, setEditingProduction] = useState<EditingProduction | null>(null);
+const [todayProduction, setTodayProduction] = useState<{
     id?: string;
     total: number;
     confirmed_presence: boolean;
@@ -118,8 +120,13 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const [presenceModalOpen, setPresenceModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("daily");
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [last3DaysProduction, setLast3DaysProduction] = useState<LastDaysProduction[]>([]);
+  
   const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
+  const [reviewingDate, setReviewingDate] = useState<string | null>(null);
+  const [warPlanMessage, setWarPlanMessage] = useState<string | null>(null);
+  const [showWarPlanWizard, setShowWarPlanWizard] = useState(false);
+  const [pacingStatus, setPacingStatus] = useState<"ahead" | "on-track" | "behind" | "critical" | null>(null);
+  const [expectedPercent, setExpectedPercent] = useState<number | null>(null);
   
   // Estado para notificação de alteração de comissão
   const { holidayDates } = useOrganizationHolidays({
@@ -156,24 +163,38 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   const fetchMonthlyGoal = useCallback(async () => {
     if (!barber) return;
 
-    const { data, error } = await supabase
-      .from("monthly_goals")
-      .select("*")
-      .eq("barber_id", barber.id)
-      .eq("month", selectedMonth)
-      .eq("year", selectedYear)
-      .maybeSingle();
+    const todayStr = getTodayString();
 
-    if (error) {
-      console.error("Erro ao buscar meta mensal:", error);
+    const [salesResponse, goalResponse] = await Promise.all([
+      supabase
+        .from("sale_transactions")
+        .select("id, created_at, client_name, item_name, item_type, price_sold")
+        .eq("barber_id", barber.id)
+        .gte("created_at", `${todayStr}T00:00:00-04:00`)
+        .lte("created_at", `${todayStr}T23:59:59-04:00`)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("monthly_goals")
+        .select("target_commission, work_days")
+        .eq("barber_id", barber.id)
+        .eq("month", selectedMonth)
+        .eq("year", selectedYear)
+        .maybeSingle(),
+    ]);
+
+    if (!salesResponse.error) {
+      setLiveSales((salesResponse.data || []) as LiveSale[]);
     }
 
-    if (data) {
-      setMonthlyGoal(data);
+    if (!goalResponse.error && goalResponse.data) {
+      setMonthlyGoal({ target_commission: goalResponse.data.target_commission });
     } else {
       setMonthlyGoal(null);
     }
   }, [barber, selectedMonth, selectedYear]);
+
+  // Alias for backward compat
+  const fetchLivePanelData = fetchMonthlyGoal;
 
   const fetchMonthlyStats = useCallback(async () => {
     if (!barber) return;
@@ -209,51 +230,42 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
     const typedProductions = (productions || []) as DailyProductionRow[];
 
-    // Consolidar dados diretamente das produções (fonte única de verdade)
-    interface ConsolidatedRow {
-      date: string;
-      consolidated_basic_total: number;
-      consolidated_extra_total: number;
-      consolidated_products_total: number;
-      total_revenue: number;
-      total_clients: number;
-      total_services: number;
-    }
-
-    const typedConsolidated: ConsolidatedRow[] = typedProductions.map((p) => {
-      // REGRA: O dashboard do barbeiro usa APENAS seus próprios dados (manual_*/services_*)
-      // Os campos tx_* são dados de auditoria do gestor e NÃO devem ser usados aqui
-      let basic: number, extra: number, prods: number;
-      if (p.services_basic_total != null || p.services_extra_total != null) {
-        basic = Number(p.services_basic_total) || 0;
-        extra = Number(p.services_extra_total) || 0;
-        prods = Number(p.products_total) || 0;
-      } else {
-        basic = Number(p.services_total) || 0;
-        extra = 0;
-        prods = Number(p.products_total) || 0;
+    // Calcular consolidados diretamente de daily_productions
+    // Prioridade: tx (gestor) > manual (barbeiro) > legado
+    const getConsolidated = (p: DailyProductionRow) => {
+      const txTotal = (Number(p.tx_basic_total) || 0) + (Number(p.tx_extra_total) || 0) + (Number(p.tx_products_total) || 0);
+      if (txTotal > 0) {
+        return {
+          basic: Number(p.tx_basic_total) || 0,
+          extra: Number(p.tx_extra_total) || 0,
+          products: Number(p.tx_products_total) || 0,
+          clients: Number(p.tx_clients_count) || 0,
+          services: Number(p.tx_services_count) || 0,
+        };
       }
-
+      if (p.services_basic_total != null || p.services_extra_total != null) {
+        return {
+          basic: Number(p.services_basic_total) || 0,
+          extra: Number(p.services_extra_total) || 0,
+          products: Number(p.products_total) || 0,
+          clients: Number(p.clients_count) || 0,
+          services: Number(p.services_count) || 0,
+        };
+      }
       return {
-        date: p.date,
-        consolidated_basic_total: basic,
-        consolidated_extra_total: extra,
-        consolidated_products_total: prods,
-        total_revenue: basic + extra + prods,
-        total_clients: Number(p.clients_count) || 0,
-        total_services: Number(p.services_count) || 0,
+        basic: Number(p.services_total) || 0,
+        extra: 0,
+        products: Number(p.products_total) || 0,
+        clients: Number(p.clients_count) || 0,
+        services: Number(p.services_count) || 0,
       };
-    });
+    };
 
-    const totalClients = typedConsolidated.reduce((sum, row) => sum + row.total_clients, 0);
-    const totalServicesCount = typedConsolidated.reduce((sum, row) => sum + row.total_services, 0);
-
-    const totalServicesRevenue = typedConsolidated.reduce(
-      (sum, row) => sum + row.consolidated_basic_total + row.consolidated_extra_total,
-      0
-    );
-    const totalProductsRevenue = typedConsolidated.reduce((sum, row) => sum + row.consolidated_products_total, 0);
-    const totalRevenue = typedConsolidated.reduce((sum, row) => sum + row.total_revenue, 0);
+    const totalClients = typedProductions.reduce((sum, p) => sum + getConsolidated(p).clients, 0);
+    const totalServicesCount = typedProductions.reduce((sum, p) => sum + getConsolidated(p).services, 0);
+    const totalServicesRevenue = typedProductions.reduce((sum, p) => { const c = getConsolidated(p); return sum + c.basic + c.extra; }, 0);
+    const totalProductsRevenue = typedProductions.reduce((sum, p) => sum + getConsolidated(p).products, 0);
+    const totalRevenue = totalServicesRevenue + totalProductsRevenue;
 
     const totalProductsCount = typedProductions.reduce((sum, p) => sum + Number(p.products_count), 0);
 
@@ -286,8 +298,8 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     const todayProd = typedProductions.find((p) => p.date === todayStr);
 
     if (todayProd) {
-      const todayConsolidated = typedConsolidated.find((row) => row.date === todayStr);
-      const todayTotal = Number(todayConsolidated?.total_revenue ?? 0) || 0;
+      const c = getConsolidated(todayProd);
+      const todayTotal = c.basic + c.extra + c.products;
       setTodayProduction({
         id: todayProd.id,
         total: todayTotal,
@@ -353,17 +365,20 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
       daysToUse = Math.max(1, remainingCalendarDays - futureOffCount);
     }
 
-    if (daysToUse > 0) {
-      const dailyCommission = remaining / daysToUse;
-      setDailyTarget(dailyCommission);
+    const dailyTarget = daysToUse > 0 ? Math.max(0, remaining / daysToUse) : 0;
+    setDailyTarget(dailyTarget);
 
-      // Calcular meta de serviços: 100% da meta diária convertida para venda de serviços
-      const servicesTarget = barber.services_commission > 0 
-        ? dailyCommission / (barber.services_commission / 100)
-        : 0;
-
-      setDailyTargetServices(servicesTarget);
+    // Calcular meta diária de faturamento (em serviços)
+    // Preferência 1: usar proporção real do mês (faturamento/comissão acumulada)
+    // Fallback: usar a % de comissão de serviços cadastrada no barbeiro
+    const servicesRate = Number((barber as any)?.services_commission) || 0;
+    let servicesTarget = 0;
+    if (stats.accumulated_commission > 0 && stats.total_services > 0) {
+      servicesTarget = dailyTarget * (stats.total_services / stats.accumulated_commission);
+    } else if (servicesRate > 0) {
+      servicesTarget = dailyTarget / (servicesRate / 100);
     }
+    setDailyTargetServices(servicesTarget);
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, holidayDates, scheduledOffDates]);
 
   const pacingCoachMessage = useMemo(() => {
@@ -402,7 +417,6 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('Comissão atualizada pelo gerente:', payload);
           const oldBarber = payload.old as BarberData;
           const newBarber = payload.new as BarberData;
           
@@ -453,7 +467,6 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
             filter: `barber_id=eq.${barber.id}`,
           },
           (payload) => {
-            console.log('Lançamento alterado (INSERT/UPDATE/DELETE):', payload);
             // Forçar recálculo IMEDIATO das estatísticas
             fetchMonthlyStats();
             fetchMonthlyGoal();
@@ -461,8 +474,49 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         )
         .subscribe();
 
+      // Realtime listener para notificar quando uma nova venda for registrada
+      const salesChannel = supabase
+        .channel(`sale-notifications-${barber.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'sale_transactions',
+            filter: `barber_id=eq.${barber.id}`,
+          },
+          async (payload) => {
+            const sale = payload.new as any;
+            const valor = Number(sale.price_sold || 0);
+            const itemName = sale.item_name || 'Item';
+            const clientName = sale.client_name?.trim() || '';
+
+            // Contar vendas do dia para esse barbeiro
+            const today = getTodayString();
+            const { count } = await supabase
+              .from('sale_transactions')
+              .select('id', { count: 'exact', head: true })
+              .eq('barber_id', barber.id)
+              .gte('created_at', `${today}T00:00:00-04:00`)
+              .lte('created_at', `${today}T23:59:59-04:00`);
+
+            const salesCount = count || 1;
+            
+            toast.success(`💰 Venda #${salesCount} do dia!`, {
+              description: `${itemName}${clientName ? ` — ${clientName}` : ''}: R$ ${valor.toFixed(2)}`,
+              duration: 6000,
+            });
+
+            // Atualizar lista de vendas ao vivo e stats
+            fetchMonthlyGoal();
+            fetchMonthlyStats();
+          }
+        )
+        .subscribe();
+
       return () => {
         supabase.removeChannel(productionsChannel);
+        supabase.removeChannel(salesChannel);
       };
     }
   }, [barber, selectedMonth, selectedYear, fetchMonthlyGoal, fetchMonthlyStats]); // Recarregar quando mês/ano mudar
@@ -473,82 +527,58 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     }
   }, [monthlyGoal, stats, barber, selectedMonth, selectedYear, calculateDailyTarget]);
 
-  const fetchLivePanelData = useCallback(async () => {
-    if (!barber) return;
-
-    const todayStr = getTodayString();
-
-    const [daysResponse, salesResponse] = await Promise.all([
-      supabase
-        .from("daily_productions")
-        .select("id, date, services_basic_total, services_extra_total, services_total, products_total, confirmed_presence")
-        .eq("barber_id", barber.id)
-        .lte("date", todayStr)
-        .order("date", { ascending: false })
-        .limit(3),
-      supabase
-        .from("sale_transactions")
-        .select("id, created_at, client_name, item_name, item_type, price_sold")
-        .eq("barber_id", barber.id)
-        .gte("created_at", `${todayStr}T00:00:00-04:00`)
-        .lte("created_at", `${todayStr}T23:59:59-04:00`)
-        .order("created_at", { ascending: false }),
-    ]);
-
-    if (!daysResponse.error) {
-      setLast3DaysProduction((daysResponse.data || []) as LastDaysProduction[]);
+  // Buscar pacing (Crítico/Atenção/No Ritmo/Acima) — mesma lógica do painel do gestor
+  useEffect(() => {
+    if (!barber || !isCurrentMonth || !monthlyGoal || !stats) {
+      setPacingStatus(null);
+      setExpectedPercent(null);
+      return;
     }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("calc_expected_pacing", {
+        p_barber_id: barber.id,
+        p_ref_date: getTodayString(),
+      });
+      if (cancelled || error) return;
+      const pacing = Array.isArray(data) ? data[0] : data;
+      const expected = Number(pacing?.expected_percent ?? 0);
+      const progress = monthlyGoal.target_commission > 0
+        ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
+        : 0;
+      const diff = progress - expected;
+      let status: "ahead" | "on-track" | "behind" | "critical";
+      if (diff >= 10) status = "ahead";
+      else if (diff >= -5) status = "on-track";
+      else if (diff >= -20) status = "behind";
+      else status = "critical";
+      setExpectedPercent(expected);
+      setPacingStatus(status);
+    })();
+    return () => { cancelled = true; };
+  }, [barber, isCurrentMonth, monthlyGoal, stats]);
 
-    if (!salesResponse.error) {
-      setLiveSales((salesResponse.data || []) as LiveSale[]);
+  // Check localStorage for existing war plan
+  useEffect(() => {
+    if (!barber) return;
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    const saved = localStorage.getItem(todayKey);
+    if (saved) {
+      setWarPlanMessage(saved);
+      setShowWarPlanWizard(false);
+    } else {
+      setShowWarPlanWizard(true);
     }
   }, [barber]);
 
-  useEffect(() => {
-    fetchLivePanelData();
-  }, [fetchLivePanelData]);
-  useEffect(() => {
+  const handleWarPlanComplete = (planText: string) => {
     if (!barber) return;
-
-    const liveDailyChannel = supabase
-      .channel(`barber-live-daily-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "daily_productions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
-
-    const liveSalesChannel = supabase
-      .channel(`barber-live-sales-${barber.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sale_transactions",
-          filter: `barber_id=eq.${barber.id}`,
-        },
-        () => {
-          fetchLivePanelData();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(liveDailyChannel);
-      supabase.removeChannel(liveSalesChannel);
-    };
-  }, [barber, fetchLivePanelData]);
-
-
+    const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
+    localStorage.setItem(todayKey, planText);
+    setWarPlanMessage(planText);
+    setShowWarPlanWizard(false);
+    setActiveTab("ai-tips");
+  };
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
@@ -582,6 +612,13 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
     const { month, year } = getCurrentMonthYear();
     setSelectedMonth(month);
     setSelectedYear(year);
+  };
+
+  const handleEditProduction = (production: EditingProduction) => {
+    setEditingProduction({
+      id: production.id,
+      date: production.date,
+    });
   };
 
   const handleFormSuccess = () => {
@@ -715,7 +752,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
   if (missingLink) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+        <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -782,36 +819,43 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+      <header className="glass-strong border-b border-white/[0.06] sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <img src={logo} alt="Performance Barber" className="h-16 w-auto" />
-              <div>
-                <h1 className="text-xl font-bold text-foreground">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <img src={logo} alt="Performance Barber" className="h-12 w-auto sm:h-16" />
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-bold text-foreground">
                   Olá, {barber.name}!
                 </h1>
                 {isCurrentMonth && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4 shrink-0" />
                     Dias úteis restantes no mês: <span className="font-bold text-foreground">{daysLeft}</span>
                   </p>
                 )}
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
-              {isSigningOut ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saindo...
-                </>
-              ) : (
-                <>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sair
-                </>
-              )}
-            </Button>
+            <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+              <PushNotificationToggle 
+                barberId={barber.id} 
+                organizationId={barber.organization_id} 
+                userId={user.id} 
+              />
+              <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saindo...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sair
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -875,28 +919,30 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="live" className="flex items-center gap-1">
               <Radio className="w-3 h-3" />
-              Ao vivo
+              <span className="hidden sm:inline">Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
+            <TabsTrigger value="strategies">Estratégias</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
             <TabsTrigger value="ai-tips" className="flex items-center gap-1">
-              <Sparkles className="w-3 h-3" />
-              <span className="hidden sm:inline">Dicas da IA</span>
-              <span className="sm:hidden">IA</span>
+              <Bot className="w-3 h-3" />
+              <span className="hidden sm:inline">IA</span>
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="daily" className="space-y-6">
+            {/* Aviso: app do barbeiro é somente para acompanhamento */}
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 flex items-start gap-2">
+              <span className="text-base leading-none mt-0.5">📋</span>
+              <p className="text-xs text-muted-foreground">
+                Este app é <strong className="text-foreground">somente para acompanhamento</strong>. Todos os lançamentos de venda são feitos pela recepção. Encontrou algum erro? Avise o gestor.
+              </p>
+            </div>
             {/* Alerta de Produções Pendentes */}
-            {/* Dias Pendentes de Conferência (AO VIVO) */}
-            <PendingDayReviews 
-              barberId={barber.id} 
-              onReview={(date) => setReviewingDate(date)} 
-            />
             {/* Seletor de Mês/Ano */}
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
@@ -935,6 +981,20 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 </div>
               </CardContent>
             </Card>
+            {/* Dias Pendentes de Conferência (colapsável) */}
+            <PendingDayReviews
+              barberId={barber.id}
+              onReview={(date) => setReviewingDate(date)}
+            />
+            {/* Dias sem nenhum registro (colapsável) */}
+            <MissingProductionAlert
+              barberId={barber.id}
+              organizationId={barber.organization_id}
+              onStatusRegistered={() => {
+                fetchMonthlyStats();
+                fetchLivePanelData();
+              }}
+            />
             {/* Card de Meta de Produção */}
             <Card className="bg-gradient-card border-border shadow-gold">
               <CardHeader>
@@ -957,6 +1017,22 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                     <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
                       <p className="text-sm text-muted-foreground font-medium">
                         💡 <span className="font-bold">LEMBRETE:</span> Vender PRODUTOS ajuda a bater esta meta mais rápido!
+                      </p>
+                    </div>
+                  </>
+                ) : dailyTarget > 0 ? (
+                  <>
+                    <div className="text-center space-y-3">
+                      <p className="text-5xl font-bold text-primary">
+                        R$ {dailyTarget.toFixed(2)}
+                      </p>
+                      <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
+                        (EM COMISSÃO)
+                      </p>
+                    </div>
+                    <div className="bg-card/50 border border-border rounded-lg p-4 text-center">
+                      <p className="text-xs text-muted-foreground">
+                        Assim que você registrar suas primeiras vendas no mês, vamos calcular também a meta em faturamento de serviços.
                       </p>
                     </div>
                   </>
@@ -985,92 +1061,65 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
               </Card>
             )}
 
-            {/* Histórico dos últimos 3 dias lançados */}
-            {isCurrentMonth && todayProduction !== null && (
+            {/* Confirmação de Presença standalone */}
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && !todayProduction.confirmed_presence && (
               <Card className="bg-card border-border shadow-card-custom">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-primary" />
-                    HISTÓRICO DOS ÚLTIMOS 3 DIAS
-                  </CardTitle>
-                  <CardDescription>
-                    Acompanhe seus últimos lançamentos e a confirmação de presença
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    {last3DaysProduction.length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center">Sem lançamentos recentes.</p>
-                    )}
-                    {last3DaysProduction.map((day) => {
-                      const hasSplitServices = day.services_basic_total !== null || day.services_extra_total !== null;
-                      const services = hasSplitServices
-                        ? (Number(day.services_basic_total) || 0) + (Number(day.services_extra_total) || 0)
-                        : (Number(day.services_total) || 0);
-                      const products = Number(day.products_total) || 0;
-                      const total = services + products;
-
-                      return (
-                        <div key={day.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium">{format(new Date(`${day.date}T12:00:00`), "EEEE, dd/MM", { locale: ptBR })}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {day.confirmed_presence ? "Presença confirmada" : "Sem confirmação de presença"}
-                            </p>
-                          </div>
-                          <p className="text-lg font-bold">R$ {total.toFixed(2)}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {/* Se faturamento = 0 e NÃO confirmou presença ainda */}
-                  {todayProduction.total === 0 && !todayProduction.confirmed_presence && (
-                    <div className="pt-4 border-t border-border">
-                      <Button
-                        variant="outline"
-                        className="w-full border-primary/50 hover:bg-primary/10"
-                        onClick={handleOpenPresenceModal}
-                        disabled={confirmingPresence}
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
-                      </Button>
-                      <p className="text-xs text-muted-foreground text-center mt-2">
-                        Clique para informar que você compareceu, mesmo sem vendas.
-                        Isso contabiliza o dia na sua meta.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Se já confirmou presença */}
-                  {todayProduction.total === 0 && todayProduction.confirmed_presence && (
-                    <div className="flex items-center justify-center gap-2 text-success pt-4 border-t border-border">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Presença confirmada para hoje</span>
-                    </div>
-                  )}
+                <CardContent className="pt-6 space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full border-primary/50 hover:bg-primary/10"
+                    onClick={handleOpenPresenceModal}
+                    disabled={confirmingPresence}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Clique para informar que você compareceu, mesmo sem vendas.
+                  </p>
                 </CardContent>
               </Card>
             )}
 
-
-            {/* Card de Ganhos de Assinatura */}
-            {hasSubscriptionModule && (
-              <SubscriptionEarningsCard 
-                barberId={barber.id} 
-                selectedMonth={selectedMonth} 
-                selectedYear={selectedYear} 
-              />
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && todayProduction.confirmed_presence && (
+              <div className="flex items-center justify-center gap-2 text-success rounded-lg border border-success/30 bg-success/5 p-3">
+                <CheckCircle className="w-5 h-5" />
+                <span className="font-medium text-sm">Presença confirmada para hoje</span>
+              </div>
             )}
 
             {/* Card de Progresso Mensal */}
             <Card className="bg-card border-border shadow-card-custom">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-success" />
-                  SEU PROGRESSO NO MÊS
-                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-success" />
+                    SEU PROGRESSO NO MÊS
+                  </CardTitle>
+                  {pacingStatus && (
+                    pacingStatus === "ahead" ? (
+                      <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                        <TrendingUp className="w-3 h-3 mr-1" />
+                        Acima da Meta
+                      </Badge>
+                    ) : pacingStatus === "on-track" ? (
+                      <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        No Ritmo
+                      </Badge>
+                    ) : pacingStatus === "behind" ? (
+                      <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        Atenção
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-red-500/20 text-red-500 border-red-500/30">
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Crítico
+                      </Badge>
+                    )
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -1083,7 +1132,10 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                   {monthlyGoal ? (
                     <>
                       <Progress value={progressPercentage} className="h-3" />
-                      <div className="flex justify-end text-sm">
+                      <div className="flex justify-between text-sm">
+                        {expectedPercent !== null ? (
+                          <span className="text-muted-foreground">Esperado: {expectedPercent.toFixed(1)}%</span>
+                        ) : <span />}
                         <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
                       </div>
                     </>
@@ -1204,6 +1256,38 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Barra de progresso do dia */}
+                {(() => {
+                  const todayTotal = todayProduction?.total ?? 0;
+                  const target = dailyTargetServices > 0 ? dailyTargetServices : dailyTarget;
+                  const dayProgress = target > 0 ? Math.min(100, (todayTotal / target) * 100) : 0;
+                  const faltaHoje = Math.max(0, target - todayTotal);
+                  const metaBatida = target > 0 && todayTotal >= target;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Progresso do dia</span>
+                        <span className={`font-bold ${metaBatida ? 'text-success' : 'text-foreground'}`}>
+                          {dayProgress.toFixed(1)}%
+                        </span>
+                      </div>
+                      <Progress value={dayProgress} className={`h-4 ${metaBatida ? '[&>div]:bg-success' : ''}`} />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>R$ {todayTotal.toFixed(2)} vendido</span>
+                        {target > 0 ? (
+                          metaBatida ? (
+                            <span className="text-success font-semibold">🏆 Meta batida!</span>
+                          ) : (
+                            <span>Falta R$ {faltaHoje.toFixed(2)}</span>
+                          )
+                        ) : (
+                          <span>Sem meta definida</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Produção de hoje</p>
@@ -1252,6 +1336,10 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
             />
           </TabsContent>
 
+          <TabsContent value="strategies" className="space-y-6">
+            {barber && <StrategyHistoryCard barberId={barber.id} />}
+          </TabsContent>
+
           <TabsContent value="leaderboard">
             <Leaderboard viewerRole="barber" />
           </TabsContent>
@@ -1267,6 +1355,7 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
                 soldThisMonth={stats.accumulated_commission}
                 daysRemaining={daysLeft}
                 dailyTarget={dailyTarget}
+                warPlan={warPlanMessage}
               />
             ) : (
               <Card className="bg-card border-border">
@@ -1301,6 +1390,27 @@ export default function BarberDashboard({ user }: BarberDashboardProps) {
             organizationId={barber.organization_id}
             date={reviewingDate}
             onSuccess={handleFormSuccess}
+          />
+        )}
+
+        {/* War Plan Wizard */}
+        {barber && isCurrentMonth && monthlyGoal && (
+          <WarPlanWizard
+            open={showWarPlanWizard}
+            onOpenChange={setShowWarPlanWizard}
+            organizationId={barber.organization_id}
+            barberId={barber.id}
+            barberName={barber.name}
+            monthlyGoal={monthlyGoal.target_commission}
+            soldThisMonth={stats?.accumulated_commission || 0}
+            dailyTarget={dailyTargetServices}
+            dailyTargetCommission={dailyTarget}
+            todayRevenue={todayProduction?.total || 0}
+            daysRemaining={Math.max(
+              0,
+              new Date(currentYearNow, currentMonthNow, 0).getDate() - today.getDate() + 1,
+            )}
+            onComplete={handleWarPlanComplete}
           />
         )}
 

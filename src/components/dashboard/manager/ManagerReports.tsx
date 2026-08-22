@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, DollarSign, TrendingUp, Users, Pencil, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parse } from "date-fns";
-import { getManausDate } from "@/lib/dateUtils";
+import { getManausDate, toDateKey } from "@/lib/dateUtils";
+import { fetchAllRows } from "@/lib/supabasePagination";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,6 +14,8 @@ import { toast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import TransactionManagerModal from "./TransactionManagerModal";
+import ManagerRescueReport from "./ManagerRescueReport";
+import AutoRecurringReport from "./AutoRecurringReport";
 import { useOrganization } from "@/hooks/useOrganization";
 
 interface DailyProduction {
@@ -25,9 +28,6 @@ interface DailyProduction {
   tx_basic_total?: number | null;
   tx_extra_total?: number | null;
   tx_products_total?: number | null;
-  manual_basic_total?: number | null;
-  manual_extra_total?: number | null;
-  manual_products_total?: number | null;
   products_total: number;
   services_count: number;
   products_count: number;
@@ -37,8 +37,6 @@ interface DailyProduction {
     id?: string;
     unit_id?: string;
     name?: string;
-    services_commission?: number;
-    products_commission?: number;
   } | null;
 }
 
@@ -62,14 +60,6 @@ interface BarberPerformanceRow {
   commissionTotal: number;
   clientsTotal: number;
   totalRevenue: number;
-}
-
-interface ClientCountTransaction {
-  daily_production_id: string | null;
-  source: string | null;
-  created_at: string;
-  client_name: string | null;
-  mobile_phone: string | null;
 }
 
 export default function ManagerReports() {
@@ -98,207 +88,138 @@ export default function ManagerReports() {
   });
   const [editingProduction, setEditingProduction] = useState<DailyProduction | null>(null);
   const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null);
-  const [productionClientCounts, setProductionClientCounts] = useState<Map<string, number>>(new Map());
-
-  const getProductionTotals = useCallback((production: DailyProduction) => {
-    const manualBasic = Number(production.manual_basic_total ?? 0);
-    const manualExtra = Number(production.manual_extra_total ?? 0);
-    const manualProducts = Number(production.manual_products_total ?? 0);
-    const txBasic = Number(production.tx_basic_total ?? 0);
-    const txExtra = Number(production.tx_extra_total ?? 0);
-    const txProducts = Number(production.tx_products_total ?? 0);
-    const legacyBasic = Number(production.services_basic_total ?? production.services_total ?? 0);
-    const legacyExtra = Number(production.services_extra_total ?? 0);
-    const legacyProducts = Number(production.products_total ?? 0);
-
-    const hasManual = manualBasic + manualExtra + manualProducts > 0;
-    const hasTx = txBasic + txExtra + txProducts > 0;
-
-    if (hasManual) {
-      return { basic: manualBasic, extra: manualExtra, products: manualProducts };
-    }
-
-    if (hasTx) {
-      return { basic: txBasic, extra: txExtra, products: txProducts };
-    }
-
-    return { basic: legacyBasic, extra: legacyExtra, products: legacyProducts };
-  }, []);
-
-  const getEffectiveCommission = useCallback((production: DailyProduction) => {
-    const savedCommission = Number(production.commission_earned) || 0;
-    if (savedCommission > 0) {
-      return savedCommission;
-    }
-
-    const { basic, extra, products } = getProductionTotals(production);
-    const totalRevenue = basic + extra + products;
-    if (totalRevenue <= 0) {
-      return 0;
-    }
-
-    const servicesRate = Number(production.barbers?.services_commission ?? 0) / 100;
-    const productsRate = Number(production.barbers?.products_commission ?? 0) / 100;
-
-    return ((basic + extra) * servicesRate) + (products * productsRate);
-  }, [getProductionTotals]);
-
-  const buildClientCountMap = useCallback((transactions: ClientCountTransaction[]) => {
-    const grouped = new Map<string, Set<string>>();
-
-    transactions.forEach((tx) => {
-      if (!tx.daily_production_id) return;
-
-      const checkoutIdentity = [
-        tx.source || "unknown",
-        tx.mobile_phone || tx.client_name || "sem-cliente",
-        tx.created_at,
-      ].join("|");
-
-      if (!grouped.has(tx.daily_production_id)) {
-        grouped.set(tx.daily_production_id, new Set());
-      }
-
-      grouped.get(tx.daily_production_id)?.add(checkoutIdentity);
-    });
-
-    return new Map(Array.from(grouped.entries()).map(([id, keys]) => [id, keys.size]));
-  }, []);
-
-  const getProductionClientsCount = useCallback((production: DailyProduction) => {
-    const txCount = productionClientCounts.get(production.id) || 0;
-    return txCount > 0 ? txCount : Number(production.clients_count) || 0;
-  }, [productionClientCounts]);
-
+  const [isLoadingView, setIsLoadingView] = useState(true);
 
   const fetchStats = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
+    if (!organizationId) return;
 
-    const goalReferenceDate = dateRange.from;
-    const startDate = format(dateRange.from, "yyyy-MM-dd");
-    const endDate = format(dateRange.to, "yyyy-MM-dd");
+    const startDate = toDateKey(dateRange.from);
+    const endDate = toDateKey(dateRange.to);
 
-    // Faturamento consolidado via RPC (sem view)
-    const rpcParams: { p_date_from: string; p_date_to: string; p_unit_id?: string; p_barber_id?: string } = {
-      p_date_from: startDate,
-      p_date_to: endDate,
-    };
-    if (selectedUnit !== "all") rpcParams.p_unit_id = selectedUnit;
-    if (selectedBarber !== "all") rpcParams.p_barber_id = selectedBarber;
-
-    let commissionsQuery = supabase
-      .from("daily_productions")
-      .select("id, barber_id, commission_earned, clients_count, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, barbers!inner(id, unit_id, services_commission, products_commission)")
-      .gte("date", startDate)
-      .lte("date", endDate);
-
-    if (selectedUnit !== "all") {
-      commissionsQuery = commissionsQuery.eq("barbers.unit_id", selectedUnit);
-    }
-
-    if (selectedBarber !== "all") {
-      commissionsQuery = commissionsQuery.eq("barber_id", selectedBarber);
-    }
-
-    // Buscar barbeiros ativos
-    let barbersQuery = supabase
-      .from("barbers")
-      .select("id")
-      .eq("status", "active");
-
-    if (selectedUnit !== "all") {
-      barbersQuery = barbersQuery.eq("unit_id", selectedUnit);
-    }
-
-    // Buscar metas do mês
-    let goalsQuery = supabase
-      .from("monthly_goals")
-      .select("*, barbers!inner(id, unit_id)")
-      .eq("month", goalReferenceDate.getMonth() + 1)
-      .eq("year", goalReferenceDate.getFullYear());
-
-    if (selectedUnit !== "all") {
-      goalsQuery = goalsQuery.eq("barbers.unit_id", selectedUnit);
-    }
-
-    const [rpcRes, commissionsRes, barbersRes, goalsRes] = await Promise.all([
-      supabase.rpc("get_manager_report_stats", rpcParams),
-      commissionsQuery,
-      barbersQuery,
-      goalsQuery,
-    ]);
-
-    if (rpcRes.error) {
-      console.error("Erro RPC get_manager_report_stats:", rpcRes.error);
-    }
-
-    const safeCommissions = (commissionsRes.data || []) as DailyProduction[];
-    const commissionProductionIds = safeCommissions.map((p) => p.id).filter(Boolean);
-
-    let commissionClientMap = new Map<string, number>();
-    if (commissionProductionIds.length > 0) {
-      const { data: txData } = await supabase
-        .from("sale_transactions")
-        .select("daily_production_id, source, created_at, client_name, mobile_phone")
-        .in("daily_production_id", commissionProductionIds);
-
-      commissionClientMap = buildClientCountMap((txData || []) as ClientCountTransaction[]);
-    }
-
-    const rpcRow = rpcRes.data?.[0];
-    const totalRevenue = Number(rpcRow?.total_revenue ?? 0);
-    const totalClients = safeCommissions.reduce((sum, production) => {
-      const txCount = commissionClientMap.get(production.id) || 0;
-      return sum + (txCount > 0 ? txCount : Number(production.clients_count) || 0);
-    }, 0);
-
-    const totalCommission = safeCommissions.reduce(
-      (sum, production) => sum + getEffectiveCommission(production),
-      0,
+    // Stats consolidados via RPC (substitui view inexistente v_consolidated_daily_production)
+    const { data: statsData, error: statsError } = await supabase.rpc(
+      "get_manager_report_stats",
+      {
+        p_date_from: startDate,
+        p_date_to: endDate,
+        p_unit_id: selectedUnit !== "all" ? selectedUnit : null,
+        p_barber_id: selectedBarber !== "all" ? selectedBarber : null,
+      }
     );
 
+    if (statsError) {
+      console.error("Erro ao buscar stats via RPC:", statsError, { startDate, endDate, selectedBarber, selectedUnit });
+    }
+
+    const statsRow = statsData?.[0] ?? {
+      total_revenue: 0,
+      total_commission: 0,
+      total_clients: 0,
+      average_ticket: 0,
+    };
+    const totalRevenue = Number(statsRow.total_revenue) || 0;
+    const totalClients = Number(statsRow.total_clients) || 0;
+    const totalCommission = Number(statsRow.total_commission) || 0;
+    const averageTicket = Number(statsRow.average_ticket) || 0;
+
+    // Buscar comissões por barbeiro no período (necessário para metas batidas)
+    const commissionRows = await fetchAllRows<{ barber_id: string; commission_earned: number | null }>(() => {
+      let q = supabase
+        .from("daily_productions")
+        .select("barber_id, commission_earned, barbers!inner(id, unit_id)")
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (selectedUnit !== "all") q = q.eq("barbers.unit_id", selectedUnit);
+      if (selectedBarber !== "all") q = q.eq("barber_id", selectedBarber);
+      return q as any;
+    });
+
+    // Metas: o intervalo pode cruzar meses, então somamos a meta de cada mês do período
+    const monthKeys: Array<{ month: number; year: number }> = [];
+    {
+      const cursor = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), 1);
+      const last = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), 1);
+      while (cursor <= last) {
+        monthKeys.push({ month: cursor.getMonth() + 1, year: cursor.getFullYear() });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+
+    const goals = await fetchAllRows<{ barber_id: string; target_commission: number | null; month: number; year: number }>(() => {
+      let q = supabase
+        .from("monthly_goals")
+        .select("barber_id, target_commission, month, year, barbers!inner(id, unit_id)")
+        .eq("organization_id", organizationId)
+        .in("month", monthKeys.map((k) => k.month))
+        .in("year", monthKeys.map((k) => k.year));
+
+      if (selectedUnit !== "all") q = q.eq("barbers.unit_id", selectedUnit);
+      if (selectedBarber !== "all") q = q.eq("barber_id", selectedBarber);
+      return q as any;
+    });
+
+    const monthKeySet = new Set(monthKeys.map((k) => `${k.year}-${k.month}`));
+
     const barberCommissions = new Map<string, number>();
-    safeCommissions.forEach((row) => {
+    commissionRows.forEach((row) => {
       const current = barberCommissions.get(row.barber_id) || 0;
-      barberCommissions.set(row.barber_id, current + getEffectiveCommission(row));
+      barberCommissions.set(row.barber_id, current + (Number(row.commission_earned) || 0));
+    });
+
+    // Meta acumulada do período por barbeiro (soma dos meses abrangidos)
+    const barberTargets = new Map<string, number>();
+    goals.forEach((goal) => {
+      if (!monthKeySet.has(`${goal.year}-${goal.month}`)) return;
+      const current = barberTargets.get(goal.barber_id) || 0;
+      barberTargets.set(goal.barber_id, current + (Number(goal.target_commission) || 0));
     });
 
     let goalsAchieved = 0;
-    if (goalsRes.data) {
-      goalsRes.data.forEach((goal) => {
-        const earned = barberCommissions.get(goal.barber_id) || 0;
-        if (earned >= goal.target_commission) {
-          goalsAchieved++;
-        }
-      });
-    }
+    barberTargets.forEach((target, barberId) => {
+      const earned = barberCommissions.get(barberId) || 0;
+      if (target > 0 && earned >= target) goalsAchieved++;
+    });
+
+    // Denominador respeita os filtros ativos (unidade / barbeiro)
+    const scopedBarbers = (allBarbers || []).filter((b) => {
+      if (selectedBarber !== "all") return b.id === selectedBarber;
+      if (selectedUnit !== "all") return b.unit_id === selectedUnit;
+      return true;
+    });
 
     setStats({
       totalRevenue,
       totalCommission,
       totalClients,
-      averageTicket: totalClients > 0 ? totalRevenue / totalClients : 0,
+      averageTicket,
       goalsAchieved,
-      totalBarbers: barbersRes.data?.length || 0,
+      totalBarbers: scopedBarbers.length,
     });
-  }, [buildClientCountMap, dateRange, getEffectiveCommission, selectedBarber, selectedUnit]);
+  }, [dateRange, selectedBarber, selectedUnit, allBarbers, organizationId]);
 
   const fetchUnits = useCallback(async () => {
+    if (!organizationId) return;
     const { data } = await supabase
       .from("units")
       .select("id, name")
+      .eq("organization_id", organizationId)
       .eq("status", "active")
       .order("name");
     
     if (data) {
       setUnits(data);
     }
-  }, []);
+  }, [organizationId]);
 
   const fetchBarbers = useCallback(async () => {
+    if (!organizationId) return;
     const { data } = await supabase
       .from("barbers")
       .select("id, name, unit_id")
+      .eq("organization_id", organizationId)
       .eq("status", "active")
       .order("name");
     
@@ -306,47 +227,40 @@ export default function ManagerReports() {
       setAllBarbers(data);
       setBarbers(data);
     }
-  }, []);
+  }, [organizationId]);
 
   const fetchProductions = useCallback(async () => {
     if (!dateRange?.from || !dateRange?.to) return;
-    
-    let query = supabase
-      .from("daily_productions")
-      .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
-      .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-      .lte("date", format(dateRange.to, "yyyy-MM-dd"))
-      .order("date", { ascending: false });
+    if (!organizationId) return;
 
-    // Aplicar filtro de unidade
-    if (selectedUnit !== "all") {
-      query = query.eq("barbers.unit_id", selectedUnit);
-    }
+    const startDate = toDateKey(dateRange.from);
+    const endDate = toDateKey(dateRange.to);
 
-    // Aplicar filtro de barbeiro
-    if (selectedBarber !== "all") {
-      query = query.eq("barber_id", selectedBarber);
-    }
+    const data = await fetchAllRows<DailyProduction>(() => {
+      let query = supabase
+        .from("daily_productions")
+        .select("*, barbers!inner(name, unit_id, services_commission, products_commission)")
+        .eq("organization_id", organizationId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false });
 
-    const { data } = await query;
-    if (data) {
-      const typedProductions = (data ?? []) as DailyProduction[];
-      setProductions(typedProductions);
-
-      const productionIds = typedProductions.map((p) => p.id);
-      if (productionIds.length === 0) {
-        setProductionClientCounts(new Map());
-        return;
+      // Aplicar filtro de unidade
+      if (selectedUnit !== "all") {
+        query = query.eq("barbers.unit_id", selectedUnit);
       }
 
-      const { data: txData } = await supabase
-        .from("sale_transactions")
-        .select("daily_production_id, source, created_at, client_name, mobile_phone")
-        .in("daily_production_id", productionIds);
+      // Aplicar filtro de barbeiro
+      if (selectedBarber !== "all") {
+        query = query.eq("barber_id", selectedBarber);
+      }
 
-      setProductionClientCounts(buildClientCountMap((txData || []) as ClientCountTransaction[]));
-    }
-  }, [buildClientCountMap, dateRange, selectedBarber, selectedUnit]);
+      return query as any;
+    });
+
+    setProductions(data as DailyProduction[]);
+  }, [dateRange, selectedBarber, selectedUnit, organizationId]);
+
 
   useEffect(() => {
     fetchUnits();
@@ -365,10 +279,27 @@ export default function ManagerReports() {
   }, [selectedUnit, allBarbers]);
 
   useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchStats();
-      fetchProductions();
-    }
+    let isMounted = true;
+
+    const loadDashboardData = async () => {
+      if (!dateRange?.from || !dateRange?.to) return;
+
+      if (isMounted) {
+        setIsLoadingView(true);
+      }
+
+      await Promise.all([fetchStats(), fetchProductions()]);
+
+      if (isMounted) {
+        setIsLoadingView(false);
+      }
+    };
+
+    loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [dateRange, selectedBarber, selectedUnit, fetchStats, fetchProductions]);
 
   const handleEdit = (production: DailyProduction) => {
@@ -412,6 +343,33 @@ export default function ManagerReports() {
     return production.barbers?.name || "Barbeiro Desconhecido";
   };
 
+  const getProductionTotals = (production: DailyProduction) => {
+    const txBasic = Number(production.tx_basic_total) || 0;
+    const txExtra = Number(production.tx_extra_total) || 0;
+    const txProducts = Number(production.tx_products_total) || 0;
+    const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+    if (hasTxSource) {
+      return { basic: txBasic, extra: txExtra, products: txProducts };
+    }
+    if (production.services_basic_total !== null || production.services_extra_total !== null) {
+      return {
+        basic: Number(production.services_basic_total) || 0,
+        extra: Number(production.services_extra_total) || 0,
+        products: Number(production.products_total) || 0,
+      };
+    }
+    return { basic: Number(production.services_total) || 0, extra: 0, products: Number(production.products_total) || 0 };
+  };
+
+  const getProductionClientsCount = (production: DailyProduction) => {
+    return Number(production.clients_count) || 0;
+  };
+
+  const getEffectiveCommission = (production: DailyProduction) => {
+    return Number(production.commission_earned) || 0;
+  };
+
   const barberPerformanceRows = useMemo<BarberPerformanceRow[]>(() => {
     const barberStats = new Map<string, Omit<BarberPerformanceRow, "id" | "totalRevenue">>();
 
@@ -433,12 +391,26 @@ export default function ManagerReports() {
       const stats = barberStats.get(barberId);
       if (!stats) return;
 
-      const totals = getProductionTotals(production);
-      stats.servicesBasicTotal += totals.basic;
-      stats.servicesExtraTotal += totals.extra;
-      stats.productsTotal += totals.products;
-      stats.commissionTotal += getEffectiveCommission(production);
-      stats.clientsTotal += getProductionClientsCount(production);
+      const txBasic = Number(production.tx_basic_total) || 0;
+      const txExtra = Number(production.tx_extra_total) || 0;
+      const txProducts = Number(production.tx_products_total) || 0;
+      const hasTxSource = txBasic + txExtra + txProducts > 0;
+
+      if (hasTxSource) {
+        stats.servicesBasicTotal += txBasic;
+        stats.servicesExtraTotal += txExtra;
+        stats.productsTotal += txProducts;
+      } else if (production.services_basic_total !== null || production.services_extra_total !== null) {
+        stats.servicesBasicTotal += Number(production.services_basic_total) || 0;
+        stats.servicesExtraTotal += Number(production.services_extra_total) || 0;
+        stats.productsTotal += Number(production.products_total) || 0;
+      } else {
+        stats.servicesBasicTotal += Number(production.services_total) || 0;
+        stats.productsTotal += Number(production.products_total) || 0;
+      }
+
+      stats.commissionTotal += Number(production.commission_earned);
+      stats.clientsTotal += Number(production.clients_count);
     });
 
     return Array.from(barberStats.entries())
@@ -448,7 +420,11 @@ export default function ManagerReports() {
         totalRevenue: stats.servicesBasicTotal + stats.servicesExtraTotal + stats.productsTotal,
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [productions, getEffectiveCommission, getProductionClientsCount, getProductionTotals]);
+  }, [productions]);
+
+  if (isLoadingView) {
+    return <div className="min-h-[200px] flex items-center justify-center text-muted-foreground">Carregando dados do dashboard...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -509,6 +485,21 @@ export default function ManagerReports() {
         </Card>
       </div>
 
+      {organizationId && dateRange?.from && dateRange?.to && (
+        <>
+          <ManagerRescueReport
+            organizationId={organizationId}
+            from={dateRange.from}
+            to={dateRange.to}
+          />
+          <AutoRecurringReport
+            organizationId={organizationId}
+            from={dateRange.from}
+            to={dateRange.to}
+          />
+        </>
+      )}
+
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
           <CardTitle>Metas Batidas</CardTitle>
@@ -555,9 +546,10 @@ export default function ManagerReports() {
                   <TableHead className="text-right">Produtos (R$)</TableHead>
                   <TableHead className="text-right">Comissão (R$)</TableHead>
                   <TableHead className="text-right">Clientes</TableHead>
-                  <TableHead className="text-right">Clientes Atendidos</TableHead>
+                  <TableHead className="text-right">Ticket Médio (R$)</TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {barberPerformanceRows.length === 0 ? (
                   <TableRow>

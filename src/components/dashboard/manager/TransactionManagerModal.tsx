@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { translateSaleError } from "@/lib/saleGuards";
 import {
   Loader2,
   Search,
@@ -57,6 +58,7 @@ interface TransactionManagerModalProps {
 
 interface Transaction {
   id: string;
+  created_at: string;
   item_name: string;
   item_type: string;
   service_category: string | null;
@@ -145,7 +147,7 @@ export default function TransactionManagerModal({
 
       let query = supabase
         .from("sale_transactions")
-        .select("id, item_name, item_type, service_category, price_sold, commission_amount, description, client_name, source")
+        .select("id, created_at, item_name, item_type, service_category, price_sold, commission_amount, description, client_name, source")
         .order("created_at", { ascending: true });
 
       if (dailyProductionId) {
@@ -166,7 +168,20 @@ export default function TransactionManagerModal({
 
       const { data, error } = await query;
       if (error) throw error;
-      setTransactions(data || []);
+
+      let finalData = data || [];
+
+      // In audit mode without explicit sourceFilter, deduplicate:
+      // If manager items exist, show only manager items (official record).
+      // Show barber items only when there are NO manager items at all.
+      if (auditMode && !sourceFilter && finalData.length > 0) {
+        const hasManagerItems = finalData.some((t) => t.source === "manager");
+        if (hasManagerItems) {
+          finalData = finalData.filter((t) => t.source === "manager");
+        }
+      }
+
+      setTransactions(finalData);
     } catch (error) {
       console.error("Error fetching transactions:", error);
       toast.error("Erro ao carregar transações");
@@ -335,7 +350,7 @@ export default function TransactionManagerModal({
     try {
       // Insert transactions
       const transactionsToInsert: any[] = [];
-      const sourceValue = auditMode ? "barber" : "manager";
+      const sourceValue = "manager";
       cart.forEach((item) => {
         for (let i = 0; i < item.quantity; i++) {
           transactionsToInsert.push({
@@ -372,7 +387,7 @@ export default function TransactionManagerModal({
       onSuccess();
     } catch (error) {
       console.error("Error adding transactions:", error);
-      toast.error("Erro ao adicionar itens");
+      toast.error(translateSaleError(error));
     } finally {
       setIsSubmitting(false);
       isSubmittingRef.current = false;
@@ -426,6 +441,18 @@ export default function TransactionManagerModal({
     .filter((transaction) => transaction.item_type !== "subscription")
     .reduce((sum, transaction) => sum + transaction.price_sold, 0);
 
+  const receptionClosedCommands = useMemo(() => {
+    const commandKeys = new Set<string>();
+
+    transactions
+      .filter((transaction) => transaction.source === "manager")
+      .forEach((transaction) => {
+        commandKeys.add(transaction.created_at || transaction.id);
+      });
+
+    return commandKeys.size;
+  }, [transactions]);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -449,7 +476,7 @@ export default function TransactionManagerModal({
               <div>
                 <DialogTitle className="text-lg font-semibold">
                   {viewMode === "list"
-                    ? `${readOnly ? "Comandas Recepção" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
+                    ? `${readOnly ? "Comandas" : auditMode ? "Auditar" : "Gerenciar"} — ${barberName}`
                     : "Adicionar Itens"}
                 </DialogTitle>
                 <DialogDescription>
@@ -457,6 +484,22 @@ export default function TransactionManagerModal({
                     ? `Data: ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}`
                     : `Itens serão vinculados à data ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}`}
                 </DialogDescription>
+                {viewMode === "list" && readOnly && !loadingTransactions && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge
+                      variant="secondary"
+                      className="bg-primary/10 text-primary border-primary/20"
+                    >
+                      {receptionClosedCommands} comanda
+                      {receptionClosedCommands === 1 ? "" : "s"} fechada
+                      {receptionClosedCommands === 1 ? "" : "s"} pela recepção
+                    </Badge>
+                    <Badge variant="outline">
+                      {transactions.length} lançamento
+                      {transactions.length === 1 ? "" : "s"} na auditoria
+                    </Badge>
+                  </div>
+                )}
               </div>
             </div>
           </DialogHeader>
