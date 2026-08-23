@@ -132,11 +132,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsContent value="overview" className="space-y-6 mt-0">
             <PerformanceAlerts />
             <MonthlyOccurrencesSummary />
-            <ManagerReports />
+            <PerformanceDashboard />
           </TabsContent>
 
-          <TabsContent value="performance" className="mt-0">
-            <PerformanceDashboard />
+          <TabsContent value="entries" className="mt-0">
+            <ManagerReports />
           </TabsContent>
 
           <TabsContent value="daily-goals" className="mt-0">

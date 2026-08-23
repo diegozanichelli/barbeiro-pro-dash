@@ -24,7 +24,7 @@ import {
   ChevronRight,
   ShieldCheck,
   UserX,
-  Gauge,
+  ClipboardList,
 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -91,7 +91,6 @@ export default function ManagerNavigation({
   const directLinks: NavItem[] = [
     { id: "live", label: "Ao Vivo", icon: Radio },
     { id: "overview", label: "Dashboard", icon: BarChart3 },
-    { id: "performance", label: "Performance", icon: Gauge },
   ];
 
   const gestaoItems: NavItem[] = [
@@ -108,6 +107,7 @@ export default function ManagerNavigation({
   const financeiroItems: NavItem[] = [
     { id: "catalog", label: "Comissões", icon: Package },
     { id: "daily-goals", label: "Dia a Dia", icon: CalendarDays },
+    { id: "entries", label: "Lançamentos", icon: ClipboardList },
   ];
 
 

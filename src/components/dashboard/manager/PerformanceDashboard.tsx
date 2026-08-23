@@ -8,6 +8,7 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
+  Wallet,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -56,6 +57,7 @@ interface Tx {
   daily_production_id: string | null;
   item_type: string;
   item_name: string;
+  service_category: string | null;
   price_sold: number;
   commission_amount: number;
   unit_id: string | null;
@@ -160,6 +162,16 @@ const emptyBucket = (): DayBucket => ({ revenue: 0, clients: 0, commission: 0 })
 const visitKey = (t: Tx) => `${t.barber_id ?? "sem-barbeiro"}|${t.created_at}`;
 
 /**
+ * Serviço sem categoria preenchida conta como básico — é como BestSalesDays e os
+ * demais relatórios do gestor tratam os lançamentos antigos.
+ */
+type ItemKind = "basic" | "extra" | "product";
+const itemKind = (t: Tx): ItemKind => {
+  if (t.item_type === "product") return "product";
+  return t.service_category === "extra" ? "extra" : "basic";
+};
+
+/**
  * Sem base no período anterior a variação é indefinida, não "+100%": fevereiro
  * não tem quinta fatia, o mês anterior pode não ter lançamento nenhum. Nesses
  * casos o card mostra "—" em vez de um crescimento que não existe.
@@ -186,6 +198,7 @@ export default function PerformanceDashboard() {
   const [current, setCurrent] = useState<Tx[]>([]);
   const [previous, setPrevious] = useState<Tx[]>([]);
   const [prodDates, setProdDates] = useState<Record<string, string>>({});
+  const [goals, setGoals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -225,7 +238,7 @@ export default function PerformanceDashboard() {
           supabase
             .from("sale_transactions")
             .select(
-              "barber_id, created_at, daily_production_id, item_type, item_name, price_sold, commission_amount, unit_id"
+              "barber_id, created_at, daily_production_id, item_type, item_name, service_category, price_sold, commission_amount, unit_id"
             )
             .eq("organization_id", organizationId)
             .in("item_type", ["service", "product"])
@@ -246,6 +259,20 @@ export default function PerformanceDashboard() {
       const map: Record<string, string> = {};
       prods.forEach((p) => (map[p.id] = p.date));
       setProdDates(map);
+
+      // Metas do mês selecionado, para o card de metas batidas.
+      const { data: goalRows } = await supabase
+        .from("monthly_goals")
+        .select("barber_id, target_commission")
+        .eq("organization_id", organizationId)
+        .eq("month", month)
+        .eq("year", year);
+      const targets: Record<string, number> = {};
+      (goalRows ?? []).forEach((g) => {
+        if (!g.barber_id) return;
+        targets[g.barber_id] = (targets[g.barber_id] ?? 0) + (Number(g.target_commission) || 0);
+      });
+      setGoals(targets);
 
       const dateOf = (t: Tx) =>
         (t.daily_production_id && map[t.daily_production_id]) ||
@@ -441,6 +468,13 @@ export default function PerformanceDashboard() {
       delta: variation(curTicket, prevTicket),
       previous: brl(prevTicket),
     },
+    {
+      label: "Comissão",
+      icon: Wallet,
+      value: brl(curTotals.commission),
+      delta: variation(curTotals.commission, prevTotals.commission),
+      previous: brl(prevTotals.commission),
+    },
   ];
 
   const chartData = useMemo(() => {
@@ -487,17 +521,21 @@ export default function PerformanceDashboard() {
 
   const teamRanking = useMemo(() => {
     const rows = filterTx(current, null);
-    const totals: Record<string, DayBucket> = {};
+    const totals: Record<string, DayBucket & Record<ItemKind, number>> = {};
     const visits: Record<string, Set<string>> = {};
     rows.forEach((t) => {
       if (!t.barber_id) return;
       const dk = dateOf(t);
       const day = Number(dk.split("-")[2]);
       if (day < range.startDay || day > range.endDay) return;
-      if (!totals[t.barber_id]) totals[t.barber_id] = emptyBucket();
+      if (!totals[t.barber_id]) {
+        totals[t.barber_id] = { ...emptyBucket(), basic: 0, extra: 0, product: 0 };
+      }
       const b = totals[t.barber_id];
-      b.revenue += Number(t.price_sold) || 0;
+      const valor = Number(t.price_sold) || 0;
+      b.revenue += valor;
       b.commission += Number(t.commission_amount) || 0;
+      b[itemKind(t)] += valor;
       (visits[t.barber_id] ??= new Set()).add(visitKey(t));
     });
     Object.entries(visits).forEach(([id, set]) => (totals[id].clients = set.size));
@@ -509,6 +547,26 @@ export default function PerformanceDashboard() {
       }))
       .sort((a, b) => b.revenue - a.revenue);
   }, [current, filterTx, dateOf, range, barbers]);
+
+  /**
+   * Metas são mensais, então este resumo ignora a fatia (S1-S5) e sempre olha o
+   * mês inteiro. A regra é a mesma do painel anterior: conta quem tem meta
+   * definida e alcançou a comissão do mês; o denominador respeita o filtro de
+   * unidade.
+   */
+  const goalsSummary = useMemo(() => {
+    const scopedBarbers = barbers.filter((b) => unitId === "all" || b.unit_id === unitId);
+    const earned: Record<string, number> = {};
+    filterTx(current, null).forEach((t) => {
+      if (!t.barber_id) return;
+      earned[t.barber_id] = (earned[t.barber_id] ?? 0) + (Number(t.commission_amount) || 0);
+    });
+    const achieved = scopedBarbers.filter((b) => {
+      const target = goals[b.id] ?? 0;
+      return target > 0 && (earned[b.id] ?? 0) >= target;
+    }).length;
+    return { achieved, total: scopedBarbers.length };
+  }, [barbers, unitId, current, filterTx, goals]);
 
   const individualDays = useMemo(() => {
     if (!selectedBarber) return [];
@@ -644,7 +702,7 @@ export default function PerformanceDashboard() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map((k) => {
           const Icon = k.icon;
           const delta = k.delta;
@@ -695,6 +753,38 @@ export default function PerformanceDashboard() {
           );
         })}
       </div>
+
+      {/* Metas do mês */}
+      <Card className="glass border-white/[0.06]">
+        <CardContent className="p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Metas batidas no mês
+              </p>
+              <p className="text-sm text-muted-foreground/80">
+                Barbeiros que já alcançaram a meta de comissão de {MONTHS[month - 1]}
+              </p>
+            </div>
+            <p className="font-metric text-2xl md:text-3xl font-bold text-foreground" data-metric>
+              {int(goalsSummary.achieved)}
+              <span className="text-muted-foreground text-lg"> / {int(goalsSummary.total)}</span>
+            </p>
+          </div>
+          <div className="mt-3 h-2 rounded-full bg-secondary overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{
+                width: `${
+                  goalsSummary.total > 0
+                    ? (goalsSummary.achieved / goalsSummary.total) * 100
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Gráfico */}
       <Card className="glass border-white/[0.06]">
@@ -917,6 +1007,9 @@ export default function PerformanceDashboard() {
                   <span className="block text-xs text-muted-foreground">
                     #{index + 1} · {int(b.clients)} atendimentos · ticket{" "}
                     {brl(b.clients ? b.revenue / b.clients : 0)}
+                  </span>
+                  <span className="block text-xs text-muted-foreground/80 truncate">
+                    básicos {brl(b.basic)} · extras {brl(b.extra)} · produtos {brl(b.product)}
                   </span>
                 </span>
                 <span className="ml-auto text-right">
