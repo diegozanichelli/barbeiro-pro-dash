@@ -257,7 +257,7 @@ export default function AuditFindingModal({
         return { tab: "clients", label: "Abrir Clientes" };
       case "missing_days":
       case "production_mismatch":
-        return { tab: "overview", label: "Abrir Lançamentos Diários" };
+        return { tab: "entries", label: "Abrir Lançamentos Diários" };
       case "subscription_commission":
       case "subscription_no_phone":
         return { tab: "subscriptions", label: "Abrir Assinaturas" };
