@@ -25,6 +25,7 @@ import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
+import { productionHasEntries, productionRevenue } from "@/lib/productionTotals";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 import PushNotificationToggle from "./barber/PushNotificationToggle";
 
@@ -641,30 +642,31 @@ const [todayProduction, setTodayProduction] = useState<{
     const dateStr = selectedDate || getTodayString();
     let error = null;
 
-    // Buscar se já existe produção para a data selecionada
+    // Buscar se já existe produção para a data selecionada.
+    // Precisa das colunas tx_*: com o lançamento entrando pelo gestor, as
+    // legadas ficam zeradas e a validação abaixo nunca dispararia.
     const { data: existingProd } = await supabase
       .from("daily_productions")
-      .select("id, services_basic_total, services_extra_total, products_total, services_total")
+      .select("id, services_basic_total, services_extra_total, products_total, services_total, tx_basic_total, tx_extra_total, tx_products_total, tx_clients_count, manual_basic_total, manual_extra_total, manual_products_total")
       .eq("barber_id", barber.id)
       .eq("date", dateStr)
       .maybeSingle();
 
-    // Validar se já existe faturamento na data selecionada
-    if (existingProd) {
-      const existingTotal = (Number(existingProd.services_basic_total) || 0) +
-                           (Number(existingProd.services_extra_total) || 0) +
-                           (Number(existingProd.products_total) || 0) +
-                           (Number(existingProd.services_total) || 0);
-      
-      if (existingTotal > 0) {
-        setConfirmingPresence(false);
-        setPresenceModalOpen(false);
-        toast.error("Não é possível confirmar presença nesta data", {
-          description: `Já existe faturamento de R$ ${existingTotal.toFixed(2).replace('.', ',')} registrado em ${dateStr.split("-").reverse().join("/")}.`,
-          duration: 5000,
-        });
-        return;
-      }
+    // O que a recepção lançou manda: nenhuma das opções deste modal (trabalhei
+    // sem vender, folga, falta) faz sentido num dia que já teve movimento.
+    if (productionHasEntries(existingProd)) {
+      const existingTotal = productionRevenue(existingProd);
+      const dataBr = dateStr.split("-").reverse().join("/");
+      setConfirmingPresence(false);
+      setPresenceModalOpen(false);
+      toast.error("Não é possível confirmar presença nesta data", {
+        description:
+          existingTotal > 0
+            ? `Já existe faturamento de R$ ${existingTotal.toFixed(2).replace(".", ",")} registrado em ${dataBr}.`
+            : `Já existem atendimentos registrados em ${dataBr}.`,
+        duration: 5000,
+      });
+      return;
     }
 
     const pType = presenceType || "present";
