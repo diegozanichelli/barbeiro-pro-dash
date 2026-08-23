@@ -7,6 +7,7 @@ import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Packag
 import { Badge } from "@/components/ui/badge";
 import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
+import { fetchAllRows } from "@/lib/supabasePagination";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
@@ -27,6 +28,31 @@ interface TxRow {
 interface Unit {
   id: string;
   name: string;
+}
+
+interface ProductionRow {
+  date: string;
+  services_total: number | null;
+  services_basic_total: number | null;
+  services_extra_total: number | null;
+  products_total: number | null;
+  tx_basic_total: number | null;
+  tx_extra_total: number | null;
+  tx_products_total: number | null;
+  manual_basic_total: number | null;
+  manual_extra_total: number | null;
+  manual_products_total: number | null;
+  commission_earned: number | null;
+  clients_count: number | null;
+  barber_id: string | null;
+  barbers: { unit_id: string; name: string | null } | null;
+}
+
+interface GoalRow {
+  month: number;
+  target_commission: number | null;
+  barber_id: string | null;
+  barbers: { unit_id: string } | null;
 }
 
 interface BarberLeader {
@@ -122,45 +148,37 @@ export default function UnitsComparison() {
       const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
       const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${lastDay}`;
 
-      const [
-        productionsResult,
-        goalsResult,
-        transactionsResult,
-      ] = await Promise.all([
-        supabase
-          .from("daily_productions")
-          .select("date, services_total, services_basic_total, services_extra_total, products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id, name)")
-          .eq("organization_id", organizationId)
-          .gte("date", startDate)
-          .lte("date", endDate),
-        supabase
-          .from("monthly_goals")
-          .select("month, target_commission, barber_id, barbers!inner(unit_id)")
-          .eq("organization_id", organizationId)
-          .eq("year", selectedYear)
-          .eq("month", selectedMonth),
-        supabase
-          .from("sale_transactions")
-          .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
-          .eq("organization_id", organizationId)
-          .eq("source", "manager")
-          .gte("created_at", `${startDate}T00:00:00`)
-          .lte("created_at", `${endDate}T23:59:59`)
-          .not("barber_id", "is", null),
+      // Paginado: sem isso o PostgREST corta em 1000 linhas e a tela diverge
+      // silenciosamente dos demais relatórios.
+      const [productions, goals, transactions] = await Promise.all([
+        fetchAllRows<ProductionRow>(() =>
+          supabase
+            .from("daily_productions")
+            .select("date, services_total, services_basic_total, services_extra_total, products_total, tx_basic_total, tx_extra_total, tx_products_total, manual_basic_total, manual_extra_total, manual_products_total, commission_earned, clients_count, barber_id, barbers!inner(unit_id, name)")
+            .eq("organization_id", organizationId)
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .order("date", { ascending: true })
+        ),
+        fetchAllRows<GoalRow>(() =>
+          supabase
+            .from("monthly_goals")
+            .select("month, target_commission, barber_id, barbers!inner(unit_id)")
+            .eq("organization_id", organizationId)
+            .eq("year", selectedYear)
+            .eq("month", selectedMonth)
+        ),
+        fetchAllRows<TxRow>(() =>
+          supabase
+            .from("sale_transactions")
+            .select("barber_id, is_new_client, item_type, subscription_action, mobile_phone, barbers!inner(unit_id)")
+            .eq("organization_id", organizationId)
+            .eq("source", "manager")
+            .gte("created_at", `${startDate}T00:00:00`)
+            .lte("created_at", `${endDate}T23:59:59`)
+            .not("barber_id", "is", null)
+        ),
       ]);
-
-      const { data: productions, error: productionsError } = productionsResult;
-      const { data: goals, error: goalsError } = goalsResult;
-      const { data: transactions, error: transactionsError } = transactionsResult;
-
-      if (productionsError) {
-        console.error("Erro ao buscar produções:", productionsError);
-        return;
-      }
-
-      if (goalsError) {
-        console.error("Erro ao buscar metas:", goalsError);
-      }
 
     // Calcular métricas por unidade
     const metricsMap = new Map<string, UnitMetrics>();
@@ -189,9 +207,6 @@ export default function UnitsComparison() {
       });
     });
 
-      if (transactionsError) {
-        console.error("Erro ao buscar transações de assinatura:", transactionsError);
-      }
 
 
     // Agregação por barbeiro (para top barbeiros por unidade)
