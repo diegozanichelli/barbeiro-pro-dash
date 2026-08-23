@@ -43,6 +43,7 @@ import { ptBR } from "date-fns/locale";
 import DivergenceModal from "./DivergenceModal";
 import StatusDoDiaDialog, { type PresenceType } from "./StatusDoDiaDialog";
 import { translateSaleError } from "@/lib/saleGuards";
+import { productionHasEntries } from "@/lib/productionTotals";
 
 interface DayReviewModalProps {
   open: boolean;
@@ -281,10 +282,21 @@ export default function DayReviewModal({
       // Get or create daily_production
       const { data: existingProd } = await supabase
         .from("daily_productions")
-        .select("id")
+        .select("id, services_basic_total, services_extra_total, products_total, services_total, tx_basic_total, tx_extra_total, tx_products_total, tx_clients_count, manual_basic_total, manual_extra_total, manual_products_total")
         .eq("barber_id", barberId)
         .eq("date", date)
         .maybeSingle();
+
+      // Nenhum destes status (trabalhei sem vender, folga, falta) faz sentido num
+      // dia que a recepção já lançou — marcar folga ali tiraria o dia da conta de
+      // dias trabalhados enquanto as vendas continuam registradas.
+      if (productionHasEntries(existingProd)) {
+        setIsSavingPresence(false);
+        toast.error("Este dia já tem lançamentos da recepção", {
+          description: "Fale com a gestão se o registro estiver errado.",
+        });
+        return;
+      }
 
       if (existingProd) {
         // Delete previous barber transactions
@@ -361,12 +373,15 @@ export default function DayReviewModal({
       if (existingProd) {
         dailyProductionId = existingProd.id;
 
-        // Replace all previous transactions from the day with the reviewed cart
+        // A conferência não apaga venda: as da recepção são a verdade e o RLS já
+        // barra o barbeiro em sale_transactions. Só as linhas que o próprio
+        // barbeiro tenha lançado no passado são limpas.
         await supabase
           .from("sale_transactions")
           .delete()
           .eq("daily_production_id", dailyProductionId)
-          .eq("barber_id", barberId);
+          .eq("barber_id", barberId)
+          .eq("source", "barber");
       } else {
         const { data: newProd, error: insertError } = await supabase
           .from("daily_productions")
