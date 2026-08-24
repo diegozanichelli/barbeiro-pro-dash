@@ -1131,7 +1131,9 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
-            {isCurrentMonth && !warPlanMessage && (
+            {/* Só convida quem pode de fato montar o plano: o wizard exige a meta
+                do mês, e sem ela o botão não abriria nada. */}
+            {isCurrentMonth && monthlyGoal && !warPlanMessage && (
               <Card className="border-primary/30 bg-primary/5">
                 <CardContent className="pt-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
