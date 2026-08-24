@@ -6,6 +6,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Building2, TrendingUp, TrendingDown, DollarSign, Users, Target, MapPin } from "lucide-react";
 import { getManausDate } from "@/lib/dateUtils";
 import { isSubscriptionRevenue } from "@/lib/metricsRules";
+import { productionBreakdown } from "@/lib/productionTotals";
+import { brl } from "@/lib/currency";
 
 interface Unit {
   id: string;
@@ -178,48 +180,11 @@ export default function ShopEvolution() {
       const month = new Date(prod.date).getMonth();
 
       // Hierarquia oficial: tx (gestor) > manual (barbeiro) > legacy detalhado > services_total
-      const txBasic = Number(prod.tx_basic_total) || 0;
-      const txExtra = Number(prod.tx_extra_total) || 0;
-      const txProducts = Number(prod.tx_products_total) || 0;
-      const txTotal = txBasic + txExtra + txProducts;
-
-      const mBasic = Number(prod.manual_basic_total) || 0;
-      const mExtra = Number(prod.manual_extra_total) || 0;
-      const mProducts = Number(prod.manual_products_total) || 0;
-      const manualTotal = mBasic + mExtra + mProducts;
-
-      const legacyBasic = Number(prod.services_basic_total) || 0;
-      const legacyExtra = Number(prod.services_extra_total) || 0;
-      const legacyProducts = Number(prod.products_total) || 0;
-      const servicesTotalLegacy = Number(prod.services_total) || 0;
-
-      let receitaBasicaItem = 0;
-      let receitaExtraItem = 0;
-      let receitaProdutosItem = 0;
-
-      if (txTotal > 0) {
-        receitaBasicaItem = txBasic;
-        receitaExtraItem = txExtra;
-        receitaProdutosItem = txProducts;
-      } else if (manualTotal > 0) {
-        receitaBasicaItem = mBasic;
-        receitaExtraItem = mExtra;
-        receitaProdutosItem = mProducts;
-      } else if (prod.services_basic_total != null || prod.services_extra_total != null) {
-        receitaExtraItem = legacyExtra;
-        // Se basic = 0 mas há extras, derivar do total legado para não duplicar
-        if (legacyBasic === 0 && legacyExtra > 0) {
-          receitaBasicaItem = Math.max(0, servicesTotalLegacy - legacyExtra);
-        } else {
-          receitaBasicaItem = legacyBasic;
-        }
-        receitaProdutosItem = legacyProducts;
-      } else {
-        // Fallback final: tudo no services_total legado, sem split
-        receitaBasicaItem = servicesTotalLegacy;
-        receitaExtraItem = 0;
-        receitaProdutosItem = legacyProducts;
-      }
+      const {
+        basic: receitaBasicaItem,
+        extra: receitaExtraItem,
+        products: receitaProdutosItem,
+      } = productionBreakdown(prod);
 
       const servicesTotal = receitaBasicaItem + receitaExtraItem;
 
@@ -323,25 +288,25 @@ export default function ShopEvolution() {
           <p className="text-sm font-semibold text-card-foreground mb-2">{data.month}</p>
           {viewMode === 'receita' && (
             <>
-              <p className="text-sm text-muted-foreground">Serviços Básicos: <span className="text-foreground font-medium">R$ {data.receitaBasica.toFixed(2)}</span></p>
-              <p className="text-sm text-muted-foreground">Serviços Extras: <span className="text-foreground font-medium">R$ {data.receitaExtra.toFixed(2)}</span></p>
-              <p className="text-sm text-muted-foreground">Produtos: <span className="text-foreground font-medium">R$ {data.receitaProdutos.toFixed(2)}</span></p>
+              <p className="text-sm text-muted-foreground">Serviços Básicos: <span className="text-foreground font-medium">{brl(data.receitaBasica)}</span></p>
+              <p className="text-sm text-muted-foreground">Serviços Extras: <span className="text-foreground font-medium">{brl(data.receitaExtra)}</span></p>
+              <p className="text-sm text-muted-foreground">Produtos: <span className="text-foreground font-medium">{brl(data.receitaProdutos)}</span></p>
               {data.receitaAssinaturas > 0 && (
-                <p className="text-sm text-muted-foreground">Assinaturas: <span className="text-foreground font-medium">R$ {data.receitaAssinaturas.toFixed(2)}</span></p>
+                <p className="text-sm text-muted-foreground">Assinaturas: <span className="text-foreground font-medium">{brl(data.receitaAssinaturas)}</span></p>
               )}
-              <p className="text-sm text-muted-foreground border-t border-border mt-2 pt-2">Total: <span className="text-primary font-bold">R$ {data.receita.toFixed(2)}</span></p>
+              <p className="text-sm text-muted-foreground border-t border-border mt-2 pt-2">Total: <span className="text-primary font-bold">{brl(data.receita)}</span></p>
             </>
           )}
           {viewMode === 'ticket' && (
             <>
-              <p className="text-sm text-muted-foreground">Ticket Médio: <span className="text-foreground font-medium">R$ {data.ticketMedio.toFixed(2)}</span></p>
+              <p className="text-sm text-muted-foreground">Ticket Médio: <span className="text-foreground font-medium">{brl(data.ticketMedio)}</span></p>
               <p className="text-sm text-muted-foreground">Total Clientes: <span className="text-foreground font-medium">{data.clientes}</span></p>
             </>
           )}
           {viewMode === 'performance' && (
             <>
-              <p className="text-sm text-muted-foreground">Meta: <span className="text-foreground font-medium">R$ {data.metaTotal.toFixed(2)}</span></p>
-              <p className="text-sm text-muted-foreground">Comissão: <span className="text-foreground font-medium">R$ {data.comissaoTotal.toFixed(2)}</span></p>
+              <p className="text-sm text-muted-foreground">Meta: <span className="text-foreground font-medium">{brl(data.metaTotal)}</span></p>
+              <p className="text-sm text-muted-foreground">Comissão: <span className="text-foreground font-medium">{brl(data.comissaoTotal)}</span></p>
               <p className="text-sm text-muted-foreground">Performance: <span className={`font-medium ${data.performance >= 100 ? 'text-green-500' : 'text-yellow-500'}`}>{data.performance.toFixed(1)}%</span></p>
             </>
           )}
@@ -372,7 +337,7 @@ export default function ShopEvolution() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Ticket Médio Anual</p>
-                <p className="text-2xl font-bold text-foreground">R$ {ticketMedioAnual.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-foreground">{brl(ticketMedioAnual)}</p>
               </div>
               <Target className="w-8 h-8 text-green-500" />
             </div>
@@ -553,7 +518,7 @@ export default function ShopEvolution() {
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-2 text-right">R$ {data.ticketMedio.toFixed(2)}</td>
+                      <td className="py-3 px-2 text-right">{brl(data.ticketMedio)}</td>
                       <td className="py-3 px-2 text-right">{data.clientes}</td>
                       <td className="py-3 px-2 text-right">R$ {data.comissaoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                       <td className="py-3 px-2 text-right">

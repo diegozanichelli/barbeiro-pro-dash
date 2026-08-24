@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { brl } from "@/lib/currency";
 
 export interface BarberReportItem {
   category: "service" | "product" | "subscription";
@@ -55,8 +56,8 @@ export async function fetchBarberReport(
   return data as unknown as BarberReportData;
 }
 
-export const fmtBRL = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v || 0));
+/** Mantido como nome local; a formatação vive em @/lib/currency. */
+export const fmtBRL = brl;
 
 export const fmtDateBR = (iso: string) => {
   const [y, m, d] = String(iso).split("-");

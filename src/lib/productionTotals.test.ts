@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { productionHasEntries, productionRevenue } from "./productionTotals";
+import { productionBreakdown, productionHasEntries, productionRevenue } from "./productionTotals";
 
 describe("productionRevenue", () => {
   it("usa as colunas do gestor no fluxo real, com as legadas zeradas", () => {
@@ -63,5 +63,52 @@ describe("productionHasEntries", () => {
   it("dia realmente vazio não acusa lançamento", () => {
     expect(productionHasEntries({ services_basic_total: 0, tx_clients_count: 0 })).toBe(false);
     expect(productionHasEntries(null)).toBe(false);
+  });
+});
+
+describe("productionBreakdown", () => {
+  it("usa o gestor quando há tx", () => {
+    expect(
+      productionBreakdown({
+        tx_basic_total: 300, tx_extra_total: 45, tx_products_total: 55,
+        manual_basic_total: 999, services_basic_total: 999,
+      })
+    ).toEqual({ basic: 300, extra: 45, products: 55 });
+  });
+
+  it("cai para o barbeiro quando não há tx", () => {
+    expect(
+      productionBreakdown({ manual_basic_total: 120, manual_extra_total: 30, manual_products_total: 10 })
+    ).toEqual({ basic: 120, extra: 30, products: 10 });
+  });
+
+  it("no legado detalhado, mantém as parcelas como estão", () => {
+    expect(
+      productionBreakdown({ services_basic_total: 200, services_extra_total: 20, products_total: 10, services_total: 220 })
+    ).toEqual({ basic: 200, extra: 20, products: 10 });
+  });
+
+  it("no legado, deriva o básico quando só os extras vieram preenchidos", () => {
+    // services_total já inclui os extras: somar os dois contaria em dobro.
+    expect(
+      productionBreakdown({ services_basic_total: 0, services_extra_total: 50, services_total: 300, products_total: 20 })
+    ).toEqual({ basic: 250, extra: 50, products: 20 });
+  });
+
+  it("não deixa o básico derivado ficar negativo", () => {
+    expect(
+      productionBreakdown({ services_basic_total: 0, services_extra_total: 80, services_total: 50 })
+    ).toEqual({ basic: 0, extra: 80, products: 0 });
+  });
+
+  it("sem separação por categoria, tudo vira básico", () => {
+    expect(productionBreakdown({ services_total: 180, products_total: 40 })).toEqual({
+      basic: 180, extra: 0, products: 40,
+    });
+  });
+
+  it("productionRevenue soma exatamente a quebra, sem duplicar o legado", () => {
+    const row = { services_basic_total: 0, services_extra_total: 50, services_total: 300, products_total: 20 };
+    expect(productionRevenue(row)).toBe(320);
   });
 });

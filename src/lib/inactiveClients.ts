@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { brl } from "@/lib/currency";
 
 export type InactiveBucket = "30_59" | "60_89" | "90_plus";
 
@@ -24,8 +25,8 @@ export const BUCKET_LABEL: Record<InactiveBucket, string> = {
 
 export const BUCKET_ORDER: InactiveBucket[] = ["30_59", "60_89", "90_plus"];
 
-export const fmtBRL = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v || 0));
+/** Mantido como nome local; a formatação vive em @/lib/currency. */
+export const fmtBRL = brl;
 
 export const fmtDateBR = (iso?: string | null) => {
   if (!iso) return "—";
