@@ -560,17 +560,14 @@ const [todayProduction, setTodayProduction] = useState<{
     return () => { cancelled = true; };
   }, [barber, isCurrentMonth, monthlyGoal, stats]);
 
-  // Check localStorage for existing war plan
+  // Recupera o plano do dia, se já existir. O wizard não abre sozinho: este é um
+  // app de acompanhamento, e pedir "quantos clientes na agenda hoje?" antes de o
+  // barbeiro ver qualquer número era a primeira coisa da tela todo dia. Quem não
+  // tem plano vê um convite discreto no painel.
   useEffect(() => {
     if (!barber) return;
     const todayKey = `war_plan_${getTodayString()}_${barber.id}`;
-    const saved = localStorage.getItem(todayKey);
-    if (saved) {
-      setWarPlanMessage(saved);
-      setShowWarPlanWizard(false);
-    } else {
-      setShowWarPlanWizard(true);
-    }
+    setWarPlanMessage(localStorage.getItem(todayKey));
   }, [barber]);
 
   const handleWarPlanComplete = (planText: string) => {
@@ -922,18 +919,20 @@ const [todayProduction, setTodayProduction] = useState<{
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          {/* 6 colunas não cabem em tela de celular: os rótulos transbordam a
+              caixa e se colam. Duas linhas de 3 mantêm todos legíveis. */}
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto gap-1 p-1">
             <TabsTrigger value="daily">Meu Painel</TabsTrigger>
             <TabsTrigger value="live" className="flex items-center gap-1">
               <Radio className="w-3 h-3" />
-              <span className="hidden sm:inline">Ao Vivo</span>
+              <span>Ao Vivo</span>
             </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
             <TabsTrigger value="strategies">Estratégias</TabsTrigger>
             <TabsTrigger value="leaderboard">Rankings</TabsTrigger>
             <TabsTrigger value="ai-tips" className="flex items-center gap-1">
               <Bot className="w-3 h-3" />
-              <span className="hidden sm:inline">IA</span>
+              <span>IA</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1128,6 +1127,27 @@ const [todayProduction, setTodayProduction] = useState<{
                   <p className="text-sm text-foreground">
                     <strong>Coach IA:</strong> {pacingCoachMessage}
                   </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Só convida quem pode de fato montar o plano: o wizard exige a meta
+                do mês, e sem ela o botão não abriria nada. */}
+            {isCurrentMonth && monthlyGoal && !warPlanMessage && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="pt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      Plano de hoje ainda não montado
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Leva 5 segundos e usa os seus números reais.
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={() => setShowWarPlanWizard(true)}>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Montar plano
+                  </Button>
                 </CardContent>
               </Card>
             )}
