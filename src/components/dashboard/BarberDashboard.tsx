@@ -26,6 +26,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calculateRemainingWorkDays, getManausDate, getCurrentMonthYear, getTodayString } from "@/lib/dateUtils";
 import { productionHasEntries, productionRevenue } from "@/lib/productionTotals";
+import { brl, pct } from "@/lib/currency";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 import PushNotificationToggle from "./barber/PushNotificationToggle";
 
@@ -504,7 +505,7 @@ const [todayProduction, setTodayProduction] = useState<{
             const salesCount = count || 1;
             
             toast.success(`💰 Venda #${salesCount} do dia!`, {
-              description: `${itemName}${clientName ? ` — ${clientName}` : ''}: R$ ${valor.toFixed(2)}`,
+              description: `${itemName}${clientName ? ` — ${clientName}` : ''}: ${brl(valor)}`,
               duration: 6000,
             });
 
@@ -662,7 +663,7 @@ const [todayProduction, setTodayProduction] = useState<{
       toast.error("Não é possível confirmar presença nesta data", {
         description:
           existingTotal > 0
-            ? `Já existe faturamento de R$ ${existingTotal.toFixed(2).replace(".", ",")} registrado em ${dataBr}.`
+            ? `Já existe faturamento de ${brl(existingTotal)} registrado em ${dataBr}.`
             : `Já existem atendimentos registrados em ${dataBr}.`,
         duration: 5000,
       });
@@ -983,6 +984,74 @@ const [todayProduction, setTodayProduction] = useState<{
                 </div>
               </CardContent>
             </Card>
+
+            {/* Hub de conferência (somente leitura) */}
+            <Card className="bg-card border-border shadow-card-custom">
+              <CardHeader>
+                <CardTitle className="text-base">Central de Conferência</CardTitle>
+                <CardDescription>
+                  Lançamentos são feitos pela recepção. Aqui você apenas acompanha e confirma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    className="w-full"
+                    onClick={() => setReviewingDate(getTodayString())}
+                    disabled={!isCurrentMonth}
+                  >
+                    Conferir hoje
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setActiveTab("history")}
+                  >
+                    Ver histórico de conferências
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Status de hoje</p>
+                  <p className="text-sm font-semibold">
+                    {todayProduction
+                      ? todayProduction.total > 0
+                        ? `Com lançamentos: ${brl(todayProduction.total)}`
+                        : todayProduction.confirmed_presence
+                        ? "Presença confirmada sem vendas"
+                        : "Sem confirmação ainda"
+                      : "Sem dados para hoje"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Confirmação de Presença standalone */}
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && !todayProduction.confirmed_presence && (
+              <Card className="bg-card border-border shadow-card-custom">
+                <CardContent className="pt-6 space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full border-primary/50 hover:bg-primary/10"
+                    onClick={handleOpenPresenceModal}
+                    disabled={confirmingPresence}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Clique para informar que você compareceu, mesmo sem vendas.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && todayProduction.confirmed_presence && (
+              <div className="flex items-center justify-center gap-2 text-success rounded-lg border border-success/30 bg-success/5 p-3">
+                <CheckCircle className="w-5 h-5" />
+                <span className="font-medium text-sm">Presença confirmada para hoje</span>
+              </div>
+            )}
             {/* Dias Pendentes de Conferência (colapsável) */}
             <PendingDayReviews
               barberId={barber.id}
@@ -1010,7 +1079,7 @@ const [todayProduction, setTodayProduction] = useState<{
                   <>
                     <div className="text-center space-y-3">
                       <p className="text-5xl font-bold text-primary">
-                        R$ {dailyTargetServices.toFixed(2)}
+                        {brl(dailyTargetServices)}
                       </p>
                       <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
                         (EM SERVIÇOS)
@@ -1026,7 +1095,7 @@ const [todayProduction, setTodayProduction] = useState<{
                   <>
                     <div className="text-center space-y-3">
                       <p className="text-5xl font-bold text-primary">
-                        R$ {dailyTarget.toFixed(2)}
+                        {brl(dailyTarget)}
                       </p>
                       <p className="text-lg font-semibold text-foreground uppercase tracking-wide">
                         (EM COMISSÃO)
@@ -1061,33 +1130,6 @@ const [todayProduction, setTodayProduction] = useState<{
                   </p>
                 </CardContent>
               </Card>
-            )}
-
-            {/* Confirmação de Presença standalone */}
-            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && !todayProduction.confirmed_presence && (
-              <Card className="bg-card border-border shadow-card-custom">
-                <CardContent className="pt-6 space-y-2">
-                  <Button
-                    variant="outline"
-                    className="w-full border-primary/50 hover:bg-primary/10"
-                    onClick={handleOpenPresenceModal}
-                    disabled={confirmingPresence}
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    {confirmingPresence ? "Confirmando..." : "Não vendi nada hoje (Confirmar Presença)"}
-                  </Button>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Clique para informar que você compareceu, mesmo sem vendas.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
-            {isCurrentMonth && todayProduction !== null && todayProduction.total === 0 && todayProduction.confirmed_presence && (
-              <div className="flex items-center justify-center gap-2 text-success rounded-lg border border-success/30 bg-success/5 p-3">
-                <CheckCircle className="w-5 h-5" />
-                <span className="font-medium text-sm">Presença confirmada para hoje</span>
-              </div>
             )}
 
             {/* Card de Progresso Mensal */}
@@ -1128,7 +1170,7 @@ const [todayProduction, setTodayProduction] = useState<{
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Sua Meta de Comissão Mensal:</span>
                     <span className="font-bold">
-                      {monthlyGoal ? `R$ ${monthlyGoal.target_commission.toFixed(2)}` : "Sem meta cadastrada"}
+                      {monthlyGoal ? brl(monthlyGoal.target_commission) : "Sem meta cadastrada"}
                     </span>
                   </div>
                   {monthlyGoal ? (
@@ -1136,9 +1178,9 @@ const [todayProduction, setTodayProduction] = useState<{
                       <Progress value={progressPercentage} className="h-3" />
                       <div className="flex justify-between text-sm">
                         {expectedPercent !== null ? (
-                          <span className="text-muted-foreground">Esperado: {expectedPercent.toFixed(1)}%</span>
+                          <span className="text-muted-foreground">Esperado: {pct(expectedPercent)}</span>
                         ) : <span />}
-                        <span className="text-success font-bold">{progressPercentage.toFixed(1)}%</span>
+                        <span className="text-success font-bold">{pct(progressPercentage)}</span>
                       </div>
                     </>
                   ) : (
@@ -1152,13 +1194,13 @@ const [todayProduction, setTodayProduction] = useState<{
                   <div>
                     <p className="text-sm text-muted-foreground">Comissão Já Ganha</p>
                     <p className="text-2xl font-bold text-success">
-                      R$ {stats.accumulated_commission.toFixed(2)}
+                      {brl(stats.accumulated_commission)}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Falta Ganhar</p>
                     <p className="text-2xl font-bold text-destructive">
-                      R$ {remaining.toFixed(2)}
+                      {brl(remaining)}
                     </p>
                   </div>
                 </div>
@@ -1178,11 +1220,11 @@ const [todayProduction, setTodayProduction] = useState<{
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Total Vendas (Serviços)</p>
-                    <p className="text-2xl font-bold text-success">R$ {stats.total_services.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-success">{brl(stats.total_services)}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Total Vendas (Produtos)</p>
-                    <p className="text-2xl font-bold text-primary">R$ {stats.total_products.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-primary">{brl(stats.total_products)}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Total Clientes Atendidos</p>
@@ -1190,57 +1232,16 @@ const [todayProduction, setTodayProduction] = useState<{
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Ticket Médio</p>
-                    <p className="text-2xl font-bold">R$ {stats.average_ticket.toFixed(2)}</p>
+                    <p className="text-2xl font-bold">{brl(stats.average_ticket)}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Taxa de Venda (Serviços %)</p>
-                    <p className="text-2xl font-bold text-success">{stats.services_conversion.toFixed(1)}%</p>
+                    <p className="text-2xl font-bold text-success">{pct(stats.services_conversion)}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Taxa de Venda (Produtos %)</p>
-                    <p className="text-2xl font-bold text-primary">{stats.products_conversion.toFixed(1)}%</p>
+                    <p className="text-2xl font-bold text-primary">{pct(stats.products_conversion)}</p>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Hub de conferência (somente leitura) */}
-            <Card className="bg-card border-border shadow-card-custom">
-              <CardHeader>
-                <CardTitle className="text-base">Central de Conferência</CardTitle>
-                <CardDescription>
-                  Lançamentos são feitos pela recepção. Aqui você apenas acompanha e confirma.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Button
-                    className="w-full"
-                    onClick={() => setReviewingDate(getTodayString())}
-                    disabled={!isCurrentMonth}
-                  >
-                    Conferir hoje
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setActiveTab("history")}
-                  >
-                    Ver histórico de conferências
-                  </Button>
-                </div>
-
-                <div className="rounded-lg border bg-muted/30 px-3 py-2">
-                  <p className="text-xs text-muted-foreground">Status de hoje</p>
-                  <p className="text-sm font-semibold">
-                    {todayProduction
-                      ? todayProduction.total > 0
-                        ? `Com lançamentos: R$ ${todayProduction.total.toFixed(2)}`
-                        : todayProduction.confirmed_presence
-                        ? "Presença confirmada sem vendas"
-                        : "Sem confirmação ainda"
-                      : "Sem dados para hoje"}
-                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -1270,17 +1271,17 @@ const [todayProduction, setTodayProduction] = useState<{
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Progresso do dia</span>
                         <span className={`font-bold ${metaBatida ? 'text-success' : 'text-foreground'}`}>
-                          {dayProgress.toFixed(1)}%
+                          {pct(dayProgress)}
                         </span>
                       </div>
                       <Progress value={dayProgress} className={`h-4 ${metaBatida ? '[&>div]:bg-success' : ''}`} />
                       <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>R$ {todayTotal.toFixed(2)} vendido</span>
+                        <span>{brl(todayTotal)} vendido</span>
                         {target > 0 ? (
                           metaBatida ? (
                             <span className="text-success font-semibold">🏆 Meta batida!</span>
                           ) : (
-                            <span>Falta R$ {faltaHoje.toFixed(2)}</span>
+                            <span>Falta {brl(faltaHoje)}</span>
                           )
                         ) : (
                           <span>Sem meta definida</span>
@@ -1293,15 +1294,15 @@ const [todayProduction, setTodayProduction] = useState<{
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Produção de hoje</p>
-                    <p className="text-2xl font-bold">R$ {todayProduction?.total.toFixed(2) ?? "0.00"}</p>
+                    <p className="text-2xl font-bold">{brl(todayProduction?.total)}</p>
                   </div>
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Meta diária (comissão)</p>
-                    <p className="text-2xl font-bold">R$ {dailyTarget.toFixed(2)}</p>
+                    <p className="text-2xl font-bold">{brl(dailyTarget)}</p>
                   </div>
                   <div className="rounded-lg border border-border p-3">
                     <p className="text-xs text-muted-foreground">Meta diária (serviços)</p>
-                    <p className="text-2xl font-bold">R$ {dailyTargetServices.toFixed(2)}</p>
+                    <p className="text-2xl font-bold">{brl(dailyTargetServices)}</p>
                   </div>
                 </div>
 
@@ -1319,7 +1320,7 @@ const [todayProduction, setTodayProduction] = useState<{
                               {sale.item_name} ({sale.item_type}) • {format(new Date(sale.created_at), "HH:mm")}
                             </p>
                           </div>
-                          <p className="font-bold">R$ {Number(sale.price_sold || 0).toFixed(2)}</p>
+                          <p className="font-bold">{brl(Number(sale.price_sold || 0))}</p>
                         </div>
                       ))}
                     </div>
