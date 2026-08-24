@@ -38,6 +38,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { brl, int } from "@/lib/currency";
 
 interface Unit {
   id: string;
@@ -72,9 +73,6 @@ const MONTHS = [
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-const brl = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
-const int = (v: number) => new Intl.NumberFormat("pt-BR").format(Math.round(v || 0));
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const daysInMonth = (year: number, month: number) =>

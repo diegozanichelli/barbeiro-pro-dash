@@ -11,6 +11,8 @@ import { fetchAllRows } from "@/lib/supabasePagination";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
+import { productionBreakdown } from "@/lib/productionTotals";
+import { brl } from "@/lib/currency";
 
 /** Evita que o TS parseie a select string (custo de typecheck). */
 const sel = (s: string): string => s;
@@ -219,46 +221,11 @@ export default function UnitsComparison() {
 
       const metrics = metricsMap.get(unitId)!;
 
-      const txBasic = Number(prod.tx_basic_total) || 0;
-      const txExtra = Number(prod.tx_extra_total) || 0;
-      const txProducts = Number(prod.tx_products_total) || 0;
-      const txTotal = txBasic + txExtra + txProducts;
-
-      const mBasic = Number(prod.manual_basic_total) || 0;
-      const mExtra = Number(prod.manual_extra_total) || 0;
-      const mProducts = Number(prod.manual_products_total) || 0;
-      const manualTotal = mBasic + mExtra + mProducts;
-
-      const legacyBasic = Number(prod.services_basic_total) || 0;
-      const legacyExtra = Number(prod.services_extra_total) || 0;
-      const legacyProducts = Number(prod.products_total) || 0;
-      const servicesTotalLegacy = Number(prod.services_total) || 0;
-
-      let receitaBasicaItem = 0;
-      let receitaExtraItem = 0;
-      let receitaProdutosItem = 0;
-
-      if (txTotal > 0) {
-        receitaBasicaItem = txBasic;
-        receitaExtraItem = txExtra;
-        receitaProdutosItem = txProducts;
-      } else if (manualTotal > 0) {
-        receitaBasicaItem = mBasic;
-        receitaExtraItem = mExtra;
-        receitaProdutosItem = mProducts;
-      } else if (prod.services_basic_total != null || prod.services_extra_total != null) {
-        receitaExtraItem = legacyExtra;
-        if (legacyBasic === 0 && legacyExtra > 0) {
-          receitaBasicaItem = Math.max(0, servicesTotalLegacy - legacyExtra);
-        } else {
-          receitaBasicaItem = legacyBasic;
-        }
-        receitaProdutosItem = legacyProducts;
-      } else {
-        receitaBasicaItem = servicesTotalLegacy;
-        receitaExtraItem = 0;
-        receitaProdutosItem = legacyProducts;
-      }
+      const {
+        basic: receitaBasicaItem,
+        extra: receitaExtraItem,
+        products: receitaProdutosItem,
+      } = productionBreakdown(prod);
 
       metrics.receitaBasica += receitaBasicaItem;
       metrics.receitaExtra += receitaExtraItem;
@@ -430,7 +397,7 @@ export default function UnitsComparison() {
           <p className="text-sm font-semibold text-card-foreground mb-2">{label}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
-              {entry.name}: {label.includes('mil') ? `R$ ${(entry.value * 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : `R$ ${entry.value.toFixed(2)}`}
+              {entry.name}: {label.includes('mil') ? brl(entry.value * 1000) : `${brl(entry.value)}`}
             </p>
           ))}
         </div>
@@ -516,7 +483,7 @@ export default function UnitsComparison() {
               </div>
               <p className="text-lg font-bold text-foreground">{ticketLeader?.unitName}</p>
               <p className="text-sm text-muted-foreground">
-                R$ {ticketLeader?.ticketMedio.toFixed(2)}
+                {brl(ticketLeader?.ticketMedio)}
               </p>
             </CardContent>
           </Card>
@@ -546,7 +513,7 @@ export default function UnitsComparison() {
               <p className="text-lg font-bold text-foreground">{conversionLeader?.unitName ?? '—'}</p>
               <p className="text-sm text-muted-foreground">
                 {conversionLeader
-                  ? `R$ ${conversionLeader.ticketMedio.toFixed(2)} por cliente · ${conversionLeader.clientes} atendimentos`
+                  ? `${brl(conversionLeader.ticketMedio)} por cliente · ${conversionLeader.clientes} atendimentos`
                   : 'Sem dados suficientes'}
               </p>
             </CardContent>
@@ -702,7 +669,7 @@ export default function UnitsComparison() {
                     <td className="py-3 px-2 font-medium">Ticket Médio</td>
                     {unitsMetrics.map((unit) => (
                       <td key={unit.unitId} className="py-3 px-4 text-right font-medium">
-                        R$ {unit.ticketMedio.toFixed(2)}
+                        {brl(unit.ticketMedio)}
                       </td>
                     ))}
                   </tr>

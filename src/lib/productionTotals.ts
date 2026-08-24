@@ -30,23 +30,67 @@ export interface ProductionTotalsRow {
 
 const num = (v: number | null | undefined) => Number(v) || 0;
 
+export interface ProductionBreakdown {
+  /** Serviços básicos. */
+  basic: number;
+  /** Serviços extras. */
+  extra: number;
+  /** Produtos. */
+  products: number;
+}
+
+/**
+ * Quebra a produção do dia em básicos, extras e produtos, na ordem
+ * gestor > barbeiro > legado detalhado > services_total.
+ *
+ * O ramo legado tem uma sutileza: quando só os extras estão preenchidos, o
+ * básico é derivado do services_total menos os extras. Somar as duas colunas
+ * contaria o mesmo dinheiro duas vezes, porque nos lançamentos antigos o
+ * services_total já inclui os extras.
+ */
+export function productionBreakdown(
+  row: ProductionTotalsRow | null | undefined
+): ProductionBreakdown {
+  if (!row) return { basic: 0, extra: 0, products: 0 };
+
+  const txBasic = num(row.tx_basic_total);
+  const txExtra = num(row.tx_extra_total);
+  const txProducts = num(row.tx_products_total);
+  if (txBasic + txExtra + txProducts > 0) {
+    return { basic: txBasic, extra: txExtra, products: txProducts };
+  }
+
+  const manualBasic = num(row.manual_basic_total);
+  const manualExtra = num(row.manual_extra_total);
+  const manualProducts = num(row.manual_products_total);
+  if (manualBasic + manualExtra + manualProducts > 0) {
+    return { basic: manualBasic, extra: manualExtra, products: manualProducts };
+  }
+
+  const legacyBasic = num(row.services_basic_total);
+  const legacyExtra = num(row.services_extra_total);
+  const legacyProducts = num(row.products_total);
+  const legacyServices = num(row.services_total);
+
+  if (row.services_basic_total != null || row.services_extra_total != null) {
+    return {
+      basic:
+        legacyBasic === 0 && legacyExtra > 0
+          ? Math.max(0, legacyServices - legacyExtra)
+          : legacyBasic,
+      extra: legacyExtra,
+      products: legacyProducts,
+    };
+  }
+
+  // Lançamento antigo sem separação por categoria.
+  return { basic: legacyServices, extra: 0, products: legacyProducts };
+}
+
 /** Faturamento do dia, na ordem gestor > barbeiro > legado. */
 export function productionRevenue(row: ProductionTotalsRow | null | undefined): number {
-  if (!row) return 0;
-
-  const tx = num(row.tx_basic_total) + num(row.tx_extra_total) + num(row.tx_products_total);
-  if (tx > 0) return tx;
-
-  const manual =
-    num(row.manual_basic_total) + num(row.manual_extra_total) + num(row.manual_products_total);
-  if (manual > 0) return manual;
-
-  return (
-    num(row.services_basic_total) +
-    num(row.services_extra_total) +
-    num(row.products_total) +
-    num(row.services_total)
-  );
+  const { basic, extra, products } = productionBreakdown(row);
+  return basic + extra + products;
 }
 
 /**
