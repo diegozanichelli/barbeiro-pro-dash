@@ -262,7 +262,7 @@ export default function AuditFindingModal({
       case "subscription_no_phone":
         return { tab: "subscriptions", label: "Abrir Assinaturas" };
       case "orphan_sales":
-        return { tab: "live", label: "Abrir Ao Vivo" };
+        return { tab: "live", label: "Abrir Hoje" };
       default:
         return null;
     }

@@ -12,7 +12,6 @@ import {
   Trophy,
   Bot,
   Repeat,
-  CalendarDays,
   Flame,
   Menu,
   Briefcase,
@@ -23,7 +22,6 @@ import {
   UserRound,
   ChevronRight,
   ShieldCheck,
-  UserX,
   ClipboardList,
 
 } from "lucide-react";
@@ -89,7 +87,7 @@ export default function ManagerNavigation({
   };
 
   const directLinks: NavItem[] = [
-    { id: "live", label: "Ao Vivo", icon: Radio },
+    { id: "live", label: "Hoje", icon: Radio },
     { id: "overview", label: "Dashboard", icon: BarChart3 },
   ];
 
@@ -98,37 +96,34 @@ export default function ManagerNavigation({
     { id: "clients", label: "Clientes", icon: UserRound },
     { id: "units", label: "Unidades", icon: Building2 },
     { id: "goals", label: "Metas", icon: Target },
+    { id: "subscriptions", label: "Assinaturas", icon: Repeat },
   ];
-
-  if (hasSubscriptionModule) {
-    gestaoItems.push({ id: "plans", label: "Planos", icon: Repeat });
-  }
 
   const financeiroItems: NavItem[] = [
     { id: "catalog", label: "Comissões", icon: Package },
-    { id: "daily-goals", label: "Dia a Dia", icon: CalendarDays },
     { id: "entries", label: "Lançamentos", icon: ClipboardList },
+    { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
   ];
 
 
   const relatoriosItems: NavItem[] = [
     { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
     { id: "barber-report", label: "Relatório do Barbeiro", icon: FileText },
-    { id: "inactive-clients", label: "Clientes Inativos", icon: UserX },
-    { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
     { id: "evolution", label: "Evolução", icon: TrendingUp },
     { id: "best-sales-days", label: "Melhores Dias", icon: Flame },
     { id: "leaderboard", label: "Rankings", icon: Trophy },
-    { id: "subscriptions", label: "Assinaturas", icon: Repeat },
+  ];
+
+  const sistemaItems: NavItem[] = [
     { id: "reports-audit", label: "Auditoria", icon: ShieldCheck },
     { id: "ai-usage", label: "Uso IA", icon: Bot },
-
   ];
 
   const groups: NavGroup[] = [
     { id: "gestao", label: "Gestão", icon: Briefcase, items: gestaoItems },
     { id: "financeiro", label: "Financeiro", icon: DollarSign, items: financeiroItems },
     { id: "relatorios", label: "Relatórios", icon: FileText, items: relatoriosItems },
+    { id: "sistema", label: "Sistema", icon: ShieldCheck, items: sistemaItems },
   ];
 
   const isGroupActive = (group: NavGroup) =>
