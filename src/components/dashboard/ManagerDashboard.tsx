@@ -1,6 +1,6 @@
 import { User } from "@supabase/supabase-js";
 import { useState, useEffect } from "react";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -125,8 +125,21 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          {/* "Hoje" reúne as duas telas do dia: o Ao Vivo, onde a recepção lança,
+              e o acompanhamento de metas, que era só uma leitura dos mesmos dados. */}
           <TabsContent value="live" className="space-y-6 mt-0">
-            <LiveDashboard />
+            <Tabs defaultValue="ao-vivo" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid">
+                <TabsTrigger value="ao-vivo">Ao Vivo</TabsTrigger>
+                <TabsTrigger value="metas-do-dia">Metas do dia</TabsTrigger>
+              </TabsList>
+              <TabsContent value="ao-vivo" className="mt-0">
+                <LiveDashboard />
+              </TabsContent>
+              <TabsContent value="metas-do-dia" className="mt-0">
+                <DailyGoalsTracking />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="overview" className="space-y-6 mt-0">
@@ -137,10 +150,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           <TabsContent value="entries" className="mt-0">
             <ManagerReports />
-          </TabsContent>
-
-          <TabsContent value="daily-goals" className="mt-0">
-            <DailyGoalsTracking />
           </TabsContent>
 
           <TabsContent value="units" className="mt-0">
@@ -155,8 +164,20 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <CatalogManagement />
           </TabsContent>
 
+          {/* Cliente é um assunto só: a base e quem parou de voltar. */}
           <TabsContent value="clients" className="mt-0">
-            <ClientsManagement />
+            <Tabs defaultValue="base" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid">
+                <TabsTrigger value="base">Clientes</TabsTrigger>
+                <TabsTrigger value="inativos">Inativos</TabsTrigger>
+              </TabsList>
+              <TabsContent value="base" className="mt-0">
+                <ClientsManagement />
+              </TabsContent>
+              <TabsContent value="inativos" className="mt-0">
+                <InactiveClientsReport />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="goals" className="mt-0">
@@ -183,10 +204,6 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <BarberReportPage />
           </TabsContent>
 
-          <TabsContent value="inactive-clients" className="mt-0">
-            <InactiveClientsReport />
-          </TabsContent>
-
 
           <TabsContent value="payroll" className="mt-0">
             <MonthlyPayroll />
@@ -201,15 +218,25 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           </TabsContent>
 
 
+          {/* Acompanhamento e planos são o mesmo assunto, e o segundo só existe
+              quando o módulo de assinaturas está ligado. */}
           <TabsContent value="subscriptions" className="mt-0">
-            <SubscriptionsTracking />
+            <Tabs defaultValue="acompanhamento" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid">
+                <TabsTrigger value="acompanhamento">Acompanhamento</TabsTrigger>
+                {hasSubscriptionModule && <TabsTrigger value="planos">Planos</TabsTrigger>}
+              </TabsList>
+              <TabsContent value="acompanhamento" className="mt-0">
+                <SubscriptionsTracking />
+              </TabsContent>
+              {hasSubscriptionModule && (
+                <TabsContent value="planos" className="mt-0">
+                  <SubscriptionPlansManagement />
+                </TabsContent>
+              )}
+            </Tabs>
           </TabsContent>
 
-          {hasSubscriptionModule && (
-            <TabsContent value="plans" className="mt-0">
-              <SubscriptionPlansManagement />
-            </TabsContent>
-          )}
 
         </Tabs>
       </div>
