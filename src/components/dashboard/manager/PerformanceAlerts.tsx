@@ -10,6 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useState } from "react";
 import { format, startOfMonth } from "date-fns";
 import { getManausDate } from "@/lib/dateUtils";
+import { brl } from "@/lib/currency";
 
 interface PerformanceAlert {
   id: string;
@@ -191,7 +192,7 @@ export function PerformanceAlerts() {
                             <div>
                               <p className="text-muted-foreground text-xs">Deficit</p>
                               <p className="font-medium text-destructive">
-                                R$ {alert.valor_deficit_r$.toFixed(2)}
+                                {brl(alert.valor_deficit_r$)}
                               </p>
                             </div>
                             <div>

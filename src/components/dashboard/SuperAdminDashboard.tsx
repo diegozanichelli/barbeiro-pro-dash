@@ -47,6 +47,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { brl } from "@/lib/currency";
 
 interface SuperAdminDashboardProps {
   user: User;
@@ -933,7 +934,7 @@ export default function SuperAdminDashboard({ user }: SuperAdminDashboardProps) 
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">R$ {stats.monthly_revenue.toFixed(2)}</div>
+              <div className="text-2xl font-bold">{brl(stats.monthly_revenue)}</div>
             </CardContent>
           </Card>
         </div>

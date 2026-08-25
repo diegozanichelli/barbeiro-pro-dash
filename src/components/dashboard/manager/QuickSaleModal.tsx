@@ -58,6 +58,7 @@ import { computeNextAnchor, serializeCycleMetadata } from "@/lib/subscriptionCyc
 import { SubscriptionCycleBanner } from "@/components/dashboard/manager/SubscriptionCycleBanner";
 import { formatInTimeZone } from "date-fns-tz";
 import { TIMEZONE } from "@/lib/dateUtils";
+import { brl } from "@/lib/currency";
 
 
 interface QuickSaleModalProps {
@@ -1134,7 +1135,7 @@ export default function QuickSaleModal({
         ? ` • ${SUBSCRIPTION_ACTION_LABELS[subscriptionInCart.action]}: ${subscriptionInCart.name}`
         : "";
       toast.success(`${cart.length} ${cart.length === 1 ? 'item registrado' : 'itens registrados'} para ${sellerName}`, {
-        description: `Total: R$ ${cartTotal.toFixed(2)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}${subDescription}`,
+        description: `Total: ${brl(cartTotal)} • ${clientsCount} ${clientsCount === 1 ? 'cliente' : 'clientes'}${subDescription}`,
       });
 
       resetForm();

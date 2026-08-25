@@ -13,6 +13,7 @@ import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
 import SubscriptionAnalytics from "./SubscriptionAnalytics";
 import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
 import { useOrganization } from "@/hooks/useOrganization";
+import { brl } from "@/lib/currency";
 
 interface Barber {
   id: string;
@@ -134,7 +135,7 @@ function BarberEvolutionChart() {
           </p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
-              {entry.name}: R$ {entry.value.toFixed(2)}
+              {entry.name}: {brl(entry.value)}
             </p>
           ))}
         </div>

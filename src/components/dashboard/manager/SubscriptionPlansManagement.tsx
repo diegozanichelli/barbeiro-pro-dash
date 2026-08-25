@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Pencil, CreditCard } from "lucide-react";
 import SubscriptionPlanModal from "./SubscriptionPlanModal";
 import { useOrganization } from "@/hooks/useOrganization";
+import { brl } from "@/lib/currency";
 
 interface SubscriptionPlan {
   id: string;
@@ -203,7 +204,7 @@ export default function SubscriptionPlansManagement() {
               {plans.map((plan) => (
                 <TableRow key={plan.id}>
                   <TableCell className="font-medium">{plan.name}</TableCell>
-                  <TableCell>R$ {Number(plan.price).toFixed(2)}</TableCell>
+                  <TableCell>{brl(Number(plan.price))}</TableCell>
                   <TableCell>
                     <Switch
                       checked={plan.active}

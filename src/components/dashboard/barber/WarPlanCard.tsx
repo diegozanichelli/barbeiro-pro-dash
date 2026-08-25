@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Swords, Target, Moon, Trophy } from "lucide-react";
 import { getManausDate } from "@/lib/dateUtils";
+import { brl } from "@/lib/currency";
 
 const CLOSING_HOUR = 23;
 
@@ -33,19 +34,19 @@ export default function WarPlanCard({ planText, soldToday = 0, dailyTarget = 0 }
             {metGoal ? (
               <>
                 <p className="text-sm font-medium text-foreground">
-                  🎉 Parabéns! Você bateu a meta diária de R$ {dailyTarget.toFixed(2)}!
+                  🎉 Parabéns! Você bateu a meta diária de {brl(dailyTarget)}!
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Produção hoje: R$ {soldToday.toFixed(2)}. Descanse bem e volte amanhã com a mesma energia! 💪
+                  Produção hoje: {brl(soldToday)}. Descanse bem e volte amanhã com a mesma energia! 💪
                 </p>
               </>
             ) : (
               <>
                 <p className="text-sm font-medium text-foreground">
-                  Hoje você produziu R$ {soldToday.toFixed(2)} de uma meta de R$ {dailyTarget.toFixed(2)}.
+                  Hoje você produziu {brl(soldToday)} de uma meta de {brl(dailyTarget)}.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Faltaram R$ {(dailyTarget - soldToday).toFixed(2)}. Amanhã é dia de compensar — foco redobrado! 🔥
+                  Faltaram {brl(dailyTarget - soldToday)}. Amanhã é dia de compensar — foco redobrado! 🔥
                 </p>
               </>
             )}

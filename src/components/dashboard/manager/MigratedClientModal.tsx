@@ -31,6 +31,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { brl } from "@/lib/currency";
 
 interface MigratedClientModalProps {
   open: boolean;
@@ -222,7 +223,7 @@ export default function MigratedClientModal({
               <SelectContent>
                 {plans.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.name} — R$ {Number(p.price).toFixed(2)}
+                    {p.name} — {brl(Number(p.price))}
                   </SelectItem>
                 ))}
               </SelectContent>

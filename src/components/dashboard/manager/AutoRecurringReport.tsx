@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhone } from "@/lib/phoneUtils";
 import { fetchAllRows } from "@/lib/supabasePagination";
+import { brl } from "@/lib/currency";
 
 interface AutoRecurringReportProps {
   organizationId: string;
@@ -270,7 +271,7 @@ export default function AutoRecurringReport({ organizationId, from, to }: AutoRe
                     </TableCell>
                     <TableCell className="text-sm">{r.unit_name}</TableCell>
                     <TableCell className="text-right font-semibold">
-                      R$ {Number(r.price_sold).toFixed(2)}
+                      {brl(Number(r.price_sold))}
                     </TableCell>
                   </TableRow>
                 ))}
