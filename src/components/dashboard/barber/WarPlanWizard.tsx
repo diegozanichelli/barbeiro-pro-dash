@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Target, Swords, ChevronRight, Sparkles, AlertCircle } from "lucide-react";
+import { brl } from "@/lib/currency";
 
 interface WarPlanWizardProps {
   open: boolean;
@@ -197,7 +198,7 @@ export default function WarPlanWizard({
               <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-400 text-sm">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
-                  Detectei inconsistência nas metas: faturamento R$ {dailyTarget.toFixed(2)} ≤ comissão R$ {dailyTargetCommission.toFixed(2)}.
+                  Detectei inconsistência nas metas: faturamento {brl(dailyTarget)} ≤ comissão {brl(dailyTargetCommission)}.
                   O gerente precisa revisar a meta mensal antes de gerar um plano confiável.
                 </span>
               </div>

@@ -7,6 +7,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { brl, int } from "@/lib/currency";
 
 interface ChampionshipLeaderboardProps {
   data: ChampionshipBarber[];
@@ -63,8 +64,8 @@ export default function ChampionshipLeaderboard({ data, championshipName }: Cham
                       </TooltipTrigger>
                       <TooltipContent>
                         {barber.is_validated 
-                          ? `✅ Validado - Faturamento: R$ ${barber.total_revenue.toFixed(2)}`
-                          : `🔒 Bloqueado - Falta R$ ${(15000 - barber.total_revenue).toFixed(2)} para validar`
+                          ? `✅ Validado - Faturamento: ${brl(barber.total_revenue)}`
+                          : `🔒 Bloqueado - Falta ${brl(15000 - barber.total_revenue)} para validar`
                         }
                       </TooltipContent>
                     </Tooltip>
@@ -85,7 +86,7 @@ export default function ChampionshipLeaderboard({ data, championshipName }: Cham
                     {barber.total_points} pts
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    R$ {barber.total_revenue.toFixed(0)} faturado
+                    R$ {int(barber.total_revenue)} faturado
                   </p>
                 </div>
               </div>
@@ -101,7 +102,7 @@ export default function ChampionshipLeaderboard({ data, championshipName }: Cham
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      R$ {barber.total_revenue.toFixed(2)} ÷ 1000 × 10 = {barber.points_faturamento} pts
+                      {brl(barber.total_revenue)} ÷ 1000 × 10 = {barber.points_faturamento} pts
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -115,7 +116,7 @@ export default function ChampionshipLeaderboard({ data, championshipName }: Cham
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      Ticket Médio: R$ {barber.ticket_medio.toFixed(2)} - {getTicketTier(barber.ticket_medio)}
+                      Ticket Médio: {brl(barber.ticket_medio)} - {getTicketTier(barber.ticket_medio)}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

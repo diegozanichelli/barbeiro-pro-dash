@@ -55,6 +55,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { brl } from "@/lib/currency";
 
 const isSubscriptionPlanFieldMissing = (error: any) => {
   const message = String(error?.message || "").toLowerCase();
@@ -480,16 +481,16 @@ export default function SubscriptionWizardModal({
 
       if (attributionType === "manager_rescue") {
         toast.success("Assinatura registrada como recuperação do gestor", {
-          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
+          description: `${actionLabel} • ${brl(Number(selectedPlan?.price || 0))} • Nenhum ponto distribuído (falha operacional registrada) ⚠️`,
         });
       } else if (attributionType === "auto_recurring") {
         toast.success("Renovação automática registrada", {
-          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Cobrança automática no cartão (sem pontuação) 💳`,
+          description: `${actionLabel} • ${brl(Number(selectedPlan?.price || 0))} • Cobrança automática no cartão (sem pontuação) 💳`,
         });
       } else {
         const attribution = selectedBarberId ? "do barbeiro" : "da Recepção";
         toast.success(`Assinatura registrada!`, {
-          description: `${actionLabel} • R$ ${Number(selectedPlan?.price || 0).toFixed(2)} • Pontos ${attribution} 🏆`,
+          description: `${actionLabel} • ${brl(Number(selectedPlan?.price || 0))} • Pontos ${attribution} 🏆`,
         });
       }
 
@@ -682,7 +683,7 @@ export default function SubscriptionWizardModal({
                     <SelectContent>
                       {plans.map((plan) => (
                         <SelectItem key={plan.id} value={plan.id}>
-                          {plan.name} — R$ {Number(plan.price).toFixed(2)}
+                          {plan.name} — {brl(Number(plan.price))}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -972,7 +973,7 @@ export default function SubscriptionWizardModal({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Plano:</span>
-                    <span className="font-medium">{selectedPlan ? `${selectedPlan.name} — R$ ${Number(selectedPlan.price).toFixed(2)}` : "—"}</span>
+                    <span className="font-medium">{selectedPlan ? `${selectedPlan.name} — ${brl(Number(selectedPlan.price))}` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Ação:</span>

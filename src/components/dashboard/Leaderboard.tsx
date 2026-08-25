@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import ChampionshipLeaderboard from "./ChampionshipLeaderboard";
 import { useChampionshipPoints, ChampionshipBarber } from "@/hooks/useChampionshipPoints";
 import { getManausDate } from "@/lib/dateUtils";
+import { brl } from "@/lib/currency";
 
 interface RankingItem {
   barber_id: string;
@@ -408,14 +409,12 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
     icon,
     data,
     description,
-    valuePrefix = "R$",
   }: {
     title: string;
     rankingKey: string;
     icon: React.ReactNode;
     data: RankingItem[];
     description?: string;
-    valuePrefix?: string;
   }) => {
     const displayTitle = customNames[rankingKey] || title;
     
@@ -465,7 +464,7 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
                   </div>
                 </div>
                 <p className={`shrink-0 text-right font-bold ${index < 3 ? "text-xl text-primary" : "text-lg text-foreground"}`}>
-                  {valuePrefix} {item.value.toFixed(2)}
+                  {brl(item.value)}
                 </p>
               </div>
             ))}
