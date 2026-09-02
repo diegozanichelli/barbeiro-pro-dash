@@ -553,7 +553,9 @@ export default function PerformanceDashboard() {
    * unidade.
    */
   const goalsSummary = useMemo(() => {
-    const scopedBarbers = barbers.filter((b) => unitId === "all" || b.unit_id === unitId);
+    const scopedBarbers = barbers.filter(
+      (b) => b.status === "active" && (unitId === "all" || b.unit_id === unitId)
+    );
     const earned: Record<string, number> = {};
     filterTx(current, null).forEach((t) => {
       if (!t.barber_id) return;
