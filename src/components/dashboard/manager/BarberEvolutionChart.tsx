@@ -1,16 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Building2, User, GitCompare, Crown, Users2, Brain } from "lucide-react";
-import ShopEvolution from "./ShopEvolution";
-import UnitsComparison from "./UnitsComparison";
-import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
-import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
-import SubscriptionAnalytics from "./SubscriptionAnalytics";
+import { TrendingUp } from "lucide-react";
 import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
 import { useOrganization } from "@/hooks/useOrganization";
 import { brl } from "@/lib/currency";
@@ -26,7 +20,7 @@ interface MonthlyData {
   comissaoGanha: number;
 }
 
-function BarberEvolutionChart() {
+export default function BarberEvolutionChart() {
   const manausNow = useMemo(() => getManausDate(), []);
   const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -277,59 +271,3 @@ function BarberEvolutionChart() {
 }
 
 // Componente principal com tabs
-export default function BarberEvolution() {
-  return (
-    <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full grid-cols-6 h-auto">
-        <TabsTrigger value="barbearia" title="Barbearia" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Building2 className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Barbearia</span>
-        </TabsTrigger>
-        <TabsTrigger value="comparativo" title="Comparativo" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <GitCompare className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Comparativo</span>
-        </TabsTrigger>
-        <TabsTrigger value="barbeiro" title="Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <User className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Barbeiro</span>
-        </TabsTrigger>
-        <TabsTrigger value="assinaturas" title="Conversão por Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Crown className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Conversão</span>
-        </TabsTrigger>
-        <TabsTrigger value="recepcao" title="Vendas da Recepção" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Users2 className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Recepção</span>
-        </TabsTrigger>
-        <TabsTrigger value="inteligencia" title="Carteira de Assinaturas" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Brain className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Carteira</span>
-        </TabsTrigger>
-      </TabsList>
-      
-      <TabsContent value="barbearia">
-        <ShopEvolution />
-      </TabsContent>
-
-      <TabsContent value="comparativo">
-        <UnitsComparison />
-      </TabsContent>
-      
-      <TabsContent value="barbeiro">
-        <BarberEvolutionChart />
-      </TabsContent>
-      
-      <TabsContent value="assinaturas">
-        <SubscriptionPerformanceReport />
-      </TabsContent>
-
-      <TabsContent value="recepcao">
-        <ReceptionPerformanceReport />
-      </TabsContent>
-
-      <TabsContent value="inteligencia">
-        <SubscriptionAnalytics />
-      </TabsContent>
-    </Tabs>
-  );
-}

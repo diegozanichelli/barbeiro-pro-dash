@@ -12,7 +12,12 @@ import GoalsManagement from "./manager/GoalsManagement";
 import DailyGoalsTracking from "./manager/DailyGoalsTracking";
 import Leaderboard from "./Leaderboard";
 import ManagerReports from "./manager/ManagerReports";
-import BarberEvolution from "./manager/BarberEvolution";
+import BarberEvolutionChart from "./manager/BarberEvolutionChart";
+import ShopEvolution from "./manager/ShopEvolution";
+import UnitsComparison from "./manager/UnitsComparison";
+import SubscriptionPerformanceReport from "./manager/SubscriptionPerformanceReport";
+import SubscriptionAnalytics from "./manager/SubscriptionAnalytics";
+import ReceptionPerformanceReport from "./manager/ReceptionPerformanceReport";
 import { PerformanceAlerts } from "./manager/PerformanceAlerts";
 import { useSubscriptionModule } from "@/hooks/useSubscriptionModule";
 import LiveDashboard from "./manager/LiveDashboard";
@@ -184,24 +189,55 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
             <GoalsManagement />
           </TabsContent>
 
-          <TabsContent value="evolution" className="mt-0">
-            <BarberEvolution />
+          {/* Setor Barbeiro: tudo que responde "como está cada um" num lugar só —
+              a ficha do período, a evolução no ano e os rankings da equipe. */}
+          <TabsContent value="report-barber" className="mt-0">
+            <Tabs defaultValue="ficha" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-grid">
+                <TabsTrigger value="ficha">Ficha</TabsTrigger>
+                <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+                <TabsTrigger value="rankings">Rankings</TabsTrigger>
+              </TabsList>
+              <TabsContent value="ficha" className="mt-0">
+                <BarberReportPage />
+              </TabsContent>
+              <TabsContent value="evolucao" className="mt-0">
+                <BarberEvolutionChart />
+              </TabsContent>
+              <TabsContent value="rankings" className="mt-0">
+                <Leaderboard />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
-          <TabsContent value="leaderboard" className="mt-0">
-            <Leaderboard />
+          {/* Setor Unidades */}
+          <TabsContent value="report-units" className="mt-0">
+            <UnitsComparison />
+          </TabsContent>
+
+          {/* Setor Negócio: como evoluímos e quando vendemos */}
+          <TabsContent value="report-business" className="mt-0">
+            <Tabs defaultValue="evolucao" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid">
+                <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+                <TabsTrigger value="melhores-dias">Melhores dias</TabsTrigger>
+              </TabsList>
+              <TabsContent value="evolucao" className="mt-0">
+                <ShopEvolution />
+              </TabsContent>
+              <TabsContent value="melhores-dias" className="mt-0">
+                <BestSalesDays />
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+
+          {/* Desempenho da recepção é operação, não relatório de resultado */}
+          <TabsContent value="reception" className="mt-0">
+            <ReceptionPerformanceReport />
           </TabsContent>
 
           <TabsContent value="monthly-presentation" className="mt-0">
             <MonthlyPresentation />
-          </TabsContent>
-
-          <TabsContent value="best-sales-days" className="mt-0">
-            <BestSalesDays />
-          </TabsContent>
-
-          <TabsContent value="barber-report" className="mt-0">
-            <BarberReportPage />
           </TabsContent>
 
 
@@ -222,12 +258,20 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               quando o módulo de assinaturas está ligado. */}
           <TabsContent value="subscriptions" className="mt-0">
             <Tabs defaultValue="acompanhamento" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid sm:grid-cols-4">
                 <TabsTrigger value="acompanhamento">Acompanhamento</TabsTrigger>
+                <TabsTrigger value="conversao">Conversão</TabsTrigger>
+                <TabsTrigger value="carteira">Carteira</TabsTrigger>
                 {hasSubscriptionModule && <TabsTrigger value="planos">Planos</TabsTrigger>}
               </TabsList>
               <TabsContent value="acompanhamento" className="mt-0">
                 <SubscriptionsTracking />
+              </TabsContent>
+              <TabsContent value="conversao" className="mt-0">
+                <SubscriptionPerformanceReport />
+              </TabsContent>
+              <TabsContent value="carteira" className="mt-0">
+                <SubscriptionAnalytics />
               </TabsContent>
               {hasSubscriptionModule && (
                 <TabsContent value="planos" className="mt-0">
