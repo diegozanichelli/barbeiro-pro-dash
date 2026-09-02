@@ -85,7 +85,8 @@ export function useSubscriptionCheck() {
 
       if (data?.error) {
         console.error("Subscription check error:", data.error, data.details);
-        // On error response, don't redirect to blocked - might be temporary
+        // Erro temporário no backend: mantém acesso e deixa o guard global decidir
+        setStatus({ has_access: true, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
         return;
       }
