@@ -106,8 +106,9 @@ export function useSubscriptionCheck() {
       }
     } catch (error) {
       console.error("Subscription check failed:", error);
-      // On catch, expose state explicitly to avoid indefinite/ambiguous UI state.
-      setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
+      // Falha inesperada (rede): não trava quem já tem sessão válida.
+      const { data: { session } } = await supabase.auth.getSession();
+      setStatus({ has_access: !!session, role: null, subscription_status: null, organization_id: null });
     } finally {
       setLoading(false);
     }
