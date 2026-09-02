@@ -25,14 +25,28 @@ export function useSubscriptionCheck() {
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke("check-subscription-status");
+      // Retry com backoff para falhas transitórias (rede/erro 500 temporário)
+      let data: any = null;
+      let error: any = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await supabase.functions.invoke("check-subscription-status");
+        data = res.data;
+        error = res.error;
+        if (!error && !data?.error) break;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        }
+      }
 
       if (error) {
         console.error("Error checking subscription:", error);
-        // On network/function error, don't redirect - allow retry
+        // Falha persistente de infraestrutura: não bloqueia quem já está logado.
+        // O SubscriptionGuard global redireciona se houver bloqueio real.
+        setStatus({ has_access: true, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
         return;
       }
+
 
       // Check for auth-related errors (session expired, invalid token, corrupted JWT)
       const authErrors = ["Invalid or expired token", "No authorization header", "User not found"];
