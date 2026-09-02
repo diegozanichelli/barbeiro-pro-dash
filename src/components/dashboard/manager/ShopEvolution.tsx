@@ -8,6 +8,7 @@ import { getManausDate } from "@/lib/dateUtils";
 import { isSubscriptionRevenue } from "@/lib/metricsRules";
 import { productionBreakdown } from "@/lib/productionTotals";
 import { brl } from "@/lib/currency";
+import { useReportsFilter } from "@/contexts/reportsFilter";
 
 interface Unit {
   id: string;
@@ -32,8 +33,7 @@ interface MonthlyShopData {
 export default function ShopEvolution() {
   // Usar data de Manaus para inicializar ano e calcular mês atual
   const manausNow = useMemo(() => getManausDate(), []);
-  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
-  const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  const { year: selectedYear, unitId: selectedUnit } = useReportsFilter();
   const [units, setUnits] = useState<Unit[]>([]);
   const [chartData, setChartData] = useState<MonthlyShopData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,8 +43,6 @@ export default function ShopEvolution() {
     "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
     "Jul", "Ago", "Set", "Out", "Nov", "Dez"
   ];
-
-  const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
   useEffect(() => {
     fetchUnits();
@@ -393,20 +391,6 @@ export default function ShopEvolution() {
               </div>
             </div>
             <div className="flex gap-3 flex-wrap">
-              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                <SelectTrigger className="w-[180px] bg-secondary">
-                  <MapPin className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Todas Unidades" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas Unidades</SelectItem>
-                  {units.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <Select value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
                 <SelectTrigger className="w-[160px] bg-secondary">
                   <SelectValue />
@@ -415,21 +399,6 @@ export default function ShopEvolution() {
                   <SelectItem value="receita">Receita</SelectItem>
                   <SelectItem value="ticket">Ticket Médio</SelectItem>
                   <SelectItem value="performance">Performance</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(value) => setSelectedYear(Number(value))}
-              >
-                <SelectTrigger className="w-[120px] bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
                 </SelectContent>
               </Select>
             </div>

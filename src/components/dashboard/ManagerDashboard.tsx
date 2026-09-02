@@ -36,6 +36,8 @@ import BarberReportPage from "./manager/BarberReportPage";
 import InactiveClientsReport from "./manager/InactiveClientsReport";
 import ReportsAuditPanel from "./manager/ReportsAuditPanel";
 import PerformanceDashboard from "./manager/PerformanceDashboard";
+import ReportsFilterBar from "./manager/ReportsFilterBar";
+import { ReportsFilterProvider } from "@/contexts/ReportsFilterProvider";
 
 
 interface ManagerDashboardProps {
@@ -129,6 +131,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
       </header>
 
       <div className="container mx-auto px-4 py-6">
+        <ReportsFilterProvider>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           {/* "Hoje" reúne as duas telas do dia: o Ao Vivo, onde a recepção lança,
               e o acompanhamento de metas, que era só uma leitura dos mesmos dados. */}
@@ -191,7 +194,8 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
           {/* Setor Barbeiro: tudo que responde "como está cada um" num lugar só —
               a ficha do período, a evolução no ano e os rankings da equipe. */}
-          <TabsContent value="report-barber" className="mt-0">
+          <TabsContent value="report-barber" className="mt-0 space-y-4">
+            <ReportsFilterBar fields={["year", "unit"]} />
             <Tabs defaultValue="ficha" className="space-y-4">
               <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-grid">
                 <TabsTrigger value="ficha">Ficha</TabsTrigger>
@@ -211,12 +215,14 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           </TabsContent>
 
           {/* Setor Unidades */}
-          <TabsContent value="report-units" className="mt-0">
+          <TabsContent value="report-units" className="mt-0 space-y-4">
+            <ReportsFilterBar fields={["month", "year"]} />
             <UnitsComparison />
           </TabsContent>
 
           {/* Setor Negócio: como evoluímos e quando vendemos */}
-          <TabsContent value="report-business" className="mt-0">
+          <TabsContent value="report-business" className="mt-0 space-y-4">
+            <ReportsFilterBar fields={["year", "unit"]} />
             <Tabs defaultValue="evolucao" className="space-y-4">
               <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid">
                 <TabsTrigger value="evolucao">Evolução</TabsTrigger>
@@ -283,6 +289,7 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
 
 
         </Tabs>
+        </ReportsFilterProvider>
       </div>
     </div>
   );

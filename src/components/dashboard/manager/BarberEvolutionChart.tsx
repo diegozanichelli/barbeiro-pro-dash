@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { TrendingUp } from "lucide-react";
 import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
 import { useOrganization } from "@/hooks/useOrganization";
 import { brl } from "@/lib/currency";
+import { useReportsFilter } from "@/contexts/reportsFilter";
 
 interface Barber {
   id: string;
@@ -21,11 +21,10 @@ interface MonthlyData {
 }
 
 export default function BarberEvolutionChart() {
-  const manausNow = useMemo(() => getManausDate(), []);
   const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
-  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
+  const { year: selectedYear } = useReportsFilter();
   const [period, setPeriod] = useState<DeepAnalysisPeriod>("current_month");
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,8 +33,6 @@ export default function BarberEvolutionChart() {
     "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
     "Jul", "Ago", "Set", "Out", "Nov", "Dez"
   ];
-
-  const years = Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i);
 
   useEffect(() => {
     fetchBarbers();
@@ -178,21 +175,6 @@ export default function BarberEvolutionChart() {
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
                 Selecionar Ano (gráfico anual)
               </label>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(value) => setSelectedYear(Number(value))}
-              >
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div>
