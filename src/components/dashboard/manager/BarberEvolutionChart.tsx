@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,7 +24,7 @@ export default function BarberEvolutionChart() {
   const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
-  const { year: selectedYear } = useReportsFilter();
+  const { year: selectedYear, unitId } = useReportsFilter();
   const [period, setPeriod] = useState<DeepAnalysisPeriod>("current_month");
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,32 +35,50 @@ export default function BarberEvolutionChart() {
   ];
 
   useEffect(() => {
-    fetchBarbers();
-  }, []);
-
-  useEffect(() => {
     if (selectedBarberId) {
       fetchEvolutionData();
     }
   }, [selectedBarberId, selectedYear]);
 
-  const fetchBarbers = async () => {
-    const { data, error } = await supabase
+  const fetchBarbers = useCallback(async () => {
+    let query = supabase
       .from("barbers")
       .select("id, name")
-      .eq("status", "active")
-      .order("name");
+      .eq("status", "active");
+
+    if (unitId !== "all") {
+      query = query.eq("unit_id", unitId);
+    }
+
+    const { data, error } = await query.order("name");
 
     if (error) {
       console.error("Erro ao buscar barbeiros:", error);
       return;
     }
 
-    setBarbers(data || []);
-    if (data && data.length > 0) {
-      setSelectedBarberId(data[0].id);
+    const lista = data || [];
+    setBarbers(lista);
+
+    // Ao trocar de unidade, o barbeiro escolhido pode não pertencer mais à
+    // lista; nesse caso cai no primeiro da nova, ou zera se ela vier vazia,
+    // para não deixar no gráfico os dados de quem não está mais em tela.
+    setSelectedBarberId((atual) =>
+      atual && lista.some((b) => b.id === atual) ? atual : lista[0]?.id ?? ""
+    );
+
+    // Sem barbeiro em tela não há o que plotar, e o efeito de busca não roda
+    // com a seleção vazia — então limpo aqui para não sobrar o gráfico antigo.
+    if (lista.length === 0) {
+      setChartData([]);
     }
-  };
+  }, [unitId]);
+
+  // A lista segue a unidade do recorte compartilhado: com uma unidade
+  // escolhida, só os barbeiros dela aparecem aqui.
+  useEffect(() => {
+    fetchBarbers();
+  }, [fetchBarbers]);
 
   const fetchEvolutionData = async () => {
     setLoading(true);
