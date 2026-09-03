@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LogOut, Target, TrendingUp, TrendingDown, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, AlertTriangle, XCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
+import { LogOut, Target, TrendingUp, TrendingDown, Users, DollarSign, Calendar, ChevronLeft, ChevronRight, Bell, X, ArrowUp, ArrowDown, CheckCircle, Sparkles, Bot, Loader2, Radio } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import logo from "@/assets/performance-barber-logo-transparent.png";
@@ -29,6 +29,7 @@ import { productionHasEntries, productionRevenue } from "@/lib/productionTotals"
 import { brl, pct } from "@/lib/currency";
 import { useOrganizationHolidays } from "@/hooks/useOrganizationHolidays";
 import PushNotificationToggle from "./barber/PushNotificationToggle";
+import MonthlyClosingPanel from "./barber/MonthlyClosingPanel";
 
 interface BarberDashboardProps {
   user: User;
@@ -798,18 +799,9 @@ const [todayProduction, setTodayProduction] = useState<{
       </div>
     );
   }
-  const progressPercentage = monthlyGoal && monthlyGoal.target_commission > 0
-    ? (stats.accumulated_commission / monthlyGoal.target_commission) * 100
-    : 0;
-
   // Calcular dias úteis REAIS restantes no calendário (apenas para o mês atual)
   const daysLeft = isCurrentMonth ? calculateRemainingWorkDays(getManausDate(), holidayDates) : 0;
   
-  // Calcular "Falta Ganhar" com proteção contra NaN
-  const remaining = monthlyGoal 
-    ? Math.max(0, monthlyGoal.target_commission - stats.accumulated_commission)
-    : 0;
-
   // Nome do mês em português
   const monthNames = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -1131,6 +1123,23 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
+            {/* O fechamento do mês: comissão, faturamento, clientes e o que
+                mais saiu da cadeira. Substituiu os cards de progresso e de
+                métricas, que mostravam os mesmos números soltos e sem ordem de
+                leitura. */}
+            <MonthlyClosingPanel
+              barberId={barber.id}
+              organizationId={barber.organization_id}
+              month={selectedMonth}
+              year={selectedYear}
+              monthLabel={`${selectedMonthName} ${selectedYear}`}
+              commissionEarned={stats.accumulated_commission}
+              commissionGoal={monthlyGoal ? Number(monthlyGoal.target_commission) : null}
+              pacingStatus={pacingStatus}
+              expectedPercent={expectedPercent}
+              servicesConversion={stats.services_conversion}
+              productsConversion={stats.products_conversion}
+            />
             {/* Só convida quem pode de fato montar o plano: o wizard exige a meta
                 do mês, e sem ela o botão não abriria nada. */}
             {isCurrentMonth && monthlyGoal && !warPlanMessage && (
@@ -1152,119 +1161,6 @@ const [todayProduction, setTodayProduction] = useState<{
               </Card>
             )}
 
-            {/* Card de Progresso Mensal */}
-            <Card className="bg-card border-border shadow-card-custom">
-              <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-success" />
-                    SEU PROGRESSO NO MÊS
-                  </CardTitle>
-                  {pacingStatus && (
-                    pacingStatus === "ahead" ? (
-                      <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
-                        <TrendingUp className="w-3 h-3 mr-1" />
-                        Acima da Meta
-                      </Badge>
-                    ) : pacingStatus === "on-track" ? (
-                      <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        No Ritmo
-                      </Badge>
-                    ) : pacingStatus === "behind" ? (
-                      <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                        Atenção
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-red-500/20 text-red-500 border-red-500/30">
-                        <XCircle className="w-3 h-3 mr-1" />
-                        Crítico
-                      </Badge>
-                    )
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Sua Meta de Comissão Mensal:</span>
-                    <span className="font-bold">
-                      {monthlyGoal ? brl(monthlyGoal.target_commission) : "Sem meta cadastrada"}
-                    </span>
-                  </div>
-                  {monthlyGoal ? (
-                    <>
-                      <Progress value={progressPercentage} className="h-3" />
-                      <div className="flex justify-between text-sm">
-                        {expectedPercent !== null ? (
-                          <span className="text-muted-foreground">Esperado: {pct(expectedPercent)}</span>
-                        ) : <span />}
-                        <span className="text-success font-bold">{pct(progressPercentage)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-2">
-                      Peça ao gerente para cadastrar sua meta mensal
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Comissão Já Ganha</p>
-                    <p className="text-2xl font-bold text-success">
-                      {brl(stats.accumulated_commission)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Falta Ganhar</p>
-                    <p className="text-2xl font-bold text-destructive">
-                      {brl(remaining)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Card de Métricas */}
-            <Card className="bg-card border-border shadow-card-custom">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  SUAS MÉTRICAS DE EFICIÊNCIA
-                </CardTitle>
-                <CardDescription>{selectedMonthName} {selectedYear}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Total Vendas (Serviços)</p>
-                    <p className="text-2xl font-bold text-success">{brl(stats.total_services)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Total Vendas (Produtos)</p>
-                    <p className="text-2xl font-bold text-primary">{brl(stats.total_products)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Total Clientes Atendidos</p>
-                    <p className="text-2xl font-bold">{stats.total_clients}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Ticket Médio</p>
-                    <p className="text-2xl font-bold">{brl(stats.average_ticket)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Taxa de Venda (Serviços %)</p>
-                    <p className="text-2xl font-bold text-success">{pct(stats.services_conversion)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Taxa de Venda (Produtos %)</p>
-                    <p className="text-2xl font-bold text-primary">{pct(stats.products_conversion)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="live" className="space-y-6">
