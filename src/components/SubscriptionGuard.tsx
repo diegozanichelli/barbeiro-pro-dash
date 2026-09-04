@@ -52,7 +52,6 @@ export function SubscriptionGuard() {
   // Re-check a cada navegação
   useEffect(() => {
     check();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   // Re-check em mudanças de auth
