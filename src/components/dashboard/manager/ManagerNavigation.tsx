@@ -12,7 +12,6 @@ import {
   Trophy,
   Bot,
   Repeat,
-  Flame,
   Menu,
   Briefcase,
   FileText,
@@ -23,6 +22,8 @@ import {
   ChevronRight,
   ShieldCheck,
   ClipboardList,
+  GitCompare,
+  Users2,
 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -97,6 +98,7 @@ export default function ManagerNavigation({
     { id: "units", label: "Unidades", icon: Building2 },
     { id: "goals", label: "Metas", icon: Target },
     { id: "subscriptions", label: "Assinaturas", icon: Repeat },
+    { id: "reception", label: "Recepção", icon: Users2 },
   ];
 
   const financeiroItems: NavItem[] = [
@@ -106,12 +108,14 @@ export default function ManagerNavigation({
   ];
 
 
+  // Um destino por setor de análise. Antes eram cinco rótulos escondendo dez
+  // telas — três delas (conversão, recepção, carteira) dentro de "Evolução",
+  // que não sugeria nada disso.
   const relatoriosItems: NavItem[] = [
+    { id: "report-barber", label: "Barbeiro", icon: Trophy },
+    { id: "report-units", label: "Comparativo de Unidades", icon: GitCompare },
+    { id: "report-business", label: "Negócio", icon: TrendingUp },
     { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
-    { id: "barber-report", label: "Relatório do Barbeiro", icon: FileText },
-    { id: "evolution", label: "Evolução", icon: TrendingUp },
-    { id: "best-sales-days", label: "Melhores Dias", icon: Flame },
-    { id: "leaderboard", label: "Rankings", icon: Trophy },
   ];
 
   const sistemaItems: NavItem[] = [

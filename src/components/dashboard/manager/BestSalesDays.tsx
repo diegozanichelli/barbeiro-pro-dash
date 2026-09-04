@@ -34,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useReportsFilter } from "@/contexts/reportsFilter";
 
 interface Unit {
   id: string;
@@ -222,7 +223,7 @@ export default function BestSalesDays() {
     from: startOfMonth(today),
     to: endOfMonth(today),
   });
-  const [selectedUnit, setSelectedUnit] = useState("all");
+  const { unitId: selectedUnit } = useReportsFilter();
   const [selectedBarber, setSelectedBarber] = useState("all");
   const [metric, setMetric] = useState<MetricKey>("amount");
   const [units, setUnits] = useState<Unit[]>([]);
@@ -600,19 +601,6 @@ export default function BestSalesDays() {
           </div>
           <div className="space-y-2">
             <Label>Unidade</Label>
-            <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-              <SelectTrigger>
-                <SelectValue placeholder="Todas as unidades" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as unidades</SelectItem>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
           <div className="space-y-2">
             <Label>Barbeiro</Label>

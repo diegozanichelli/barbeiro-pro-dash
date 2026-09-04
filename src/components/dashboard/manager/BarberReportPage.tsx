@@ -27,6 +27,7 @@ import {
   sumGroup,
 } from "@/lib/barberReport";
 import { generateBarberReportPdf } from "@/lib/barberReportPdf";
+import { useReportsFilter } from "@/contexts/reportsFilter";
 
 const toISO = (d: Date) => format(d, "yyyy-MM-dd");
 
@@ -67,7 +68,7 @@ export default function BarberReportPage() {
   const today = getManausDate();
   const [startDate, setStartDate] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
   const [endDate, setEndDate] = useState<Date>(today);
-  const [unitId, setUnitId] = useState<string>("all");
+  const { unitId, setUnitId } = useReportsFilter();
   const [appliedUnitId, setAppliedUnitId] = useState<string>("all");
   const [barberId, setBarberId] = useState<string | null>(null);
   const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
@@ -114,6 +115,12 @@ export default function BarberReportPage() {
     }
   };
 
+  // Trocar a unidade no recorte compartilhado invalida o barbeiro escolhido,
+  // como fazia o seletor local que existia aqui.
+  useEffect(() => {
+    setBarberId(null);
+  }, [unitId]);
+
   const handleGenerate = () => runReport(unitId);
 
   const handleRetryAllUnits = () => {
@@ -153,28 +160,6 @@ export default function BarberReportPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Unidade</span>
-              <Select
-                value={unitId}
-                onValueChange={(v) => {
-                  setUnitId(v);
-                  setBarberId(null);
-                }}
-              >
-                <SelectTrigger className="h-11">
-                  <SelectValue placeholder="Todas as unidades" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as unidades</SelectItem>
-                  {units.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Barbeiro</span>

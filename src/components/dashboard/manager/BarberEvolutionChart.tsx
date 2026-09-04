@@ -1,19 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
-import { getManausDate } from "@/lib/dateUtils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { TrendingUp, Building2, User, GitCompare, Crown, Users2, Brain } from "lucide-react";
-import ShopEvolution from "./ShopEvolution";
-import UnitsComparison from "./UnitsComparison";
-import SubscriptionPerformanceReport from "./SubscriptionPerformanceReport";
-import ReceptionPerformanceReport from "./ReceptionPerformanceReport";
-import SubscriptionAnalytics from "./SubscriptionAnalytics";
+import { TrendingUp } from "lucide-react";
 import BarberDeepAnalysis, { type DeepAnalysisPeriod } from "./BarberDeepAnalysis";
 import { useOrganization } from "@/hooks/useOrganization";
 import { brl } from "@/lib/currency";
+import { useReportsFilter } from "@/contexts/reportsFilter";
 
 interface Barber {
   id: string;
@@ -26,12 +20,11 @@ interface MonthlyData {
   comissaoGanha: number;
 }
 
-function BarberEvolutionChart() {
-  const manausNow = useMemo(() => getManausDate(), []);
+export default function BarberEvolutionChart() {
   const { organizationId } = useOrganization();
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
-  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
+  const { year: selectedYear, unitId } = useReportsFilter();
   const [period, setPeriod] = useState<DeepAnalysisPeriod>("current_month");
   const [chartData, setChartData] = useState<MonthlyData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,35 +34,51 @@ function BarberEvolutionChart() {
     "Jul", "Ago", "Set", "Out", "Nov", "Dez"
   ];
 
-  const years = Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i);
-
-  useEffect(() => {
-    fetchBarbers();
-  }, []);
-
   useEffect(() => {
     if (selectedBarberId) {
       fetchEvolutionData();
     }
   }, [selectedBarberId, selectedYear]);
 
-  const fetchBarbers = async () => {
-    const { data, error } = await supabase
+  const fetchBarbers = useCallback(async () => {
+    let query = supabase
       .from("barbers")
       .select("id, name")
-      .eq("status", "active")
-      .order("name");
+      .eq("status", "active");
+
+    if (unitId !== "all") {
+      query = query.eq("unit_id", unitId);
+    }
+
+    const { data, error } = await query.order("name");
 
     if (error) {
       console.error("Erro ao buscar barbeiros:", error);
       return;
     }
 
-    setBarbers(data || []);
-    if (data && data.length > 0) {
-      setSelectedBarberId(data[0].id);
+    const lista = data || [];
+    setBarbers(lista);
+
+    // Ao trocar de unidade, o barbeiro escolhido pode não pertencer mais à
+    // lista; nesse caso cai no primeiro da nova, ou zera se ela vier vazia,
+    // para não deixar no gráfico os dados de quem não está mais em tela.
+    setSelectedBarberId((atual) =>
+      atual && lista.some((b) => b.id === atual) ? atual : lista[0]?.id ?? ""
+    );
+
+    // Sem barbeiro em tela não há o que plotar, e o efeito de busca não roda
+    // com a seleção vazia — então limpo aqui para não sobrar o gráfico antigo.
+    if (lista.length === 0) {
+      setChartData([]);
     }
-  };
+  }, [unitId]);
+
+  // A lista segue a unidade do recorte compartilhado: com uma unidade
+  // escolhida, só os barbeiros dela aparecem aqui.
+  useEffect(() => {
+    fetchBarbers();
+  }, [fetchBarbers]);
 
   const fetchEvolutionData = async () => {
     setLoading(true);
@@ -184,21 +193,6 @@ function BarberEvolutionChart() {
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
                 Selecionar Ano (gráfico anual)
               </label>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(value) => setSelectedYear(Number(value))}
-              >
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div>
@@ -277,59 +271,3 @@ function BarberEvolutionChart() {
 }
 
 // Componente principal com tabs
-export default function BarberEvolution() {
-  return (
-    <Tabs defaultValue="barbearia" className="space-y-6">
-      <TabsList className="grid w-full grid-cols-6 h-auto">
-        <TabsTrigger value="barbearia" title="Barbearia" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Building2 className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Barbearia</span>
-        </TabsTrigger>
-        <TabsTrigger value="comparativo" title="Comparativo" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <GitCompare className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Comparativo</span>
-        </TabsTrigger>
-        <TabsTrigger value="barbeiro" title="Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <User className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Barbeiro</span>
-        </TabsTrigger>
-        <TabsTrigger value="assinaturas" title="Conversão por Barbeiro" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Crown className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Conversão</span>
-        </TabsTrigger>
-        <TabsTrigger value="recepcao" title="Vendas da Recepção" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Users2 className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Recepção</span>
-        </TabsTrigger>
-        <TabsTrigger value="inteligencia" title="Carteira de Assinaturas" className="flex items-center gap-1.5 px-2 py-2 text-xs sm:text-sm">
-          <Brain className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline truncate">Carteira</span>
-        </TabsTrigger>
-      </TabsList>
-      
-      <TabsContent value="barbearia">
-        <ShopEvolution />
-      </TabsContent>
-
-      <TabsContent value="comparativo">
-        <UnitsComparison />
-      </TabsContent>
-      
-      <TabsContent value="barbeiro">
-        <BarberEvolutionChart />
-      </TabsContent>
-      
-      <TabsContent value="assinaturas">
-        <SubscriptionPerformanceReport />
-      </TabsContent>
-
-      <TabsContent value="recepcao">
-        <ReceptionPerformanceReport />
-      </TabsContent>
-
-      <TabsContent value="inteligencia">
-        <SubscriptionAnalytics />
-      </TabsContent>
-    </Tabs>
-  );
-}

@@ -5,7 +5,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { GitCompare, TrendingUp, TrendingDown, Medal, Scissors, Sparkles, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { getManausDate } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
 import { fetchAllRows } from "@/lib/supabasePagination";
 import { isNewSubscription, isValidOpportunity } from "@/lib/metricsRules";
@@ -13,6 +12,7 @@ import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import BarberPeriodDetailModal from "./BarberPeriodDetailModal";
 import { productionBreakdown } from "@/lib/productionTotals";
 import { brl } from "@/lib/currency";
+import { useReportsFilter } from "@/contexts/reportsFilter";
 
 /** Evita que o TS parseie a select string (custo de typecheck). */
 const sel = (s: string): string => s;
@@ -99,17 +99,13 @@ const monthNames = [
 
 export default function UnitsComparison() {
   // Usar data de Manaus para inicializar ano e mês corretamente
-  const manausNow = useMemo(() => getManausDate(), []);
   const { organizationId } = useOrganization();
-  const [selectedYear, setSelectedYear] = useState<number>(manausNow.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(manausNow.getMonth() + 1);
+  const { month: selectedMonth, year: selectedYear } = useReportsFilter();
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitsMetrics, setUnitsMetrics] = useState<UnitMetrics[]>([]);
   const [topBarbersByUnit, setTopBarbersByUnit] = useState<UnitTopBarbers[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailBarber, setDetailBarber] = useState<{ id: string; name: string; unitName: string } | null>(null);
-
-  const years = useMemo(() => Array.from({ length: 5 }, (_, i) => getManausDate().getFullYear() - 2 + i), []);
 
   useEffect(() => {
     if (organizationId) {
@@ -422,38 +418,6 @@ export default function UnitsComparison() {
                   Compare o desempenho das unidades lado a lado - {monthNames[selectedMonth - 1]} {selectedYear}
                 </CardDescription>
               </div>
-            </div>
-            <div className="flex gap-3 flex-wrap">
-              <Select
-                value={selectedMonth.toString()}
-                onValueChange={(value) => setSelectedMonth(Number(value))}
-              >
-                <SelectTrigger className="w-[140px] bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {monthNames.map((month, index) => (
-                    <SelectItem key={index + 1} value={(index + 1).toString()}>
-                      {month}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(value) => setSelectedYear(Number(value))}
-              >
-                <SelectTrigger className="w-[100px] bg-secondary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
         </CardHeader>
