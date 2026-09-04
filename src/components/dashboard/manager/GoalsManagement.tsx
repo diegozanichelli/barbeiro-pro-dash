@@ -30,9 +30,109 @@ interface MonthlyGoal {
   year: number;
   target_commission: number;
   work_days: number;
+  target_new_clubs: number | null;
+  target_products_revenue: number | null;
+  target_extras_per_client: number | null;
+  target_frequency_uplift_pct: number | null;
+  target_productivity_pct: number | null;
   barbers?: {
     name: string;
   };
+}
+
+interface FrontTargets {
+  newClubs: string;
+  products: string;
+  extras: string;
+  frequency: string;
+  productivity: string;
+}
+
+const EMPTY_FRONTS: FrontTargets = {
+  newClubs: "",
+  products: "",
+  extras: "",
+  frequency: "",
+  productivity: "",
+};
+
+/** Config das 5 frentes do Plano de Ação — rótulo, prefixo/sufixo e ajuda. */
+const FRONTS: {
+  key: keyof FrontTargets;
+  label: string;
+  prefix?: string;
+  suffix?: string;
+  step: string;
+  placeholder: string;
+}[] = [
+  { key: "newClubs", label: "Novos clubes (conversões)", step: "1", placeholder: "15" },
+  { key: "products", label: "Produtos (R$)", prefix: "R$", step: "0.01", placeholder: "800.00" },
+  { key: "extras", label: "Extras por cliente (R$)", prefix: "R$", step: "0.01", placeholder: "12.00" },
+  { key: "frequency", label: "Aumento de frequência", suffix: "%", step: "1", placeholder: "10" },
+  { key: "productivity", label: "Agenda produtiva", suffix: "%", step: "1", placeholder: "100" },
+];
+
+const numOrNull = (v: string): number | null => {
+  const t = v.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Alguma meta por frente digitada como número negativo? (o banco também rejeita) */
+const hasNegativeFront = (f: FrontTargets): boolean =>
+  Object.values(f).some((v) => {
+    const n = numOrNull(v);
+    return n != null && n < 0;
+  });
+
+/**
+ * Campos das metas por frente, opcionais, reaproveitados nos diálogos de criar
+ * e editar. Frente deixada em branco vira NULL — na tela do barbeiro aparece
+ * como "meta não definida pelo gestor".
+ */
+function FrontTargetsFields({
+  fronts,
+  setFronts,
+  idPrefix,
+}: {
+  fronts: FrontTargets;
+  setFronts: (f: FrontTargets) => void;
+  idPrefix: string;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-dashed p-3">
+      <div>
+        <p className="text-sm font-medium">Metas por frente (opcional)</p>
+        <p className="text-xs text-muted-foreground">
+          As metas do Plano de Ação do barbeiro. Deixe em branco a frente que não quiser definir.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {FRONTS.map((f) => (
+          <div key={f.key} className="space-y-1.5">
+            <Label htmlFor={`${idPrefix}-${f.key}`} className="text-xs">
+              {f.label}
+            </Label>
+            <div className="flex items-center gap-1">
+              {f.prefix && <span className="text-xs text-muted-foreground">{f.prefix}</span>}
+              <Input
+                id={`${idPrefix}-${f.key}`}
+                type="number"
+                step={f.step}
+                min="0"
+                placeholder={f.placeholder}
+                value={fronts[f.key]}
+                onChange={(e) => setFronts({ ...fronts, [f.key]: e.target.value })}
+                className="h-9"
+              />
+              {f.suffix && <span className="text-xs text-muted-foreground">{f.suffix}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function GoalsManagement() {
@@ -53,6 +153,7 @@ export default function GoalsManagement() {
   // Form states
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
   const [targetCommission, setTargetCommission] = useState("");
+  const [fronts, setFronts] = useState<FrontTargets>(EMPTY_FRONTS);
   const [editingGoal, setEditingGoal] = useState<MonthlyGoal | null>(null);
   const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null);
   const [holidayDates, setHolidayDates] = useState<Date[]>([]);
@@ -199,6 +300,11 @@ export default function GoalsManagement() {
       return;
     }
 
+    if (hasNegativeFront(fronts)) {
+      toast.error("As metas por frente não podem ser negativas.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -212,6 +318,11 @@ export default function GoalsManagement() {
           year: filterYear,
           target_commission: Number(targetCommission),
           work_days: monthDays,
+          target_new_clubs: numOrNull(fronts.newClubs),
+          target_products_revenue: numOrNull(fronts.products),
+          target_extras_per_client: numOrNull(fronts.extras),
+          target_frequency_uplift_pct: numOrNull(fronts.frequency),
+          target_productivity_pct: numOrNull(fronts.productivity),
         });
 
       if (error) throw error;
@@ -239,6 +350,11 @@ export default function GoalsManagement() {
       return;
     }
 
+    if (hasNegativeFront(fronts)) {
+      toast.error("As metas por frente não podem ser negativas.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -248,6 +364,11 @@ export default function GoalsManagement() {
         .update({
           target_commission: Number(targetCommission),
           work_days: monthDays,
+          target_new_clubs: numOrNull(fronts.newClubs),
+          target_products_revenue: numOrNull(fronts.products),
+          target_extras_per_client: numOrNull(fronts.extras),
+          target_frequency_uplift_pct: numOrNull(fronts.frequency),
+          target_productivity_pct: numOrNull(fronts.productivity),
         })
         .eq("id", editingGoal.id);
 
@@ -300,6 +421,14 @@ export default function GoalsManagement() {
   const openEditDialog = (goal: MonthlyGoal) => {
     setEditingGoal(goal);
     setTargetCommission(goal.target_commission.toString());
+    const asStr = (v: number | null | undefined) => (v == null ? "" : String(v));
+    setFronts({
+      newClubs: asStr(goal.target_new_clubs),
+      products: asStr(goal.target_products_revenue),
+      extras: asStr(goal.target_extras_per_client),
+      frequency: asStr(goal.target_frequency_uplift_pct),
+      productivity: asStr(goal.target_productivity_pct),
+    });
     setIsEditDialogOpen(true);
   };
 
@@ -311,6 +440,7 @@ export default function GoalsManagement() {
   const resetForm = () => {
     setSelectedBarberId("");
     setTargetCommission("");
+    setFronts(EMPTY_FRONTS);
     setEditingGoal(null);
   };
 
@@ -576,6 +706,7 @@ export default function GoalsManagement() {
                 onChange={(e) => setTargetCommission(e.target.value)}
               />
             </div>
+            <FrontTargetsFields fronts={fronts} setFronts={setFronts} idPrefix="create" />
             <p className="text-sm text-muted-foreground">
               O divisor da meta será dinâmico no mês completo, abatendo apenas feriados e ausências registradas.
             </p>
@@ -612,6 +743,7 @@ export default function GoalsManagement() {
                 onChange={(e) => setTargetCommission(e.target.value)}
               />
             </div>
+            <FrontTargetsFields fronts={fronts} setFronts={setFronts} idPrefix="edit" />
             <p className="text-sm text-muted-foreground">
               O calendário de meta é dinâmico (mês completo), com abatimento automático de feriados e ausências.
             </p>
