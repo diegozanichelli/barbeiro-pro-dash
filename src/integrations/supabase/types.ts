@@ -1517,6 +1517,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_barber_subscriber_phones: {
+        Args: { p_barber_id: string; p_end: string; p_start: string }
+        Returns: {
+          mobile_phone: string
+        }[]
+      }
       get_inactive_clients: {
         Args: { p_barber_id?: string; p_ref_date?: string; p_unit_id?: string }
         Returns: {

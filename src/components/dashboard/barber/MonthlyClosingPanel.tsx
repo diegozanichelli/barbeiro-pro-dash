@@ -47,12 +47,6 @@ interface Tx {
   mobile_phone: string | null;
 }
 
-interface ClienteRow {
-  mobile_phone: string | null;
-  normalized_name: string | null;
-  subscription_plan_id: string | null;
-}
-
 interface ItemAgregado {
   nome: string;
   valor: number;
@@ -160,7 +154,6 @@ const agrupar = (txs: Tx[]): ItemAgregado[] => {
 
 interface Props {
   barberId: string;
-  organizationId: string;
   month: number;
   year: number;
   monthLabel: string;
@@ -183,7 +176,6 @@ const RITMO = {
 
 export default function MonthlyClosingPanel({
   barberId,
-  organizationId,
   month,
   year,
   monthLabel,
@@ -264,23 +256,19 @@ export default function MonthlyClosingPanel({
       porCliente.set(id, atual);
     });
 
-    // O clube é status do cadastro do cliente, não da venda: busco só os
-    // clientes que apareceram no mês, em vez da carteira inteira.
+    // O clube é status do cadastro do cliente. A tabela clients só é legível por
+    // gestor/super_admin, então o barbeiro obtém isso por uma função definer que
+    // devolve os assinantes entre os SEUS próprios clientes do período.
     const telefones = [...porCliente.values()].map((c) => c.tel).filter((t) => t.length >= 8);
     let assinantes = new Set<string>();
     if (telefones.length > 0) {
-      const cadastros = await fetchAllRows<ClienteRow>(() =>
-        supabase
-          .from("clients")
-          .select("mobile_phone, normalized_name, subscription_plan_id")
-          .eq("organization_id", organizationId)
-          .in("mobile_phone", telefones)
-      );
+      const { data: assinantesRows } = await supabase.rpc("get_barber_subscriber_phones", {
+        p_barber_id: barberId,
+        p_start: `${inicio}T00:00:00-04:00`,
+        p_end: `${diaSeguinte}T00:00:00-04:00`,
+      });
       assinantes = new Set(
-        cadastros
-          .filter((c) => c.subscription_plan_id)
-          .map((c) => soDigitos(c.mobile_phone))
-          .filter(Boolean)
+        (assinantesRows ?? []).map((r) => soDigitos(r.mobile_phone)).filter(Boolean)
       );
     }
 
@@ -326,7 +314,7 @@ export default function MonthlyClosingPanel({
       evolucao,
     });
     setCarregando(false);
-  }, [barberId, organizationId, month, year]);
+  }, [barberId, month, year]);
 
   useEffect(() => {
     buscar();

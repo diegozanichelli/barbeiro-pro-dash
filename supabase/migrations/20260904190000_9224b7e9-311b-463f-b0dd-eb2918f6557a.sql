@@ -23,3 +23,17 @@ COMMENT ON COLUMN public.monthly_goals.target_products_revenue IS 'Meta de fatur
 COMMENT ON COLUMN public.monthly_goals.target_extras_per_client IS 'Meta de serviços adicionais por cliente atendido, em R$ (frente 2). Definida pelo gestor.';
 COMMENT ON COLUMN public.monthly_goals.target_frequency_uplift_pct IS 'Meta de aumento da frequência dos clientes sem clube, em % (frente 4). Definida pelo gestor.';
 COMMENT ON COLUMN public.monthly_goals.target_productivity_pct IS 'Meta de agenda produtiva no mês, em % (frente 5). Definida pelo gestor.';
+
+-- Metas não podem ser negativas (clube, R$, %). As colunas são anuláveis, então
+-- a checagem só se aplica quando há valor.
+ALTER TABLE public.monthly_goals
+  ADD CONSTRAINT monthly_goals_target_new_clubs_nonneg
+    CHECK (target_new_clubs IS NULL OR target_new_clubs >= 0),
+  ADD CONSTRAINT monthly_goals_target_products_revenue_nonneg
+    CHECK (target_products_revenue IS NULL OR target_products_revenue >= 0),
+  ADD CONSTRAINT monthly_goals_target_extras_per_client_nonneg
+    CHECK (target_extras_per_client IS NULL OR target_extras_per_client >= 0),
+  ADD CONSTRAINT monthly_goals_target_frequency_uplift_pct_nonneg
+    CHECK (target_frequency_uplift_pct IS NULL OR target_frequency_uplift_pct >= 0),
+  ADD CONSTRAINT monthly_goals_target_productivity_pct_nonneg
+    CHECK (target_productivity_pct IS NULL OR target_productivity_pct >= 0);

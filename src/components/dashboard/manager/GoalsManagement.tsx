@@ -79,6 +79,13 @@ const numOrNull = (v: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** Alguma meta por frente digitada como número negativo? (o banco também rejeita) */
+const hasNegativeFront = (f: FrontTargets): boolean =>
+  Object.values(f).some((v) => {
+    const n = numOrNull(v);
+    return n != null && n < 0;
+  });
+
 /**
  * Campos das metas por frente, opcionais, reaproveitados nos diálogos de criar
  * e editar. Frente deixada em branco vira NULL — na tela do barbeiro aparece
@@ -293,6 +300,11 @@ export default function GoalsManagement() {
       return;
     }
 
+    if (hasNegativeFront(fronts)) {
+      toast.error("As metas por frente não podem ser negativas.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -335,6 +347,11 @@ export default function GoalsManagement() {
   const handleEdit = async () => {
     if (!editingGoal || !targetCommission) {
       toast.error("Preencha todos os campos");
+      return;
+    }
+
+    if (hasNegativeFront(fronts)) {
+      toast.error("As metas por frente não podem ser negativas.");
       return;
     }
 

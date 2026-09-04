@@ -92,10 +92,9 @@ const diasNoMes = (ano: number, mes: number) => new Date(ano, mes, 0).getDate();
 
 interface Props {
   barberId: string;
-  organizationId: string;
 }
 
-export default function ActionPlanPanel({ barberId, organizationId }: Props) {
+export default function ActionPlanPanel({ barberId }: Props) {
   const [carregando, setCarregando] = useState(true);
   const [metaComissao, setMetaComissao] = useState<number | null>(null);
   const [metas, setMetas] = useState<MetasFrente>({
@@ -164,20 +163,19 @@ export default function ActionPlanPanel({ barberId, organizationId }: Props) {
     txs.forEach((t) => porCliente.set(identidade(t), soDigitos(t.mobile_phone)));
     const clientesDistintos = porCliente.size;
 
-    // Status de clube dos clientes atendidos (atributo do cliente, não venda).
+    // Status de clube dos clientes atendidos. A tabela clients só é legível por
+    // gestor/super_admin, então o barbeiro obtém isso por uma função definer que
+    // só devolve os assinantes entre os SEUS próprios clientes do período.
     const telefones = [...porCliente.values()].filter((t) => t.length >= 8);
     let comClube = 0;
     if (telefones.length > 0) {
-      const cadastros = await fetchAllRows<{ mobile_phone: string | null; subscription_plan_id: string | null }>(
-        () =>
-          supabase
-            .from("clients")
-            .select("mobile_phone, subscription_plan_id")
-            .eq("organization_id", organizationId)
-            .in("mobile_phone", telefones)
-      );
+      const { data: assinantesRows } = await supabase.rpc("get_barber_subscriber_phones", {
+        p_barber_id: barberId,
+        p_start: `${inicio}T00:00:00-04:00`,
+        p_end: `${diaSeguinte}T00:00:00-04:00`,
+      });
       const assinantes = new Set(
-        cadastros.filter((c) => c.subscription_plan_id).map((c) => soDigitos(c.mobile_phone)).filter(Boolean)
+        (assinantesRows ?? []).map((r) => soDigitos(r.mobile_phone)).filter(Boolean)
       );
       comClube = [...porCliente.values()].filter((tel) => assinantes.has(tel)).length;
     }
@@ -192,7 +190,7 @@ export default function ActionPlanPanel({ barberId, organizationId }: Props) {
     });
 
     setCarregando(false);
-  }, [barberId, organizationId, planoMes, planoAno, baseMes, baseAno]);
+  }, [barberId, planoMes, planoAno, baseMes, baseAno]);
 
   useEffect(() => {
     buscar();

@@ -1130,7 +1130,6 @@ const [todayProduction, setTodayProduction] = useState<{
                 leitura. */}
             <MonthlyClosingPanel
               barberId={barber.id}
-              organizationId={barber.organization_id}
               month={selectedMonth}
               year={selectedYear}
               monthLabel={`${selectedMonthName} ${selectedYear}`}
@@ -1258,7 +1257,7 @@ const [todayProduction, setTodayProduction] = useState<{
 
           <TabsContent value="strategies" className="space-y-6">
             {barber && (
-              <ActionPlanPanel barberId={barber.id} organizationId={barber.organization_id} />
+              <ActionPlanPanel barberId={barber.id} />
             )}
             {barber && <StrategyHistoryCard barberId={barber.id} />}
           </TabsContent>
