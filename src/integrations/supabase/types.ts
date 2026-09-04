@@ -570,6 +570,11 @@ export type Database = {
           month: number
           organization_id: string
           target_commission: number
+          target_extras_per_client: number | null
+          target_frequency_uplift_pct: number | null
+          target_new_clubs: number | null
+          target_products_revenue: number | null
+          target_productivity_pct: number | null
           updated_at: string
           work_days: number
           year: number
@@ -581,6 +586,11 @@ export type Database = {
           month: number
           organization_id: string
           target_commission: number
+          target_extras_per_client?: number | null
+          target_frequency_uplift_pct?: number | null
+          target_new_clubs?: number | null
+          target_products_revenue?: number | null
+          target_productivity_pct?: number | null
           updated_at?: string
           work_days: number
           year: number
@@ -592,6 +602,11 @@ export type Database = {
           month?: number
           organization_id?: string
           target_commission?: number
+          target_extras_per_client?: number | null
+          target_frequency_uplift_pct?: number | null
+          target_new_clubs?: number | null
+          target_products_revenue?: number | null
+          target_productivity_pct?: number | null
           updated_at?: string
           work_days?: number
           year?: number

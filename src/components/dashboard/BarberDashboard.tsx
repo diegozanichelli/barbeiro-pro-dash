@@ -17,6 +17,7 @@ import Leaderboard from "./Leaderboard";
 import AITipsTab from "./barber/AITipsTab";
 import WarPlanWizard from "./barber/WarPlanWizard";
 import StrategyHistoryCard from "./barber/StrategyHistoryCard";
+import ActionPlanPanel from "./barber/ActionPlanPanel";
 import ConfirmPresenceModal from "./barber/ConfirmPresenceModal";
 import PendingDayReviews from "./barber/PendingDayReviews";
 import DayReviewModal from "./barber/DayReviewModal";
@@ -1256,6 +1257,9 @@ const [todayProduction, setTodayProduction] = useState<{
           </TabsContent>
 
           <TabsContent value="strategies" className="space-y-6">
+            {barber && (
+              <ActionPlanPanel barberId={barber.id} organizationId={barber.organization_id} />
+            )}
             {barber && <StrategyHistoryCard barberId={barber.id} />}
           </TabsContent>
 
