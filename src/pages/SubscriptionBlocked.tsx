@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Lock, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { checkSubscriptionAccess } from "@/lib/subscriptionAccess";
 
 export default function SubscriptionBlocked() {
   const navigate = useNavigate();
@@ -46,8 +47,8 @@ export default function SubscriptionBlocked() {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const { data } = await supabase.functions.invoke("check-subscription-status");
-        if (data?.has_access) {
+        const result = await checkSubscriptionAccess();
+        if (result.data?.has_access) {
           navigate("/dashboard");
         }
       } catch {

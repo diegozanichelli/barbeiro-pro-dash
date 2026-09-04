@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { checkSubscriptionAccess, type SubscriptionAccessStatus } from "@/lib/subscriptionAccess";
 
-interface SubscriptionStatus {
-  has_access: boolean;
-  role: string | null;
-  subscription_status: string | null;
-  organization_id: string | null;
-}
+type SubscriptionStatus = SubscriptionAccessStatus;
 
 export function useSubscriptionCheck() {
   const navigate = useNavigate();
@@ -16,9 +12,9 @@ export function useSubscriptionCheck() {
 
   const checkSubscription = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
+      const result = await checkSubscriptionAccess();
+
+      if (!result.authenticated) {
         // No session - user should login, not go to subscription-blocked
         setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
@@ -26,15 +22,17 @@ export function useSubscriptionCheck() {
       }
 
       // Retry com backoff para falhas transitórias (rede/erro 500 temporário)
-      let data: any = null;
-      let error: any = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const res = await supabase.functions.invoke("check-subscription-status");
-        data = res.data;
-        error = res.error;
-        if (!error && !data?.error) break;
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      let data = result.data;
+      let error = result.error;
+      for (let attempt = 1; attempt < 3 && (error || data?.error || !data); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        const retry = await checkSubscriptionAccess();
+        data = retry.data;
+        error = retry.error;
+        if (!retry.authenticated) {
+          setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
+          navigate("/auth");
+          return;
         }
       }
 
@@ -48,44 +46,9 @@ export function useSubscriptionCheck() {
       }
 
 
-      // Check for auth-related errors (session expired, invalid token, corrupted JWT)
-      const authErrors = ["Invalid or expired token", "No authorization header", "User not found"];
-      const isAuthError = authErrors.some(err => data?.message?.includes(err)) || 
-                          data?.message?.includes("invalid claim");
-      
-      if (isAuthError) {
-        
-        // Wait for autoRefreshToken to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const { data: { session: freshSession } } = await supabase.auth.getSession();
-        if (!freshSession) {
-          await supabase.auth.signOut();
-          setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
-          setLoading(false);
-          navigate("/auth");
-          return;
-        }
-        
-        // Retry with fresh session
-        const retryResult = await supabase.functions.invoke("check-subscription-status");
-        if (retryResult.data?.message?.includes("Invalid") || retryResult.data?.message?.includes("invalid claim")) {
-          await supabase.auth.signOut();
-          setStatus({ has_access: false, role: null, subscription_status: null, organization_id: null });
-          setLoading(false);
-          navigate("/auth");
-          return;
-        }
-        
-        // Retry succeeded
-        setStatus(retryResult.data);
-        setLoading(false);
-        return;
-      }
-
-      if (data?.error) {
+      if (!data || data.error || data.message?.toLowerCase().includes("invalid")) {
         console.error("Subscription check error:", data.error, data.details);
-        // Erro temporário no backend: mantém acesso e deixa o guard global decidir
+        // Uma resposta inválida não prova que a assinatura está bloqueada.
         setStatus({ has_access: true, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
         return;
@@ -106,9 +69,8 @@ export function useSubscriptionCheck() {
       }
     } catch (error) {
       console.error("Subscription check failed:", error);
-      // Falha inesperada (rede): não trava quem já tem sessão válida.
-      const { data: { session } } = await supabase.auth.getSession();
-      setStatus({ has_access: !!session, role: null, subscription_status: null, organization_id: null });
+      // Falha inesperada não deve derrubar uma sessão já autenticada.
+      setStatus({ has_access: true, role: null, subscription_status: null, organization_id: null });
     } finally {
       setLoading(false);
     }

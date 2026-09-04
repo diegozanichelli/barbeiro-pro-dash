@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { checkSubscriptionAccess } from "@/lib/subscriptionAccess";
 
 // Rotas que NÃO exigem assinatura ativa (auth/recuperação e a própria tela de bloqueio)
 const PUBLIC_PATHS = new Set<string>([
@@ -28,13 +29,13 @@ export function SubscriptionGuard() {
     if (checkingRef.current) return;
     checkingRef.current = true;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const result = await checkSubscriptionAccess();
+      if (!result.authenticated) {
         setBlocked(false);
         return;
       }
-      const { data, error } = await supabase.functions.invoke("check-subscription-status");
-      if (error) return;
+      if (result.error || !result.data || result.data.error) return;
+      const data = result.data;
 
       const isBlocked =
         !data?.has_access &&
