@@ -15,7 +15,8 @@ const getJwtSubject = (token: string): string | null => {
   try {
     const payloadPart = token.split(".")[1];
     if (!payloadPart) return null;
-    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const normalized = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
     const payload = JSON.parse(atob(normalized));
     return typeof payload?.sub === "string" && payload.sub.length > 0 ? payload.sub : null;
   } catch {

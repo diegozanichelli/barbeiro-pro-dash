@@ -47,7 +47,7 @@ export function useSubscriptionCheck() {
 
 
       if (!data || data.error || data.message?.toLowerCase().includes("invalid")) {
-        console.error("Subscription check error:", data.error, data.details);
+        console.error("Subscription check error:", data?.error, data?.details);
         // Uma resposta inválida não prova que a assinatura está bloqueada.
         setStatus({ has_access: true, role: null, subscription_status: null, organization_id: null });
         setLoading(false);
