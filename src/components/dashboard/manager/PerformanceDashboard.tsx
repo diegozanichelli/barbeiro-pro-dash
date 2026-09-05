@@ -62,6 +62,7 @@ interface Tx {
   price_sold: number;
   commission_amount: number;
   unit_id: string | null;
+  source: string | null;
 }
 
 type MetricKey = "revenue" | "clients" | "ticket";
@@ -138,6 +139,8 @@ interface ChartRow {
   label: string;
   atual: number | null;
   anterior: number | null;
+  /** Só na view Faturamento: vendas operacionais (serviços+produtos), sem assinaturas. */
+  atualVendas: number | null;
   /** Data do mês anterior pareada por dia da semana (dd/MM). */
   anteriorLabel: string | null;
 }
@@ -195,6 +198,9 @@ export default function PerformanceDashboard() {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [current, setCurrent] = useState<Tx[]>([]);
   const [previous, setPrevious] = useState<Tx[]>([]);
+  // Todas as transações do intervalo (inclui assinaturas e todas as origens),
+  // usadas só pela view Faturamento, reconciliada com o Ao Vivo.
+  const [allTxs, setAllTxs] = useState<Tx[]>([]);
   const [prodDates, setProdDates] = useState<Record<string, string>>({});
   const [goals, setGoals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -236,10 +242,10 @@ export default function PerformanceDashboard() {
           supabase
             .from("sale_transactions")
             .select(
-              "barber_id, created_at, daily_production_id, item_type, item_name, service_category, price_sold, commission_amount, unit_id"
+              "barber_id, created_at, daily_production_id, item_type, item_name, service_category, price_sold, commission_amount, unit_id, source"
             )
             .eq("organization_id", organizationId)
-            .in("item_type", ["service", "product"])
+            .in("item_type", ["service", "product", "subscription"])
             .gte("created_at", `${startKey}T00:00:00-04:00`)
             .lt("created_at", `${nextDay}T00:00:00-04:00`)
             .order("created_at", { ascending: true })
@@ -276,10 +282,14 @@ export default function PerformanceDashboard() {
         (t.daily_production_id && map[t.daily_production_id]) ||
         formatInTimeZone(t.created_at, TIMEZONE, "yyyy-MM-dd");
 
-      setCurrent(txs.filter((t) => dateOf(t).startsWith(`${year}-${pad(month)}`)));
+      // As séries existentes (atendimentos, ticket, comissão, detalhamento por
+      // barbeiro) seguem só serviços+produtos, por data de produção — inalteradas.
+      const isSale = (t: Tx) => t.item_type === "service" || t.item_type === "product";
+      setCurrent(txs.filter((t) => isSale(t) && dateOf(t).startsWith(`${year}-${pad(month)}`)));
       setPrevious(
-        txs.filter((t) => dateOf(t).startsWith(`${prevYear}-${pad(prevMonth)}`))
+        txs.filter((t) => isSale(t) && dateOf(t).startsWith(`${prevYear}-${pad(prevMonth)}`))
       );
+      setAllTxs(txs);
     } catch (e) {
       console.error(e);
       setError("Não foi possível carregar os dados de performance.");
@@ -355,6 +365,39 @@ export default function PerformanceDashboard() {
     };
   }, [current, previous, filterTx, buildSeries, selectedBarber, year, month, prevYear, prevMonth]);
 
+  /**
+   * Faturamento reconciliado com o "Ao Vivo": por data da venda (created_at) e só
+   * origem 'manager' (fluxo da recepção), separando vendas (serviços+produtos) de
+   * assinaturas. É o que faz o total desta view bater com o TOTAL HOJE do Ao Vivo,
+   * e as vendas baterem com o "Vendas (serviços+produtos)" de lá.
+   */
+  const faturamentoByDay = useCallback(
+    (rows: Tx[], y: number, m: number) => {
+      const byDay: Record<number, { sales: number; subs: number }> = {};
+      const prefix = `${y}-${pad(m)}`;
+      rows.forEach((t) => {
+        if (t.source !== "manager") return;
+        const dk = formatInTimeZone(t.created_at, TIMEZONE, "yyyy-MM-dd");
+        if (!dk.startsWith(prefix)) return;
+        const day = Number(dk.slice(8, 10));
+        const price = Number(t.price_sold) || 0;
+        (byDay[day] ??= { sales: 0, subs: 0 });
+        if (t.item_type === "subscription") byDay[day].subs += price;
+        else byDay[day].sales += price;
+      });
+      return byDay;
+    },
+    []
+  );
+
+  const scopedFat = useMemo(() => {
+    const rows = filterTx(allTxs, selectedBarber);
+    return {
+      cur: faturamentoByDay(rows, year, month),
+      prev: faturamentoByDay(rows, prevYear, prevMonth),
+    };
+  }, [allTxs, filterTx, selectedBarber, faturamentoByDay, year, month, prevYear, prevMonth]);
+
   const range = sliceRange(year, month, slice);
   const prevRange = sliceRange(prevYear, prevMonth, slice);
   const prevTotalDays = daysInMonth(prevYear, prevMonth);
@@ -429,6 +472,24 @@ export default function PerformanceDashboard() {
   const curTotals = sumRange(scoped.cur.byDay, range.startDay, curEndDay);
   const prevTotals = sumRange(scoped.prev.byDay, prevWindow.startDay, prevWindow.endDay);
 
+  const sumFat = (
+    byDay: Record<number, { sales: number; subs: number }>,
+    start: number,
+    end: number
+  ) => {
+    let sales = 0;
+    let subs = 0;
+    for (let d = start; d <= end; d++) {
+      const b = byDay[d];
+      if (!b) continue;
+      sales += b.sales;
+      subs += b.subs;
+    }
+    return { sales, subs, total: sales + subs };
+  };
+  const curFat = sumFat(scopedFat.cur, range.startDay, curEndDay);
+  const prevFat = sumFat(scopedFat.prev, prevWindow.startDay, prevWindow.endDay);
+
   /**
    * O período comparado fica escrito no card, não só no title: em telefone não
    * existe hover, e é esse intervalo que explica o número ao lado.
@@ -448,9 +509,10 @@ export default function PerformanceDashboard() {
     {
       label: "Faturamento",
       icon: DollarSign,
-      value: brl(curTotals.revenue),
-      delta: variation(curTotals.revenue, prevTotals.revenue),
-      previous: brl(prevTotals.revenue),
+      value: brl(curFat.total),
+      delta: variation(curFat.total, prevFat.total),
+      previous: brl(prevFat.total),
+      sub: `Vendas ${brl(curFat.sales)} · Assinaturas ${brl(curFat.subs)}`,
     },
     {
       label: "Atendimentos",
@@ -487,17 +549,36 @@ export default function PerformanceDashboard() {
       const dk = key(year, month, day);
       const cb = scoped.cur.byDay[day];
       const pb = hasPrev ? scoped.prev.byDay[prevDay] : undefined;
+      const label = slice === "month" ? shortDate(dk) : `${WEEKDAYS[weekdayOf(dk)]} ${day}`;
+      const anteriorLabel = hasPrev ? shortDate(key(prevYear, prevMonth, prevDay)) : null;
+
+      if (metric === "revenue") {
+        // Faturamento vem da agregação reconciliada com o Ao Vivo (created_at,
+        // source='manager'): linha principal = total (com assinaturas), linha
+        // secundária = vendas operacionais.
+        const cf = hasCur ? scopedFat.cur[day] : undefined;
+        const pf = hasPrev ? scopedFat.prev[prevDay] : undefined;
+        rows.push({
+          label,
+          atual: hasCur ? (cf ? cf.sales + cf.subs : 0) : null,
+          atualVendas: hasCur ? (cf ? cf.sales : 0) : null,
+          anterior: hasPrev ? (pf ? pf.sales + pf.subs : 0) : null,
+          anteriorLabel,
+        });
+        continue;
+      }
+
       const pick = (b?: DayBucket) => {
         if (!b) return 0;
-        if (metric === "revenue") return b.revenue;
         if (metric === "clients") return b.clients;
         return b.clients ? b.revenue / b.clients : 0;
       };
       rows.push({
-        label: slice === "month" ? shortDate(dk) : `${WEEKDAYS[weekdayOf(dk)]} ${day}`,
+        label,
         atual: hasCur ? pick(cb) : null,
+        atualVendas: null,
         anterior: hasPrev ? pick(pb) : null,
-        anteriorLabel: hasPrev ? shortDate(key(prevYear, prevMonth, prevDay)) : null,
+        anteriorLabel,
       });
     }
     return rows;
@@ -509,6 +590,7 @@ export default function PerformanceDashboard() {
     curLastDay,
     prevLastDay,
     scoped,
+    scopedFat,
     metric,
     slice,
     year,
@@ -722,6 +804,9 @@ export default function PerformanceDashboard() {
                     >
                       {loading ? "—" : k.value}
                     </p>
+                    {!loading && k.sub && (
+                      <p className="text-xs text-muted-foreground/80 mt-1">{k.sub}</p>
+                    )}
                   </div>
                   <span className="rounded-xl bg-primary/12 p-2.5">
                     <Icon className="w-5 h-5 text-primary" />
@@ -873,11 +958,15 @@ export default function PerformanceDashboard() {
                       item: { payload?: ChartRow }
                     ) => [
                       metricFormatter(Number(value)),
-                      name === "atual"
-                        ? "Período atual"
-                        : item?.payload?.anteriorLabel
-                          ? `Mês anterior (${item.payload.anteriorLabel})`
-                          : "Mês anterior",
+                      name === "atualVendas"
+                        ? "Vendas (serviços + produtos)"
+                        : name === "atual"
+                          ? metric === "revenue"
+                            ? "Faturamento total"
+                            : "Período atual"
+                          : item?.payload?.anteriorLabel
+                            ? `Mês anterior (${item.payload.anteriorLabel})`
+                            : "Mês anterior",
                     ]}
                   />
                   <Line
@@ -889,6 +978,18 @@ export default function PerformanceDashboard() {
                     dot={{ r: 3, fill: "hsl(var(--primary))" }}
                     activeDot={{ r: 5 }}
                   />
+                  {metric === "revenue" && (
+                    <Line
+                      type="monotone"
+                      dataKey="atualVendas"
+                      name="atualVendas"
+                      stroke="#3c83f6"
+                      strokeWidth={2}
+                      dot={{ r: 2.5, fill: "#3c83f6" }}
+                      activeDot={{ r: 4 }}
+                      connectNulls
+                    />
+                  )}
                   <Line
                     type="monotone"
                     dataKey="anterior"
@@ -904,10 +1005,17 @@ export default function PerformanceDashboard() {
             )}
           </div>
 
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-2">
-              <span className="h-0.5 w-6 rounded-full bg-primary" /> Período atual
+              <span className="h-0.5 w-6 rounded-full bg-primary" />
+              {metric === "revenue" ? "Faturamento total" : "Período atual"}
             </span>
+            {metric === "revenue" && (
+              <span className="flex items-center gap-2">
+                <span className="h-0.5 w-6 rounded-full" style={{ backgroundColor: "#3c83f6" }} />
+                Vendas <span className="text-muted-foreground/70">(serviços + produtos)</span>
+              </span>
+            )}
             <span className="flex items-center gap-2">
               <span className="h-0.5 w-6 rounded-full bg-muted-foreground/70" /> Mês
               anterior <span className="text-muted-foreground/70">(mesmo dia da semana)</span>
