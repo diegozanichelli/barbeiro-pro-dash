@@ -373,7 +373,10 @@ export default function PerformanceDashboard() {
    */
   const faturamentoByDay = useCallback(
     (rows: Tx[], y: number, m: number) => {
-      const byDay: Record<number, { sales: number; subs: number }> = {};
+      // atendimento = comanda = COUNT DISTINCT (barbeiro|created_at) entre linhas
+      // service/product, a mesma definição do restante do app. Assinatura não é
+      // atendimento.
+      const acc: Record<number, { sales: number; subs: number; visits: Set<string> }> = {};
       const prefix = `${y}-${pad(m)}`;
       rows.forEach((t) => {
         if (t.source !== "manager") return;
@@ -381,9 +384,17 @@ export default function PerformanceDashboard() {
         if (!dk.startsWith(prefix)) return;
         const day = Number(dk.slice(8, 10));
         const price = Number(t.price_sold) || 0;
-        (byDay[day] ??= { sales: 0, subs: 0 });
-        if (t.item_type === "subscription") byDay[day].subs += price;
-        else byDay[day].sales += price;
+        (acc[day] ??= { sales: 0, subs: 0, visits: new Set() });
+        if (t.item_type === "subscription") {
+          acc[day].subs += price;
+        } else {
+          acc[day].sales += price;
+          acc[day].visits.add(`${t.barber_id ?? "sem-barbeiro"}|${t.created_at}`);
+        }
+      });
+      const byDay: Record<number, { sales: number; subs: number; atend: number }> = {};
+      Object.entries(acc).forEach(([d, b]) => {
+        byDay[Number(d)] = { sales: b.sales, subs: b.subs, atend: b.visits.size };
       });
       return byDay;
     },
@@ -473,19 +484,21 @@ export default function PerformanceDashboard() {
   const prevTotals = sumRange(scoped.prev.byDay, prevWindow.startDay, prevWindow.endDay);
 
   const sumFat = (
-    byDay: Record<number, { sales: number; subs: number }>,
+    byDay: Record<number, { sales: number; subs: number; atend: number }>,
     start: number,
     end: number
   ) => {
     let sales = 0;
     let subs = 0;
+    let atend = 0;
     for (let d = start; d <= end; d++) {
       const b = byDay[d];
       if (!b) continue;
       sales += b.sales;
       subs += b.subs;
+      atend += b.atend;
     }
-    return { sales, subs, total: sales + subs };
+    return { sales, subs, atend, total: sales + subs };
   };
   const curFat = sumFat(scopedFat.cur, range.startDay, curEndDay);
   const prevFat = sumFat(scopedFat.prev, prevWindow.startDay, prevWindow.endDay);
@@ -502,8 +515,10 @@ export default function PerformanceDashboard() {
       )}`
     : MONTHS[prevMonth - 1];
 
-  const curTicket = curTotals.clients ? curTotals.revenue / curTotals.clients : 0;
-  const prevTicket = prevTotals.clients ? prevTotals.revenue / prevTotals.clients : 0;
+  // Atendimentos e ticket também reconciliados com o Ao Vivo: vendas e comandas
+  // por created_at + source='manager'. Ticket = vendas ÷ atendimentos.
+  const curTicket = curFat.atend ? curFat.sales / curFat.atend : 0;
+  const prevTicket = prevFat.atend ? prevFat.sales / prevFat.atend : 0;
 
   const kpis = [
     {
@@ -517,9 +532,9 @@ export default function PerformanceDashboard() {
     {
       label: "Atendimentos",
       icon: Users,
-      value: int(curTotals.clients),
-      delta: variation(curTotals.clients, prevTotals.clients),
-      previous: int(prevTotals.clients),
+      value: int(curFat.atend),
+      delta: variation(curFat.atend, prevFat.atend),
+      previous: int(prevFat.atend),
     },
     {
       label: "Ticket médio",
@@ -547,17 +562,16 @@ export default function PerformanceDashboard() {
       const hasCur = day <= curLastDay;
       const hasPrev = prevDay >= 1 && prevDay <= Math.min(prevTotalDays, prevLastDay);
       const dk = key(year, month, day);
-      const cb = scoped.cur.byDay[day];
-      const pb = hasPrev ? scoped.prev.byDay[prevDay] : undefined;
       const label = slice === "month" ? shortDate(dk) : `${WEEKDAYS[weekdayOf(dk)]} ${day}`;
       const anteriorLabel = hasPrev ? shortDate(key(prevYear, prevMonth, prevDay)) : null;
 
+      // Todas as métricas da view vêm da agregação reconciliada com o Ao Vivo
+      // (created_at, source='manager').
+      const cf = hasCur ? scopedFat.cur[day] : undefined;
+      const pf = hasPrev ? scopedFat.prev[prevDay] : undefined;
+
       if (metric === "revenue") {
-        // Faturamento vem da agregação reconciliada com o Ao Vivo (created_at,
-        // source='manager'): linha principal = total (com assinaturas), linha
-        // secundária = vendas operacionais.
-        const cf = hasCur ? scopedFat.cur[day] : undefined;
-        const pf = hasPrev ? scopedFat.prev[prevDay] : undefined;
+        // Linha principal = total (com assinaturas), secundária = vendas.
         rows.push({
           label,
           atual: hasCur ? (cf ? cf.sales + cf.subs : 0) : null,
@@ -568,16 +582,16 @@ export default function PerformanceDashboard() {
         continue;
       }
 
-      const pick = (b?: DayBucket) => {
-        if (!b) return 0;
-        if (metric === "clients") return b.clients;
-        return b.clients ? b.revenue / b.clients : 0;
+      const pick = (f?: { sales: number; atend: number }) => {
+        if (!f) return 0;
+        if (metric === "clients") return f.atend;
+        return f.atend ? f.sales / f.atend : 0;
       };
       rows.push({
         label,
-        atual: hasCur ? pick(cb) : null,
+        atual: hasCur ? pick(cf) : null,
         atualVendas: null,
-        anterior: hasPrev ? pick(pb) : null,
+        anterior: hasPrev ? pick(pf) : null,
         anteriorLabel,
       });
     }
@@ -589,7 +603,6 @@ export default function PerformanceDashboard() {
     prevTotalDays,
     curLastDay,
     prevLastDay,
-    scoped,
     scopedFat,
     metric,
     slice,
