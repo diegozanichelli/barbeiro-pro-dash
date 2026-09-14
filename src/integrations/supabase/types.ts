@@ -570,11 +570,6 @@ export type Database = {
           month: number
           organization_id: string
           target_commission: number
-          target_extras_per_client: number | null
-          target_frequency_uplift_pct: number | null
-          target_new_clubs: number | null
-          target_products_revenue: number | null
-          target_productivity_pct: number | null
           updated_at: string
           work_days: number
           year: number
@@ -586,11 +581,6 @@ export type Database = {
           month: number
           organization_id: string
           target_commission: number
-          target_extras_per_client?: number | null
-          target_frequency_uplift_pct?: number | null
-          target_new_clubs?: number | null
-          target_products_revenue?: number | null
-          target_productivity_pct?: number | null
           updated_at?: string
           work_days: number
           year: number
@@ -602,11 +592,6 @@ export type Database = {
           month?: number
           organization_id?: string
           target_commission?: number
-          target_extras_per_client?: number | null
-          target_frequency_uplift_pct?: number | null
-          target_new_clubs?: number | null
-          target_products_revenue?: number | null
-          target_productivity_pct?: number | null
           updated_at?: string
           work_days?: number
           year?: number
@@ -1516,12 +1501,6 @@ export type Database = {
           p_unit_id?: string
         }
         Returns: Json
-      }
-      get_barber_subscriber_phones: {
-        Args: { p_barber_id: string; p_end: string; p_start: string }
-        Returns: {
-          mobile_phone: string
-        }[]
       }
       get_inactive_clients: {
         Args: { p_barber_id?: string; p_ref_date?: string; p_unit_id?: string }
