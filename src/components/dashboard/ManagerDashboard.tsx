@@ -27,6 +27,7 @@ import ManagerNavigation from "./manager/ManagerNavigation";
 import SubscriptionsTracking from "./manager/SubscriptionsTracking";
 import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
+import SubscriptionReconciliation from "./manager/SubscriptionReconciliation";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
 import SendNotificationsButton from "./manager/SendNotificationsButton";
