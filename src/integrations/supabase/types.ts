@@ -226,6 +226,105 @@ export type Database = {
           },
         ]
       }
+      championship_configs: {
+        Row: {
+          created_at: string
+          extra_high_multiplier: number
+          extra_high_threshold: number
+          extra_points: number
+          extras_enabled: boolean
+          id: string
+          min_revenue: number
+          name: string
+          organization_id: string
+          penalty_dayoff_enabled: boolean
+          penalty_dayoff_points: number
+          penalty_unconverted_enabled: boolean
+          penalty_unconverted_points: number
+          plan_multipliers: Json
+          product_points: number
+          products_enabled: boolean
+          revenue_enabled: boolean
+          revenue_points_per_1000: number
+          subscription_points: number
+          subscriptions_enabled: boolean
+          ticket_enabled: boolean
+          ticket_tiers: Json
+          updated_at: string
+          updated_by: string | null
+          validation_enabled: boolean
+        }
+        Insert: {
+          created_at?: string
+          extra_high_multiplier?: number
+          extra_high_threshold?: number
+          extra_points?: number
+          extras_enabled?: boolean
+          id?: string
+          min_revenue?: number
+          name?: string
+          organization_id: string
+          penalty_dayoff_enabled?: boolean
+          penalty_dayoff_points?: number
+          penalty_unconverted_enabled?: boolean
+          penalty_unconverted_points?: number
+          plan_multipliers?: Json
+          product_points?: number
+          products_enabled?: boolean
+          revenue_enabled?: boolean
+          revenue_points_per_1000?: number
+          subscription_points?: number
+          subscriptions_enabled?: boolean
+          ticket_enabled?: boolean
+          ticket_tiers?: Json
+          updated_at?: string
+          updated_by?: string | null
+          validation_enabled?: boolean
+        }
+        Update: {
+          created_at?: string
+          extra_high_multiplier?: number
+          extra_high_threshold?: number
+          extra_points?: number
+          extras_enabled?: boolean
+          id?: string
+          min_revenue?: number
+          name?: string
+          organization_id?: string
+          penalty_dayoff_enabled?: boolean
+          penalty_dayoff_points?: number
+          penalty_unconverted_enabled?: boolean
+          penalty_unconverted_points?: number
+          plan_multipliers?: Json
+          product_points?: number
+          products_enabled?: boolean
+          revenue_enabled?: boolean
+          revenue_points_per_1000?: number
+          subscription_points?: number
+          subscriptions_enabled?: boolean
+          ticket_enabled?: boolean
+          ticket_tiers?: Json
+          updated_at?: string
+          updated_by?: string | null
+          validation_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "championship_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "championship_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_origin_recompute_logs: {
         Row: {
           duration_ms: number | null
@@ -1521,6 +1620,21 @@ export type Database = {
         Args: { p_barber_id: string; p_end: string; p_start: string }
         Returns: {
           mobile_phone: string
+        }[]
+      }
+      get_championship_details: {
+        Args: {
+          p_end_date: string
+          p_extra_threshold?: number
+          p_start_date: string
+          p_unit_id?: string
+        }
+        Returns: {
+          barber_id: string
+          days_off_count: number
+          extras_high_count: number
+          new_clients_unconverted: number
+          subs_by_plan: Json
         }[]
       }
       get_clients_subscription_summary: {
