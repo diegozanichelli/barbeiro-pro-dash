@@ -92,7 +92,7 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
   useEffect(() => {
     fetchRankings();
-  }, [period, unitFilter]);
+  }, [period, unitFilter, championshipConfig.extra_high_threshold]);
 
   // Refetch automático quando a aba volta ao foco (ex: após fechar modal de venda)
   useEffect(() => {
@@ -103,24 +103,44 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [period, unitFilter]);
+  }, [period, unitFilter, championshipConfig.extra_high_threshold]);
 
   const fetchUnits = async () => {
     const { data } = await supabase.from("units").select("*").eq("status", "active");
     if (data) setUnits(data);
   };
 
-  const fetchChampionshipName = async () => {
-    if (!organizationId) return;
-    const { data } = await supabase
-      .from("organizations")
-      .select("championship_name")
-      .eq("id", organizationId)
-      .single();
-    if (data?.championship_name) {
-      setChampionshipName(data.championship_name);
+  const fetchChampionshipDetails = async (start: string, end: string) => {
+    const { data, error } = await supabase.rpc("get_championship_details", {
+      p_start_date: start.slice(0, 10),
+      p_end_date: end.slice(0, 10),
+      p_unit_id: unitFilter === "all" ? null : unitFilter,
+      p_extra_threshold: championshipConfig.extra_high_threshold,
+    });
+
+    if (error || !data) {
+      setChampionshipDetails({});
+      return;
     }
+
+    const map: Record<string, ChampionshipDetail> = {};
+    (data as any[]).forEach((row) => {
+      const byPlan: Record<string, number> = {};
+      if (row.subs_by_plan && typeof row.subs_by_plan === "object") {
+        Object.entries(row.subs_by_plan as Record<string, unknown>).forEach(([k, v]) => {
+          byPlan[k] = Number(v) || 0;
+        });
+      }
+      map[row.barber_id] = {
+        extras_high_count: Number(row.extras_high_count) || 0,
+        subs_by_plan: byPlan,
+        new_clients_unconverted: Number(row.new_clients_unconverted) || 0,
+        days_off_count: Number(row.days_off_count) || 0,
+      };
+    });
+    setChampionshipDetails(map);
   };
+
 
   const fetchCustomNames = async () => {
     if (!organization?.id) return;
