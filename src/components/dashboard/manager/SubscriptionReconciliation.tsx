@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { normalizeClientName } from "@/lib/clientName";
 import { getManausDate, manausDayStart, manausDayEnd, toDateKey } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
 import { fetchAllRows } from "@/lib/supabasePagination";
@@ -79,7 +80,10 @@ const HEADER_ALIASES: Record<keyof Omit<CsvRow, "key">, string[]> = {
   planLabel: ["plano", "descricao", "descrição", "description", "item", "produto", "assinatura"],
 };
 
-const DATE_ALIASES = ["data", "data_pagamento", "data pagamento", "pagamento", "data_criacao", "data de criação", "date", "paid_at", "vencimento"];
+const DATE_ALIASES = ["data do status atual", "data_status", "data pagamento", "data_pagamento", "data", "data_pagamento", "data pagamento", "pagamento", "data_criacao", "data de criação", "date", "paid_at"];
+const STATUS_ALIASES = ["status"];
+const REJECTED_STATUS = /(cancel|recus|negad|estorn|falh|pendente|aguard|expir|chargeback|devolv)/;
+const nameKey = (n: string) => normalizeClientName(n).replace(/\s+/g, " ");
 
 const normalizeHeader = (h: string) =>
   h.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/^"|"$/g, "");
@@ -234,10 +238,11 @@ export default function SubscriptionReconciliation() {
       const idxAmount = findIdx(HEADER_ALIASES.amount);
       const idxPlan = findIdx(HEADER_ALIASES.planLabel);
       const idxDate = findIdx(DATE_ALIASES);
+      const idxStatus = headers.indexOf("status") >= 0 ? headers.indexOf("status") : findIdx(STATUS_ALIASES);
 
-      if (idxName < 0 || idxPhone < 0) {
-        toast.error("Não encontrei as colunas de nome e telefone", {
-          description: "O arquivo precisa ter uma coluna de nome do cliente e uma de celular.",
+      if (idxName < 0) {
+        toast.error("Não encontrei a coluna de nome do cliente", {
+          description: "O arquivo precisa ter uma coluna com o nome do cliente.",
         });
         return;
       }
@@ -249,7 +254,14 @@ export default function SubscriptionReconciliation() {
       for (let i = 1; i < lines.length; i++) {
         const cols = splitCsvLine(lines[i], delimiter);
         const name = (cols[idxName] || "").trim();
-        const phone = sanitizePhone(cols[idxPhone] || "");
+        const phone = idxPhone >= 0 ? sanitizePhone(cols[idxPhone] || "") : "";
+        if (idxStatus >= 0) {
+          const st = normalizeHeader(cols[idxStatus] || "");
+          if (REJECTED_STATUS.test(st)) {
+            skipped++;
+            continue;
+          }
+        }
         const amount = idxAmount >= 0 ? parseAmount(cols[idxAmount] || "") : 0;
         const planLabel = idxPlan >= 0 ? (cols[idxPlan] || "").trim() : "";
 
@@ -261,11 +273,11 @@ export default function SubscriptionReconciliation() {
           }
         }
 
-        if (!name || phone.length !== 11) {
+        if (!name || (phone && phone.length !== 11)) {
           skipped++;
           continue;
         }
-        rows.push({ key: `${phone}-${i}`, name, phone, amount, planLabel });
+        rows.push({ key: `${phone || nameKey(name)}-${i}`, name, phone, amount, planLabel });
       }
 
       setCsvRows(rows);
@@ -275,7 +287,7 @@ export default function SubscriptionReconciliation() {
       setAssignments({});
       toast.success(`${rows.length} cobranças lidas do arquivo`, {
         description: [
-          skipped ? `${skipped} linha(s) sem nome/celular válido` : null,
+          skipped ? `${skipped} linha(s) ignorada(s) (não pagas ou sem nome)` : null,
           outOfRange ? `${outOfRange} de outras datas ignorada(s)` : null,
         ]
           .filter(Boolean)
@@ -288,7 +300,12 @@ export default function SubscriptionReconciliation() {
 
   const comparison = useMemo(() => {
     const systemByPhone = new Map<string, SystemTx[]>();
+    const systemByName = new Map<string, SystemTx[]>();
     systemTx.forEach((tx) => {
+      if (tx.client_name) {
+        const k = nameKey(tx.client_name);
+        systemByName.set(k, [...(systemByName.get(k) || []), tx]);
+      }
       const phone = sanitizePhone(tx.mobile_phone || "");
       if (!phone) return;
       const list = systemByPhone.get(phone) || [];
@@ -302,7 +319,9 @@ export default function SubscriptionReconciliation() {
     const missingInSystem: CsvRow[] = [];
 
     csvRows.forEach((row) => {
-      const candidates = (systemByPhone.get(row.phone) || []).filter((t) => !usedTxIds.has(t.id));
+      const pool = row.phone ? systemByPhone.get(row.phone) || [] : [];
+      const byName = systemByName.get(nameKey(row.name)) || [];
+      const candidates = (pool.length ? pool : byName).filter((t) => !usedTxIds.has(t.id));
       if (candidates.length === 0) {
         missingInSystem.push(row);
         return;
@@ -387,10 +406,26 @@ export default function SubscriptionReconciliation() {
         }
 
         try {
+          let phone = row.phone;
+          if (!phone) {
+            const { data: found } = await supabase
+              .from("clients")
+              .select("mobile_phone")
+              .eq("organization_id", organizationId)
+              .eq("normalized_name", normalizeClientName(row.name))
+              .limit(2);
+            if (!found || found.length !== 1 || !found[0].mobile_phone) {
+              failures.push(
+                `${row.name}: ${found && found.length > 1 ? "mais de um cliente com esse nome" : "cliente sem celular cadastrado"} — cadastre em Clientes`,
+              );
+              continue;
+            }
+            phone = sanitizePhone(found[0].mobile_phone);
+          }
           const client = await registerClientOrThrow({
             organizationId,
             clientName: row.name,
-            mobilePhone: row.phone,
+            mobilePhone: phone,
           });
 
           await (supabase.from("clients") as any)
@@ -685,7 +720,7 @@ export default function SubscriptionReconciliation() {
                                   />
                                 </TableCell>
                                 <TableCell className="font-medium whitespace-nowrap">{row.name}</TableCell>
-                                <TableCell className="whitespace-nowrap">{formatPhone(row.phone)}</TableCell>
+                                <TableCell className="whitespace-nowrap">{row.phone ? formatPhone(row.phone) : "—"}</TableCell>
                                 <TableCell className="text-right whitespace-nowrap">{brl(row.amount)}</TableCell>
                                 <TableCell>
                                   <Select value={a.planId} onValueChange={(v) => updateAssignment(row, { planId: v })}>
@@ -826,7 +861,7 @@ export default function SubscriptionReconciliation() {
                         {comparison.divergent.map(({ row, tx }) => (
                           <TableRow key={row.key}>
                             <TableCell className="font-medium">{row.name}</TableCell>
-                            <TableCell>{formatPhone(row.phone)}</TableCell>
+                            <TableCell>{row.phone ? formatPhone(row.phone) : "—"}</TableCell>
                             <TableCell className="text-right">{brl(row.amount)}</TableCell>
                             <TableCell className="text-right">{brl(tx.price_sold)}</TableCell>
                             <TableCell className="text-right">
@@ -862,7 +897,7 @@ export default function SubscriptionReconciliation() {
                         {comparison.matched.map(({ row, tx }) => (
                           <TableRow key={row.key}>
                             <TableCell className="font-medium">{row.name}</TableCell>
-                            <TableCell>{formatPhone(row.phone)}</TableCell>
+                            <TableCell>{row.phone ? formatPhone(row.phone) : "—"}</TableCell>
                             <TableCell className="text-right">{brl(tx.price_sold)}</TableCell>
                             <TableCell>{barberName(tx.barber_id)}</TableCell>
                             <TableCell>{unitName(tx.unit_id)}</TableCell>
