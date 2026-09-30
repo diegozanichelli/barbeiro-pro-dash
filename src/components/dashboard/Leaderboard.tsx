@@ -58,8 +58,10 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
   
   // View mode: "financial" or "championship"
   const [viewMode, setViewMode] = useState<"financial" | "championship">("financial");
-  const [championshipName, setChampionshipName] = useState("Campeonato Anual");
-  
+  const { config: championshipConfig, saveConfig } = useChampionshipConfig();
+  const championshipName = championshipConfig.name;
+  const [showCampaignModal, setShowCampaignModal] = useState(false);
+
   const [performanceRanking, setPerformanceRanking] = useState<RankingItem[]>([]);
   const [servicesExtraRanking, setServicesExtraRanking] = useState<RankingItem[]>([]);
   const [productsRanking, setProductsRanking] = useState<RankingItem[]>([]);
@@ -68,7 +70,8 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
   // Championship data
   const [rawBarberData, setRawBarberData] = useState<RawBarberData[]>([]);
-  const championshipData = useChampionshipPoints(rawBarberData);
+  const [championshipDetails, setChampionshipDetails] = useState<Record<string, ChampionshipDetail>>({});
+  const championshipData = useChampionshipPoints(rawBarberData, championshipConfig, championshipDetails);
 
   const [customNames, setCustomNames] = useState<Record<string, string>>({});
   const [rankingConfigs, setRankingConfigs] = useState<Record<string, RankingConfig>>({});
@@ -83,9 +86,9 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
   useEffect(() => {
     if (organization?.id) {
       fetchCustomNames();
-      fetchChampionshipName();
     }
   }, [organization?.id]);
+
 
   useEffect(() => {
     fetchRankings();
