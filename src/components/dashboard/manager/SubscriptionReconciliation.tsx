@@ -184,7 +184,7 @@ export default function SubscriptionReconciliation() {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const rows = await fetchAllRows<SystemTx>((range) =>
+      const rows = await fetchAllRows<SystemTx>(() =>
         supabase
           .from("sale_transactions")
           .select("id, client_name, mobile_phone, item_name, price_sold, barber_id, unit_id, subscription_action, created_at")
@@ -193,7 +193,6 @@ export default function SubscriptionReconciliation() {
           .gte("created_at", manausDayStart(refDate))
           .lte("created_at", manausDayEnd(refDate))
           .order("created_at", { ascending: true })
-          .range(range.from, range.to)
       );
       setSystemTx(rows.map((r) => ({ ...r, price_sold: Number(r.price_sold) })));
     } catch (err: any) {
