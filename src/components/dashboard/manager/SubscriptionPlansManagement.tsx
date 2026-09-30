@@ -95,48 +95,16 @@ export default function SubscriptionPlansManagement() {
   const handleSave = async (name: string, price: number, serviceIds: string[]) => {
     if (!organizationId) return;
 
-    let planId = editingPlan?.id;
-
-    if (editingPlan) {
-      const { error } = await supabase
-        .from("subscription_plans")
-        .update({ name, price })
-        .eq("id", editingPlan.id);
-      if (error) throw error;
-      toast.success("Plano atualizado!");
-    } else {
-      const { data: insertedPlan, error } = await supabase
-        .from("subscription_plans")
-        .insert({ name, price, organization_id: organizationId })
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (insertedPlan?.id) planId = insertedPlan.id;
-      toast.success("Plano criado!");
-    }
-
-    if (planId) {
-      const { error: deleteError } = await supabase
-        .from("subscription_plan_services")
-        .delete()
-        .eq("subscription_plan_id", planId);
-
-      if (deleteError) throw deleteError;
-
-      if (serviceIds.length > 0) {
-        const payload = serviceIds.map((serviceId) => ({
-          organization_id: organizationId,
-          subscription_plan_id: planId,
-          catalog_service_id: serviceId,
-        }));
-
-        const { error: insertError } = await supabase
-          .from("subscription_plan_services")
-          .insert(payload);
-
-        if (insertError) throw insertError;
-      }
-    }
+    // Plano + serviços salvos numa única operação (tudo ou nada)
+    const { error } = await supabase.rpc("save_subscription_plan", {
+      p_organization_id: organizationId,
+      p_plan_id: editingPlan?.id ?? null,
+      p_name: name,
+      p_price: price,
+      p_service_ids: serviceIds,
+    } as any);
+    if (error) throw error;
+    toast.success(editingPlan ? "Plano atualizado!" : "Plano criado!");
 
     fetchPlans();
     fetchPlanServiceLinks();
