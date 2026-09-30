@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Trophy, Save } from "lucide-react";
 import { ChampionshipConfig } from "@/hooks/useChampionshipConfig";
@@ -148,7 +147,7 @@ export default function ChampionshipCampaignModal({ open, onOpenChange, config, 
             )}
           </div>
 
-          <Separator />
+          <div className="h-px w-full bg-border" />
 
           {/* Faturamento */}
           <div className="space-y-3">
@@ -171,7 +170,7 @@ export default function ChampionshipCampaignModal({ open, onOpenChange, config, 
             )}
           </div>
 
-          <Separator />
+          <div className="h-px w-full bg-border" />
 
           {/* Ticket médio */}
           <div className="space-y-3">
@@ -207,7 +206,7 @@ export default function ChampionshipCampaignModal({ open, onOpenChange, config, 
             )}
           </div>
 
-          <Separator />
+          <div className="h-px w-full bg-border" />
 
           {/* Assinaturas */}
           <div className="space-y-3">
@@ -263,7 +262,7 @@ export default function ChampionshipCampaignModal({ open, onOpenChange, config, 
             )}
           </div>
 
-          <Separator />
+          <div className="h-px w-full bg-border" />
 
           {/* Extras */}
           <div className="space-y-3">
@@ -304,7 +303,7 @@ export default function ChampionshipCampaignModal({ open, onOpenChange, config, 
             )}
           </div>
 
-          <Separator />
+          <div className="h-px w-full bg-border" />
 
           {/* Produtos */}
           <div className="space-y-3">
@@ -327,7 +326,7 @@ export default function ChampionshipCampaignModal({ open, onOpenChange, config, 
             )}
           </div>
 
-          <Separator />
+          <div className="h-px w-full bg-border" />
 
           {/* Penalidades */}
           <div className="space-y-3">
