@@ -167,8 +167,7 @@ export default function ClientsManagement() {
       const { data: plansData } = await supabase
         .from("subscription_plans")
         .select("id, name, price")
-        .eq("organization_id", organizationId)
-        .eq("active", true);
+        .eq("organization_id", organizationId);
 
       const { data: unitsData } = await supabase
         .from("units")
@@ -191,50 +190,17 @@ export default function ClientsManagement() {
         }
       }
 
-      // Fetch latest subscription payments per phone (paginated, desc by created_at)
+      // Resumo por telefone calculado no banco (último pagamento de assinatura + histórico)
       const subMap = new Map<string, string>();
-      let subFrom = 0;
-      let subHasMore = true;
-      while (subHasMore) {
-        const { data: subs, error: subErr } = await supabase
-          .from("sale_transactions")
-          .select("mobile_phone, created_at, subscription_action")
-          .eq("organization_id", organizationId)
-          .eq("item_type", "subscription")
-          .not("mobile_phone", "is", null)
-          .order("created_at", { ascending: false })
-          .range(subFrom, subFrom + PAGE_SIZE - 1);
-        if (subErr) throw subErr;
-        for (const tx of subs || []) {
-          if (!tx.mobile_phone) continue;
-          if (tx.subscription_action && !SUB_PAID_ACTIONS.has(tx.subscription_action)) continue;
-          if (!subMap.has(tx.mobile_phone)) {
-            subMap.set(tx.mobile_phone, tx.created_at);
-          }
-        }
-        subHasMore = (subs?.length || 0) === PAGE_SIZE;
-        subFrom += PAGE_SIZE;
-      }
-
-      // Fetch phones that already have visit history (sale transactions)
       const historyPhones = new Set<string>();
-      let histFrom = 0;
-      let histHasMore = true;
-      while (histHasMore) {
-        const { data: visitTx, error: visitErr } = await supabase
-          .from("sale_transactions")
-          .select("mobile_phone")
-          .eq("organization_id", organizationId)
-          .not("mobile_phone", "is", null)
-          .range(histFrom, histFrom + PAGE_SIZE - 1);
-        if (visitErr) throw visitErr;
-
-        for (const tx of visitTx || []) {
-          if (tx.mobile_phone) historyPhones.add(tx.mobile_phone);
-        }
-
-        histHasMore = (visitTx?.length || 0) === PAGE_SIZE;
-        histFrom += PAGE_SIZE;
+      const { data: summary, error: sumErr } = await supabase.rpc("get_clients_subscription_summary", {
+        p_organization_id: organizationId,
+      });
+      if (sumErr) throw sumErr;
+      for (const row of (summary as any[]) || []) {
+        if (!row.mobile_phone) continue;
+        historyPhones.add(row.mobile_phone);
+        if (row.last_paid_at) subMap.set(row.mobile_phone, row.last_paid_at);
       }
 
       setClients(allClients as Client[]);
