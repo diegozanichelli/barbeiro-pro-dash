@@ -385,6 +385,8 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
     // Store raw data for championship mode
     setRawBarberData(statsArray);
+    fetchChampionshipDetails(start, end);
+
 
     // Ranking de Performance (Serviços Extras + Produtos por Cliente)
     const performance = statsArray
