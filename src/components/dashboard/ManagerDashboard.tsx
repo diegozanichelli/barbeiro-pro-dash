@@ -27,6 +27,7 @@ import ManagerNavigation from "./manager/ManagerNavigation";
 import SubscriptionsTracking from "./manager/SubscriptionsTracking";
 import MonthlyPayroll from "./manager/MonthlyPayroll";
 import SubscriptionPlansManagement from "./manager/SubscriptionPlansManagement";
+import SubscriptionReconciliation from "./manager/SubscriptionReconciliation";
 import MonthlyOccurrencesSummary from "./manager/MonthlyOccurrencesSummary";
 import ClientsManagement from "./manager/ClientsManagement";
 import SendNotificationsButton from "./manager/SendNotificationsButton";
@@ -264,10 +265,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               quando o módulo de assinaturas está ligado. */}
           <TabsContent value="subscriptions" className="mt-0">
             <Tabs defaultValue="acompanhamento" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid sm:grid-cols-4">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-grid sm:grid-cols-5">
                 <TabsTrigger value="acompanhamento">Acompanhamento</TabsTrigger>
                 <TabsTrigger value="conversao">Conversão</TabsTrigger>
                 <TabsTrigger value="carteira">Carteira</TabsTrigger>
+                <TabsTrigger value="conciliacao">Conciliação Diária</TabsTrigger>
                 {hasSubscriptionModule && <TabsTrigger value="planos">Planos</TabsTrigger>}
               </TabsList>
               <TabsContent value="acompanhamento" className="mt-0">
@@ -278,6 +280,9 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
               </TabsContent>
               <TabsContent value="carteira" className="mt-0">
                 <SubscriptionAnalytics />
+              </TabsContent>
+              <TabsContent value="conciliacao" className="mt-0">
+                <SubscriptionReconciliation />
               </TabsContent>
               {hasSubscriptionModule && (
                 <TabsContent value="planos" className="mt-0">
