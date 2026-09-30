@@ -635,7 +635,23 @@ export default function Leaderboard({ viewerRole = "manager" }: LeaderboardProps
 
       {/* Championship View */}
       {viewMode === "championship" && (
-        <ChampionshipLeaderboard data={championshipData} championshipName={championshipName} />
+        <ChampionshipLeaderboard
+          data={championshipData}
+          championshipName={championshipName}
+          config={championshipConfig}
+          onConfigure={viewerRole === "manager" ? () => setShowCampaignModal(true) : undefined}
+        />
+      )}
+
+      {viewerRole === "manager" && (
+        <ChampionshipCampaignModal
+          open={showCampaignModal}
+          onOpenChange={setShowCampaignModal}
+          config={championshipConfig}
+          onSave={saveConfig}
+        />
+      )}
+
       )}
 
       {/* Financial View */}
