@@ -12,9 +12,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Switch } from "@/components/ui/switch";
 import ChampionshipLeaderboard from "./ChampionshipLeaderboard";
-import { useChampionshipPoints, ChampionshipBarber } from "@/hooks/useChampionshipPoints";
+import { useChampionshipPoints, ChampionshipDetail } from "@/hooks/useChampionshipPoints";
+import { useChampionshipConfig } from "@/hooks/useChampionshipConfig";
+import ChampionshipCampaignModal from "./manager/ChampionshipCampaignModal";
 import { getManausDate } from "@/lib/dateUtils";
 import { brl } from "@/lib/currency";
+
 
 interface RankingItem {
   barber_id: string;
