@@ -164,12 +164,11 @@ export default function SubscriptionPerformanceReport() {
     setLoading(true);
 
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
-    const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split("T")[0];
+    const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(new Date(selectedYear, selectedMonth, 0).getDate()).padStart(2, "0")}`;
 
     // Filtros com timezone Manaus (UTC-4) explícito para evitar bordas erradas
     const startISO = `${startDate}T00:00:00-04:00`;
     const endISO = `${endDate}T23:59:59-04:00`;
-    const debugPhone = "92984700424";
 
     try {
       // TODO(metrics-ssot): centralizar regra de "oportunidade de conversão" em hook/util único
@@ -275,19 +274,6 @@ export default function SubscriptionPerformanceReport() {
         };
 
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
-        if (normalizedPhone === debugPhone) {
-          console.info("[SubscriptionPerformanceReport][debug-phone][barber]", {
-            phone: normalizedPhone,
-            createdAt: (tx as any).created_at,
-            subscriptionAction: tx.subscription_action,
-            isNewClient: tx.is_new_client,
-            barberId: tx.barber_id,
-            unitId: tx.unit_id,
-            inRange: true,
-            startISO,
-            endISO,
-          });
-        }
         if (tx.is_new_client === true) {
           existing.rawNewAttendances++;
         }
@@ -361,19 +347,6 @@ export default function SubscriptionPerformanceReport() {
 
       receptionTx?.forEach((tx) => {
         const normalizedPhone = normalizePhoneForMetrics(tx.mobile_phone);
-        if (normalizedPhone === debugPhone) {
-          console.info("[SubscriptionPerformanceReport][debug-phone][reception]", {
-            phone: normalizedPhone,
-            createdAt: (tx as any).created_at,
-            subscriptionAction: tx.subscription_action,
-            isNewClient: tx.is_new_client,
-            barberId: null,
-            unitId: tx.unit_id,
-            inRange: true,
-            startISO,
-            endISO,
-          });
-        }
         if (
           tx.item_type === "subscription" &&
           tx.subscription_action === "legacy_import" &&

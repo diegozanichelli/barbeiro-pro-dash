@@ -1523,6 +1523,14 @@ export type Database = {
           mobile_phone: string
         }[]
       }
+      get_clients_subscription_summary: {
+        Args: { p_organization_id: string }
+        Returns: {
+          has_history: boolean
+          last_paid_at: string
+          mobile_phone: string
+        }[]
+      }
       get_inactive_clients: {
         Args: { p_barber_id?: string; p_ref_date?: string; p_unit_id?: string }
         Returns: {
@@ -1634,6 +1642,16 @@ export type Database = {
       recompute_all_client_origins: {
         Args: { p_organization_id: string }
         Returns: Json
+      }
+      save_subscription_plan: {
+        Args: {
+          p_name: string
+          p_organization_id: string
+          p_plan_id: string
+          p_price: number
+          p_service_ids: string[]
+        }
+        Returns: string
       }
       suggest_client_origin_units: {
         Args: { p_organization_id: string }

@@ -108,7 +108,7 @@ export default function SubscriptionAnalytics() {
 
   useEffect(() => {
     if (!organizationId) return;
-    supabase.from("units").select("id, name").eq("status", "active").order("name").then(({ data }) => {
+    supabase.from("units").select("id, name").eq("organization_id", organizationId).eq("status", "active").order("name").then(({ data }) => {
       if (data) setUnits(data);
     });
   }, [organizationId]);
