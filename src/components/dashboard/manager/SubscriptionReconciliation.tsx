@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { normalizePhoneKey } from "@/lib/normalizers";
 import { normalizeClientName } from "@/lib/clientName";
 import { getManausDate, manausDayStart, manausDayEnd, toDateKey } from "@/lib/dateUtils";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -254,7 +255,7 @@ export default function SubscriptionReconciliation() {
       for (let i = 1; i < lines.length; i++) {
         const cols = splitCsvLine(lines[i], delimiter);
         const name = (cols[idxName] || "").trim();
-        const phone = idxPhone >= 0 ? sanitizePhone(cols[idxPhone] || "") : "";
+        const phone = idxPhone >= 0 ? normalizePhoneKey(cols[idxPhone] || "") || "" : "";
         if (idxStatus >= 0) {
           const st = normalizeHeader(cols[idxStatus] || "");
           if (REJECTED_STATUS.test(st)) {
@@ -273,7 +274,10 @@ export default function SubscriptionReconciliation() {
           }
         }
 
-        if (!name || (phone && phone.length !== 11)) {
+        // Telefones com código do país (+55, 13 dígitos) ou fixo (10 dígitos) são
+        // aceitos aqui: viram chave de comparação normalizada ou caem no matching
+        // por nome. A validação estrita de celular (11 dígitos) acontece na importação.
+        if (!name) {
           skipped++;
           continue;
         }
@@ -306,7 +310,7 @@ export default function SubscriptionReconciliation() {
         const k = nameKey(tx.client_name);
         systemByName.set(k, [...(systemByName.get(k) || []), tx]);
       }
-      const phone = sanitizePhone(tx.mobile_phone || "");
+      const phone = normalizePhoneKey(tx.mobile_phone) || "";
       if (!phone) return;
       const list = systemByPhone.get(phone) || [];
       list.push(tx);
@@ -406,7 +410,9 @@ export default function SubscriptionReconciliation() {
         }
 
         try {
-          let phone = row.phone;
+          // Celular válido obrigatório para registrar; telefone estranho (fixo, lixo)
+          // cai no mesmo fallback de busca pelo nome cadastrado.
+          let phone = row.phone && row.phone.length === 11 ? row.phone : "";
           if (!phone) {
             const { data: found } = await supabase
               .from("clients")
@@ -420,7 +426,7 @@ export default function SubscriptionReconciliation() {
               );
               continue;
             }
-            phone = sanitizePhone(found[0].mobile_phone);
+            phone = normalizePhoneKey(found[0].mobile_phone) || "";
           }
           const client = await registerClientOrThrow({
             organizationId,
@@ -591,14 +597,14 @@ export default function SubscriptionReconciliation() {
               <FileSpreadsheet className="w-4 h-4" />
               <span className="font-medium text-foreground">{csvFileName}</span>
               <span>· {csvRows.length} cobranças · {brl(csvTotal)}</span>
-              {csvSkipped > 0 && <span>· {csvSkipped} linha(s) sem nome/celular</span>}
+              {csvSkipped > 0 && <span>· {csvSkipped} linha(s) não pagas ou sem nome</span>}
               {csvOutOfRange > 0 && <span>· {csvOutOfRange} de outras datas</span>}
             </div>
           )}
 
           <div className="rounded-lg border border-white/[0.06] bg-muted/20 p-3 text-xs text-muted-foreground">
-            O arquivo precisa ter, no mínimo, uma coluna com o nome do cliente e outra com o celular (11 dígitos).
-            Colunas de valor, plano e data são reconhecidas automaticamente quando existirem.
+            O arquivo precisa ter, no mínimo, uma coluna com o nome do cliente e outra com o celular
+            (com ou sem o código 55). Colunas de valor, plano e data são reconhecidas automaticamente quando existirem.
           </div>
         </CardContent>
       </Card>
