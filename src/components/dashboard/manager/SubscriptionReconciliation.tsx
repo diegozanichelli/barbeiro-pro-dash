@@ -21,7 +21,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { brl } from "@/lib/currency";
-import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
+import { formatPhone } from "@/lib/phoneUtils";
 import { normalizePhoneKey } from "@/lib/normalizers";
 import { normalizeClientName } from "@/lib/clientName";
 import { getManausDate, manausDayStart, manausDayEnd, toDateKey } from "@/lib/dateUtils";
