@@ -59,6 +59,55 @@ const norm = (s: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+// Conjunto de palavras-chave de um nome de plano, tolerante às diferenças entre
+// o gateway e o cadastro: tira acentos/pontuação, ignora prefixos "clube"/"plano",
+// a conjunção "e", e o plural (legendários -> legendario).
+const planTokens = (name: string): Set<string> => {
+  const raw = (name || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const tokens = raw
+    .filter((t, i) => !(i === 0 && (t === "clube" || t === "plano")))
+    .filter((t) => t !== "e")
+    .map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t));
+  return new Set(tokens);
+};
+
+const isSubset = (a: Set<string>, b: Set<string>) => [...a].every((t) => b.has(t));
+
+// Casa o nome de plano do CSV com um plano cadastrado.
+function matchPlanByName<T extends { name: string }>(text: string, plans: T[]): T | null {
+  const k = planTokens(text);
+  if (k.size === 0) return null;
+  // 1) conjunto de palavras idêntico
+  const exact = plans.find((p) => {
+    const pk = planTokens(p.name);
+    return pk.size === k.size && isSubset(k, pk);
+  });
+  if (exact) return exact;
+  // 2) um conjunto contido no outro — escolhe o de maior sobreposição; empate = sem match
+  let best: { plan: T; shared: number } | null = null;
+  let tie = false;
+  for (const p of plans) {
+    const pk = planTokens(p.name);
+    if (isSubset(k, pk) || isSubset(pk, k)) {
+      const shared = [...k].filter((t) => pk.has(t)).length;
+      if (!best || shared > best.shared) {
+        best = { plan: p, shared };
+        tie = false;
+      } else if (shared === best.shared) {
+        tie = true;
+      }
+    }
+  }
+  return best && !tie ? best.plan : null;
+}
+
 const parseBRNumber = (s: string): number => {
   const c = (s || "").trim().replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
   const n = Number(c);
@@ -87,11 +136,6 @@ export default function ControllerCsvImport({
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  const plansByNorm = useMemo(() => {
-    const m = new Map<string, Plan>();
-    plans.forEach((p) => m.set(norm(p.name), p));
-    return m;
-  }, [plans]);
   const unitsById = useMemo(() => {
     const m = new Map<string, string>();
     units.forEach((u) => m.set(u.id, u.name));
@@ -150,7 +194,7 @@ export default function ControllerCsvImport({
         const phone = sanitizePhone(c[idx.telefone] || "");
         if (!phone) continue;
         const planText = (c[idx.plano] || "").trim();
-        const matched = plansByNorm.get(norm(planText)) || null;
+        const matched = matchPlanByName(planText, plans);
         const dateKey =
           parseBRDateKey(c[idx.dataStatus] ?? "") ||
           parseBRDateKey(c[idx.venc] ?? "") ||
