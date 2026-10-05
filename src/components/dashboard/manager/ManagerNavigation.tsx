@@ -102,7 +102,7 @@ export default function ManagerNavigation({
   ];
 
   const financeiroItems: NavItem[] = [
-    { id: "catalog", label: "Comissões", icon: Package },
+    { id: "catalog", label: "Catálogo e Comissões", icon: Package },
     { id: "entries", label: "Lançamentos", icon: ClipboardList },
     { id: "payroll", label: "Fechamento Mensal", icon: Calculator },
   ];
