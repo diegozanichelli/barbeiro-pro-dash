@@ -235,11 +235,14 @@ export default function ControllerCsvImport({
       const unitByPhone = new Map<string, string | null>();
       for (let i = 0; i < phones.length; i += 300) {
         const chunk = phones.slice(i, i + 300);
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("clients")
           .select("mobile_phone, subscription_unit_id")
           .eq("organization_id", organizationId)
           .in("mobile_phone", chunk);
+        // Falha de leitura aqui não pode virar "todos sem unidade": isso jogaria
+        // a renovação de quem já tem unidade para a unidade padrão errada. Aborta.
+        if (error) throw new Error("Falha ao consultar a base de clientes. Tente novamente.");
         (data || []).forEach((cl: { mobile_phone: string; subscription_unit_id: string | null }) =>
           unitByPhone.set(cl.mobile_phone, cl.subscription_unit_id)
         );
@@ -251,7 +254,7 @@ export default function ControllerCsvImport({
       if (dayKeys.length > 0) {
         const minDay = dayKeys.sort()[0];
         const maxDay = dayKeys.sort()[dayKeys.length - 1];
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("sale_transactions")
           .select("mobile_phone, price_sold, created_at")
           .eq("organization_id", organizationId)
@@ -259,6 +262,8 @@ export default function ControllerCsvImport({
           .eq("attribution_source", "auto_recurring")
           .gte("created_at", `${minDay}T00:00:00${MANAUS_OFFSET}`)
           .lte("created_at", `${maxDay}T23:59:59${MANAUS_OFFSET}`);
+        // Sem a checagem de duplicadas confiável, poderíamos reimportar em dobro. Aborta.
+        if (error) throw new Error("Falha ao checar lançamentos duplicados. Tente novamente.");
         (data || []).forEach((t: { mobile_phone: string | null; price_sold: number; created_at: string }) => {
           const dk = t.created_at.slice(0, 10);
           existing.add(`${sanitizePhone(t.mobile_phone || "")}|${dk}|${Number(t.price_sold).toFixed(2)}`);
@@ -285,7 +290,8 @@ export default function ControllerCsvImport({
       setRows(finalRows);
     } catch (err) {
       console.error("Erro ao ler CSV:", err);
-      toast.error("Não foi possível ler o arquivo CSV.");
+      toast.error(err instanceof Error ? err.message : "Não foi possível ler o arquivo CSV.");
+      setRows([]);
     } finally {
       setParsing(false);
     }
@@ -369,7 +375,7 @@ export default function ControllerCsvImport({
       for (const [planId, phones] of phonesByPlan) {
         for (let i = 0; i < phones.length; i += 300) {
           const chunk = phones.slice(i, i + 300);
-          await supabase
+          const { error } = await supabase
             .from("clients")
             .update({
               subscription_plan_id: planId,
@@ -378,6 +384,7 @@ export default function ControllerCsvImport({
             })
             .eq("organization_id", organizationId)
             .in("mobile_phone", chunk);
+          if (error) throw error;
         }
       }
 
@@ -386,12 +393,13 @@ export default function ControllerCsvImport({
         const allPhones = [...uniq.keys()];
         for (let i = 0; i < allPhones.length; i += 300) {
           const chunk = allPhones.slice(i, i + 300);
-          await supabase
+          const { error } = await supabase
             .from("clients")
             .update({ subscription_unit_id: defaultUnitId })
             .eq("organization_id", organizationId)
             .in("mobile_phone", chunk)
             .is("subscription_unit_id", null);
+          if (error) throw error;
         }
       }
 
