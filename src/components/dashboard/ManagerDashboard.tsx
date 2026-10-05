@@ -38,6 +38,7 @@ import InactiveClientsReport from "./manager/InactiveClientsReport";
 import ReportsAuditPanel from "./manager/ReportsAuditPanel";
 import PerformanceDashboard from "./manager/PerformanceDashboard";
 import ReportsFilterBar from "./manager/ReportsFilterBar";
+import SubscriptionMovementReport from "./manager/SubscriptionMovementReport";
 import { ReportsFilterProvider } from "@/contexts/ReportsFilterProvider";
 
 
@@ -236,6 +237,12 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
                 <BestSalesDays />
               </TabsContent>
             </Tabs>
+          </TabsContent>
+
+          {/* Movimentação de assinaturas: unifica recepção e controladoria */}
+          <TabsContent value="report-movement" className="mt-0 space-y-4">
+            <ReportsFilterBar fields={["month", "year", "unit"]} />
+            <SubscriptionMovementReport />
           </TabsContent>
 
           {/* Desempenho da recepção é operação, não relatório de resultado */}
