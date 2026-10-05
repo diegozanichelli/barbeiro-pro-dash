@@ -47,6 +47,7 @@ import { ptBR } from "date-fns/locale";
 import { serializeCycleMetadata } from "@/lib/subscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
+import ControllerCsvImport from "./ControllerCsvImport";
 
 type EntryMode = "cancel" | "auto_recurring" | "online";
 
@@ -538,6 +539,14 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
           </div>
         </CardContent>
       </Card>
+
+      {/* Importação em lote do relatório do gateway (renovações automáticas) */}
+      <ControllerCsvImport
+        organizationId={organizationId}
+        plans={plans}
+        units={units}
+        onImported={loadDayEntries}
+      />
 
       {/* Formulário por tipo de evento */}
       <Card className="bg-card border-border shadow-card-custom">
