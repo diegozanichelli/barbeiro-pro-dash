@@ -11,8 +11,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { FileUp, Loader2, CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { FileUp, Loader2, CheckCircle2, AlertTriangle, X, Building2 } from "lucide-react";
 import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { MANAUS_OFFSET } from "@/lib/dateUtils";
@@ -137,6 +145,11 @@ export default function ControllerCsvImport({
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Unidade padrão para clientes sem histórico (sem unidade resolvida).
+  const [defaultUnitId, setDefaultUnitId] = useState<string>("");
+
+  // Unidade efetiva de uma linha: a do cliente, ou a padrão escolhida.
+  const effUnitId = (r: ParsedRow): string | null => r.unitId ?? (defaultUnitId || null);
 
   const unitsById = useMemo(() => {
     const m = new Map<string, string>();
@@ -222,11 +235,14 @@ export default function ControllerCsvImport({
       const unitByPhone = new Map<string, string | null>();
       for (let i = 0; i < phones.length; i += 300) {
         const chunk = phones.slice(i, i + 300);
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("clients")
           .select("mobile_phone, subscription_unit_id")
           .eq("organization_id", organizationId)
           .in("mobile_phone", chunk);
+        // Falha de leitura aqui não pode virar "todos sem unidade": isso jogaria
+        // a renovação de quem já tem unidade para a unidade padrão errada. Aborta.
+        if (error) throw new Error("Falha ao consultar a base de clientes. Tente novamente.");
         (data || []).forEach((cl: { mobile_phone: string; subscription_unit_id: string | null }) =>
           unitByPhone.set(cl.mobile_phone, cl.subscription_unit_id)
         );
@@ -238,7 +254,7 @@ export default function ControllerCsvImport({
       if (dayKeys.length > 0) {
         const minDay = dayKeys.sort()[0];
         const maxDay = dayKeys.sort()[dayKeys.length - 1];
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("sale_transactions")
           .select("mobile_phone, price_sold, created_at")
           .eq("organization_id", organizationId)
@@ -246,6 +262,8 @@ export default function ControllerCsvImport({
           .eq("attribution_source", "auto_recurring")
           .gte("created_at", `${minDay}T00:00:00${MANAUS_OFFSET}`)
           .lte("created_at", `${maxDay}T23:59:59${MANAUS_OFFSET}`);
+        // Sem a checagem de duplicadas confiável, poderíamos reimportar em dobro. Aborta.
+        if (error) throw new Error("Falha ao checar lançamentos duplicados. Tente novamente.");
         (data || []).forEach((t: { mobile_phone: string | null; price_sold: number; created_at: string }) => {
           const dk = t.created_at.slice(0, 10);
           existing.add(`${sanitizePhone(t.mobile_phone || "")}|${dk}|${Number(t.price_sold).toFixed(2)}`);
@@ -272,7 +290,8 @@ export default function ControllerCsvImport({
       setRows(finalRows);
     } catch (err) {
       console.error("Erro ao ler CSV:", err);
-      toast.error("Não foi possível ler o arquivo CSV.");
+      toast.error(err instanceof Error ? err.message : "Não foi possível ler o arquivo CSV.");
+      setRows([]);
     } finally {
       setParsing(false);
     }
@@ -300,7 +319,7 @@ export default function ControllerCsvImport({
           commission_rate_used: 0,
           commission_amount: 0,
           subscription_plan_id: r.planId,
-          unit_id: r.unitId,
+          unit_id: effUnitId(r),
           client_name: r.clientName || null,
           mobile_phone: r.phone,
           is_new_client: false,
@@ -356,7 +375,7 @@ export default function ControllerCsvImport({
       for (const [planId, phones] of phonesByPlan) {
         for (let i = 0; i < phones.length; i += 300) {
           const chunk = phones.slice(i, i + 300);
-          await supabase
+          const { error } = await supabase
             .from("clients")
             .update({
               subscription_plan_id: planId,
@@ -365,6 +384,22 @@ export default function ControllerCsvImport({
             })
             .eq("organization_id", organizationId)
             .in("mobile_phone", chunk);
+          if (error) throw error;
+        }
+      }
+
+      // Unidade padrão: preenche só quem está SEM unidade (não sobrescreve quem já tem).
+      if (defaultUnitId) {
+        const allPhones = [...uniq.keys()];
+        for (let i = 0; i < allPhones.length; i += 300) {
+          const chunk = allPhones.slice(i, i + 300);
+          const { error } = await supabase
+            .from("clients")
+            .update({ subscription_unit_id: defaultUnitId })
+            .eq("organization_id", organizationId)
+            .in("mobile_phone", chunk)
+            .is("subscription_unit_id", null);
+          if (error) throw error;
         }
       }
 
@@ -420,6 +455,28 @@ export default function ControllerCsvImport({
               </button>
             </span>
           )}
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs flex items-center gap-1">
+            <Building2 className="w-3.5 h-3.5" /> Unidade padrão (clientes sem unidade)
+          </Label>
+          <Select value={defaultUnitId || "none"} onValueChange={(v) => setDefaultUnitId(v === "none" ? "" : v)}>
+            <SelectTrigger className="max-w-xs">
+              <SelectValue placeholder="Sem unidade padrão" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sem unidade padrão</SelectItem>
+              {units.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            Aplicada só a quem não tem unidade (clientes novos ou sem histórico). Quem já tem unidade é preservado.
+          </p>
         </div>
 
         {rows.length > 0 && (
@@ -481,7 +538,12 @@ export default function ControllerCsvImport({
                           <span className="block text-[11px] text-amber-600 dark:text-amber-400">sem vínculo</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{r.unitName}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {(() => {
+                          const eu = effUnitId(r);
+                          return eu ? unitsById.get(eu) || "Unidade removida" : "Não informada";
+                        })()}
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {r.dateKey ? r.dateKey.split("-").reverse().join("/") : "—"}
                       </TableCell>
