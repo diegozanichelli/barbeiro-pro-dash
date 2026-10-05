@@ -17,6 +17,7 @@ import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { MANAUS_OFFSET } from "@/lib/dateUtils";
 import { serializeCycleMetadata } from "@/lib/subscriptionCycle";
+import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { addMonths, parseISO } from "date-fns";
 
 interface Plan {
@@ -48,6 +49,7 @@ interface ParsedRow {
   planId: string | null;
   unitId: string | null;
   unitName: string;
+  clientExists: boolean;
   status: RowStatus;
 }
 
@@ -143,14 +145,14 @@ export default function ControllerCsvImport({
   }, [units]);
 
   const counts = useMemo(() => {
-    const ok = rows.filter((r) => r.status === "ok" || r.status === "no_plan").length;
+    const willImport = (r: ParsedRow) => r.status === "ok" || r.status === "no_plan";
+    const ok = rows.filter(willImport).length;
     const dup = rows.filter((r) => r.status === "dup").length;
     const ignored = rows.filter((r) => r.status === "ignored_status").length;
     const noPlan = rows.filter((r) => r.status === "no_plan").length;
-    const mrr = rows
-      .filter((r) => r.status === "ok" || r.status === "no_plan")
-      .reduce((a, r) => a + r.valor, 0);
-    return { ok, dup, ignored, noPlan, mrr };
+    const newClients = rows.filter((r) => willImport(r) && !r.clientExists).length;
+    const mrr = rows.filter(willImport).reduce((a, r) => a + r.valor, 0);
+    return { ok, dup, ignored, noPlan, newClients, mrr };
   }, [rows]);
 
   const reset = () => {
@@ -251,6 +253,7 @@ export default function ControllerCsvImport({
       }
 
       const finalRows: ParsedRow[] = parsed.map((p) => {
+        const clientExists = unitByPhone.has(p.phone);
         const unitId = unitByPhone.get(p.phone) ?? null;
         const unitName = unitId ? unitsById.get(unitId) || "Unidade removida" : "Não informada";
         let status: RowStatus;
@@ -263,7 +266,7 @@ export default function ControllerCsvImport({
         } else {
           status = "ok";
         }
-        return { ...p, unitId, unitName, status };
+        return { ...p, unitId, unitName, clientExists, status };
       });
 
       setRows(finalRows);
@@ -315,7 +318,61 @@ export default function ControllerCsvImport({
         inserted += batch.length;
       }
 
-      toast.success(`${inserted} renovação${inserted === 1 ? "" : "ões"} automática${inserted === 1 ? "" : "s"} importada${inserted === 1 ? "" : "s"}.`);
+      // Cria o cliente se não existir e vincula/reativa o plano (por telefone único).
+      const uniq = new Map<string, { name: string; planId: string | null }>();
+      for (const r of toImport) {
+        if (r.phone) uniq.set(r.phone, { name: r.clientName, planId: r.planId });
+      }
+      const entries = [...uniq.entries()];
+      let clientsCreated = 0;
+      let clientErrors = 0;
+      for (let i = 0; i < entries.length; i += 8) {
+        const chunk = entries.slice(i, i + 8);
+        await Promise.all(
+          chunk.map(async ([phone, info]) => {
+            try {
+              const res = await registerClientOrThrow({
+                organizationId,
+                clientName: info.name || "",
+                mobilePhone: phone,
+              });
+              if (!res.reusedByPhone) clientsCreated++;
+            } catch {
+              clientErrors++;
+            }
+          })
+        );
+      }
+
+      // Vincula o plano (e limpa flag de cancelamento) agrupando por plano.
+      const phonesByPlan = new Map<string, string[]>();
+      for (const [phone, info] of uniq) {
+        if (info.planId) {
+          const arr = phonesByPlan.get(info.planId) || [];
+          arr.push(phone);
+          phonesByPlan.set(info.planId, arr);
+        }
+      }
+      for (const [planId, phones] of phonesByPlan) {
+        for (let i = 0; i < phones.length; i += 300) {
+          const chunk = phones.slice(i, i + 300);
+          await supabase
+            .from("clients")
+            .update({
+              subscription_plan_id: planId,
+              subscription_cancelled_at: null,
+              subscription_cancel_reason: null,
+            })
+            .eq("organization_id", organizationId)
+            .in("mobile_phone", chunk);
+        }
+      }
+
+      toast.success(
+        `${inserted} renovação${inserted === 1 ? "" : "ões"} importada${inserted === 1 ? "" : "s"}` +
+          `${clientsCreated > 0 ? ` · ${clientsCreated} cliente(s) novo(s)` : ""}` +
+          `${clientErrors > 0 ? ` · ${clientErrors} ignorado(s) por telefone/nome inválido` : ""}.`
+      );
       reset();
       onImported();
     } catch (err) {
@@ -335,7 +392,8 @@ export default function ControllerCsvImport({
         </CardTitle>
         <CardDescription>
           Suba o relatório de cobranças do cartão (separado por ";"). Cada linha "Capturada na
-          Operadora" vira uma renovação automática. Confira antes de confirmar; duplicadas são ignoradas.
+          Operadora" vira uma renovação automática. O cliente é buscado pelo telefone: se não
+          existir, é cadastrado; se existir, o plano é vinculado. Confira antes de confirmar; duplicadas são ignoradas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -366,10 +424,14 @@ export default function ControllerCsvImport({
 
         {rows.length > 0 && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <div className="rounded-md border bg-secondary/40 p-2">
                 <p className="text-xs text-muted-foreground">A importar</p>
                 <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{counts.ok}</p>
+              </div>
+              <div className="rounded-md border bg-secondary/40 p-2">
+                <p className="text-xs text-muted-foreground">Clientes novos</p>
+                <p className="text-lg font-bold">{counts.newClients}</p>
               </div>
               <div className="rounded-md border bg-secondary/40 p-2">
                 <p className="text-xs text-muted-foreground">MRR</p>
@@ -380,7 +442,7 @@ export default function ControllerCsvImport({
                 <p className="text-lg font-bold text-muted-foreground">{counts.dup}</p>
               </div>
               <div className="rounded-md border bg-secondary/40 p-2">
-                <p className="text-xs text-muted-foreground">Ignoradas (status)</p>
+                <p className="text-xs text-muted-foreground">Ignoradas</p>
                 <p className="text-lg font-bold text-muted-foreground">{counts.ignored}</p>
               </div>
             </div>
