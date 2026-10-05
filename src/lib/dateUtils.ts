@@ -80,6 +80,28 @@ export function getCurrentDay(): number {
 }
 
 /**
+ * Dias que o controlador deve lançar por padrão, seguindo a regra operacional:
+ * ele registra sempre o movimento do dia anterior. Na segunda-feira, isso
+ * engloba o fim de semana (sábado e domingo); nos demais dias, apenas o dia
+ * imediatamente anterior. É só uma SUGESTÃO inteligente — a tela permite ajustar
+ * a data manualmente para corrigir lançamentos.
+ * @param today - Data atual (padrão: data de Manaus)
+ * @returns lista de chaves yyyy-MM-dd em ordem cronológica
+ */
+export function getControllerDefaultDays(today: Date = getManausDate()): string[] {
+  const dayAt = (offset: number): string =>
+    toDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset));
+
+  // getDay(): 0=domingo, 1=segunda, ... 6=sábado
+  if (today.getDay() === 1) {
+    // Segunda-feira → sábado (2 dias atrás) e domingo (1 dia atrás)
+    return [dayAt(2), dayAt(1)];
+  }
+  // Demais dias → somente ontem
+  return [dayAt(1)];
+}
+
+/**
  * Calcula o número de dias restantes no mês atual (incluindo hoje)
  * Considera o mês completo e exclui apenas feriados configurados
  * @param today - Data atual (padrão: data de Manaus)

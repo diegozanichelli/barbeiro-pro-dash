@@ -57,3 +57,6 @@ verify_jwt = false
 
 [functions.delete-organization]
 verify_jwt = true
+
+[functions.create-controller]
+verify_jwt = true

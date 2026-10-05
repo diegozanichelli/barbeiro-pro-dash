@@ -5,6 +5,7 @@ import { User } from "@supabase/supabase-js";
 import SuperAdminDashboard from "@/components/dashboard/SuperAdminDashboard";
 import ManagerDashboard from "@/components/dashboard/ManagerDashboard";
 import BarberDashboard from "@/components/dashboard/BarberDashboard";
+import ControllerDashboard from "@/components/dashboard/ControllerDashboard";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,8 @@ export default function Dashboard() {
           <SuperAdminDashboard user={user} />
         ) : userRole === "manager" ? (
           <ManagerDashboard user={user} />
+        ) : userRole === "controller" ? (
+          <ControllerDashboard user={user} />
         ) : (
           <BarberDashboard user={user} />
         )}

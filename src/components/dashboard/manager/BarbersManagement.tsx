@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Users, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import ControllerAccessCard from "./ControllerAccessCard";
 
 function PasswordCheck({ label, met }: { label: string; met: boolean }) {
   return (
@@ -196,6 +197,7 @@ export default function BarbersManagement() {
   };
 
   return (
+    <div className="space-y-6">
     <Card className="bg-card border-border shadow-card-custom">
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -393,5 +395,8 @@ export default function BarbersManagement() {
         </Table>
       </CardContent>
     </Card>
+
+    <ControllerAccessCard />
+    </div>
   );
 }
