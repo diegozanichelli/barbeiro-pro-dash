@@ -16,7 +16,16 @@
 --
 -- O escopo de escrita em sale_transactions é travado por item_type
 -- = 'subscription' e attribution_source na lista do controlador, para que o
--- papel não consiga criar/apagar vendas operacionais.
+-- papel não consiga criar/apagar vendas operacionais. O SELECT também é
+-- limitado a assinaturas (o filtro no React não é fronteira de segurança), e o
+-- DELETE só atinge linhas criadas pelo próprio usuário (coluna created_by), para
+-- o controlador não apagar renovações automáticas lançadas pelo gestor.
+
+-- Carimbo de autoria: quem inseriu a linha. Default auth.uid() cobre todos os
+-- caminhos de insert (inclusive RPCs SECURITY DEFINER, onde auth.uid() continua
+-- sendo o chamador). Linhas antigas ficam com NULL.
+ALTER TABLE public.sale_transactions
+  ADD COLUMN IF NOT EXISTS created_by uuid DEFAULT auth.uid();
 
 -- ---------------------------------------------------------------------------
 -- clients
@@ -58,6 +67,7 @@ FOR SELECT
 USING (
   organization_id = get_user_organization(auth.uid())
   AND has_role(auth.uid(), 'controller'::app_role)
+  AND item_type = 'subscription'
 );
 
 CREATE POLICY "Controllers can insert subscription movements"
@@ -78,4 +88,5 @@ USING (
   AND has_role(auth.uid(), 'controller'::app_role)
   AND item_type = 'subscription'
   AND attribution_source IN ('controller', 'online', 'auto_recurring')
+  AND created_by = auth.uid()
 );

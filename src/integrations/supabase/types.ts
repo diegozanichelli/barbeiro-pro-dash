@@ -1088,6 +1088,7 @@ export type Database = {
           commission_amount: number
           commission_rate_used: number
           created_at: string
+          created_by: string | null
           daily_production_id: string | null
           description: string | null
           downgrade_reason: string | null
@@ -1115,6 +1116,7 @@ export type Database = {
           commission_amount: number
           commission_rate_used: number
           created_at?: string
+          created_by?: string | null
           daily_production_id?: string | null
           description?: string | null
           downgrade_reason?: string | null
@@ -1142,6 +1144,7 @@ export type Database = {
           commission_amount?: number
           commission_rate_used?: number
           created_at?: string
+          created_by?: string | null
           daily_production_id?: string | null
           description?: string | null
           downgrade_reason?: string | null

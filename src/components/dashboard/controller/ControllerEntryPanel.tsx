@@ -256,6 +256,8 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       attribution_source: "controller",
       source: "manager",
       price_sold: 0,
+      commission_rate_used: 0,
+      commission_amount: 0,
       subscription_plan_id: planId,
       previous_plan_id: planId,
       unit_id: chosenUnitId || selectedClient.subscription_unit_id || null,
@@ -296,6 +298,8 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       attribution_source: "auto_recurring",
       source: "manager",
       price_sold: plan.price,
+      commission_rate_used: 0,
+      commission_amount: 0,
       subscription_plan_id: plan.id,
       unit_id: chosenUnitId || selectedClient.subscription_unit_id || null,
       client_name: selectedClient.name,
@@ -332,17 +336,35 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       return;
     }
 
-    await registerClientOrThrow({ organizationId, clientName: name, mobilePhone: phone });
-
-    // Recupera o cliente (criado ou já existente) para ter id e unidade atual.
-    const { data: cliRow } = await supabase
+    // Detecta se o cliente já existe ANTES de cadastrar: define is_new_client
+    // corretamente (não inflar métrica de cliente novo) e guarda o plano anterior
+    // para o desfazer restaurar o estado certo.
+    const { data: existingRow } = await supabase
       .from("clients")
-      .select("id, subscription_unit_id")
+      .select("id, subscription_unit_id, subscription_plan_id")
       .eq("organization_id", organizationId)
       .eq("mobile_phone", phone)
       .maybeSingle();
 
-    const unitId = chosenUnitId || cliRow?.subscription_unit_id || null;
+    const existed = !!existingRow;
+    const prevPlanId = existingRow?.subscription_plan_id ?? null;
+
+    // Garante o cadastro (cria se novo, reaproveita se já existe).
+    await registerClientOrThrow({ organizationId, clientName: name, mobilePhone: phone });
+
+    // Recupera o id (o cadastro pode ter acabado de criar o cliente).
+    const clientRow =
+      existingRow ??
+      (
+        await supabase
+          .from("clients")
+          .select("id, subscription_unit_id, subscription_plan_id")
+          .eq("organization_id", organizationId)
+          .eq("mobile_phone", phone)
+          .maybeSingle()
+      ).data;
+
+    const unitId = chosenUnitId || clientRow?.subscription_unit_id || null;
     const anchor = parseISO(selectedDate);
 
     const { error: txErr } = await supabase.from("sale_transactions").insert({
@@ -354,17 +376,20 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       attribution_source: "online",
       source: "manager",
       price_sold: plan.price,
+      commission_rate_used: 0,
+      commission_amount: 0,
       subscription_plan_id: plan.id,
+      previous_plan_id: prevPlanId,
       unit_id: unitId,
       client_name: name,
       mobile_phone: phone,
-      is_new_client: true,
+      is_new_client: !existed,
       created_at: createdAtIso,
       description: serializeCycleMetadata(anchor, addMonths(anchor, 1)),
     });
     if (txErr) throw txErr;
 
-    if (cliRow?.id) {
+    if (clientRow?.id) {
       await supabase
         .from("clients")
         .update({
@@ -374,7 +399,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
           subscription_cancel_reason: null,
           ...(unitId ? { subscription_unit_id: unitId } : {}),
         })
-        .eq("id", cliRow.id);
+        .eq("id", clientRow.id);
     }
 
     toast.success(`Venda online registrada para ${name}.`);
@@ -424,9 +449,14 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
             .eq("organization_id", organizationId)
             .eq("mobile_phone", entry.mobile_phone);
         } else if (entry.subscription_action === "new" && entry.attribution_source === "online") {
+          // Restaura o plano anterior (null se era cliente realmente novo),
+          // em vez de zerar sempre — não derruba quem já era assinante.
           await supabase
             .from("clients")
-            .update({ subscription_plan_id: null, subscription_started_at: null })
+            .update({
+              subscription_plan_id: entry.previous_plan_id,
+              subscription_started_at: null,
+            })
             .eq("organization_id", organizationId)
             .eq("mobile_phone", entry.mobile_phone);
         }
