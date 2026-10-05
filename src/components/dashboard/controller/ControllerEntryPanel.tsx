@@ -151,6 +151,14 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
+  // Id do controlador logado — a lista do dia mostra só o que ELE lançou
+  // (as linhas carimbadas com created_by = seu uid), evitando exibir e tentar
+  // apagar renovações automáticas que o gestor lançou.
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
   // ---- carregar catálogos ----
   useEffect(() => {
     if (!organizationId) return;
@@ -176,7 +184,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
 
   // ---- carregar lançamentos do dia ----
   const loadDayEntries = useCallback(async () => {
-    if (!organizationId || !selectedDate) return;
+    if (!organizationId || !selectedDate || !userId) return;
     setLoadingEntries(true);
     try {
       const { data, error } = await supabase
@@ -186,6 +194,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
         )
         .eq("organization_id", organizationId)
         .eq("item_type", "subscription")
+        .eq("created_by", userId)
         .in("attribution_source", ["controller", "online", "auto_recurring"])
         .gte("created_at", manausDayStart(selectedDate))
         .lte("created_at", manausDayEnd(selectedDate))
@@ -197,7 +206,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
     } finally {
       setLoadingEntries(false);
     }
-  }, [organizationId, selectedDate]);
+  }, [organizationId, selectedDate, userId]);
 
   useEffect(() => {
     loadDayEntries();
@@ -339,12 +348,13 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
     // Detecta se o cliente já existe ANTES de cadastrar: define is_new_client
     // corretamente (não inflar métrica de cliente novo) e guarda o plano anterior
     // para o desfazer restaurar o estado certo.
-    const { data: existingRow } = await supabase
+    const { data: existingRow, error: existingErr } = await supabase
       .from("clients")
       .select("id, subscription_unit_id, subscription_plan_id")
       .eq("organization_id", organizationId)
       .eq("mobile_phone", phone)
       .maybeSingle();
+    if (existingErr) throw existingErr;
 
     const existed = !!existingRow;
     const prevPlanId = existingRow?.subscription_plan_id ?? null;
@@ -353,16 +363,17 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
     await registerClientOrThrow({ organizationId, clientName: name, mobilePhone: phone });
 
     // Recupera o id (o cadastro pode ter acabado de criar o cliente).
-    const clientRow =
-      existingRow ??
-      (
-        await supabase
-          .from("clients")
-          .select("id, subscription_unit_id, subscription_plan_id")
-          .eq("organization_id", organizationId)
-          .eq("mobile_phone", phone)
-          .maybeSingle()
-      ).data;
+    let clientRow = existingRow;
+    if (!clientRow) {
+      const { data: fetched, error: fetchErr } = await supabase
+        .from("clients")
+        .select("id, subscription_unit_id, subscription_plan_id")
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", phone)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      clientRow = fetched;
+    }
 
     const unitId = chosenUnitId || clientRow?.subscription_unit_id || null;
     const anchor = parseISO(selectedDate);
@@ -390,7 +401,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
     if (txErr) throw txErr;
 
     if (clientRow?.id) {
-      await supabase
+      const { error: updErr } = await supabase
         .from("clients")
         .update({
           subscription_plan_id: plan.id,
@@ -400,6 +411,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
           ...(unitId ? { subscription_unit_id: unitId } : {}),
         })
         .eq("id", clientRow.id);
+      if (updErr) throw updErr;
     }
 
     toast.success(`Venda online registrada para ${name}.`);
@@ -450,12 +462,14 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
             .eq("mobile_phone", entry.mobile_phone);
         } else if (entry.subscription_action === "new" && entry.attribution_source === "online") {
           // Restaura o plano anterior (null se era cliente realmente novo),
-          // em vez de zerar sempre — não derruba quem já era assinante.
+          // em vez de zerar sempre — não derruba quem já era assinante. Só zera
+          // a data de início quando o cliente não tinha plano antes (adesão nova
+          // de fato); se já era assinante, preserva a data original.
           await supabase
             .from("clients")
             .update({
               subscription_plan_id: entry.previous_plan_id,
-              subscription_started_at: null,
+              ...(entry.previous_plan_id ? {} : { subscription_started_at: null }),
             })
             .eq("organization_id", organizationId)
             .eq("mobile_phone", entry.mobile_phone);
