@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791222160920,
+      "tag": "0000_add_controller_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791222180955,
+      "tag": "0001_controller_rls_and_created_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791222185769,
+      "tag": "0002_client_subscription_cancel_fields",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS subscription_cancelled_at timestamptz, ADD COLUMN IF NOT EXISTS subscription_cancel_reason text;
