@@ -424,8 +424,6 @@ export type Database = {
           name: string
           normalized_name: string | null
           organization_id: string
-          subscription_cancel_reason: string | null
-          subscription_cancelled_at: string | null
           subscription_plan_id: string | null
           subscription_started_at: string | null
           subscription_unit_id: string | null
@@ -439,8 +437,6 @@ export type Database = {
           name: string
           normalized_name?: string | null
           organization_id: string
-          subscription_cancel_reason?: string | null
-          subscription_cancelled_at?: string | null
           subscription_plan_id?: string | null
           subscription_started_at?: string | null
           subscription_unit_id?: string | null
@@ -454,8 +450,6 @@ export type Database = {
           name?: string
           normalized_name?: string | null
           organization_id?: string
-          subscription_cancel_reason?: string | null
-          subscription_cancelled_at?: string | null
           subscription_plan_id?: string | null
           subscription_started_at?: string | null
           subscription_unit_id?: string | null
@@ -1088,7 +1082,6 @@ export type Database = {
           commission_amount: number
           commission_rate_used: number
           created_at: string
-          created_by: string | null
           daily_production_id: string | null
           description: string | null
           downgrade_reason: string | null
@@ -1116,7 +1109,6 @@ export type Database = {
           commission_amount: number
           commission_rate_used: number
           created_at?: string
-          created_by?: string | null
           daily_production_id?: string | null
           description?: string | null
           downgrade_reason?: string | null
@@ -1144,7 +1136,6 @@ export type Database = {
           commission_amount?: number
           commission_rate_used?: number
           created_at?: string
-          created_by?: string | null
           daily_production_id?: string | null
           description?: string | null
           downgrade_reason?: string | null
@@ -1790,7 +1781,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "super_admin" | "manager" | "barber" | "controller"
+      app_role: "super_admin" | "manager" | "barber"
       seasonality_source:
         | "linear"
         | "previous_year"
@@ -1924,7 +1915,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["super_admin", "manager", "barber", "controller"],
+      app_role: ["super_admin", "manager", "barber"],
       seasonality_source: [
         "linear",
         "previous_year",
