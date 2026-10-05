@@ -1781,7 +1781,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "super_admin" | "manager" | "barber"
+      app_role: "super_admin" | "manager" | "barber" | "controller"
       seasonality_source:
         | "linear"
         | "previous_year"
@@ -1915,7 +1915,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["super_admin", "manager", "barber"],
+      app_role: ["super_admin", "manager", "barber", "controller"],
       seasonality_source: [
         "linear",
         "previous_year",
