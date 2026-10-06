@@ -1653,6 +1653,13 @@ export type Database = {
           subs_by_plan: Json
         }[]
       }
+      get_client_units_by_phones: {
+        Args: { p_organization_id: string; p_phones: string[] }
+        Returns: {
+          mobile_phone: string
+          unit_id: string
+        }[]
+      }
       get_clients_subscription_summary: {
         Args: { p_organization_id: string }
         Returns: {
