@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { getManausDate, manausDayStart, manausDayEnd, toDateKey } from "@/lib/dateUtils";
 import { fetchAllRows } from "@/lib/supabasePagination";
-import { isLegacyImport, isValidOpportunity } from "@/lib/metricsRules";
+import { isLegacyImport, isValidOpportunity, isCancellation } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Building2, Crown, TrendingUp, TrendingDown, Minus, Users, HelpCircle } from "lucide-react";
@@ -98,10 +98,10 @@ export default function ReceptionPerformanceReport() {
       );
 
       // Buscar mês anterior para trend
-      const prevMonthData = await fetchAllRows<{ unit_id: string | null; subscription_action: string | null }>(() =>
+      const prevMonthData = await fetchAllRows<{ unit_id: string | null; subscription_action: string | null; item_type: string | null }>(() =>
         supabase
           .from("sale_transactions")
-          .select("unit_id, subscription_action")
+          .select("unit_id, subscription_action, item_type")
           .eq("organization_id", organizationId)
           .eq("item_type", "subscription")
           .is("barber_id", null)
@@ -140,7 +140,7 @@ export default function ReceptionPerformanceReport() {
       // não contam como adesão, e "cliente novo" exige telefone válido de 11 dígitos.
       const seenNewPhones = new Set<string>();
       currentMonthData?.forEach(tx => {
-        if (isLegacyImport(tx)) return;
+        if (isLegacyImport(tx) || isCancellation(tx)) return;
         const key = tx.unit_id || "unknown";
         const unit = unitMap.get(key);
         if (unit) {
@@ -157,7 +157,7 @@ export default function ReceptionPerformanceReport() {
 
       // Processar dados do mês anterior
       prevMonthData?.forEach(tx => {
-        if (isLegacyImport(tx)) return;
+        if (isLegacyImport(tx) || isCancellation(tx)) return;
         const key = tx.unit_id || "unknown";
         const unit = unitMap.get(key);
         if (unit) {
