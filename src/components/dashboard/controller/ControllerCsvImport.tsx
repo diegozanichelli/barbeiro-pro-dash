@@ -181,6 +181,7 @@ export default function ControllerCsvImport({
   const handleFile = async (file: File) => {
     setParsing(true);
     setRows([]);
+    setManualUnitByPhone({});
     setFileName(file.name);
     try {
       const text = await file.text();
@@ -545,7 +546,7 @@ export default function ControllerCsvImport({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.slice(0, 80).map((r, i) => (
+                  {rows.map((r, i) => (
                     <TableRow key={i} className={r.status === "dup" || r.status === "ignored_status" ? "opacity-50" : ""}>
                       <TableCell className="font-medium">
                         <div className="min-w-0">
@@ -614,9 +615,6 @@ export default function ControllerCsvImport({
                 </TableBody>
               </Table>
             </div>
-            {rows.length > 80 && (
-              <p className="text-xs text-muted-foreground">Mostrando as primeiras 80 de {rows.length} linhas.</p>
-            )}
 
             <Button className="w-full" onClick={handleImport} disabled={importing || counts.ok === 0}>
               {importing ? (
