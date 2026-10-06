@@ -8,7 +8,7 @@ import { fetchAllRows } from "@/lib/supabasePagination";
 import { isLegacyImport, isValidOpportunity, isCancellation } from "@/lib/metricsRules";
 import { normalizePhoneForMetrics } from "@/lib/normalizers";
 import { useOrganization } from "@/hooks/useOrganization";
-import { Building2, Crown, TrendingUp, TrendingDown, Minus, Users, HelpCircle } from "lucide-react";
+import { Building2, Crown, TrendingUp, TrendingDown, Minus, Users, HelpCircle, UserMinus } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SubscriptionScopeBanner, SubscriptionScopeFooter } from "./SubscriptionScopeInfo";
 
@@ -29,6 +29,8 @@ export default function ReceptionPerformanceReport() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<UnitPerformance[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
+  const [cancellations, setCancellations] = useState(0);
+  const [prevCancellations, setPrevCancellations] = useState(0);
 
   const monthNames = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -139,8 +141,11 @@ export default function ReceptionPerformanceReport() {
       // Regras unificadas (src/lib/metricsRules.ts): clientes migrados do sistema antigo
       // não contam como adesão, e "cliente novo" exige telefone válido de 11 dígitos.
       const seenNewPhones = new Set<string>();
+      let cancelCount = 0;
+      let prevCancelCount = 0;
       currentMonthData?.forEach(tx => {
-        if (isLegacyImport(tx) || isCancellation(tx)) return;
+        if (isCancellation(tx)) { cancelCount++; return; }
+        if (isLegacyImport(tx)) return;
         const key = tx.unit_id || "unknown";
         const unit = unitMap.get(key);
         if (unit) {
@@ -157,7 +162,8 @@ export default function ReceptionPerformanceReport() {
 
       // Processar dados do mês anterior
       prevMonthData?.forEach(tx => {
-        if (isLegacyImport(tx) || isCancellation(tx)) return;
+        if (isCancellation(tx)) { prevCancelCount++; return; }
+        if (isLegacyImport(tx)) return;
         const key = tx.unit_id || "unknown";
         const unit = unitMap.get(key);
         if (unit) {
@@ -171,6 +177,8 @@ export default function ReceptionPerformanceReport() {
         .sort((a, b) => b.totalSubscriptions - a.totalSubscriptions);
 
       setData(result);
+      setCancellations(cancelCount);
+      setPrevCancellations(prevCancelCount);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     } finally {
@@ -243,7 +251,7 @@ export default function ReceptionPerformanceReport() {
 
           {/* Cards de Resumo */}
           <TooltipProvider delayDuration={150}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <Card className="bg-secondary/50">
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-3">
@@ -305,6 +313,35 @@ export default function ReceptionPerformanceReport() {
                       <p className="text-2xl font-bold">{bestUnit}</p>
                       <p className="text-xs text-muted-foreground">
                         Média: {avgPerUnit} por unidade
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-secondary/50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <UserMinus className="w-8 h-8 text-destructive" />
+                    <div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <p className="text-sm">Cancelamentos</p>
+                        <UITooltip>
+                          <TooltipTrigger asChild>
+                            <button type="button" aria-label="Sobre Cancelamentos">
+                              <HelpCircle className="w-3 h-3 opacity-60 hover:opacity-100" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            Cancelamentos de assinatura lançados pela controladoria no período.
+                            Saídas (churn) — detalhadas por unidade no relatório de Movimentação
+                            de Assinaturas.
+                          </TooltipContent>
+                        </UITooltip>
+                      </div>
+                      <p className="text-2xl font-bold text-destructive">{cancellations}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {prevCancellations} no mês anterior
                       </p>
                     </div>
                   </div>
