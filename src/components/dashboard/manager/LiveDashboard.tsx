@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import { isOperationalRevenueTx, isSubscriptionRevenue } from "@/lib/metricsRules";
+import { isOperationalRevenueTx, isSubscriptionRevenue, isCancellation } from "@/lib/metricsRules";
 import {
   Dialog,
   DialogContent,
@@ -804,6 +804,7 @@ export default function LiveDashboard() {
     const map = new Map<string, { id: string; name: string; isReception: boolean; count: number; revenue: number }>();
     managerTransactions.forEach((t) => {
       if (t.item_type !== "subscription") return;
+      if (isCancellation(t)) return; // cancelamento não é venda/renovação
       if (t.barber_id) {
         const barber = barbers.find((b) => b.id === t.barber_id);
         if (!barber) return;
@@ -840,6 +841,7 @@ export default function LiveDashboard() {
     let recCount = 0, recRevenue = 0;
     managerTransactions.forEach((t) => {
       if (t.item_type !== "subscription") return;
+      if (isCancellation(t)) return; // cancelamento não conta como adesão nem recorrência
       const price = Number(t.price_sold) || 0;
       if (t.subscription_action === "new") {
         newCount += 1;
