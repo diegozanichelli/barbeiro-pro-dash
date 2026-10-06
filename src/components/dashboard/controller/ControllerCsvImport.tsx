@@ -203,7 +203,7 @@ export default function ControllerCsvImport({
         return;
       }
 
-      const parsed: Omit<ParsedRow, "status" | "unitId" | "unitName">[] = [];
+      const parsed: Omit<ParsedRow, "status" | "unitId" | "unitName" | "clientExists">[] = [];
       for (let i = 1; i < lines.length; i++) {
         const c = splitCsvLine(lines[i]);
         const phone = sanitizePhone(c[idx.telefone] || "");
