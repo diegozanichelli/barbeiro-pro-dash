@@ -426,6 +426,11 @@ export type Database = {
           organization_id: string
           subscription_cancel_reason: string | null
           subscription_cancelled_at: string | null
+          subscription_due_date: string | null
+          subscription_due_policy: string
+          subscription_last_late_days: number | null
+          subscription_last_payment_at: string | null
+          subscription_payment_shift_flagged_at: string | null
           subscription_plan_id: string | null
           subscription_started_at: string | null
           subscription_unit_id: string | null
@@ -441,6 +446,11 @@ export type Database = {
           organization_id: string
           subscription_cancel_reason?: string | null
           subscription_cancelled_at?: string | null
+          subscription_due_date?: string | null
+          subscription_due_policy?: string
+          subscription_last_late_days?: number | null
+          subscription_last_payment_at?: string | null
+          subscription_payment_shift_flagged_at?: string | null
           subscription_plan_id?: string | null
           subscription_started_at?: string | null
           subscription_unit_id?: string | null
@@ -456,6 +466,11 @@ export type Database = {
           organization_id?: string
           subscription_cancel_reason?: string | null
           subscription_cancelled_at?: string | null
+          subscription_due_date?: string | null
+          subscription_due_policy?: string
+          subscription_last_late_days?: number | null
+          subscription_last_payment_at?: string | null
+          subscription_payment_shift_flagged_at?: string | null
           subscription_plan_id?: string | null
           subscription_started_at?: string | null
           subscription_unit_id?: string | null

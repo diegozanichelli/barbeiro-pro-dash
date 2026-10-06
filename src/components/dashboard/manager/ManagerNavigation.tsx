@@ -24,6 +24,7 @@ import {
   ClipboardList,
   GitCompare,
   Users2,
+  CalendarClock,
 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -98,6 +99,7 @@ export default function ManagerNavigation({
     { id: "units", label: "Unidades", icon: Building2 },
     { id: "goals", label: "Metas", icon: Target },
     { id: "subscriptions", label: "Assinaturas", icon: Repeat },
+    { id: "due-dates", label: "Datas de Vencimento", icon: CalendarClock },
     { id: "reception", label: "Recepção", icon: Users2 },
   ];
 
