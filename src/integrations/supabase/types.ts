@@ -1631,13 +1631,6 @@ export type Database = {
           mobile_phone: string
         }[]
       }
-      get_client_units_by_phones: {
-        Args: { p_organization_id: string; p_phones: string[] }
-        Returns: {
-          mobile_phone: string
-          unit_id: string
-        }[]
-      }
       get_championship_details: {
         Args: {
           p_end_date: string
@@ -1651,6 +1644,13 @@ export type Database = {
           extras_high_count: number
           new_clients_unconverted: number
           subs_by_plan: Json
+        }[]
+      }
+      get_client_units_by_phones: {
+        Args: { p_organization_id: string; p_phones: string[] }
+        Returns: {
+          mobile_phone: string
+          unit_id: string
         }[]
       }
       get_clients_subscription_summary: {
