@@ -54,7 +54,11 @@ import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import { useSubscriptionCycle } from "@/hooks/useSubscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
-import { computeNextAnchor, serializeCycleMetadata } from "@/lib/subscriptionCycle";
+import {
+  computeNextAnchor,
+  serializeCycleMetadata,
+  LATE_FLAG_THRESHOLD_DAYS,
+} from "@/lib/subscriptionCycle";
 import { SubscriptionCycleBanner } from "@/components/dashboard/manager/SubscriptionCycleBanner";
 import { formatInTimeZone } from "date-fns-tz";
 import { TIMEZONE } from "@/lib/dateUtils";
@@ -1082,9 +1086,24 @@ export default function QuickSaleModal({
       // If a subscription plan was sold in this transaction, link it to the client
       if (subscriptionInCart) {
         try {
+          const cliUpdate: Record<string, unknown> = {
+            subscription_plan_id: subscriptionInCart.planId,
+          };
+          // M4: numa renovação pelo banner, persiste o novo vencimento e marca o
+          // cliente se o pagamento veio com mais de 10 dias de atraso (a data em si
+          // segue a política de preservar dias pagos — não desloca por atraso).
+          if (pendingCycleNextDueISO) {
+            const lateDays = cycle ? Math.max(0, -cycle.daysLeft) : 0;
+            cliUpdate.subscription_due_date = pendingCycleNextDueISO;
+            cliUpdate.subscription_last_payment_at = getTodayString();
+            cliUpdate.subscription_last_late_days = lateDays;
+            if (lateDays > LATE_FLAG_THRESHOLD_DAYS) {
+              cliUpdate.subscription_payment_shift_flagged_at = new Date().toISOString();
+            }
+          }
           const { error: linkError } = await (supabase
             .from("clients") as any)
-            .update({ subscription_plan_id: subscriptionInCart.planId })
+            .update(cliUpdate)
             .eq("organization_id", organizationId)
             .eq("mobile_phone", registeredClient.mobilePhone);
           if (linkError && !isSubscriptionPlanFieldMissing(linkError)) {

@@ -44,7 +44,12 @@ import {
 } from "@/lib/dateUtils";
 import { addMonths, format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { serializeCycleMetadata } from "@/lib/subscriptionCycle";
+import {
+  serializeCycleMetadata,
+  computeRenewalDue,
+  formatDueDate,
+  type DuePolicy,
+} from "@/lib/subscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { useClientAutocomplete } from "@/hooks/useClientAutocomplete";
 import ControllerCsvImport from "./ControllerCsvImport";
@@ -284,6 +289,8 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
         subscription_plan_id: null,
         subscription_cancelled_at: createdAtIso,
         subscription_cancel_reason: reason.trim() || null,
+        subscription_due_date: null,
+        subscription_payment_shift_flagged_at: null,
       })
       .eq("id", selectedClient.id);
     if (cliErr) throw cliErr;
@@ -298,7 +305,26 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       toast.error("Selecione o plano da renovação.");
       return;
     }
-    const anchor = parseISO(selectedDate);
+    const paymentDate = parseISO(selectedDate);
+
+    // Lê o vencimento vigente e a política do cliente para decidir a data do
+    // novo ciclo (vencimento prevalece por padrão; só re-ancora se o gestor
+    // marcou "cliente solicitou troca").
+    const { data: cliCycle } = await supabase
+      .from("clients")
+      .select("subscription_due_date, subscription_due_policy")
+      .eq("id", selectedClient.id)
+      .maybeSingle();
+    const currentDue = cliCycle?.subscription_due_date
+      ? parseISO(cliCycle.subscription_due_date)
+      : null;
+    const policy = (cliCycle?.subscription_due_policy as DuePolicy) ?? "keep";
+    const { anchor, nextDue, lateDays, shouldFlag } = computeRenewalDue(
+      currentDue,
+      paymentDate,
+      policy,
+    );
+
     const { error: txErr } = await supabase.from("sale_transactions").insert({
       organization_id: organizationId,
       barber_id: null,
@@ -316,17 +342,22 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       mobile_phone: selectedClient.mobile_phone,
       is_new_client: false,
       created_at: createdAtIso,
-      description: serializeCycleMetadata(anchor, addMonths(anchor, 1)),
+      description: serializeCycleMetadata(anchor, nextDue),
     });
     if (txErr) throw txErr;
 
-    // Mantém o vínculo de plano do cliente (renovação não muda plano).
-    if (selectedClient.subscription_plan_id !== plan.id) {
-      await supabase
-        .from("clients")
-        .update({ subscription_plan_id: plan.id })
-        .eq("id", selectedClient.id);
-    }
+    // Atualiza o ciclo do cliente: novo vencimento, último pagamento, atraso e
+    // flag (se > 10 dias). Renovação não muda plano, mas garante o vínculo.
+    const cliUpdate: Record<string, unknown> = {
+      subscription_plan_id: plan.id,
+      subscription_due_date: formatDueDate(nextDue),
+      subscription_last_payment_at: selectedDate,
+      subscription_last_late_days: lateDays,
+    };
+    if (shouldFlag) cliUpdate.subscription_payment_shift_flagged_at = new Date().toISOString();
+    // Troca aplicada: volta para "keep" (a nova data agora vigora).
+    if (policy === "follow_payment") cliUpdate.subscription_due_policy = "keep";
+    await supabase.from("clients").update(cliUpdate).eq("id", selectedClient.id);
 
     toast.success(`Renovação automática registrada para ${selectedClient.name}.`);
   };
@@ -378,6 +409,8 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
 
     const unitId = chosenUnitId || clientRow?.subscription_unit_id || null;
     const anchor = parseISO(selectedDate);
+    // Adesão nova: o 1º vencimento é a data de adesão + 1 mês (começa o ciclo).
+    const nextDue = addMonths(anchor, 1);
 
     const { error: txErr } = await supabase.from("sale_transactions").insert({
       organization_id: organizationId,
@@ -397,7 +430,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
       mobile_phone: phone,
       is_new_client: !existed,
       created_at: createdAtIso,
-      description: serializeCycleMetadata(anchor, addMonths(anchor, 1)),
+      description: serializeCycleMetadata(anchor, nextDue),
     });
     if (txErr) throw txErr;
 
@@ -407,6 +440,11 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
         .update({
           subscription_plan_id: plan.id,
           subscription_started_at: createdAtIso,
+          subscription_due_date: formatDueDate(nextDue),
+          subscription_due_policy: "keep",
+          subscription_last_payment_at: selectedDate,
+          subscription_last_late_days: 0,
+          subscription_payment_shift_flagged_at: null,
           subscription_cancelled_at: null,
           subscription_cancel_reason: null,
           ...(unitId ? { subscription_unit_id: unitId } : {}),

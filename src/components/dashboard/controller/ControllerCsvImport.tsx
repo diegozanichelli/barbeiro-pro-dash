@@ -23,9 +23,14 @@ import { FileUp, Loader2, CheckCircle2, AlertTriangle, X } from "lucide-react";
 import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { MANAUS_OFFSET } from "@/lib/dateUtils";
-import { serializeCycleMetadata } from "@/lib/subscriptionCycle";
+import {
+  serializeCycleMetadata,
+  computeRenewalDue,
+  formatDueDate,
+  type DuePolicy,
+} from "@/lib/subscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
-import { addMonths, parseISO } from "date-fns";
+import { parseISO } from "date-fns";
 
 interface Plan {
   id: string;
@@ -58,6 +63,9 @@ interface ParsedRow {
   // inferida do histórico de atendimentos. null = precisa definir manualmente.
   resolvedUnitId: string | null;
   clientExists: boolean;
+  // Ciclo atual do cliente (para a renovação decidir a nova data de vencimento).
+  currentDueDate: string | null; // yyyy-MM-dd ou null (sem ciclo conhecido)
+  duePolicy: DuePolicy; // "keep" (padrão) ou "follow_payment"
   status: RowStatus;
 }
 
@@ -208,7 +216,10 @@ export default function ControllerCsvImport({
         return;
       }
 
-      const parsed: Omit<ParsedRow, "status" | "resolvedUnitId" | "clientExists">[] = [];
+      const parsed: Omit<
+        ParsedRow,
+        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy"
+      >[] = [];
       for (let i = 1; i < lines.length; i++) {
         const c = splitCsvLine(lines[i]);
         const phone = sanitizePhone(c[idx.telefone] || "");
@@ -237,19 +248,33 @@ export default function ControllerCsvImport({
 
       const phones = Array.from(new Set(parsed.map((p) => p.phone)));
 
-      // 1) Cliente já existe? Qual a unidade cadastrada dele (subscription_unit_id)?
+      // 1) Cliente já existe? Unidade cadastrada + ciclo vigente (vencimento/política)?
       const existingUnitByPhone = new Map<string, string | null>();
+      const dueByPhone = new Map<string, string | null>();
+      const policyByPhone = new Map<string, DuePolicy>();
       for (let i = 0; i < phones.length; i += 300) {
         const chunk = phones.slice(i, i + 300);
         const { data, error } = await supabase
           .from("clients")
-          .select("mobile_phone, subscription_unit_id")
+          .select("mobile_phone, subscription_unit_id, subscription_due_date, subscription_due_policy")
           .eq("organization_id", organizationId)
           .in("mobile_phone", chunk);
         // Falha de leitura aqui não pode virar "todos sem unidade". Aborta.
         if (error) throw new Error("Falha ao consultar a base de clientes. Tente novamente.");
-        (data || []).forEach((cl: { mobile_phone: string; subscription_unit_id: string | null }) =>
-          existingUnitByPhone.set(cl.mobile_phone, cl.subscription_unit_id)
+        (data || []).forEach(
+          (cl: {
+            mobile_phone: string;
+            subscription_unit_id: string | null;
+            subscription_due_date: string | null;
+            subscription_due_policy: string | null;
+          }) => {
+            existingUnitByPhone.set(cl.mobile_phone, cl.subscription_unit_id);
+            dueByPhone.set(cl.mobile_phone, cl.subscription_due_date);
+            policyByPhone.set(
+              cl.mobile_phone,
+              cl.subscription_due_policy === "follow_payment" ? "follow_payment" : "keep",
+            );
+          },
         );
       }
 
@@ -305,7 +330,14 @@ export default function ControllerCsvImport({
         } else {
           status = "ok";
         }
-        return { ...p, resolvedUnitId, clientExists, status };
+        return {
+          ...p,
+          resolvedUnitId,
+          clientExists,
+          currentDueDate: dueByPhone.get(p.phone) ?? null,
+          duePolicy: policyByPhone.get(p.phone) ?? "keep",
+          status,
+        };
       });
 
       setRows(finalRows);
@@ -326,28 +358,34 @@ export default function ControllerCsvImport({
     }
     setImporting(true);
     try {
-      const payload = toImport.map((r) => {
-        const anchor = r.dateKey ? parseISO(r.dateKey) : new Date();
-        return {
-          organization_id: organizationId,
-          barber_id: null,
-          item_type: "subscription",
-          item_name: `Assinatura ${r.planText || ""}`.trim(),
-          subscription_action: "renew",
-          attribution_source: "auto_recurring",
-          source: "manager",
-          price_sold: r.valor,
-          commission_rate_used: 0,
-          commission_amount: 0,
-          subscription_plan_id: r.planId,
-          unit_id: effUnitId(r),
-          client_name: r.clientName || null,
-          mobile_phone: r.phone,
-          is_new_client: false,
-          created_at: r.dateKey ? `${r.dateKey}T12:00:00${MANAUS_OFFSET}` : undefined,
-          description: r.dateKey ? serializeCycleMetadata(anchor, addMonths(anchor, 1)) : null,
-        };
+      // Decide a data do novo ciclo de cada linha respeitando a política do
+      // cliente (vencimento prevalece por padrão; re-ancora só em "follow_payment").
+      const computed = toImport.map((r) => {
+        const paymentDate = r.dateKey ? parseISO(r.dateKey) : new Date();
+        const currentDue = r.currentDueDate ? parseISO(r.currentDueDate) : null;
+        const cycle = computeRenewalDue(currentDue, paymentDate, r.duePolicy);
+        return { r, cycle };
       });
+
+      const payload = computed.map(({ r, cycle }) => ({
+        organization_id: organizationId,
+        barber_id: null,
+        item_type: "subscription",
+        item_name: `Assinatura ${r.planText || ""}`.trim(),
+        subscription_action: "renew",
+        attribution_source: "auto_recurring",
+        source: "manager",
+        price_sold: r.valor,
+        commission_rate_used: 0,
+        commission_amount: 0,
+        subscription_plan_id: r.planId,
+        unit_id: effUnitId(r),
+        client_name: r.clientName || null,
+        mobile_phone: r.phone,
+        is_new_client: false,
+        created_at: r.dateKey ? `${r.dateKey}T12:00:00${MANAUS_OFFSET}` : undefined,
+        description: r.dateKey ? serializeCycleMetadata(cycle.anchor, cycle.nextDue) : null,
+      }));
 
       // Insere em lotes para não estourar o payload
       let inserted = 0;
@@ -431,6 +469,39 @@ export default function ControllerCsvImport({
             .is("subscription_unit_id", null);
           if (error) throw error;
         }
+      }
+
+      // Atualiza o ciclo de cada cliente: novo vencimento, último pagamento,
+      // atraso e flag (> 10 dias). Se um telefone tiver várias cobranças no mesmo
+      // arquivo, vence a de data mais recente.
+      const dueByPhone = new Map<string, (typeof computed)[number]>();
+      for (const c of computed) {
+        if (!c.r.phone || !c.r.dateKey) continue;
+        const prev = dueByPhone.get(c.r.phone);
+        if (!prev || c.r.dateKey > prev.r.dateKey) dueByPhone.set(c.r.phone, c);
+      }
+      const dueEntries = [...dueByPhone.entries()];
+      for (let i = 0; i < dueEntries.length; i += 8) {
+        const chunk = dueEntries.slice(i, i + 8);
+        await Promise.all(
+          chunk.map(async ([phone, { r, cycle }]) => {
+            const upd: Record<string, unknown> = {
+              subscription_due_date: formatDueDate(cycle.nextDue),
+              subscription_last_payment_at: r.dateKey,
+              subscription_last_late_days: cycle.lateDays,
+            };
+            if (cycle.shouldFlag) {
+              upd.subscription_payment_shift_flagged_at = new Date().toISOString();
+            }
+            // Troca aplicada: volta para "keep" (a nova data agora vigora).
+            if (r.duePolicy === "follow_payment") upd.subscription_due_policy = "keep";
+            await supabase
+              .from("clients")
+              .update(upd)
+              .eq("organization_id", organizationId)
+              .eq("mobile_phone", phone);
+          }),
+        );
       }
 
       toast.success(

@@ -39,6 +39,7 @@ import ReportsAuditPanel from "./manager/ReportsAuditPanel";
 import PerformanceDashboard from "./manager/PerformanceDashboard";
 import ReportsFilterBar from "./manager/ReportsFilterBar";
 import SubscriptionMovementReport from "./manager/SubscriptionMovementReport";
+import SubscriptionDueDateReport from "./manager/SubscriptionDueDateReport";
 import { ReportsFilterProvider } from "@/contexts/ReportsFilterProvider";
 
 
@@ -243,6 +244,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsContent value="report-movement" className="mt-0 space-y-4">
             <ReportsFilterBar fields={["month", "year", "unit"]} />
             <SubscriptionMovementReport />
+          </TabsContent>
+
+          {/* Datas de vencimento: clientes com pagamento atrasado > 10 dias ou troca solicitada */}
+          <TabsContent value="due-dates" className="mt-0">
+            <SubscriptionDueDateReport />
           </TabsContent>
 
           {/* Desempenho da recepção é operação, não relatório de resultado */}

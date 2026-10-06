@@ -59,6 +59,14 @@ export function parseCycleAnchor(description: string | null | undefined): Date |
 }
 
 /**
+ * Formata uma data como "yyyy-MM-dd" no fuso de Manaus, para gravar em colunas
+ * `date` (ex.: clients.subscription_due_date).
+ */
+export function formatDueDate(date: Date): string {
+  return formatInTimeZone(date, TIMEZONE, "yyyy-MM-dd");
+}
+
+/**
  * Serializa o cycle_anchor + next_due em JSON para gravar no campo description.
  */
 export function serializeCycleMetadata(anchorDate: Date, nextDueDate: Date): string {
@@ -114,6 +122,68 @@ export function computeCycleStatus(
   }
 
   return { status, dueDate, daysLeft, dueDateLabel, label, variant };
+}
+
+/** Atraso (em dias) a partir do qual o cliente é marcado para a aba de gestão. */
+export const LATE_FLAG_THRESHOLD_DAYS = 10;
+
+/**
+ * Política de vencimento por cliente.
+ * - "keep": o vencimento vigente prevalece (pagar atrasado não desloca o ciclo).
+ * - "follow_payment": cliente solicitou trocar a data — a renovação re-ancora
+ *   na data de pagamento (a nova data passa a valer dali pra frente).
+ */
+export type DuePolicy = "keep" | "follow_payment";
+
+export interface RenewalDueResult {
+  /** Âncora do novo ciclo (nextDue = anchor + 1 mês). Fuso de Manaus. */
+  anchor: Date;
+  /** Próximo vencimento após esta renovação. Fuso de Manaus. */
+  nextDue: Date;
+  /** Dias de atraso do pagamento vs. vencimento vigente (>0 = atrasado, <0 = adiantado). */
+  lateDays: number;
+  /** true quando o atraso passou de LATE_FLAG_THRESHOLD_DAYS (marca flag p/ gestão). */
+  shouldFlag: boolean;
+}
+
+/**
+ * Decide a data do novo ciclo numa renovação, respeitando a política do cliente.
+ *
+ * - "keep" (padrão): o vencimento vigente PREVALECE. O novo vencimento = vencimento
+ *   atual + 1 mês, mantendo o dia do contrato. Se o cliente perdeu um ou mais ciclos
+ *   (pagou muito atrasado), avança meses inteiros até cair no futuro — nunca gera
+ *   vencimento no passado, mas mantém o dia.
+ * - "follow_payment": o novo ciclo parte da data de pagamento (o cliente pediu para
+ *   trocar a data do contrato).
+ * Sem vencimento vigente conhecido (1º ciclo / legado), parte da data de pagamento.
+ *
+ * A flag (shouldFlag) é calculada pelo atraso real (pagamento − vencimento vigente),
+ * independente da política: mesmo mantendo a data, um atraso > 10 dias marca o cliente.
+ */
+export function computeRenewalDue(
+  currentDueDate: Date | null,
+  paymentDate: Date,
+  policy: DuePolicy = "keep",
+): RenewalDueResult {
+  const pay = toZonedTime(paymentDate, TIMEZONE);
+  const due = currentDueDate ? toZonedTime(currentDueDate, TIMEZONE) : null;
+
+  const lateDays = due ? differenceInCalendarDays(pay, due) : 0;
+  const shouldFlag = lateDays > LATE_FLAG_THRESHOLD_DAYS;
+
+  // Sem vencimento conhecido, ou cliente pediu troca: ancora no pagamento.
+  if (!due || policy === "follow_payment") {
+    return { anchor: pay, nextDue: addMonths(pay, 1), lateDays, shouldFlag };
+  }
+
+  // "keep": mantém o dia do contrato. Avança meses inteiros a partir do vencimento
+  // vigente até o próximo vencimento ficar depois da data de pagamento.
+  let nextDue = addMonths(due, 1);
+  while (differenceInCalendarDays(nextDue, pay) <= 0) {
+    nextDue = addMonths(nextDue, 1);
+  }
+  const anchor = addMonths(nextDue, -1);
+  return { anchor, nextDue, lateDays, shouldFlag };
 }
 
 /**
