@@ -114,6 +114,9 @@ export default function SubscriptionMovementReport() {
             row.cancelamentos++;
             continue;
           }
+          // Importação de histórico não é movimento do período: não entra em
+          // contagem nem em receita (alinha com isNew, que já a exclui).
+          if (isLegacyImport(tx)) continue;
           row.receita += Number(tx.price_sold || 0);
           if (isNew(tx)) {
             if (isOnlineAdhesion(tx)) row.entradasOnline++;

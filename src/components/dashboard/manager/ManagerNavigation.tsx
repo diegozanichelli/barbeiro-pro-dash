@@ -115,7 +115,7 @@ export default function ManagerNavigation({
     { id: "report-barber", label: "Barbeiro", icon: Trophy },
     { id: "report-units", label: "Comparativo de Unidades", icon: GitCompare },
     { id: "report-business", label: "Negócio", icon: TrendingUp },
-    { id: "report-movement", label: "Assinaturas", icon: Repeat },
+    { id: "report-movement", label: "Assinaturas - Controladoria", icon: Repeat },
     { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
   ];
 
