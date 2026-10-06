@@ -1631,6 +1631,13 @@ export type Database = {
           mobile_phone: string
         }[]
       }
+      get_client_units_by_phones: {
+        Args: { p_organization_id: string; p_phones: string[] }
+        Returns: {
+          mobile_phone: string
+          unit_id: string
+        }[]
+      }
       get_championship_details: {
         Args: {
           p_end_date: string

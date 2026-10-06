@@ -18,9 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { FileUp, Loader2, CheckCircle2, AlertTriangle, X, Building2 } from "lucide-react";
+import { FileUp, Loader2, CheckCircle2, AlertTriangle, X } from "lucide-react";
 import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { MANAUS_OFFSET } from "@/lib/dateUtils";
@@ -55,8 +54,9 @@ interface ParsedRow {
   dateKey: string; // yyyy-MM-dd do lançamento
   phone: string; // sanitizado
   planId: string | null;
-  unitId: string | null;
-  unitName: string;
+  // Unidade do cliente já resolvida: a cadastrada (subscription_unit_id) ou a
+  // inferida do histórico de atendimentos. null = precisa definir manualmente.
+  resolvedUnitId: string | null;
   clientExists: boolean;
   status: RowStatus;
 }
@@ -145,11 +145,12 @@ export default function ControllerCsvImport({
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
-  // Unidade padrão para clientes sem histórico (sem unidade resolvida).
-  const [defaultUnitId, setDefaultUnitId] = useState<string>("");
+  // Unidade escolhida manualmente por linha (telefone), quando não dá pra inferir.
+  const [manualUnitByPhone, setManualUnitByPhone] = useState<Record<string, string>>({});
 
-  // Unidade efetiva de uma linha: a do cliente, ou a padrão escolhida.
-  const effUnitId = (r: ParsedRow): string | null => r.unitId ?? (defaultUnitId || null);
+  // Unidade efetiva: a resolvida (cadastro/histórico) ou a escolhida manualmente.
+  const effUnitId = (r: ParsedRow): string | null =>
+    r.resolvedUnitId ?? manualUnitByPhone[r.phone] ?? null;
 
   const unitsById = useMemo(() => {
     const m = new Map<string, string>();
@@ -164,13 +165,16 @@ export default function ControllerCsvImport({
     const ignored = rows.filter((r) => r.status === "ignored_status").length;
     const noPlan = rows.filter((r) => r.status === "no_plan").length;
     const newClients = rows.filter((r) => willImport(r) && !r.clientExists).length;
+    const needsUnit = rows.filter((r) => willImport(r) && !effUnitId(r)).length;
     const mrr = rows.filter(willImport).reduce((a, r) => a + r.valor, 0);
-    return { ok, dup, ignored, noPlan, newClients, mrr };
-  }, [rows]);
+    return { ok, dup, ignored, noPlan, newClients, needsUnit, mrr };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, manualUnitByPhone]);
 
   const reset = () => {
     setRows([]);
     setFileName("");
+    setManualUnitByPhone({});
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -203,7 +207,7 @@ export default function ControllerCsvImport({
         return;
       }
 
-      const parsed: Omit<ParsedRow, "status" | "unitId" | "unitName">[] = [];
+      const parsed: Omit<ParsedRow, "status" | "resolvedUnitId" | "clientExists">[] = [];
       for (let i = 1; i < lines.length; i++) {
         const c = splitCsvLine(lines[i]);
         const phone = sanitizePhone(c[idx.telefone] || "");
@@ -230,9 +234,10 @@ export default function ControllerCsvImport({
         return;
       }
 
-      // Resolve unidade dos clientes (lookup por telefone) em lote
       const phones = Array.from(new Set(parsed.map((p) => p.phone)));
-      const unitByPhone = new Map<string, string | null>();
+
+      // 1) Cliente já existe? Qual a unidade cadastrada dele (subscription_unit_id)?
+      const existingUnitByPhone = new Map<string, string | null>();
       for (let i = 0; i < phones.length; i += 300) {
         const chunk = phones.slice(i, i + 300);
         const { data, error } = await supabase
@@ -240,12 +245,27 @@ export default function ControllerCsvImport({
           .select("mobile_phone, subscription_unit_id")
           .eq("organization_id", organizationId)
           .in("mobile_phone", chunk);
-        // Falha de leitura aqui não pode virar "todos sem unidade": isso jogaria
-        // a renovação de quem já tem unidade para a unidade padrão errada. Aborta.
+        // Falha de leitura aqui não pode virar "todos sem unidade". Aborta.
         if (error) throw new Error("Falha ao consultar a base de clientes. Tente novamente.");
         (data || []).forEach((cl: { mobile_phone: string; subscription_unit_id: string | null }) =>
-          unitByPhone.set(cl.mobile_phone, cl.subscription_unit_id)
+          existingUnitByPhone.set(cl.mobile_phone, cl.subscription_unit_id)
         );
+      }
+
+      // 2) Para quem não tem unidade cadastrada, infere pelos últimos atendimentos
+      //    (barbeiro dominante -> unidade), via função SECURITY DEFINER no banco
+      //    (o controlador não lê transações de serviço diretamente).
+      const inferredByPhone = new Map<string, string>();
+      for (let i = 0; i < phones.length; i += 300) {
+        const chunk = phones.slice(i, i + 300);
+        const { data, error } = await supabase.rpc("get_client_units_by_phones", {
+          p_organization_id: organizationId,
+          p_phones: chunk,
+        });
+        if (error) throw new Error("Falha ao identificar a unidade dos clientes. Tente novamente.");
+        (data || []).forEach((row: { mobile_phone: string; unit_id: string | null }) => {
+          if (row.unit_id) inferredByPhone.set(row.mobile_phone, row.unit_id);
+        });
       }
 
       // Dedupe: renovações automáticas já lançadas no(s) mesmo(s) dia(s)
@@ -271,9 +291,9 @@ export default function ControllerCsvImport({
       }
 
       const finalRows: ParsedRow[] = parsed.map((p) => {
-        const clientExists = unitByPhone.has(p.phone);
-        const unitId = unitByPhone.get(p.phone) ?? null;
-        const unitName = unitId ? unitsById.get(unitId) || "Unidade removida" : "Não informada";
+        const clientExists = existingUnitByPhone.has(p.phone);
+        const resolvedUnitId =
+          (existingUnitByPhone.get(p.phone) ?? null) || inferredByPhone.get(p.phone) || null;
         let status: RowStatus;
         if (!norm(p.statusText).includes("captur")) {
           status = "ignored_status";
@@ -284,7 +304,7 @@ export default function ControllerCsvImport({
         } else {
           status = "ok";
         }
-        return { ...p, unitId, unitName, clientExists, status };
+        return { ...p, resolvedUnitId, clientExists, status };
       });
 
       setRows(finalRows);
@@ -388,14 +408,23 @@ export default function ControllerCsvImport({
         }
       }
 
-      // Unidade padrão: preenche só quem está SEM unidade (não sobrescreve quem já tem).
-      if (defaultUnitId) {
-        const allPhones = [...uniq.keys()];
-        for (let i = 0; i < allPhones.length; i += 300) {
-          const chunk = allPhones.slice(i, i + 300);
+      // Persiste a unidade (inferida ou escolhida manualmente) nos clientes que
+      // estão SEM unidade — agrupando por unidade. Não sobrescreve quem já tem.
+      const phonesByUnit = new Map<string, string[]>();
+      for (const r of toImport) {
+        const u = effUnitId(r);
+        if (u && r.phone) {
+          const arr = phonesByUnit.get(u) || [];
+          arr.push(r.phone);
+          phonesByUnit.set(u, arr);
+        }
+      }
+      for (const [unitId, unitPhones] of phonesByUnit) {
+        for (let i = 0; i < unitPhones.length; i += 300) {
+          const chunk = unitPhones.slice(i, i + 300);
           const { error } = await supabase
             .from("clients")
-            .update({ subscription_unit_id: defaultUnitId })
+            .update({ subscription_unit_id: unitId })
             .eq("organization_id", organizationId)
             .in("mobile_phone", chunk)
             .is("subscription_unit_id", null);
@@ -427,8 +456,9 @@ export default function ControllerCsvImport({
         </CardTitle>
         <CardDescription>
           Suba o relatório de cobranças do cartão (separado por ";"). Cada linha "Capturada na
-          Operadora" vira uma renovação automática. O cliente é buscado pelo telefone: se não
-          existir, é cadastrado; se existir, o plano é vinculado. Confira antes de confirmar; duplicadas são ignoradas.
+          Operadora" vira uma renovação automática. Por cliente, o sistema cruza os dados: busca pelo
+          telefone, cadastra se não existir e identifica a unidade pelos últimos atendimentos dele.
+          Quando não dá pra identificar, você define a unidade na linha. Duplicadas são ignoradas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -457,31 +487,9 @@ export default function ControllerCsvImport({
           )}
         </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs flex items-center gap-1">
-            <Building2 className="w-3.5 h-3.5" /> Unidade padrão (clientes sem unidade)
-          </Label>
-          <Select value={defaultUnitId || "none"} onValueChange={(v) => setDefaultUnitId(v === "none" ? "" : v)}>
-            <SelectTrigger className="max-w-xs">
-              <SelectValue placeholder="Sem unidade padrão" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sem unidade padrão</SelectItem>
-              {units.map((u) => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-[11px] text-muted-foreground">
-            Aplicada só a quem não tem unidade (clientes novos ou sem histórico). Quem já tem unidade é preservado.
-          </p>
-        </div>
-
         {rows.length > 0 && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <div className="rounded-md border bg-secondary/40 p-2">
                 <p className="text-xs text-muted-foreground">A importar</p>
                 <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{counts.ok}</p>
@@ -489,6 +497,12 @@ export default function ControllerCsvImport({
               <div className="rounded-md border bg-secondary/40 p-2">
                 <p className="text-xs text-muted-foreground">Clientes novos</p>
                 <p className="text-lg font-bold">{counts.newClients}</p>
+              </div>
+              <div className="rounded-md border bg-secondary/40 p-2">
+                <p className="text-xs text-muted-foreground">Sem unidade</p>
+                <p className={`text-lg font-bold ${counts.needsUnit > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
+                  {counts.needsUnit}
+                </p>
               </div>
               <div className="rounded-md border bg-secondary/40 p-2">
                 <p className="text-xs text-muted-foreground">MRR</p>
@@ -503,6 +517,13 @@ export default function ControllerCsvImport({
                 <p className="text-lg font-bold text-muted-foreground">{counts.ignored}</p>
               </div>
             </div>
+
+            {counts.needsUnit > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {counts.needsUnit} cliente(s) sem unidade identificada — defina a unidade na linha; sem isso, serão importados sem unidade.
+              </p>
+            )}
 
             {counts.noPlan > 0 && (
               <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
@@ -538,10 +559,39 @@ export default function ControllerCsvImport({
                           <span className="block text-[11px] text-amber-600 dark:text-amber-400">sem vínculo</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-sm">
                         {(() => {
                           const eu = effUnitId(r);
-                          return eu ? unitsById.get(eu) || "Unidade removida" : "Não informada";
+                          if (eu) {
+                            return (
+                              <span className="text-muted-foreground">
+                                {unitsById.get(eu) || "Unidade removida"}
+                              </span>
+                            );
+                          }
+                          if (r.status === "dup" || r.status === "ignored_status") {
+                            return <span className="text-muted-foreground">—</span>;
+                          }
+                          // Sem unidade resolvida: deixa o usuário escolher na linha.
+                          return (
+                            <Select
+                              value={manualUnitByPhone[r.phone] || ""}
+                              onValueChange={(v) =>
+                                setManualUnitByPhone((m) => ({ ...m, [r.phone]: v }))
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[150px] text-xs">
+                                <SelectValue placeholder="Definir unidade" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {units.map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          );
                         })()}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
