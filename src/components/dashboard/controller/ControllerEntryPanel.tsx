@@ -289,8 +289,9 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
         subscription_plan_id: null,
         subscription_cancelled_at: createdAtIso,
         subscription_cancel_reason: reason.trim() || null,
-        subscription_due_date: null,
-        subscription_payment_shift_flagged_at: null,
+        // Não mexe nos campos de ciclo (vencimento/flag): se o cancelamento for
+        // desfeito, o vencimento vigente continua intacto (evita re-ancorar como
+        // legado na próxima renovação). Um cliente sem plano não aparece na aba.
       })
       .eq("id", selectedClient.id);
     if (cliErr) throw cliErr;

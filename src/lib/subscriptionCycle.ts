@@ -176,13 +176,16 @@ export function computeRenewalDue(
     return { anchor: pay, nextDue: addMonths(pay, 1), lateDays, shouldFlag };
   }
 
-  // "keep": mantém o dia do contrato. Avança meses inteiros a partir do vencimento
-  // vigente até o próximo vencimento ficar depois da data de pagamento.
-  let nextDue = addMonths(due, 1);
+  // "keep": mantém o dia do contrato. Avança meses inteiros SEMPRE a partir do
+  // vencimento vigente (não do resultado já clampado), para não perder o dia em
+  // meses curtos: ex. venc. 31/jan pago em 28/fev -> próximo 31/mar (e não 28/mar).
+  let months = 1;
+  let nextDue = addMonths(due, months);
   while (differenceInCalendarDays(nextDue, pay) <= 0) {
-    nextDue = addMonths(nextDue, 1);
+    months += 1;
+    nextDue = addMonths(due, months);
   }
-  const anchor = addMonths(nextDue, -1);
+  const anchor = addMonths(due, months - 1);
   return { anchor, nextDue, lateDays, shouldFlag };
 }
 

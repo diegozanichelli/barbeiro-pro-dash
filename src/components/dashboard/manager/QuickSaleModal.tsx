@@ -47,6 +47,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getManausDate, getTodayString } from "@/lib/dateUtils";
+import { parseISO } from "date-fns";
 import { formatPhone, isValidPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { translateSaleError } from "@/lib/saleGuards";
 import { useClientHistory } from "@/hooks/useClientHistory";
@@ -56,8 +57,10 @@ import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { recordClientPurchasesBestEffort } from "@/lib/clientPurchaseHistory";
 import {
   computeNextAnchor,
+  computeRenewalDue,
   serializeCycleMetadata,
-  LATE_FLAG_THRESHOLD_DAYS,
+  formatDueDate,
+  type DuePolicy,
 } from "@/lib/subscriptionCycle";
 import { SubscriptionCycleBanner } from "@/components/dashboard/manager/SubscriptionCycleBanner";
 import { formatInTimeZone } from "date-fns-tz";
@@ -289,11 +292,6 @@ export default function QuickSaleModal({
       enabled: open,
       skipLegacyFallback: false,
     });
-
-  // When user clicks "Renovar agora" on the banner, we capture the anchor
-  // so we can serialize it into description JSON at submission time.
-  const [pendingCycleAnchorISO, setPendingCycleAnchorISO] = useState<string | null>(null);
-  const [pendingCycleNextDueISO, setPendingCycleNextDueISO] = useState<string | null>(null);
 
   // Date picker state - use initialDate from LiveDashboard if provided
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
@@ -714,11 +712,9 @@ export default function QuickSaleModal({
       return;
     }
 
-    // Compute next anchor (preserves remaining days unless overdue)
-    const { anchor, nextDue, preservedDays } = computeNextAnchor(cycle);
-
-    setPendingCycleAnchorISO(formatInTimeZone(anchor, TIMEZONE, "yyyy-MM-dd"));
-    setPendingCycleNextDueISO(formatInTimeZone(nextDue, TIMEZONE, "yyyy-MM-dd"));
+    // Estimativa para o toast (a data autoritativa é calculada e persistida em
+    // ensureSubscriptionAssigned no checkout, respeitando a política do cliente).
+    const { nextDue, preservedDays } = computeNextAnchor(cycle);
 
     setCart((prev) => [
       ...prev,
@@ -940,20 +936,77 @@ export default function QuickSaleModal({
   };
 
   /**
-   * Atualiza `clients.subscription_plan_id` SOMENTE quando o cliente está
-   * adquirindo/renovando/atualizando o plano nesta venda. Status pré-existente
-   * de assinatura é apenas leitura — não rebatemos no banco.
+   * Vincula o plano ao cliente e atualiza o ciclo de vencimento (M4) nesta venda.
+   * Respeita a política do cliente: por padrão o vencimento prevalece (renovar
+   * não desloca o ciclo); re-ancora na data de pagamento só se o gestor marcou
+   * "cliente solicitou troca" (follow_payment). Marca a flag se o pagamento veio
+   * com mais de 10 dias de atraso. Vale para QUALQUER ação de assinatura (não só
+   * a renovação 1-clique do banner).
+   * Retorna o ciclo calculado (anchor/nextDue) para gravar no description da tx.
    */
-  const ensureSubscriptionAssigned = async (mobilePhoneSanitized: string) => {
-    if (!subscriptionInCart) return;
+  const ensureSubscriptionAssigned = async (
+    mobilePhoneSanitized: string,
+  ): Promise<{ anchor: Date; nextDue: Date } | null> => {
+    if (!subscriptionInCart) return null;
 
+    // 1) Vínculo do plano (principal; guardado por schema antigo sem a coluna).
     const { error } = await (supabase
       .from("clients") as any)
       .update({ subscription_plan_id: subscriptionInCart.planId })
       .eq("organization_id", organizationId)
       .eq("mobile_phone", mobilePhoneSanitized);
-
     if (error && !isSubscriptionPlanFieldMissing(error)) throw error;
+
+    // 2) Ciclo de vencimento. Renovação (renew/upgrade/downgrade) parte do
+    //    vencimento vigente; adesão nova (new) começa um ciclo do zero.
+    const action = subscriptionInCart.action;
+    const isRenewal = action === "renew" || action === "upgrade" || action === "downgrade";
+
+    let currentDue: Date | null = null;
+    let policy: DuePolicy = "keep";
+    try {
+      const { data: cliRow } = await supabase
+        .from("clients")
+        .select("subscription_due_date, subscription_due_policy")
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", mobilePhoneSanitized)
+        .maybeSingle();
+      if (cliRow?.subscription_due_policy === "follow_payment") policy = "follow_payment";
+      if (isRenewal) {
+        currentDue = cliRow?.subscription_due_date
+          ? parseISO(cliRow.subscription_due_date)
+          : (cycle?.dueDate ?? null);
+      }
+    } catch {
+      // Colunas de ciclo podem não existir (migração não aplicada): segue com
+      // defaults (ancora no pagamento) sem quebrar a venda.
+    }
+
+    const { anchor, nextDue, lateDays, shouldFlag } = computeRenewalDue(
+      currentDue,
+      selectedDate,
+      policy,
+    );
+
+    // 3) Persistência do ciclo no cliente — best-effort (não quebra a venda se a
+    //    migração ainda não foi aplicada).
+    try {
+      const cycleUpdate: Record<string, unknown> = {
+        subscription_due_date: formatDueDate(nextDue),
+        subscription_last_payment_at: formatDueDate(selectedDate),
+        subscription_last_late_days: lateDays,
+      };
+      if (shouldFlag) cycleUpdate.subscription_payment_shift_flagged_at = new Date().toISOString();
+      if (policy === "follow_payment") cycleUpdate.subscription_due_policy = "keep";
+      await (supabase.from("clients") as any)
+        .update(cycleUpdate)
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", mobilePhoneSanitized);
+    } catch (cycleErr) {
+      console.warn("[QuickSaleModal] Falha ao gravar ciclo de vencimento (não bloqueante):", cycleErr);
+    }
+
+    return { anchor, nextDue };
   };
 
   // Check if phone is valid for proceeding
@@ -1030,7 +1083,7 @@ export default function QuickSaleModal({
         }
       }
 
-      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
+      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone);
 
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
         toast.info(`Cliente identificado pelo celular: ${safeClientName}`);
@@ -1083,44 +1136,13 @@ export default function QuickSaleModal({
       });
       if (error) throw error;
 
-      // If a subscription plan was sold in this transaction, link it to the client
-      if (subscriptionInCart) {
+      // O vínculo do plano e o ciclo de vencimento do cliente já foram
+      // persistidos por ensureSubscriptionAssigned (respeitando a política).
+      // Aqui só gravamos o cycle_anchor/next_due no description da transação
+      // recém-criada, para QUALQUER assinatura (não só a renovação do banner).
+      if (subscriptionInCart && subCycleMeta) {
         try {
-          const cliUpdate: Record<string, unknown> = {
-            subscription_plan_id: subscriptionInCart.planId,
-          };
-          // M4: numa renovação pelo banner, persiste o novo vencimento e marca o
-          // cliente se o pagamento veio com mais de 10 dias de atraso (a data em si
-          // segue a política de preservar dias pagos — não desloca por atraso).
-          if (pendingCycleNextDueISO) {
-            const lateDays = cycle ? Math.max(0, -cycle.daysLeft) : 0;
-            cliUpdate.subscription_due_date = pendingCycleNextDueISO;
-            cliUpdate.subscription_last_payment_at = getTodayString();
-            cliUpdate.subscription_last_late_days = lateDays;
-            if (lateDays > LATE_FLAG_THRESHOLD_DAYS) {
-              cliUpdate.subscription_payment_shift_flagged_at = new Date().toISOString();
-            }
-          }
-          const { error: linkError } = await (supabase
-            .from("clients") as any)
-            .update(cliUpdate)
-            .eq("organization_id", organizationId)
-            .eq("mobile_phone", registeredClient.mobilePhone);
-          if (linkError && !isSubscriptionPlanFieldMissing(linkError)) {
-            console.error("Erro ao vincular assinatura ao cliente:", linkError);
-          }
-        } catch (linkErr) {
-          console.error("Erro inesperado ao vincular assinatura:", linkErr);
-        }
-      }
-
-      // 1-click renewal from banner: persist cycle metadata into description.
-      if (subscriptionInCart && pendingCycleAnchorISO && pendingCycleNextDueISO) {
-        try {
-          const cycleJson = JSON.stringify({
-            cycle_anchor: pendingCycleAnchorISO,
-            next_due: pendingCycleNextDueISO,
-          });
+          const cycleJson = serializeCycleMetadata(subCycleMeta.anchor, subCycleMeta.nextDue);
           await supabase
             .from("sale_transactions")
             .update({ description: cycleJson })

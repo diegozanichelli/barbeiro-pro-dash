@@ -28,6 +28,7 @@ import {
   computeRenewalDue,
   formatDueDate,
   type DuePolicy,
+  type RenewalDueResult,
 } from "@/lib/subscriptionCycle";
 import { registerClientOrThrow } from "@/lib/clientRegistry";
 import { parseISO } from "date-fns";
@@ -360,12 +361,42 @@ export default function ControllerCsvImport({
     try {
       // Decide a data do novo ciclo de cada linha respeitando a política do
       // cliente (vencimento prevalece por padrão; re-ancora só em "follow_payment").
-      const computed = toImport.map((r) => {
-        const paymentDate = r.dateKey ? parseISO(r.dateKey) : new Date();
-        const currentDue = r.currentDueDate ? parseISO(r.currentDueDate) : null;
-        const cycle = computeRenewalDue(currentDue, paymentDate, r.duePolicy);
-        return { r, cycle };
-      });
+      // Cobranças do MESMO cliente são processadas em ordem de data, encadeando o
+      // vencimento: a 1ª avança o vencimento para a 2ª, etc. (não trata a 2ª como
+      // atrasada contra o vencimento pré-importação).
+      type Computed = { r: ParsedRow; cycle: RenewalDueResult };
+      const byPhone = new Map<string, ParsedRow[]>();
+      for (const r of toImport) {
+        const arr = byPhone.get(r.phone) || [];
+        arr.push(r);
+        byPhone.set(r.phone, arr);
+      }
+      const computed: Computed[] = [];
+      // Atualização final de ciclo por cliente (última cobrança da sequência).
+      const clientCycleByPhone = new Map<
+        string,
+        { last: Computed; anyFlag: boolean; policyWasFollow: boolean }
+      >();
+      for (const [phone, group] of byPhone) {
+        const sorted = [...group].sort((a, b) => (a.dateKey || "").localeCompare(b.dateKey || ""));
+        let runningDue = sorted[0].currentDueDate ? parseISO(sorted[0].currentDueDate) : null;
+        let runningPolicy: DuePolicy = sorted[0].duePolicy;
+        const policyWasFollow = sorted[0].duePolicy === "follow_payment";
+        let anyFlag = false;
+        let last: Computed | null = null;
+        for (const r of sorted) {
+          const paymentDate = r.dateKey ? parseISO(r.dateKey) : new Date();
+          const cycle = computeRenewalDue(runningDue, paymentDate, runningPolicy);
+          computed.push({ r, cycle });
+          runningDue = cycle.nextDue; // encadeia para a próxima cobrança
+          runningPolicy = "keep"; // follow_payment vale só para a 1ª cobrança
+          if (cycle.shouldFlag) anyFlag = true;
+          last = { r, cycle };
+        }
+        if (last && phone) {
+          clientCycleByPhone.set(phone, { last, anyFlag, policyWasFollow });
+        }
+      }
 
       const payload = computed.map(({ r, cycle }) => ({
         organization_id: organizationId,
@@ -471,30 +502,24 @@ export default function ControllerCsvImport({
         }
       }
 
-      // Atualiza o ciclo de cada cliente: novo vencimento, último pagamento,
-      // atraso e flag (> 10 dias). Se um telefone tiver várias cobranças no mesmo
-      // arquivo, vence a de data mais recente.
-      const dueByPhone = new Map<string, (typeof computed)[number]>();
-      for (const c of computed) {
-        if (!c.r.phone || !c.r.dateKey) continue;
-        const prev = dueByPhone.get(c.r.phone);
-        if (!prev || c.r.dateKey > prev.r.dateKey) dueByPhone.set(c.r.phone, c);
-      }
-      const dueEntries = [...dueByPhone.entries()];
+      // Atualiza o ciclo de cada cliente a partir da ÚLTIMA cobrança da sequência
+      // (o vencimento já foi encadeado acima). A flag agrega qualquer atraso >10d
+      // ocorrido na sequência; se a política era follow_payment, volta para keep.
+      const dueEntries = [...clientCycleByPhone.entries()];
       for (let i = 0; i < dueEntries.length; i += 8) {
         const chunk = dueEntries.slice(i, i + 8);
         await Promise.all(
-          chunk.map(async ([phone, { r, cycle }]) => {
+          chunk.map(async ([phone, { last, anyFlag, policyWasFollow }]) => {
             const upd: Record<string, unknown> = {
-              subscription_due_date: formatDueDate(cycle.nextDue),
-              subscription_last_payment_at: r.dateKey,
-              subscription_last_late_days: cycle.lateDays,
+              subscription_due_date: formatDueDate(last.cycle.nextDue),
+              subscription_last_payment_at: last.r.dateKey,
+              subscription_last_late_days: last.cycle.lateDays,
             };
-            if (cycle.shouldFlag) {
+            if (anyFlag) {
               upd.subscription_payment_shift_flagged_at = new Date().toISOString();
             }
             // Troca aplicada: volta para "keep" (a nova data agora vigora).
-            if (r.duePolicy === "follow_payment") upd.subscription_due_policy = "keep";
+            if (policyWasFollow) upd.subscription_due_policy = "keep";
             await supabase
               .from("clients")
               .update(upd)
