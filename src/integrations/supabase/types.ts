@@ -1424,6 +1424,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "unit_weekly_growth_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "unit_weekly_growth_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
@@ -1830,6 +1837,7 @@ export type Database = {
         Args: { p_organization_id: string }
         Returns: Json
       }
+      safe_jsonb: { Args: { p: string }; Returns: Json }
       save_subscription_plan: {
         Args: {
           p_name: string

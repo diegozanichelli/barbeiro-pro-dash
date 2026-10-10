@@ -7,15 +7,32 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import { SubscriptionGuard } from "./components/SubscriptionGuard";
 
-// Lazy load non-critical pages for better initial load performance
-const Auth = lazy(() => import("./pages/Auth"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const OnboardingSuccess = lazy(() => import("./pages/OnboardingSuccess"));
-const SubscriptionBlocked = lazy(() => import("./pages/SubscriptionBlocked"));
-const RecoverPassword = lazy(() => import("./pages/RecoverPassword"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
-const NotFound = lazy(() => import("./pages/NotFound"));
+// Lazy load com recuperação: se o módulo antigo sumiu após uma atualização
+// ("Failed to fetch dynamically imported module"), recarrega a página uma vez.
+const lazyWithReload = <T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) =>
+  lazy(async () => {
+    try {
+      const mod = await factory();
+      sessionStorage.removeItem("chunk-reloaded");
+      return mod;
+    } catch (err) {
+      if (!sessionStorage.getItem("chunk-reloaded")) {
+        sessionStorage.setItem("chunk-reloaded", "1");
+        window.location.reload();
+        return new Promise<{ default: T }>(() => {});
+      }
+      throw err;
+    }
+  });
+
+const Auth = lazyWithReload(() => import("./pages/Auth"));
+const Dashboard = lazyWithReload(() => import("./pages/Dashboard"));
+const Onboarding = lazyWithReload(() => import("./pages/Onboarding"));
+const OnboardingSuccess = lazyWithReload(() => import("./pages/OnboardingSuccess"));
+const SubscriptionBlocked = lazyWithReload(() => import("./pages/SubscriptionBlocked"));
+const RecoverPassword = lazyWithReload(() => import("./pages/RecoverPassword"));
+const ResetPassword = lazyWithReload(() => import("./pages/ResetPassword"));
+const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
