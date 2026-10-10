@@ -242,9 +242,9 @@ export default function ControllerCsvImport({
       const chunk = phones.slice(i, i + 8);
       await Promise.all(
         chunk.map(async (phone) => {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from("sale_transactions")
-            .select("description")
+            .select("description, subscription_plan_id, created_at")
             .eq("organization_id", organizationId)
             .eq("mobile_phone", phone)
             .eq("item_type", "subscription")
@@ -252,20 +252,36 @@ export default function ControllerCsvImport({
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
+          // Falha de leitura NÃO pode zerar a assinatura do cliente (poderia
+          // limpar quem ainda tem assinatura). Mantém o cliente como está.
+          if (error) {
+            console.warn("[import] falha ao reconstruir ciclo; cliente mantido:", phone, error);
+            return;
+          }
           if (data) {
-            // Ainda tem assinatura → recompõe o vencimento pelo next_due restante.
+            // Ainda tem assinatura → reconstrói o estado pela última restante
+            // (plano, vencimento, último pagamento; limpa atraso/flag).
             await supabase
               .from("clients")
-              .update({ subscription_due_date: parseCycleNextDue(data.description) })
+              .update({
+                subscription_plan_id: data.subscription_plan_id ?? null,
+                subscription_due_date: parseCycleNextDue(data.description),
+                subscription_last_payment_at: data.created_at ? data.created_at.slice(0, 10) : null,
+                subscription_last_late_days: null,
+                subscription_payment_shift_flagged_at: null,
+              })
               .eq("organization_id", organizationId)
               .eq("mobile_phone", phone);
           } else {
-            // Sem assinatura restante → deixa de ser assinante.
+            // Sem assinatura restante → deixa de ser assinante (zera tudo).
             await supabase
               .from("clients")
               .update({
                 subscription_plan_id: null,
                 subscription_due_date: null,
+                subscription_started_at: null,
+                subscription_last_payment_at: null,
+                subscription_last_late_days: null,
                 subscription_payment_shift_flagged_at: null,
               })
               .eq("organization_id", organizationId)
@@ -509,6 +525,20 @@ export default function ControllerCsvImport({
         );
       }
 
+      // Sugestão "nova adesão" só para a 1ª cobrança (mais antiga) de cada cliente
+      // SEM assinatura ativa na base. Cobranças seguintes do mesmo cliente são
+      // renovações (senão todas resetariam o ciclo e inflariam novas adesões).
+      const newEligible = (phone: string) =>
+        !existingUnitByPhone.has(phone) || !planByPhone.get(phone);
+      const firstNewIdxByPhone = new Map<string, number>();
+      parsed.forEach((p, i) => {
+        if (!newEligible(p.phone)) return;
+        const cur = firstNewIdxByPhone.get(p.phone);
+        if (cur === undefined || (p.dateKey || "") < (parsed[cur].dateKey || "")) {
+          firstNewIdxByPhone.set(p.phone, i);
+        }
+      });
+
       const finalRows: ParsedRow[] = parsed.map((p, i) => {
         const clientExists = existingUnitByPhone.has(p.phone);
         const resolvedUnitId =
@@ -537,8 +567,8 @@ export default function ControllerCsvImport({
           status,
           dupInfo,
           rowId: `${p.phone}|${p.dateKey}|${p.valor.toFixed(2)}|${i}`,
-          // Novo quando o cliente não existe na base OU existe sem plano ativo.
-          isLikelyNew: !clientExists || !planByPhone.get(p.phone),
+          // Novo só na 1ª cobrança de um cliente sem assinatura ativa na base.
+          isLikelyNew: firstNewIdxByPhone.get(p.phone) === i,
         };
       });
 

@@ -17,10 +17,10 @@ CREATE TABLE IF NOT EXISTS public.controller_import_batches (
 
 ALTER TABLE public.controller_import_batches ENABLE ROW LEVEL SECURITY;
 
--- Controlador (e gestor/super_admin) da própria organização gerencia os lotes.
-CREATE POLICY "Controller/manager manage import batches"
+-- Leitura: controlador e gestor/super_admin da própria organização veem os lotes.
+CREATE POLICY "Controller/manager view import batches"
 ON public.controller_import_batches
-FOR ALL
+FOR SELECT
 USING (
   has_role(auth.uid(), 'super_admin'::app_role)
   OR (
@@ -30,7 +30,12 @@ USING (
       OR has_role(auth.uid(), 'controller'::app_role)
     )
   )
-)
+);
+
+-- Inserção: controlador e gestor/super_admin da própria organização.
+CREATE POLICY "Controller/manager insert import batches"
+ON public.controller_import_batches
+FOR INSERT
 WITH CHECK (
   has_role(auth.uid(), 'super_admin'::app_role)
   OR (
@@ -38,6 +43,23 @@ WITH CHECK (
     AND (
       has_role(auth.uid(), 'manager'::app_role)
       OR has_role(auth.uid(), 'controller'::app_role)
+    )
+  )
+);
+
+-- Exclusão: super_admin ou gestor da org (qualquer lote); o controlador só pode
+-- excluir os lotes que ELE criou — espelhando a policy de DELETE em
+-- sale_transactions (created_by = auth.uid()), para não deixar lançamentos órfãos.
+CREATE POLICY "Delete own or managed import batches"
+ON public.controller_import_batches
+FOR DELETE
+USING (
+  has_role(auth.uid(), 'super_admin'::app_role)
+  OR (
+    organization_id = get_user_organization(auth.uid())
+    AND (
+      has_role(auth.uid(), 'manager'::app_role)
+      OR (has_role(auth.uid(), 'controller'::app_role) AND created_by = auth.uid())
     )
   )
 );
