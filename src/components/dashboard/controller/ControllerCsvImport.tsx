@@ -426,17 +426,24 @@ export default function ControllerCsvImport({
         return;
       }
 
-      // Cabeçalho -> índices das colunas conhecidas
+      // Cabeçalho -> índices das colunas conhecidas. Detecção tolerante: o layout
+      // do gateway varia ("nome" x "Nome do cliente"; "data dos status atual" x
+      // "Data do status atual"), então casamos por palavra-chave, não exato.
       const header = splitCsvLine(lines[0]).map(norm);
-      const col = (name: string) => header.indexOf(norm(name));
+      const find = (pred: (h: string) => boolean) => header.findIndex(pred);
       const idx = {
-        nome: col("Nome do cliente"),
-        plano: col("Plano"),
-        venc: col("Vencimento"),
-        valor: col("Valor"),
-        status: col("Status"),
-        dataStatus: col("Data do status atual"),
-        telefone: col("Telefone"),
+        nome: find((h) => h.includes("nome") || h.includes("cliente")),
+        plano: find((h) => h.includes("plano")),
+        // "vencimento" sozinho; evita confundir com "data dos status atual".
+        venc: find((h) => h.includes("vencimento") && !h.includes("status")),
+        valor: find((h) => h.includes("valor") || h.includes("preco")),
+        // Data do status (pagamento): contém "data" e "status" (cobre "do"/"dos").
+        dataStatus: find((h) => h.includes("data") && h.includes("status")),
+        // Status (texto): contém "status" mas não é a coluna de data.
+        status: find((h) => h.includes("status") && !h.includes("data")),
+        telefone: find(
+          (h) => h.includes("telefone") || h.includes("celular") || h.includes("fone") || h.includes("whatsapp"),
+        ),
       };
       if (idx.telefone < 0 || idx.valor < 0 || idx.plano < 0) {
         toast.error("CSV não reconhecido. Esperado o relatório do gateway (colunas Nome/Plano/Valor/Telefone).");
