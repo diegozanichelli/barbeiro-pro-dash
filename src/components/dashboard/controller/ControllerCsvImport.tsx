@@ -328,7 +328,10 @@ export default function ControllerCsvImport({
 
   // Uma linha será importada? ok/no_plan sempre; duplicata só se o usuário forçar.
   const willImportRow = (r: ParsedRow) =>
-    r.status === "ok" || r.status === "no_plan" || (r.status === "dup" && forcedImport.has(r.rowId));
+    r.status === "ok" ||
+    r.status === "no_plan" ||
+    // Possível duplicata ou status não-capturado: só entram se o usuário forçar.
+    ((r.status === "dup" || r.status === "ignored_status") && forcedImport.has(r.rowId));
 
   const counts = useMemo(() => {
     const ok = rows.filter(willImportRow).length;
@@ -792,12 +795,13 @@ export default function ControllerCsvImport({
           Importar relatório do gateway (CSV)
         </CardTitle>
         <CardDescription>
-          Suba o relatório de cobranças do cartão (separado por ";"). Cada linha "Capturada na
-          Operadora" vira uma renovação automática. Por cliente, o sistema cruza os dados: busca pelo
-          telefone, cadastra se não existir e identifica a unidade pelos últimos atendimentos dele.
-          Quando não dá pra identificar, você define a unidade na linha. Se a recepção já lançou a
-          assinatura daquele cliente no mesmo dia (nova ou renovação), a linha é marcada como possível
-          duplicata e não é importada — marque "importar mesmo assim" se for um lançamento diferente.
+          Suba o relatório de cobranças do cartão (separado por ";"). Todas as linhas aparecem com o
+          status; por padrão só as "Capturada na Operadora" (pagas) são importadas — as de outro
+          status (recusado, pendente, estornado...) ficam desmarcadas e você marca "importar mesmo
+          assim" se quiser. Por cliente, o sistema cruza os dados: busca pelo telefone, cadastra se não
+          existir e identifica a unidade pelos últimos atendimentos. Cada linha pode ser "Nova adesão"
+          ou "Renovação". Se a recepção já lançou a assinatura daquele cliente no mesmo dia, a linha é
+          marcada como possível duplicata e não é importada (também com "importar mesmo assim").
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -852,7 +856,7 @@ export default function ControllerCsvImport({
                 <p className="text-lg font-bold text-muted-foreground">{counts.dup}</p>
               </div>
               <div className="rounded-md border bg-secondary/40 p-2">
-                <p className="text-xs text-muted-foreground">Ignoradas</p>
+                <p className="text-xs text-muted-foreground">Outros status</p>
                 <p className="text-lg font-bold text-muted-foreground">{counts.ignored}</p>
               </div>
             </div>
@@ -886,7 +890,7 @@ export default function ControllerCsvImport({
                 </TableHeader>
                 <TableBody>
                   {rows.map((r, i) => (
-                    <TableRow key={i} className={((r.status === "dup" && !forcedImport.has(r.rowId)) || r.status === "ignored_status") ? "opacity-50" : ""}>
+                    <TableRow key={i} className={(((r.status === "dup" || r.status === "ignored_status") && !forcedImport.has(r.rowId))) ? "opacity-50" : ""}>
                       <TableCell className="font-medium">
                         <div className="min-w-0">
                           <p className="truncate max-w-[180px]">{r.clientName || "—"}</p>
@@ -909,7 +913,7 @@ export default function ControllerCsvImport({
                               </span>
                             );
                           }
-                          if ((r.status === "dup" && !forcedImport.has(r.rowId)) || r.status === "ignored_status") {
+                          if ((r.status === "dup" || r.status === "ignored_status") && !forcedImport.has(r.rowId)) {
                             return <span className="text-muted-foreground">—</span>;
                           }
                           // Sem unidade resolvida: deixa o usuário escolher na linha.
@@ -990,7 +994,35 @@ export default function ControllerCsvImport({
                             </label>
                           </div>
                         ) : r.status === "ignored_status" ? (
-                          <Badge variant="outline" className="text-muted-foreground">Ignorada</Badge>
+                          <div className="space-y-1">
+                            <Badge
+                              variant="outline"
+                              className={forcedImport.has(r.rowId)
+                                ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                                : "text-muted-foreground"}
+                            >
+                              {forcedImport.has(r.rowId) ? "Importar" : (r.statusText || "Sem status")}
+                            </Badge>
+                            {!forcedImport.has(r.rowId) && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">não capturado</p>
+                            )}
+                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3 accent-primary"
+                                checked={forcedImport.has(r.rowId)}
+                                onChange={(e) =>
+                                  setForcedImport((s) => {
+                                    const next = new Set(s);
+                                    if (e.target.checked) next.add(r.rowId);
+                                    else next.delete(r.rowId);
+                                    return next;
+                                  })
+                                }
+                              />
+                              importar mesmo assim
+                            </label>
+                          </div>
                         ) : (
                           <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
                             Importar
