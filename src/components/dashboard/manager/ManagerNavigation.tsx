@@ -118,6 +118,7 @@ export default function ManagerNavigation({
     { id: "report-units", label: "Comparativo de Unidades", icon: GitCompare },
     { id: "report-business", label: "Negócio", icon: TrendingUp },
     { id: "report-movement", label: "Assinaturas - Controladoria", icon: Repeat },
+    { id: "report-weekly-goal", label: "Meta Semanal", icon: Target },
     { id: "monthly-presentation", label: "Apresentação Mensal", icon: Presentation },
   ];
 
