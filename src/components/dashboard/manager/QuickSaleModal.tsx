@@ -949,13 +949,24 @@ export default function QuickSaleModal({
   ): Promise<{ anchor: Date; nextDue: Date } | null> => {
     if (!subscriptionInCart) return null;
 
-    // 1) Vínculo do plano (principal; guardado por schema antigo sem a coluna).
-    const { error } = await (supabase
-      .from("clients") as any)
-      .update({ subscription_plan_id: subscriptionInCart.planId })
-      .eq("organization_id", organizationId)
-      .eq("mobile_phone", mobilePhoneSanitized);
-    if (error && !isSubscriptionPlanFieldMissing(error)) throw error;
+    // IMPORTANTE: esta função roda APÓS o commit da venda. Ela é best-effort e
+    // NUNCA lança — uma falha aqui (rede/RLS) não pode ser reportada como "venda
+    // falhou", senão o funcionário repete e a venda é duplicada.
+
+    // 1) Vínculo do plano (guardado por schema antigo sem a coluna).
+    try {
+      const { error } = await (supabase
+        .from("clients") as any)
+        .update({ subscription_plan_id: subscriptionInCart.planId })
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", mobilePhoneSanitized);
+      if (error && !isSubscriptionPlanFieldMissing(error)) {
+        console.warn("[QuickSaleModal] Falha ao vincular plano ao cliente (não bloqueante):", error);
+        toast.warning("Venda salva, mas não consegui atualizar o plano/vencimento do cliente. Revise na aba Assinaturas.");
+      }
+    } catch (linkErr) {
+      console.warn("[QuickSaleModal] Erro inesperado ao vincular plano (não bloqueante):", linkErr);
+    }
 
     // 2) Ciclo de vencimento. Renovação (renew/upgrade/downgrade) parte do
     //    vencimento vigente; adesão nova (new) começa um ciclo do zero.
