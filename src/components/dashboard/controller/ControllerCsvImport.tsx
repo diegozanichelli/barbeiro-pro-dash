@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,7 +73,34 @@ interface ParsedRow {
   dupInfo?: string;
   // Id estável da linha (para o "importar mesmo assim" dos duplicados).
   rowId: string;
+  // Cliente sem assinatura ativa na base (não existe OU sem plano) → sugere nova adesão.
+  isLikelyNew: boolean;
+  // Origem do pagamento derivada do Status (gateway x balcão), para atribuir a
+  // origem certa e distinguir renov. automática x balcão nos relatórios.
+  payOrigin: PayOrigin;
 }
+
+// Tipo do lançamento importado, escolhido por linha.
+type ImportKind = "new" | "renew";
+
+interface ImportBatch {
+  id: string;
+  created_at: string;
+  file_name: string | null;
+  row_count: number;
+  total_value: number;
+}
+
+// next_due (yyyy-MM-dd) do JSON de ciclo gravado no description, ou null.
+const parseCycleNextDue = (description: string | null): string | null => {
+  if (!description) return null;
+  try {
+    const p = JSON.parse(description);
+    return typeof p?.next_due === "string" ? p.next_due : null;
+  } catch {
+    return null;
+  }
+};
 
 const norm = (s: string): string =>
   (s || "")
@@ -148,6 +175,44 @@ const parseBRDateKey = (s: string): string | null => {
 const splitCsvLine = (line: string): string[] =>
   line.split(";").map((c) => c.trim().replace(/^"(.*)"$/, "$1").trim());
 
+// Origem do pagamento, derivada do Status do gateway:
+//  - "gateway": cobrado/capturado pela operadora (cartão).
+//  - "counter": "pago fora do sistema" = quitado no balcão, fora da operadora.
+type PayOrigin = "gateway" | "counter";
+
+// Classifica o Status do CSV em (pago?, origem do pagamento).
+//  - "pago fora do sistema" → pago, origem balcão (counter).
+//  - "capturada na operadora" → pago, origem gateway. ATENÇÃO: "não capturado"
+//    também contém "captur", então excluímos explicitamente o "nao captur".
+//  - demais (recusado, pendente, estornado, não capturado...) → não pago.
+const classifyStatus = (statusText: string): { paid: boolean; payOrigin: PayOrigin } => {
+  const n = norm(statusText);
+  if (n.includes("fora do sistema") || n.includes("pago fora")) {
+    return { paid: true, payOrigin: "counter" };
+  }
+  if (n.includes("captur") && !n.includes("nao captur")) {
+    return { paid: true, payOrigin: "gateway" };
+  }
+  return { paid: false, payOrigin: "gateway" };
+};
+
+// Rótulo da origem do lançamento, combinando a origem do pagamento com nova/renovação:
+// renovação automática (gateway) · nova adesão online (gateway) · novo no balcão
+// (counter) · renovou no balcão (counter). É o que o gestor usa pra distinguir.
+const originLabel = (payOrigin: PayOrigin, isNew: boolean): string =>
+  payOrigin === "counter"
+    ? isNew
+      ? "Novo no balcão"
+      : "Renovou no balcão"
+    : isNew
+      ? "Nova adesão online"
+      : "Renovação automática";
+
+// attribution_source gravado por linha: balcão (counter) → "reception" (cai em
+// Balcão/Renov. manual nos relatórios); gateway → "online" (nova) / "auto_recurring".
+const attributionFor = (payOrigin: PayOrigin, isNew: boolean): string =>
+  payOrigin === "counter" ? "reception" : isNew ? "online" : "auto_recurring";
+
 // Rótulo amigável da origem do lançamento que já existe (para a possível duplicata).
 const dupSourceLabel = (source: string | null): string => {
   switch (source) {
@@ -180,6 +245,133 @@ export default function ControllerCsvImport({
   const [manualUnitByPhone, setManualUnitByPhone] = useState<Record<string, string>>({});
   // Linhas duplicadas que o usuário decidiu importar mesmo assim (por rowId).
   const [forcedImport, setForcedImport] = useState<Set<string>>(new Set());
+  // Override do tipo (nova adesão/renovação) por linha; sem override usa a sugestão.
+  const [rowKind, setRowKind] = useState<Record<string, ImportKind>>({});
+
+  // Tipo efetivo da linha: override manual ou sugestão (nova adesão se cliente
+  // não tem assinatura ativa na base).
+  const effKind = (r: ParsedRow): ImportKind =>
+    rowKind[r.rowId] ?? (r.isLikelyNew ? "new" : "renew");
+
+  // Histórico de importações (lotes) + exclusão.
+  const [batches, setBatches] = useState<ImportBatch[]>([]);
+  const [deletingBatch, setDeletingBatch] = useState<string | null>(null);
+
+  const loadBatches = useCallback(async () => {
+    if (!organizationId) return;
+    const { data, error } = await supabase
+      .from("controller_import_batches")
+      .select("id, created_at, file_name, row_count, total_value")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) {
+      console.warn("Falha ao carregar histórico de importações:", error);
+      return;
+    }
+    setBatches((data as ImportBatch[]) || []);
+  }, [organizationId]);
+
+  useEffect(() => {
+    loadBatches();
+  }, [loadBatches]);
+
+  // Recompõe o ciclo dos clientes afetados após excluir um lote: usa a última
+  // assinatura restante (next_due); se não houver, o cliente deixa de ser assinante.
+  const recomputeClientsCycle = async (phones: string[]) => {
+    for (let i = 0; i < phones.length; i += 8) {
+      const chunk = phones.slice(i, i + 8);
+      await Promise.all(
+        chunk.map(async (phone) => {
+          const { data, error } = await supabase
+            .from("sale_transactions")
+            .select("description, subscription_plan_id, created_at")
+            .eq("organization_id", organizationId)
+            .eq("mobile_phone", phone)
+            .eq("item_type", "subscription")
+            .in("subscription_action", ["new", "renew", "upgrade"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          // Falha de leitura NÃO pode zerar a assinatura do cliente (poderia
+          // limpar quem ainda tem assinatura). Mantém o cliente como está.
+          if (error) {
+            console.warn("[import] falha ao reconstruir ciclo; cliente mantido:", phone, error);
+            return;
+          }
+          if (data) {
+            // Ainda tem assinatura → reconstrói o estado pela última restante
+            // (plano, vencimento, último pagamento; limpa atraso/flag).
+            await supabase
+              .from("clients")
+              .update({
+                subscription_plan_id: data.subscription_plan_id ?? null,
+                subscription_due_date: parseCycleNextDue(data.description),
+                subscription_last_payment_at: data.created_at ? data.created_at.slice(0, 10) : null,
+                subscription_last_late_days: null,
+                subscription_payment_shift_flagged_at: null,
+              })
+              .eq("organization_id", organizationId)
+              .eq("mobile_phone", phone);
+          } else {
+            // Sem assinatura restante → deixa de ser assinante (zera tudo).
+            await supabase
+              .from("clients")
+              .update({
+                subscription_plan_id: null,
+                subscription_due_date: null,
+                subscription_started_at: null,
+                subscription_last_payment_at: null,
+                subscription_last_late_days: null,
+                subscription_payment_shift_flagged_at: null,
+              })
+              .eq("organization_id", organizationId)
+              .eq("mobile_phone", phone);
+          }
+        }),
+      );
+    }
+  };
+
+  const deleteBatch = async (batch: ImportBatch) => {
+    if (!confirm(`Excluir esta importação? ${batch.row_count} lançamento(s) serão apagados.`)) return;
+    setDeletingBatch(batch.id);
+    try {
+      // Telefones afetados (para recompor o ciclo depois de apagar).
+      const { data: txRows, error: txErr } = await supabase
+        .from("sale_transactions")
+        .select("mobile_phone")
+        .eq("organization_id", organizationId)
+        .eq("import_batch_id", batch.id);
+      if (txErr) throw txErr;
+      const affectedPhones = Array.from(
+        new Set(
+          (txRows || [])
+            .map((t: { mobile_phone: string | null }) => sanitizePhone(t.mobile_phone || ""))
+            .filter(Boolean),
+        ),
+      );
+
+      const { error: delErr } = await supabase
+        .from("sale_transactions")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("import_batch_id", batch.id);
+      if (delErr) throw delErr;
+
+      await recomputeClientsCycle(affectedPhones);
+      await supabase.from("controller_import_batches").delete().eq("id", batch.id);
+
+      toast.success("Importação excluída.");
+      loadBatches();
+      onImported();
+    } catch (err) {
+      console.error("Erro ao excluir importação:", err);
+      toast.error("Não foi possível excluir a importação.");
+    } finally {
+      setDeletingBatch(null);
+    }
+  };
 
   // Unidade efetiva: a resolvida (cadastro/histórico) ou a escolhida manualmente.
   const effUnitId = (r: ParsedRow): string | null =>
@@ -193,7 +385,10 @@ export default function ControllerCsvImport({
 
   // Uma linha será importada? ok/no_plan sempre; duplicata só se o usuário forçar.
   const willImportRow = (r: ParsedRow) =>
-    r.status === "ok" || r.status === "no_plan" || (r.status === "dup" && forcedImport.has(r.rowId));
+    r.status === "ok" ||
+    r.status === "no_plan" ||
+    // Possível duplicata ou status não-capturado: só entram se o usuário forçar.
+    ((r.status === "dup" || r.status === "ignored_status") && forcedImport.has(r.rowId));
 
   const counts = useMemo(() => {
     const ok = rows.filter(willImportRow).length;
@@ -212,6 +407,7 @@ export default function ControllerCsvImport({
     setFileName("");
     setManualUnitByPhone({});
     setForcedImport(new Set());
+    setRowKind({});
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -220,6 +416,7 @@ export default function ControllerCsvImport({
     setRows([]);
     setManualUnitByPhone({});
     setForcedImport(new Set());
+    setRowKind({});
     setFileName(file.name);
     try {
       const text = await file.text();
@@ -248,7 +445,7 @@ export default function ControllerCsvImport({
 
       const parsed: Omit<
         ParsedRow,
-        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy" | "dupInfo" | "rowId"
+        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy" | "dupInfo" | "rowId" | "isLikelyNew" | "payOrigin"
       >[] = [];
       for (let i = 1; i < lines.length; i++) {
         const c = splitCsvLine(lines[i]);
@@ -278,15 +475,16 @@ export default function ControllerCsvImport({
 
       const phones = Array.from(new Set(parsed.map((p) => p.phone)));
 
-      // 1) Cliente já existe? Unidade cadastrada + ciclo vigente (vencimento/política)?
+      // 1) Cliente já existe? Unidade cadastrada + ciclo vigente + assinatura ativa?
       const existingUnitByPhone = new Map<string, string | null>();
       const dueByPhone = new Map<string, string | null>();
       const policyByPhone = new Map<string, DuePolicy>();
+      const planByPhone = new Map<string, string | null>();
       for (let i = 0; i < phones.length; i += 300) {
         const chunk = phones.slice(i, i + 300);
         const { data, error } = await supabase
           .from("clients")
-          .select("mobile_phone, subscription_unit_id, subscription_due_date, subscription_due_policy")
+          .select("mobile_phone, subscription_unit_id, subscription_due_date, subscription_due_policy, subscription_plan_id")
           .eq("organization_id", organizationId)
           .in("mobile_phone", chunk);
         // Falha de leitura aqui não pode virar "todos sem unidade". Aborta.
@@ -297,6 +495,7 @@ export default function ControllerCsvImport({
             subscription_unit_id: string | null;
             subscription_due_date: string | null;
             subscription_due_policy: string | null;
+            subscription_plan_id: string | null;
           }) => {
             existingUnitByPhone.set(cl.mobile_phone, cl.subscription_unit_id);
             dueByPhone.set(cl.mobile_phone, cl.subscription_due_date);
@@ -304,6 +503,7 @@ export default function ControllerCsvImport({
               cl.mobile_phone,
               cl.subscription_due_policy === "follow_payment" ? "follow_payment" : "keep",
             );
+            planByPhone.set(cl.mobile_phone, cl.subscription_plan_id);
           },
         );
       }
@@ -366,14 +566,30 @@ export default function ControllerCsvImport({
         );
       }
 
+      // Sugestão "nova adesão" só para a 1ª cobrança (mais antiga) de cada cliente
+      // SEM assinatura ativa na base. Cobranças seguintes do mesmo cliente são
+      // renovações (senão todas resetariam o ciclo e inflariam novas adesões).
+      const newEligible = (phone: string) =>
+        !existingUnitByPhone.has(phone) || !planByPhone.get(phone);
+      const firstNewIdxByPhone = new Map<string, number>();
+      parsed.forEach((p, i) => {
+        if (!newEligible(p.phone)) return;
+        const cur = firstNewIdxByPhone.get(p.phone);
+        if (cur === undefined || (p.dateKey || "") < (parsed[cur].dateKey || "")) {
+          firstNewIdxByPhone.set(p.phone, i);
+        }
+      });
+
       const finalRows: ParsedRow[] = parsed.map((p, i) => {
         const clientExists = existingUnitByPhone.has(p.phone);
         const resolvedUnitId =
           (existingUnitByPhone.get(p.phone) ?? null) || inferredByPhone.get(p.phone) || null;
         const existingSub = p.dateKey ? existingByPhoneDay.get(`${p.phone}|${p.dateKey}`) : undefined;
+        const { paid, payOrigin } = classifyStatus(p.statusText);
         let status: RowStatus;
         let dupInfo: string | undefined;
-        if (!norm(p.statusText).includes("captur")) {
+        if (!paid) {
+          // Não pago (recusado, pendente, estornado, não capturado): fica desmarcado.
           status = "ignored_status";
         } else if (existingSub) {
           // Já existe assinatura desse cliente neste dia (recepção/balcão ou
@@ -394,6 +610,9 @@ export default function ControllerCsvImport({
           status,
           dupInfo,
           rowId: `${p.phone}|${p.dateKey}|${p.valor.toFixed(2)}|${i}`,
+          // Novo só na 1ª cobrança de um cliente sem assinatura ativa na base.
+          isLikelyNew: firstNewIdxByPhone.get(p.phone) === i,
+          payOrigin,
         };
       });
 
@@ -415,6 +634,32 @@ export default function ControllerCsvImport({
     }
     setImporting(true);
     try {
+      // Registra o lote de importação (histórico + base para exclusão depois).
+      const totalValue = toImport.reduce((a, r) => a + r.valor, 0);
+      const { data: batchRow, error: batchErr } = await supabase
+        .from("controller_import_batches")
+        .insert({
+          organization_id: organizationId,
+          file_name: fileName || null,
+          row_count: toImport.length,
+          total_value: totalValue,
+        })
+        .select("id")
+        .single();
+      if (batchErr || !batchRow) {
+        throw new Error("Falha ao registrar o lote de importação. Tente novamente.");
+      }
+      const batchId = batchRow.id as string;
+
+      // Data de início por cliente que entra como NOVA ADESÃO (menor data).
+      const newStartedByPhone = new Map<string, string>();
+      for (const r of toImport) {
+        if (effKind(r) === "new" && r.dateKey) {
+          const cur = newStartedByPhone.get(r.phone);
+          if (!cur || r.dateKey < cur) newStartedByPhone.set(r.phone, r.dateKey);
+        }
+      }
+
       // Decide a data do novo ciclo de cada linha respeitando a política do
       // cliente (vencimento prevalece por padrão; re-ancora só em "follow_payment").
       // Cobranças do MESMO cliente são processadas em ordem de data, encadeando o
@@ -442,7 +687,10 @@ export default function ControllerCsvImport({
         let last: Computed | null = null;
         for (const r of sorted) {
           const paymentDate = r.dateKey ? parseISO(r.dateKey) : new Date();
-          const cycle = computeRenewalDue(runningDue, paymentDate, runningPolicy);
+          // Nova adesão começa ciclo do zero (ancora no pagamento); renovação parte
+          // do vencimento vigente encadeado.
+          const base = effKind(r) === "new" ? null : runningDue;
+          const cycle = computeRenewalDue(base, paymentDate, runningPolicy);
           computed.push({ r, cycle });
           runningDue = cycle.nextDue; // encadeia para a próxima cobrança
           runningPolicy = "keep"; // follow_payment vale só para a 1ª cobrança
@@ -454,25 +702,32 @@ export default function ControllerCsvImport({
         }
       }
 
-      const payload = computed.map(({ r, cycle }) => ({
-        organization_id: organizationId,
-        barber_id: null,
-        item_type: "subscription",
-        item_name: `Assinatura ${r.planText || ""}`.trim(),
-        subscription_action: "renew",
-        attribution_source: "auto_recurring",
-        source: "manager",
-        price_sold: r.valor,
-        commission_rate_used: 0,
-        commission_amount: 0,
-        subscription_plan_id: r.planId,
-        unit_id: effUnitId(r),
-        client_name: r.clientName || null,
-        mobile_phone: r.phone,
-        is_new_client: false,
-        created_at: r.dateKey ? `${r.dateKey}T12:00:00${MANAUS_OFFSET}` : undefined,
-        description: r.dateKey ? serializeCycleMetadata(cycle.anchor, cycle.nextDue) : null,
-      }));
+      const payload = computed.map(({ r, cycle }) => {
+        const isNew = effKind(r) === "new";
+        return {
+          organization_id: organizationId,
+          barber_id: null,
+          item_type: "subscription",
+          item_name: `Assinatura ${r.planText || ""}`.trim(),
+          // Origem derivada do Status: balcão ("pago fora do sistema") → reception;
+          // gateway → online (nova adesão / link) ou auto_recurring (renovação).
+          subscription_action: isNew ? "new" : "renew",
+          attribution_source: attributionFor(r.payOrigin, isNew),
+          source: "manager",
+          price_sold: r.valor,
+          commission_rate_used: 0,
+          commission_amount: 0,
+          subscription_plan_id: r.planId,
+          unit_id: effUnitId(r),
+          client_name: r.clientName || null,
+          mobile_phone: r.phone,
+          // Cliente novo de fato só quando não existia na base.
+          is_new_client: isNew ? !r.clientExists : false,
+          import_batch_id: batchId,
+          created_at: r.dateKey ? `${r.dateKey}T12:00:00${MANAUS_OFFSET}` : undefined,
+          description: r.dateKey ? serializeCycleMetadata(cycle.anchor, cycle.nextDue) : null,
+        };
+      });
 
       // Insere em lotes para não estourar o payload
       let inserted = 0;
@@ -576,6 +831,9 @@ export default function ControllerCsvImport({
             }
             // Troca aplicada: volta para "keep" (a nova data agora vigora).
             if (policyWasFollow) upd.subscription_due_policy = "keep";
+            // Nova adesão: registra a data de início da assinatura.
+            const startedAt = newStartedByPhone.get(phone);
+            if (startedAt) upd.subscription_started_at = startedAt;
             await supabase
               .from("clients")
               .update(upd)
@@ -585,12 +843,16 @@ export default function ControllerCsvImport({
         );
       }
 
+      const newCount = toImport.filter((r) => effKind(r) === "new").length;
+      const renewCount = inserted - newCount;
       toast.success(
-        `${inserted} renovação${inserted === 1 ? "" : "ões"} importada${inserted === 1 ? "" : "s"}` +
+        `${inserted} lançamento${inserted === 1 ? "" : "s"} importado${inserted === 1 ? "" : "s"}` +
+          ` · ${newCount} nova(s) adesão(ões) · ${renewCount} renovação(ões)` +
           `${clientsCreated > 0 ? ` · ${clientsCreated} cliente(s) novo(s)` : ""}` +
           `${clientErrors > 0 ? ` · ${clientErrors} ignorado(s) por telefone/nome inválido` : ""}.`
       );
       reset();
+      loadBatches();
       onImported();
     } catch (err) {
       console.error("Erro ao importar CSV:", err);
@@ -608,12 +870,16 @@ export default function ControllerCsvImport({
           Importar relatório do gateway (CSV)
         </CardTitle>
         <CardDescription>
-          Suba o relatório de cobranças do cartão (separado por ";"). Cada linha "Capturada na
-          Operadora" vira uma renovação automática. Por cliente, o sistema cruza os dados: busca pelo
-          telefone, cadastra se não existir e identifica a unidade pelos últimos atendimentos dele.
-          Quando não dá pra identificar, você define a unidade na linha. Se a recepção já lançou a
-          assinatura daquele cliente no mesmo dia (nova ou renovação), a linha é marcada como possível
-          duplicata e não é importada — marque "importar mesmo assim" se for um lançamento diferente.
+          Suba o relatório de cobranças do cartão (separado por ";"). Todas as linhas aparecem com o
+          status; por padrão as pagas são importadas — "Capturada na Operadora" (renovação automática)
+          e "Pago fora do sistema" (quitado no balcão). As de outro status (recusado, pendente,
+          estornado, não capturado...) ficam desmarcadas e você marca "importar mesmo assim" se quiser.
+          Por cliente, o sistema cruza os dados: busca pelo telefone, cadastra se não existir e
+          identifica a unidade pelos últimos atendimentos. Cada linha mostra a origem resultante —
+          renovação automática, nova adesão online, novo no balcão ou renovou no balcão — conforme o
+          status e o tipo (Nova adesão/Renovação). Se a recepção já lançou a assinatura daquele cliente
+          no mesmo dia, a linha é marcada como possível duplicata e não é importada (também com
+          "importar mesmo assim").
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -668,7 +934,7 @@ export default function ControllerCsvImport({
                 <p className="text-lg font-bold text-muted-foreground">{counts.dup}</p>
               </div>
               <div className="rounded-md border bg-secondary/40 p-2">
-                <p className="text-xs text-muted-foreground">Ignoradas</p>
+                <p className="text-xs text-muted-foreground">Outros status</p>
                 <p className="text-lg font-bold text-muted-foreground">{counts.ignored}</p>
               </div>
             </div>
@@ -696,12 +962,13 @@ export default function ControllerCsvImport({
                     <TableHead>Unidade</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
+                    <TableHead>Tipo</TableHead>
                     <TableHead>Situação</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((r, i) => (
-                    <TableRow key={i} className={((r.status === "dup" && !forcedImport.has(r.rowId)) || r.status === "ignored_status") ? "opacity-50" : ""}>
+                    <TableRow key={i} className={(((r.status === "dup" || r.status === "ignored_status") && !forcedImport.has(r.rowId))) ? "opacity-50" : ""}>
                       <TableCell className="font-medium">
                         <div className="min-w-0">
                           <p className="truncate max-w-[180px]">{r.clientName || "—"}</p>
@@ -724,7 +991,7 @@ export default function ControllerCsvImport({
                               </span>
                             );
                           }
-                          if ((r.status === "dup" && !forcedImport.has(r.rowId)) || r.status === "ignored_status") {
+                          if ((r.status === "dup" || r.status === "ignored_status") && !forcedImport.has(r.rowId)) {
                             return <span className="text-muted-foreground">—</span>;
                           }
                           // Sem unidade resolvida: deixa o usuário escolher na linha.
@@ -753,6 +1020,38 @@ export default function ControllerCsvImport({
                         {r.dateKey ? r.dateKey.split("-").reverse().join("/") : "—"}
                       </TableCell>
                       <TableCell className="text-right font-semibold">{brl(r.valor)}</TableCell>
+                      <TableCell>
+                        {willImportRow(r) ? (
+                          <div className="space-y-1">
+                            <Select
+                              value={effKind(r)}
+                              onValueChange={(v) =>
+                                setRowKind((m) => ({ ...m, [r.rowId]: v as ImportKind }))
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[130px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="renew">Renovação</SelectItem>
+                                <SelectItem value="new">Nova adesão</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {/* Origem resultante: distingue renov. automática x balcão. */}
+                            <p
+                              className={`text-[10px] leading-tight ${
+                                r.payOrigin === "counter"
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {originLabel(r.payOrigin, effKind(r) === "new")}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {r.status === "dup" ? (
                           <div className="space-y-1">
@@ -785,7 +1084,35 @@ export default function ControllerCsvImport({
                             </label>
                           </div>
                         ) : r.status === "ignored_status" ? (
-                          <Badge variant="outline" className="text-muted-foreground">Ignorada</Badge>
+                          <div className="space-y-1">
+                            <Badge
+                              variant="outline"
+                              className={forcedImport.has(r.rowId)
+                                ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                                : "text-muted-foreground"}
+                            >
+                              {forcedImport.has(r.rowId) ? "Importar" : (r.statusText || "Sem status")}
+                            </Badge>
+                            {!forcedImport.has(r.rowId) && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">não capturado</p>
+                            )}
+                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3 accent-primary"
+                                checked={forcedImport.has(r.rowId)}
+                                onChange={(e) =>
+                                  setForcedImport((s) => {
+                                    const next = new Set(s);
+                                    if (e.target.checked) next.add(r.rowId);
+                                    else next.delete(r.rowId);
+                                    return next;
+                                  })
+                                }
+                              />
+                              importar mesmo assim
+                            </label>
+                          </div>
                         ) : (
                           <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
                             Importar
@@ -805,11 +1132,49 @@ export default function ControllerCsvImport({
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4 mr-2" /> Importar {counts.ok} renovações automáticas
+                  <CheckCircle2 className="w-4 h-4 mr-2" /> Importar {counts.ok} lançamento{counts.ok === 1 ? "" : "s"}
                 </>
               )}
             </Button>
           </>
+        )}
+
+        {/* Histórico de importações — permite excluir uma importação inteira */}
+        {batches.length > 0 && (
+          <div className="mt-6 border-t border-border pt-4">
+            <p className="text-sm font-semibold mb-2">Importações recentes</p>
+            <div className="space-y-2">
+              {batches.map((b) => (
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{b.file_name || "Importação"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(b.created_at).toLocaleString("pt-BR")} · {b.row_count} lançamento
+                      {b.row_count === 1 ? "" : "s"} · {brl(Number(b.total_value) || 0)}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0 text-destructive hover:text-destructive"
+                    disabled={deletingBatch === b.id}
+                    onClick={() => deleteBatch(b)}
+                  >
+                    {deletingBatch === b.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        <X className="w-3.5 h-3.5 mr-1" /> Excluir
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -500,6 +500,44 @@ export type Database = {
           },
         ]
       }
+      controller_import_batches: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          file_name: string | null
+          id: string
+          organization_id: string
+          row_count: number
+          total_value: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          file_name?: string | null
+          id?: string
+          organization_id: string
+          row_count?: number
+          total_value?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          file_name?: string | null
+          id?: string
+          organization_id?: string
+          row_count?: number
+          total_value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "controller_import_batches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_productions: {
         Row: {
           barber_id: string
@@ -1108,6 +1146,7 @@ export type Database = {
           description: string | null
           downgrade_reason: string | null
           id: string
+          import_batch_id: string | null
           is_new_client: boolean | null
           item_name: string
           item_type: string
@@ -1136,6 +1175,7 @@ export type Database = {
           description?: string | null
           downgrade_reason?: string | null
           id?: string
+          import_batch_id?: string | null
           is_new_client?: boolean | null
           item_name: string
           item_type: string
@@ -1164,6 +1204,7 @@ export type Database = {
           description?: string | null
           downgrade_reason?: string | null
           id?: string
+          import_batch_id?: string | null
           is_new_client?: boolean | null
           item_name?: string
           item_type?: string
