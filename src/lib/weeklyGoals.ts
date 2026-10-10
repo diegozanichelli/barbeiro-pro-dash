@@ -1,6 +1,5 @@
 import { startOfWeek, endOfWeek, subWeeks } from "date-fns";
-import { toZonedTime } from "date-fns-tz";
-import { TIMEZONE, getManausDate, toDateKey } from "@/lib/dateUtils";
+import { getManausDate, toDateKey } from "@/lib/dateUtils";
 import { isCancellation, isLegacyImport, type MetricTx } from "@/lib/metricsRules";
 
 /**
@@ -15,9 +14,11 @@ export interface WeekRanges {
 }
 
 export function getWeekRanges(now: Date = getManausDate()): WeekRanges {
-  const z = toZonedTime(now, TIMEZONE);
-  const curStart = startOfWeek(z, { weekStartsOn: 1 });
-  const curEnd = endOfWeek(z, { weekStartsOn: 1 });
+  // `now` já vem no horário de parede de Manaus (getManausDate). Não reaplicar
+  // toZonedTime aqui — isso deslocaria o fuso de novo em clientes fora de Manaus
+  // e poderia selecionar a semana errada perto da virada de segunda-feira.
+  const curStart = startOfWeek(now, { weekStartsOn: 1 });
+  const curEnd = endOfWeek(now, { weekStartsOn: 1 });
   const prevStart = subWeeks(curStart, 1);
   const prevEnd = subWeeks(curEnd, 1);
   return {

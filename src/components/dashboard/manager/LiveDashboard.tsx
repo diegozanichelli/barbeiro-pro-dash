@@ -123,6 +123,7 @@ interface Unit {
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
   const weeklyGoals = useWeeklyUnitGoals(organizationId);
+  const refetchWeeklyGoals = weeklyGoals.refetch; // estável (useCallback no hook)
   const todayManausDate = getManausDate();
   const { holidayDates } = useOrganizationHolidays({
     organizationId,
@@ -320,12 +321,16 @@ export default function LiveDashboard() {
         .filter(isOperationalRevenueTx)
         .reduce((sum, t) => sum + (t.price_sold || 0), 0);
       setYesterdayRevenue(yRevenue);
+
+      // Mantém a meta semanal em sincronia com as vendas ao vivo (realtime,
+      // modais de venda, etc. chamam fetchData após cada mutação).
+      refetchWeeklyGoals();
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, selectedDate, currentMonth, currentYear, selectedUnit]);
+  }, [organizationId, selectedDate, currentMonth, currentYear, selectedUnit, refetchWeeklyGoals]);
 
   useEffect(() => {
     fetchData();

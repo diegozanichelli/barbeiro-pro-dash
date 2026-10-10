@@ -73,6 +73,9 @@ export function useWeeklyUnitGoals(organizationId: string | undefined): UseWeekl
             .from("sale_transactions")
             .select("unit_id, barber_id, item_type, subscription_action, price_sold, created_at")
             .eq("organization_id", organizationId)
+            // Fonte de verdade do gestor (e da controladoria). Sem isto, linhas
+            // source='barber' (produção lançada pelo barbeiro) duplicariam o faturamento.
+            .eq("source", "manager")
             .gte("created_at", manausDayStart(weeks.prevStart))
             .lte("created_at", manausDayEnd(weeks.currentEnd)) as never,
         );
