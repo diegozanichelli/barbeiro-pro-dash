@@ -75,6 +75,9 @@ interface ParsedRow {
   rowId: string;
   // Cliente sem assinatura ativa na base (não existe OU sem plano) → sugere nova adesão.
   isLikelyNew: boolean;
+  // Origem do pagamento derivada do Status (gateway x balcão), para atribuir a
+  // origem certa e distinguir renov. automática x balcão nos relatórios.
+  payOrigin: PayOrigin;
 }
 
 // Tipo do lançamento importado, escolhido por linha.
@@ -171,6 +174,44 @@ const parseBRDateKey = (s: string): string | null => {
 
 const splitCsvLine = (line: string): string[] =>
   line.split(";").map((c) => c.trim().replace(/^"(.*)"$/, "$1").trim());
+
+// Origem do pagamento, derivada do Status do gateway:
+//  - "gateway": cobrado/capturado pela operadora (cartão).
+//  - "counter": "pago fora do sistema" = quitado no balcão, fora da operadora.
+type PayOrigin = "gateway" | "counter";
+
+// Classifica o Status do CSV em (pago?, origem do pagamento).
+//  - "pago fora do sistema" → pago, origem balcão (counter).
+//  - "capturada na operadora" → pago, origem gateway. ATENÇÃO: "não capturado"
+//    também contém "captur", então excluímos explicitamente o "nao captur".
+//  - demais (recusado, pendente, estornado, não capturado...) → não pago.
+const classifyStatus = (statusText: string): { paid: boolean; payOrigin: PayOrigin } => {
+  const n = norm(statusText);
+  if (n.includes("fora do sistema") || n.includes("pago fora")) {
+    return { paid: true, payOrigin: "counter" };
+  }
+  if (n.includes("captur") && !n.includes("nao captur")) {
+    return { paid: true, payOrigin: "gateway" };
+  }
+  return { paid: false, payOrigin: "gateway" };
+};
+
+// Rótulo da origem do lançamento, combinando a origem do pagamento com nova/renovação:
+// renovação automática (gateway) · nova adesão online (gateway) · novo no balcão
+// (counter) · renovou no balcão (counter). É o que o gestor usa pra distinguir.
+const originLabel = (payOrigin: PayOrigin, isNew: boolean): string =>
+  payOrigin === "counter"
+    ? isNew
+      ? "Novo no balcão"
+      : "Renovou no balcão"
+    : isNew
+      ? "Nova adesão online"
+      : "Renovação automática";
+
+// attribution_source gravado por linha: balcão (counter) → "reception" (cai em
+// Balcão/Renov. manual nos relatórios); gateway → "online" (nova) / "auto_recurring".
+const attributionFor = (payOrigin: PayOrigin, isNew: boolean): string =>
+  payOrigin === "counter" ? "reception" : isNew ? "online" : "auto_recurring";
 
 // Rótulo amigável da origem do lançamento que já existe (para a possível duplicata).
 const dupSourceLabel = (source: string | null): string => {
@@ -404,7 +445,7 @@ export default function ControllerCsvImport({
 
       const parsed: Omit<
         ParsedRow,
-        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy" | "dupInfo" | "rowId" | "isLikelyNew"
+        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy" | "dupInfo" | "rowId" | "isLikelyNew" | "payOrigin"
       >[] = [];
       for (let i = 1; i < lines.length; i++) {
         const c = splitCsvLine(lines[i]);
@@ -544,9 +585,11 @@ export default function ControllerCsvImport({
         const resolvedUnitId =
           (existingUnitByPhone.get(p.phone) ?? null) || inferredByPhone.get(p.phone) || null;
         const existingSub = p.dateKey ? existingByPhoneDay.get(`${p.phone}|${p.dateKey}`) : undefined;
+        const { paid, payOrigin } = classifyStatus(p.statusText);
         let status: RowStatus;
         let dupInfo: string | undefined;
-        if (!norm(p.statusText).includes("captur")) {
+        if (!paid) {
+          // Não pago (recusado, pendente, estornado, não capturado): fica desmarcado.
           status = "ignored_status";
         } else if (existingSub) {
           // Já existe assinatura desse cliente neste dia (recepção/balcão ou
@@ -569,6 +612,7 @@ export default function ControllerCsvImport({
           rowId: `${p.phone}|${p.dateKey}|${p.valor.toFixed(2)}|${i}`,
           // Novo só na 1ª cobrança de um cliente sem assinatura ativa na base.
           isLikelyNew: firstNewIdxByPhone.get(p.phone) === i,
+          payOrigin,
         };
       });
 
@@ -665,9 +709,10 @@ export default function ControllerCsvImport({
           barber_id: null,
           item_type: "subscription",
           item_name: `Assinatura ${r.planText || ""}`.trim(),
-          // Nova adesão (ex.: link de pagamento) vs renovação automática do gateway.
+          // Origem derivada do Status: balcão ("pago fora do sistema") → reception;
+          // gateway → online (nova adesão / link) ou auto_recurring (renovação).
           subscription_action: isNew ? "new" : "renew",
-          attribution_source: isNew ? "online" : "auto_recurring",
+          attribution_source: attributionFor(r.payOrigin, isNew),
           source: "manager",
           price_sold: r.valor,
           commission_rate_used: 0,
@@ -826,12 +871,15 @@ export default function ControllerCsvImport({
         </CardTitle>
         <CardDescription>
           Suba o relatório de cobranças do cartão (separado por ";"). Todas as linhas aparecem com o
-          status; por padrão só as "Capturada na Operadora" (pagas) são importadas — as de outro
-          status (recusado, pendente, estornado...) ficam desmarcadas e você marca "importar mesmo
-          assim" se quiser. Por cliente, o sistema cruza os dados: busca pelo telefone, cadastra se não
-          existir e identifica a unidade pelos últimos atendimentos. Cada linha pode ser "Nova adesão"
-          ou "Renovação". Se a recepção já lançou a assinatura daquele cliente no mesmo dia, a linha é
-          marcada como possível duplicata e não é importada (também com "importar mesmo assim").
+          status; por padrão as pagas são importadas — "Capturada na Operadora" (renovação automática)
+          e "Pago fora do sistema" (quitado no balcão). As de outro status (recusado, pendente,
+          estornado, não capturado...) ficam desmarcadas e você marca "importar mesmo assim" se quiser.
+          Por cliente, o sistema cruza os dados: busca pelo telefone, cadastra se não existir e
+          identifica a unidade pelos últimos atendimentos. Cada linha mostra a origem resultante —
+          renovação automática, nova adesão online, novo no balcão ou renovou no balcão — conforme o
+          status e o tipo (Nova adesão/Renovação). Se a recepção já lançou a assinatura daquele cliente
+          no mesmo dia, a linha é marcada como possível duplicata e não é importada (também com
+          "importar mesmo assim").
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -974,20 +1022,32 @@ export default function ControllerCsvImport({
                       <TableCell className="text-right font-semibold">{brl(r.valor)}</TableCell>
                       <TableCell>
                         {willImportRow(r) ? (
-                          <Select
-                            value={effKind(r)}
-                            onValueChange={(v) =>
-                              setRowKind((m) => ({ ...m, [r.rowId]: v as ImportKind }))
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-[130px] text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="renew">Renovação</SelectItem>
-                              <SelectItem value="new">Nova adesão</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="space-y-1">
+                            <Select
+                              value={effKind(r)}
+                              onValueChange={(v) =>
+                                setRowKind((m) => ({ ...m, [r.rowId]: v as ImportKind }))
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[130px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="renew">Renovação</SelectItem>
+                                <SelectItem value="new">Nova adesão</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {/* Origem resultante: distingue renov. automática x balcão. */}
+                            <p
+                              className={`text-[10px] leading-tight ${
+                                r.payOrigin === "counter"
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {originLabel(r.payOrigin, effKind(r) === "new")}
+                            </p>
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
