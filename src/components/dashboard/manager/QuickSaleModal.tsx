@@ -949,13 +949,24 @@ export default function QuickSaleModal({
   ): Promise<{ anchor: Date; nextDue: Date } | null> => {
     if (!subscriptionInCart) return null;
 
-    // 1) Vínculo do plano (principal; guardado por schema antigo sem a coluna).
-    const { error } = await (supabase
-      .from("clients") as any)
-      .update({ subscription_plan_id: subscriptionInCart.planId })
-      .eq("organization_id", organizationId)
-      .eq("mobile_phone", mobilePhoneSanitized);
-    if (error && !isSubscriptionPlanFieldMissing(error)) throw error;
+    // IMPORTANTE: esta função roda APÓS o commit da venda. Ela é best-effort e
+    // NUNCA lança — uma falha aqui (rede/RLS) não pode ser reportada como "venda
+    // falhou", senão o funcionário repete e a venda é duplicada.
+
+    // 1) Vínculo do plano (guardado por schema antigo sem a coluna).
+    try {
+      const { error } = await (supabase
+        .from("clients") as any)
+        .update({ subscription_plan_id: subscriptionInCart.planId })
+        .eq("organization_id", organizationId)
+        .eq("mobile_phone", mobilePhoneSanitized);
+      if (error && !isSubscriptionPlanFieldMissing(error)) {
+        console.warn("[QuickSaleModal] Falha ao vincular plano ao cliente (não bloqueante):", error);
+        toast.warning("Venda salva, mas não consegui atualizar o plano/vencimento do cliente. Revise na aba Assinaturas.");
+      }
+    } catch (linkErr) {
+      console.warn("[QuickSaleModal] Erro inesperado ao vincular plano (não bloqueante):", linkErr);
+    }
 
     // 2) Ciclo de vencimento. Renovação (renew/upgrade/downgrade) parte do
     //    vencimento vigente; adesão nova (new) começa um ciclo do zero.
@@ -1083,8 +1094,6 @@ export default function QuickSaleModal({
         }
       }
 
-      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone);
-
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
         toast.info(`Cliente identificado pelo celular: ${safeClientName}`);
       }
@@ -1136,10 +1145,14 @@ export default function QuickSaleModal({
       });
       if (error) throw error;
 
-      // O vínculo do plano e o ciclo de vencimento do cliente já foram
-      // persistidos por ensureSubscriptionAssigned (respeitando a política).
-      // Aqui só gravamos o cycle_anchor/next_due no description da transação
-      // recém-criada, para QUALQUER assinatura (não só a renovação do banner).
+      // Só APÓS a venda ser salva com sucesso: vincula o plano e avança o ciclo
+      // de vencimento do cliente. Fazer isto antes do RPC adiantava a data mesmo
+      // quando o save falhava — e a cada retentativa adiantava de novo (cliente
+      // ganhava mês grátis na visualização).
+      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone);
+
+      // Grava o cycle_anchor/next_due no description da transação recém-criada,
+      // para QUALQUER assinatura (não só a renovação do banner).
       if (subscriptionInCart && subCycleMeta) {
         try {
           const cycleJson = serializeCycleMetadata(subCycleMeta.anchor, subCycleMeta.nextDue);
@@ -1245,8 +1258,6 @@ export default function QuickSaleModal({
 
       const safeClientName = registeredClient.clientName || clientName.trim() || "Cliente";
 
-      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
-
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
         toast.info(`Cliente identificado pelo celular: ${safeClientName}`);
       }
@@ -1293,6 +1304,9 @@ export default function QuickSaleModal({
       });
 
       if (error) throw error;
+
+      // Só após o save: vincula plano/ciclo (não adianta vencimento se o save falha).
+      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
 
       await recordClientPurchasesBestEffort({
         organizationId,

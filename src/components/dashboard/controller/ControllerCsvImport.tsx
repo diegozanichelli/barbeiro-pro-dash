@@ -68,6 +68,11 @@ interface ParsedRow {
   currentDueDate: string | null; // yyyy-MM-dd ou null (sem ciclo conhecido)
   duePolicy: DuePolicy; // "keep" (padrão) ou "follow_payment"
   status: RowStatus;
+  // Quando status="dup": descreve o lançamento que já existe (origem · valor),
+  // para o controlador entender por que a linha é possível duplicata.
+  dupInfo?: string;
+  // Id estável da linha (para o "importar mesmo assim" dos duplicados).
+  rowId: string;
 }
 
 const norm = (s: string): string =>
@@ -143,6 +148,23 @@ const parseBRDateKey = (s: string): string | null => {
 const splitCsvLine = (line: string): string[] =>
   line.split(";").map((c) => c.trim().replace(/^"(.*)"$/, "$1").trim());
 
+// Rótulo amigável da origem do lançamento que já existe (para a possível duplicata).
+const dupSourceLabel = (source: string | null): string => {
+  switch (source) {
+    case "auto_recurring":
+      return "Gateway (já importado)";
+    case "online":
+      return "Venda online";
+    case "controller":
+      return "Controladoria";
+    case "barber":
+      return "Barbeiro";
+    case "reception":
+    default:
+      return "Recepção/balcão";
+  }
+};
+
 export default function ControllerCsvImport({
   organizationId,
   plans,
@@ -156,6 +178,8 @@ export default function ControllerCsvImport({
   const [importing, setImporting] = useState(false);
   // Unidade escolhida manualmente por linha (telefone), quando não dá pra inferir.
   const [manualUnitByPhone, setManualUnitByPhone] = useState<Record<string, string>>({});
+  // Linhas duplicadas que o usuário decidiu importar mesmo assim (por rowId).
+  const [forcedImport, setForcedImport] = useState<Set<string>>(new Set());
 
   // Unidade efetiva: a resolvida (cadastro/histórico) ou a escolhida manualmente.
   const effUnitId = (r: ParsedRow): string | null =>
@@ -167,23 +191,27 @@ export default function ControllerCsvImport({
     return m;
   }, [units]);
 
+  // Uma linha será importada? ok/no_plan sempre; duplicata só se o usuário forçar.
+  const willImportRow = (r: ParsedRow) =>
+    r.status === "ok" || r.status === "no_plan" || (r.status === "dup" && forcedImport.has(r.rowId));
+
   const counts = useMemo(() => {
-    const willImport = (r: ParsedRow) => r.status === "ok" || r.status === "no_plan";
-    const ok = rows.filter(willImport).length;
+    const ok = rows.filter(willImportRow).length;
     const dup = rows.filter((r) => r.status === "dup").length;
     const ignored = rows.filter((r) => r.status === "ignored_status").length;
     const noPlan = rows.filter((r) => r.status === "no_plan").length;
-    const newClients = rows.filter((r) => willImport(r) && !r.clientExists).length;
-    const needsUnit = rows.filter((r) => willImport(r) && !effUnitId(r)).length;
-    const mrr = rows.filter(willImport).reduce((a, r) => a + r.valor, 0);
+    const newClients = rows.filter((r) => willImportRow(r) && !r.clientExists).length;
+    const needsUnit = rows.filter((r) => willImportRow(r) && !effUnitId(r)).length;
+    const mrr = rows.filter(willImportRow).reduce((a, r) => a + r.valor, 0);
     return { ok, dup, ignored, noPlan, newClients, needsUnit, mrr };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, manualUnitByPhone]);
+  }, [rows, manualUnitByPhone, forcedImport]);
 
   const reset = () => {
     setRows([]);
     setFileName("");
     setManualUnitByPhone({});
+    setForcedImport(new Set());
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -191,6 +219,7 @@ export default function ControllerCsvImport({
     setParsing(true);
     setRows([]);
     setManualUnitByPhone({});
+    setForcedImport(new Set());
     setFileName(file.name);
     try {
       const text = await file.text();
@@ -219,7 +248,7 @@ export default function ControllerCsvImport({
 
       const parsed: Omit<
         ParsedRow,
-        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy"
+        "status" | "resolvedUnitId" | "clientExists" | "currentDueDate" | "duePolicy" | "dupInfo" | "rowId"
       >[] = [];
       for (let i = 1; i < lines.length; i++) {
         const c = splitCsvLine(lines[i]);
@@ -295,37 +324,62 @@ export default function ControllerCsvImport({
         });
       }
 
-      // Dedupe: renovações automáticas já lançadas no(s) mesmo(s) dia(s)
+      // Dedupe por telefone + dia: qualquer assinatura (não-cancelamento) já
+      // lançada para o cliente NO MESMO DIA da cobrança — seja re-importação do
+      // gateway OU lançamento da recepção/balcão (nova adesão ou renovação).
+      // Evita contar a mesma mensalidade duas vezes.
       const dayKeys = Array.from(new Set(parsed.map((p) => p.dateKey).filter(Boolean)));
-      const existing = new Set<string>();
+      const existingByPhoneDay = new Map<
+        string,
+        { source: string | null; value: number }
+      >();
       if (dayKeys.length > 0) {
         const minDay = dayKeys.sort()[0];
         const maxDay = dayKeys.sort()[dayKeys.length - 1];
         const { data, error } = await supabase
           .from("sale_transactions")
-          .select("mobile_phone, price_sold, created_at")
+          .select("mobile_phone, price_sold, created_at, subscription_action, attribution_source")
           .eq("organization_id", organizationId)
           .eq("item_type", "subscription")
-          .eq("attribution_source", "auto_recurring")
           .gte("created_at", `${minDay}T00:00:00${MANAUS_OFFSET}`)
           .lte("created_at", `${maxDay}T23:59:59${MANAUS_OFFSET}`);
         // Sem a checagem de duplicadas confiável, poderíamos reimportar em dobro. Aborta.
         if (error) throw new Error("Falha ao checar lançamentos duplicados. Tente novamente.");
-        (data || []).forEach((t: { mobile_phone: string | null; price_sold: number; created_at: string }) => {
-          const dk = t.created_at.slice(0, 10);
-          existing.add(`${sanitizePhone(t.mobile_phone || "")}|${dk}|${Number(t.price_sold).toFixed(2)}`);
-        });
+        (data || []).forEach(
+          (t: {
+            mobile_phone: string | null;
+            price_sold: number;
+            created_at: string;
+            subscription_action: string | null;
+            attribution_source: string | null;
+          }) => {
+            if (t.subscription_action === "cancel") return; // cancelamento não é duplicata
+            const key = `${sanitizePhone(t.mobile_phone || "")}|${t.created_at.slice(0, 10)}`;
+            // Mantém o primeiro encontrado (origem/valor para exibir na prévia).
+            if (!existingByPhoneDay.has(key)) {
+              existingByPhoneDay.set(key, {
+                source: t.attribution_source,
+                value: Number(t.price_sold) || 0,
+              });
+            }
+          },
+        );
       }
 
-      const finalRows: ParsedRow[] = parsed.map((p) => {
+      const finalRows: ParsedRow[] = parsed.map((p, i) => {
         const clientExists = existingUnitByPhone.has(p.phone);
         const resolvedUnitId =
           (existingUnitByPhone.get(p.phone) ?? null) || inferredByPhone.get(p.phone) || null;
+        const existingSub = p.dateKey ? existingByPhoneDay.get(`${p.phone}|${p.dateKey}`) : undefined;
         let status: RowStatus;
+        let dupInfo: string | undefined;
         if (!norm(p.statusText).includes("captur")) {
           status = "ignored_status";
-        } else if (p.dateKey && existing.has(`${p.phone}|${p.dateKey}|${p.valor.toFixed(2)}`)) {
+        } else if (existingSub) {
+          // Já existe assinatura desse cliente neste dia (recepção/balcão ou
+          // re-importação do gateway) → possível duplicata, não importa por padrão.
           status = "dup";
+          dupInfo = `${dupSourceLabel(existingSub.source)} · ${brl(existingSub.value)}`;
         } else if (!p.planId) {
           status = "no_plan"; // ainda importa, mas sem vínculo de plano
         } else {
@@ -338,6 +392,8 @@ export default function ControllerCsvImport({
           currentDueDate: dueByPhone.get(p.phone) ?? null,
           duePolicy: policyByPhone.get(p.phone) ?? "keep",
           status,
+          dupInfo,
+          rowId: `${p.phone}|${p.dateKey}|${p.valor.toFixed(2)}|${i}`,
         };
       });
 
@@ -352,7 +408,7 @@ export default function ControllerCsvImport({
   };
 
   const handleImport = async () => {
-    const toImport = rows.filter((r) => r.status === "ok" || r.status === "no_plan");
+    const toImport = rows.filter(willImportRow);
     if (toImport.length === 0) {
       toast.error("Nada para importar.");
       return;
@@ -555,7 +611,9 @@ export default function ControllerCsvImport({
           Suba o relatório de cobranças do cartão (separado por ";"). Cada linha "Capturada na
           Operadora" vira uma renovação automática. Por cliente, o sistema cruza os dados: busca pelo
           telefone, cadastra se não existir e identifica a unidade pelos últimos atendimentos dele.
-          Quando não dá pra identificar, você define a unidade na linha. Duplicadas são ignoradas.
+          Quando não dá pra identificar, você define a unidade na linha. Se a recepção já lançou a
+          assinatura daquele cliente no mesmo dia (nova ou renovação), a linha é marcada como possível
+          duplicata e não é importada — marque "importar mesmo assim" se for um lançamento diferente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -643,7 +701,7 @@ export default function ControllerCsvImport({
                 </TableHeader>
                 <TableBody>
                   {rows.map((r, i) => (
-                    <TableRow key={i} className={r.status === "dup" || r.status === "ignored_status" ? "opacity-50" : ""}>
+                    <TableRow key={i} className={((r.status === "dup" && !forcedImport.has(r.rowId)) || r.status === "ignored_status") ? "opacity-50" : ""}>
                       <TableCell className="font-medium">
                         <div className="min-w-0">
                           <p className="truncate max-w-[180px]">{r.clientName || "—"}</p>
@@ -666,7 +724,7 @@ export default function ControllerCsvImport({
                               </span>
                             );
                           }
-                          if (r.status === "dup" || r.status === "ignored_status") {
+                          if ((r.status === "dup" && !forcedImport.has(r.rowId)) || r.status === "ignored_status") {
                             return <span className="text-muted-foreground">—</span>;
                           }
                           // Sem unidade resolvida: deixa o usuário escolher na linha.
@@ -697,7 +755,35 @@ export default function ControllerCsvImport({
                       <TableCell className="text-right font-semibold">{brl(r.valor)}</TableCell>
                       <TableCell>
                         {r.status === "dup" ? (
-                          <Badge variant="outline" className="text-muted-foreground">Duplicada</Badge>
+                          <div className="space-y-1">
+                            <Badge
+                              variant="outline"
+                              className={forcedImport.has(r.rowId)
+                                ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                                : "border-amber-500/40 text-amber-600 dark:text-amber-400"}
+                            >
+                              {forcedImport.has(r.rowId) ? "Importar" : "Possível duplicata"}
+                            </Badge>
+                            {r.dupInfo && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">já lançado: {r.dupInfo}</p>
+                            )}
+                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3 accent-primary"
+                                checked={forcedImport.has(r.rowId)}
+                                onChange={(e) =>
+                                  setForcedImport((s) => {
+                                    const next = new Set(s);
+                                    if (e.target.checked) next.add(r.rowId);
+                                    else next.delete(r.rowId);
+                                    return next;
+                                  })
+                                }
+                              />
+                              importar mesmo assim
+                            </label>
+                          </div>
                         ) : r.status === "ignored_status" ? (
                           <Badge variant="outline" className="text-muted-foreground">Ignorada</Badge>
                         ) : (
