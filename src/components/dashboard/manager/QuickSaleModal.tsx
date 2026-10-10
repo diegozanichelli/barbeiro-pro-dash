@@ -1083,8 +1083,6 @@ export default function QuickSaleModal({
         }
       }
 
-      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone);
-
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
         toast.info(`Cliente identificado pelo celular: ${safeClientName}`);
       }
@@ -1136,10 +1134,14 @@ export default function QuickSaleModal({
       });
       if (error) throw error;
 
-      // O vínculo do plano e o ciclo de vencimento do cliente já foram
-      // persistidos por ensureSubscriptionAssigned (respeitando a política).
-      // Aqui só gravamos o cycle_anchor/next_due no description da transação
-      // recém-criada, para QUALQUER assinatura (não só a renovação do banner).
+      // Só APÓS a venda ser salva com sucesso: vincula o plano e avança o ciclo
+      // de vencimento do cliente. Fazer isto antes do RPC adiantava a data mesmo
+      // quando o save falhava — e a cada retentativa adiantava de novo (cliente
+      // ganhava mês grátis na visualização).
+      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone);
+
+      // Grava o cycle_anchor/next_due no description da transação recém-criada,
+      // para QUALQUER assinatura (não só a renovação do banner).
       if (subscriptionInCart && subCycleMeta) {
         try {
           const cycleJson = serializeCycleMetadata(subCycleMeta.anchor, subCycleMeta.nextDue);
@@ -1245,8 +1247,6 @@ export default function QuickSaleModal({
 
       const safeClientName = registeredClient.clientName || clientName.trim() || "Cliente";
 
-      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
-
       if (registeredClient.reusedByPhone && registeredClient.clientName !== clientName.trim()) {
         toast.info(`Cliente identificado pelo celular: ${safeClientName}`);
       }
@@ -1293,6 +1293,9 @@ export default function QuickSaleModal({
       });
 
       if (error) throw error;
+
+      // Só após o save: vincula plano/ciclo (não adianta vencimento se o save falha).
+      await ensureSubscriptionAssigned(registeredClient.mobilePhone);
 
       await recordClientPurchasesBestEffort({
         organizationId,
