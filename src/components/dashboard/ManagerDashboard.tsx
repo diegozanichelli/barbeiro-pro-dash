@@ -40,6 +40,7 @@ import PerformanceDashboard from "./manager/PerformanceDashboard";
 import ReportsFilterBar from "./manager/ReportsFilterBar";
 import SubscriptionMovementReport from "./manager/SubscriptionMovementReport";
 import SubscriptionDueDateReport from "./manager/SubscriptionDueDateReport";
+import WeeklyUnitGoalReport from "./manager/WeeklyUnitGoalReport";
 import { ReportsFilterProvider } from "@/contexts/ReportsFilterProvider";
 
 
@@ -244,6 +245,11 @@ export default function ManagerDashboard({ user }: ManagerDashboardProps) {
           <TabsContent value="report-movement" className="mt-0 space-y-4">
             <ReportsFilterBar fields={["month", "year", "unit"]} />
             <SubscriptionMovementReport />
+          </TabsContent>
+
+          {/* Meta semanal por unidade (base = semana anterior; realizado = corrente) */}
+          <TabsContent value="report-weekly-goal" className="mt-0 space-y-4">
+            <WeeklyUnitGoalReport />
           </TabsContent>
 
           {/* Datas de vencimento: clientes com pagamento atrasado > 10 dias ou troca solicitada */}

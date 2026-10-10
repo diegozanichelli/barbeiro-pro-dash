@@ -25,7 +25,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format, subDays, addDays, isToday, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import { isOperationalRevenueTx, isSubscriptionRevenue, isCancellation } from "@/lib/metricsRules";
+import { isOperationalRevenueTx, isSubscriptionRevenue, isCancellation, isOnlineAdhesion, isAutoRecurring } from "@/lib/metricsRules";
+import { useWeeklyUnitGoals } from "@/hooks/useWeeklyUnitGoals";
+import { brl } from "@/lib/currency";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +61,7 @@ interface ManagerTransaction {
   mobile_phone: string | null;
   created_at: string;
   subscription_action?: string | null;
+  attribution_source?: string | null;
 }
 
 interface Barber {
@@ -119,6 +122,7 @@ interface Unit {
 
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
+  const weeklyGoals = useWeeklyUnitGoals(organizationId);
   const todayManausDate = getManausDate();
   const { holidayDates } = useOrganizationHolidays({
     organizationId,
@@ -235,7 +239,7 @@ export default function LiveDashboard() {
       const nextDay = format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd");
       let mgrTxQuery = supabase
         .from("sale_transactions")
-        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at, subscription_action")
+        .select("barber_id, price_sold, item_type, service_category, unit_id, mobile_phone, created_at, subscription_action, attribution_source")
         .eq("organization_id", organizationId)
         .eq("source", "manager")
         .gte("created_at", selectedDate + "T00:00:00-04:00")
@@ -836,9 +840,12 @@ export default function LiveDashboard() {
   );
 
   // Breakdown novas adesões vs recorrentes (renew/upgrade/downgrade)
+  // + origem Controladoria (adesão online + renovação automática do gateway).
   const subscriptionBreakdown = useMemo(() => {
     let newCount = 0, newRevenue = 0;
     let recCount = 0, recRevenue = 0;
+    let ctrlOnlineCount = 0, ctrlOnlineRevenue = 0;
+    let ctrlRecCount = 0, ctrlRecRevenue = 0;
     managerTransactions.forEach((t) => {
       if (t.item_type !== "subscription") return;
       if (isCancellation(t)) return; // cancelamento não conta como adesão nem recorrência
@@ -851,8 +858,21 @@ export default function LiveDashboard() {
         recCount += 1;
         recRevenue += price;
       }
+      // Flag Controladoria: adesão online e renovação automática lançadas fora do balcão.
+      if (isOnlineAdhesion(t)) {
+        ctrlOnlineCount += 1;
+        ctrlOnlineRevenue += price;
+      } else if (isAutoRecurring(t)) {
+        ctrlRecCount += 1;
+        ctrlRecRevenue += price;
+      }
     });
-    return { newCount, newRevenue, recCount, recRevenue };
+    return {
+      newCount, newRevenue, recCount, recRevenue,
+      ctrlOnlineCount, ctrlOnlineRevenue, ctrlRecCount, ctrlRecRevenue,
+      ctrlCount: ctrlOnlineCount + ctrlRecCount,
+      ctrlRevenue: ctrlOnlineRevenue + ctrlRecRevenue,
+    };
   }, [managerTransactions]);
 
 
@@ -1684,6 +1704,17 @@ export default function LiveDashboard() {
                           {subscriptionBreakdown.recRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                         </span>
                       </div>
+                      {subscriptionBreakdown.ctrlCount > 0 && (
+                        <div className="flex items-center justify-between text-[9px] pt-0.5 mt-0.5 border-t border-amber-600/20">
+                          <span className="text-muted-foreground">
+                            <span className="text-purple-500">🎛️</span> via Controladoria
+                            <span className="text-muted-foreground/70"> (online {subscriptionBreakdown.ctrlOnlineCount} · auto {subscriptionBreakdown.ctrlRecCount})</span>
+                          </span>
+                          <span className="font-semibold text-purple-500 tabular-nums">
+                            {subscriptionBreakdown.ctrlRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1709,6 +1740,58 @@ export default function LiveDashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Meta Semanal por Unidade (resumo) — base = semana anterior */}
+            {weeklyGoals.rows.length > 0 && (
+              <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    🎯 META SEMANAL
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3 space-y-2">
+                  {/* Rede (total) */}
+                  <div className="rounded-lg border border-primary/30 bg-gradient-to-br from-primary/10 to-transparent p-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[9px] text-primary font-bold uppercase">Rede</p>
+                      <span className={`text-[10px] font-bold ${weeklyGoals.total.pct >= 1 ? "text-green-500" : "text-muted-foreground"}`}>
+                        {Math.round(weeklyGoals.total.pct * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
+                        style={{ width: `${Math.min(100, Math.round(weeklyGoals.total.pct * 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground tabular-nums">
+                      <span>{brl(weeklyGoals.total.realizado)}</span>
+                      <span>meta {brl(weeklyGoals.total.meta)}</span>
+                    </div>
+                  </div>
+                  {/* Por unidade */}
+                  <div className="space-y-1.5">
+                    {weeklyGoals.rows.map((u) => {
+                      const p = Math.round(u.pct * 100);
+                      return (
+                        <div key={u.unitId}>
+                          <div className="flex items-center justify-between text-[9px]">
+                            <span className="text-foreground/80 truncate pr-1">{u.unitName}</span>
+                            <span className={`font-bold shrink-0 ${p >= 100 ? "text-green-500" : "text-muted-foreground"}`}>{p}%</span>
+                          </div>
+                          <div className="h-1 rounded-full bg-muted/40 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${p >= 100 ? "bg-green-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.min(100, p)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Ranking ASSINATURAS — prioridade máxima do negócio */}
             <Card className="overflow-hidden border-2 border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 backdrop-blur-sm shadow-[0_0_20px_hsl(38_92%_50%/0.15)]">
