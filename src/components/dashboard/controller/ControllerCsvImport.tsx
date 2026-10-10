@@ -426,17 +426,52 @@ export default function ControllerCsvImport({
         return;
       }
 
-      // Cabeçalho -> índices das colunas conhecidas
+      // Cabeçalho -> índices das colunas conhecidas. Detecção tolerante porque o
+      // layout do gateway varia ("nome" x "Nome do cliente"; "data dos status
+      // atual" x "Data do status atual"). Para não pegar a coluna errada quando
+      // existe outra antes com o mesmo termo (ex.: "Telefone do cliente" antes de
+      // "Nome do cliente", "Valor líquido" antes de "Valor", "ID do plano" antes
+      // de "Plano"), casamos PRIMEIRO por alias exato e só depois por substring
+      // desambiguado como fallback.
       const header = splitCsvLine(lines[0]).map(norm);
-      const col = (name: string) => header.indexOf(norm(name));
+      const findCol = (exacts: string[], fuzzy: (h: string) => boolean): number => {
+        for (const e of exacts) {
+          const i = header.indexOf(norm(e));
+          if (i >= 0) return i;
+        }
+        return header.findIndex(fuzzy);
+      };
       const idx = {
-        nome: col("Nome do cliente"),
-        plano: col("Plano"),
-        venc: col("Vencimento"),
-        valor: col("Valor"),
-        status: col("Status"),
-        dataStatus: col("Data do status atual"),
-        telefone: col("Telefone"),
+        nome: findCol(
+          ["nome do cliente", "nome", "cliente", "nome cliente"],
+          (h) => h.includes("nome"),
+        ),
+        plano: findCol(
+          ["plano", "nome do plano"],
+          (h) => h.includes("plano") && !h.startsWith("id"),
+        ),
+        venc: findCol(
+          ["vencimento", "data de vencimento", "data vencimento"],
+          (h) => h.includes("vencimento") && !h.includes("status"),
+        ),
+        valor: findCol(
+          ["valor", "preco", "valor pago", "valor da cobranca"],
+          (h) => (h.includes("valor") || h.includes("preco")) && !h.includes("liquid") && !h.includes("desconto"),
+        ),
+        // Data do status (pagamento): cobre "do"/"dos".
+        dataStatus: findCol(
+          ["data do status atual", "data dos status atual", "data do status", "data status"],
+          (h) => h.includes("data") && h.includes("status"),
+        ),
+        // Status (texto): "status" mas não a coluna de data.
+        status: findCol(
+          ["status", "situacao"],
+          (h) => h.includes("status") && !h.includes("data"),
+        ),
+        telefone: findCol(
+          ["telefone", "celular", "whatsapp", "fone", "telefone do cliente"],
+          (h) => h.includes("telefone") || h.includes("celular") || h.includes("whatsapp") || h.includes("fone"),
+        ),
       };
       if (idx.telefone < 0 || idx.valor < 0 || idx.plano < 0) {
         toast.error("CSV não reconhecido. Esperado o relatório do gateway (colunas Nome/Plano/Valor/Telefone).");
