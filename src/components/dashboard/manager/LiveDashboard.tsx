@@ -64,6 +64,19 @@ interface ManagerTransaction {
   attribution_source?: string | null;
 }
 
+// Lançamento feito pela Controladoria (import CSV ou lançamento manual):
+// assinatura com origem controller/online/auto_recurring, ou de um lote de
+// importação (import_batch_id). Mostrado no card lateral independente do dia.
+interface ControllerEntry {
+  created_at: string;
+  price_sold: number | null;
+  subscription_action: string | null;
+  attribution_source: string | null;
+  client_name: string | null;
+  mobile_phone: string | null;
+  item_name: string | null;
+}
+
 interface Barber {
   id: string;
   name: string;
@@ -187,6 +200,9 @@ export default function LiveDashboard() {
   const currentMonth = selectedDateObj.getMonth() + 1;
   const currentYear = selectedDateObj.getFullYear();
 
+  // Lançamentos da Controladoria no mês (card lateral fixo — independe do dia).
+  const [controllerEntries, setControllerEntries] = useState<ControllerEntry[]>([]);
+
   const fetchData = useCallback(async () => {
     if (!organizationId) {
       setBarbers([]);
@@ -251,6 +267,35 @@ export default function LiveDashboard() {
       const { data: managerTxData } = await mgrTxQuery;
 
       setManagerTransactions(managerTxData || []);
+
+      // Lançamentos da Controladoria do MÊS (independe do dia selecionado):
+      // assinaturas com origem controller/online/auto_recurring OU de um lote de
+      // importação (import_batch_id). Exclui vendas normais da recepção (balcão
+      // da recepção tem barbeiro e não tem lote).
+      const ctrlMonthStart = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
+      const ctrlNextMonth =
+        currentMonth === 12
+          ? `${currentYear + 1}-01-01`
+          : `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`;
+      let ctrlQuery = supabase
+        .from("sale_transactions")
+        .select("created_at, price_sold, subscription_action, attribution_source, client_name, mobile_phone, item_name")
+        .eq("organization_id", organizationId)
+        .eq("item_type", "subscription")
+        .gte("created_at", ctrlMonthStart + "T00:00:00-04:00")
+        .lt("created_at", ctrlNextMonth + "T00:00:00-04:00")
+        .or("attribution_source.in.(controller,online,auto_recurring),import_batch_id.not.is.null")
+        .order("created_at", { ascending: false });
+      if (selectedUnit !== "all") {
+        ctrlQuery = ctrlQuery.eq("unit_id", selectedUnit);
+      }
+      const { data: ctrlData, error: ctrlError } = await ctrlQuery;
+      if (ctrlError) {
+        console.warn("Falha ao carregar lançamentos da controladoria:", ctrlError);
+        setControllerEntries([]);
+      } else {
+        setControllerEntries((ctrlData as ControllerEntry[]) || []);
+      }
 
       // Fetch month's productions for days worked calculation and average ticket
       const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
@@ -879,6 +924,56 @@ export default function LiveDashboard() {
       ctrlRevenue: ctrlOnlineRevenue + ctrlRecRevenue,
     };
   }, [managerTransactions]);
+
+  // Rótulo da origem de um lançamento da Controladoria (renov. automática /
+  // nova adesão online / novo ou renovou no balcão / cancelamento).
+  const controllerOriginLabel = (e: ControllerEntry): string =>
+    e.subscription_action === "cancel"
+      ? "Cancelamento"
+      : e.attribution_source === "auto_recurring"
+        ? "Renov. automática"
+        : e.attribution_source === "online"
+          ? "Nova adesão online"
+          : e.subscription_action === "new"
+            ? "Novo no balcão"
+            : "Renovou no balcão";
+
+  // Resumo do mês dos lançamentos da Controladoria (card lateral).
+  const controllerSummary = useMemo(() => {
+    let autoCount = 0, autoRev = 0;
+    let onlineCount = 0, onlineRev = 0;
+    let balcaoNewCount = 0, balcaoRenewCount = 0, balcaoRev = 0;
+    let cancelCount = 0;
+    let total = 0, totalRev = 0;
+    controllerEntries.forEach((e) => {
+      const price = Number(e.price_sold) || 0;
+      if (e.subscription_action === "cancel") {
+        cancelCount++;
+        return;
+      }
+      total++;
+      totalRev += price;
+      if (e.attribution_source === "auto_recurring") {
+        autoCount++;
+        autoRev += price;
+      } else if (e.attribution_source === "online") {
+        onlineCount++;
+        onlineRev += price;
+      } else {
+        // reception (balcão importado) ou sem origem definida
+        if (e.subscription_action === "new") balcaoNewCount++;
+        else balcaoRenewCount++;
+        balcaoRev += price;
+      }
+    });
+    return {
+      autoCount, autoRev,
+      onlineCount, onlineRev,
+      balcaoNewCount, balcaoRenewCount, balcaoRev,
+      cancelCount, total, totalRev,
+      hasAny: total + cancelCount > 0,
+    };
+  }, [controllerEntries]);
 
 
   // Monthly team goal progress
@@ -1743,6 +1838,71 @@ export default function LiveDashboard() {
                     </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Controladoria — lançamentos do mês (independe do dia selecionado) */}
+            <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  🎛️ CONTROLADORIA
+                </CardTitle>
+                <p className="text-[10px] text-muted-foreground -mt-1">Lançamentos do mês · {selectedDateObj.toLocaleDateString("pt-BR", { month: "long" })}</p>
+              </CardHeader>
+              <CardContent className="px-3 pb-3 space-y-2">
+                {!controllerSummary.hasAny ? (
+                  <p className="text-[11px] text-muted-foreground py-2 text-center">
+                    Nenhum lançamento do controlador neste mês.
+                  </p>
+                ) : (
+                  <>
+                    {/* Total do mês */}
+                    <div className="rounded-lg border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-transparent p-2">
+                      <p className="text-[9px] text-purple-500 font-bold uppercase">MRR via Controladoria</p>
+                      <p className="text-sm font-extrabold text-purple-500 leading-tight">
+                        {controllerSummary.totalRev.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">
+                        {controllerSummary.total} lançamento{controllerSummary.total === 1 ? "" : "s"}
+                        {controllerSummary.cancelCount > 0 ? ` · ${controllerSummary.cancelCount} cancelamento${controllerSummary.cancelCount === 1 ? "" : "s"}` : ""}
+                      </p>
+                    </div>
+
+                    {/* Breakdown por origem */}
+                    <div className="rounded-lg border border-border/30 bg-muted/20 p-2 space-y-1">
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground"><span className="text-blue-500">•</span> Renov. automática <span className="text-muted-foreground/70">({controllerSummary.autoCount})</span></span>
+                        <span className="font-semibold text-blue-500 tabular-nums">{controllerSummary.autoRev.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground"><span className="text-emerald-600">•</span> Nova adesão online <span className="text-muted-foreground/70">({controllerSummary.onlineCount})</span></span>
+                        <span className="font-semibold text-emerald-600 tabular-nums">{controllerSummary.onlineRev.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px]">
+                        <span className="text-muted-foreground"><span className="text-amber-600">•</span> Balcão <span className="text-muted-foreground/70">(novo {controllerSummary.balcaoNewCount} · renov {controllerSummary.balcaoRenewCount})</span></span>
+                        <span className="font-semibold text-amber-600 tabular-nums">{controllerSummary.balcaoRev.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                      </div>
+                    </div>
+
+                    {/* Últimos lançamentos */}
+                    <div className="space-y-1">
+                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">Últimos</p>
+                      {controllerEntries.slice(0, 5).map((e, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 text-[9px]">
+                          <div className="min-w-0">
+                            <p className="truncate text-foreground">{e.client_name || "—"}</p>
+                            <p className="text-muted-foreground/70">
+                              {controllerOriginLabel(e)} · {e.created_at.slice(5, 10).split("-").reverse().join("/")}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 tabular-nums font-semibold ${e.subscription_action === "cancel" ? "text-destructive" : "text-foreground"}`}>
+                            {e.subscription_action === "cancel" ? "—" : (Number(e.price_sold) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
