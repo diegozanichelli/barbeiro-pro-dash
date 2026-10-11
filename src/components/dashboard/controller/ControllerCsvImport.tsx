@@ -988,7 +988,7 @@ export default function ControllerCsvImport({
               </p>
             )}
 
-            <div className="rounded-md border overflow-auto max-h-80">
+            <div className="rounded-md border overflow-auto max-h-[60vh]">
               <Table>
                 <TableHeader>
                   <TableRow>
