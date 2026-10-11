@@ -536,7 +536,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
         : !!selectedClient);
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {/* Seletor de data */}
       <Card className="bg-card border-border shadow-card-custom">
         <CardHeader>
