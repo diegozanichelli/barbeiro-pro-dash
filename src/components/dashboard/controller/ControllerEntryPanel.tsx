@@ -166,27 +166,29 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
   }, []);
 
   // ---- carregar catálogos ----
+  // Recarregável para refletir um plano recém-cadastrado durante a importação.
+  const loadPlans = useCallback(async () => {
+    if (!organizationId) return;
+    const { data } = await supabase
+      .from("subscription_plans")
+      .select("id, name, price")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("price", { ascending: true });
+    setPlans((data || []).map((p) => ({ id: p.id, name: p.name, price: Number(p.price) || 0 })));
+  }, [organizationId]);
+
   useEffect(() => {
     if (!organizationId) return;
-    (async () => {
-      const [plansRes, unitsRes] = await Promise.all([
-        supabase
-          .from("subscription_plans")
-          .select("id, name, price")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("price", { ascending: true }),
-        supabase
-          .from("units")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .eq("status", "active")
-          .order("name"),
-      ]);
-      setPlans((plansRes.data || []).map((p) => ({ id: p.id, name: p.name, price: Number(p.price) || 0 })));
-      setUnits((unitsRes.data || []) as Unit[]);
-    })();
-  }, [organizationId]);
+    loadPlans();
+    supabase
+      .from("units")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      .order("name")
+      .then(({ data }) => setUnits((data || []) as Unit[]));
+  }, [organizationId, loadPlans]);
 
   // ---- carregar lançamentos do dia ----
   const loadDayEntries = useCallback(async () => {
@@ -585,6 +587,7 @@ export default function ControllerEntryPanel({ organizationId }: ControllerEntry
         plans={plans}
         units={units}
         onImported={loadDayEntries}
+        onPlansChanged={loadPlans}
       />
 
       {/* Formulário por tipo de evento */}

@@ -18,8 +18,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { FileUp, Loader2, CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { FileUp, Loader2, CheckCircle2, AlertTriangle, X, Plus } from "lucide-react";
 import { brl } from "@/lib/currency";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { MANAUS_OFFSET } from "@/lib/dateUtils";
@@ -48,6 +58,8 @@ interface ControllerCsvImportProps {
   plans: Plan[];
   units: Unit[];
   onImported: () => void;
+  // Avisa o pai para recarregar os planos após um cadastro feito aqui.
+  onPlansChanged?: () => void;
 }
 
 type RowStatus = "ok" | "dup" | "ignored_status" | "no_plan";
@@ -235,6 +247,7 @@ export default function ControllerCsvImport({
   plans,
   units,
   onImported,
+  onPlansChanged,
 }: ControllerCsvImportProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
@@ -247,6 +260,70 @@ export default function ControllerCsvImport({
   const [forcedImport, setForcedImport] = useState<Set<string>>(new Set());
   // Override do tipo (nova adesão/renovação) por linha; sem override usa a sugestão.
   const [rowKind, setRowKind] = useState<Record<string, ImportKind>>({});
+
+  // Cadastro rápido de plano (linha "sem vínculo"): dialog com nome + preço.
+  const [planDialogRow, setPlanDialogRow] = useState<ParsedRow | null>(null);
+  const [planName, setPlanName] = useState("");
+  const [planPrice, setPlanPrice] = useState("");
+  const [creatingPlan, setCreatingPlan] = useState(false);
+
+  const openPlanDialog = (r: ParsedRow) => {
+    setPlanDialogRow(r);
+    setPlanName(r.planText || "");
+    setPlanPrice(r.valor ? r.valor.toFixed(2).replace(".", ",") : "");
+  };
+
+  // Cria o plano (nome + preço) e vincula na hora todas as linhas "sem vínculo"
+  // daquele mesmo plano do CSV; depois pede ao pai para recarregar os planos.
+  const createPlan = async () => {
+    if (!planDialogRow) return;
+    const name = planName.trim();
+    const price = parseBRNumber(planPrice);
+    if (!name) {
+      toast.error("Informe o nome do plano.");
+      return;
+    }
+    setCreatingPlan(true);
+    try {
+      // RPC ainda não refletida no types.ts gerado — cast para evitar erro de tipos.
+      const { data, error } = await (supabase.rpc as (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: unknown }>)("controller_create_subscription_plan", {
+        p_organization_id: organizationId,
+        p_name: name,
+        p_price: price,
+      });
+      if (error) throw error;
+      const newId = data as string;
+      const sourceText = planDialogRow.planText;
+      // Vincula todas as linhas "sem vínculo" do mesmo plano do CSV.
+      setRows((prev) =>
+        prev.map((row) =>
+          row.status === "no_plan" && row.planText === sourceText
+            ? { ...row, planId: newId, status: "ok" as RowStatus }
+            : row,
+        ),
+      );
+      toast.success(`Plano "${name}" cadastrado e vinculado.`);
+      setPlanDialogRow(null);
+      onPlansChanged?.();
+    } catch (err) {
+      const msg =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message: unknown }).message)
+          : err instanceof Error
+            ? err.message
+            : "";
+      toast.error(
+        msg.includes("Sem permissão")
+          ? "Sem permissão para cadastrar plano — peça ao gestor."
+          : "Não foi possível cadastrar o plano.",
+      );
+    } finally {
+      setCreatingPlan(false);
+    }
+  };
 
   // Tipo efetivo da linha: override manual ou sugestão (nova adesão se cliente
   // não tem assinatura ativa na base).
@@ -984,7 +1061,7 @@ export default function ControllerCsvImport({
             {counts.noPlan > 0 && (
               <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                {counts.noPlan} linha(s) com plano não encontrado no cadastro — serão importadas sem vínculo de plano (o valor é mantido).
+                {counts.noPlan} linha(s) com plano não encontrado no cadastro — clique em "Cadastrar plano" na linha para criar e vincular, ou importe sem vínculo (o valor é mantido).
               </p>
             )}
 
@@ -1013,7 +1090,17 @@ export default function ControllerCsvImport({
                       <TableCell className="text-sm">
                         {r.planText || "—"}
                         {r.status === "no_plan" && (
-                          <span className="block text-[11px] text-amber-600 dark:text-amber-400">sem vínculo</span>
+                          <>
+                            <span className="block text-[11px] text-amber-600 dark:text-amber-400">sem vínculo</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 mt-1 px-2 text-[10px] gap-1"
+                              onClick={() => openPlanDialog(r)}
+                            >
+                              <Plus className="w-3 h-3" /> Cadastrar plano
+                            </Button>
+                          </>
                         )}
                       </TableCell>
                       <TableCell className="text-sm">
@@ -1212,6 +1299,49 @@ export default function ControllerCsvImport({
           </div>
         )}
       </CardContent>
+
+      {/* Cadastro rápido de plano, a partir de uma linha "sem vínculo" */}
+      <Dialog open={!!planDialogRow} onOpenChange={(o) => !o && setPlanDialogRow(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cadastrar plano</DialogTitle>
+            <DialogDescription>
+              Esse plano não está no cadastro. Crie-o agora para vincular as linhas da
+              importação. Você pode ajustar serviços/preço depois na tela de Planos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="plan-name" className="text-xs">Nome do plano</Label>
+              <Input
+                id="plan-name"
+                value={planName}
+                onChange={(e) => setPlanName(e.target.value)}
+                placeholder="Ex.: Clube Legendário"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="plan-price" className="text-xs">Preço mensal (R$)</Label>
+              <Input
+                id="plan-price"
+                inputMode="decimal"
+                value={planPrice}
+                onChange={(e) => setPlanPrice(e.target.value)}
+                placeholder="Ex.: 149,90"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPlanDialogRow(null)} disabled={creatingPlan}>
+              Cancelar
+            </Button>
+            <Button onClick={createPlan} disabled={creatingPlan}>
+              {creatingPlan ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Cadastrar e vincular
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
