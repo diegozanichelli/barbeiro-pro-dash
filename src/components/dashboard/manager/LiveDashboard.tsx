@@ -828,13 +828,17 @@ export default function LiveDashboard() {
   });
 
   // Barbeiro em folga/falta confirmada e sem venda no dia → candidato a ocultar.
+  // Importante: getBarberRevenue zera a receita de quem está em folga/falta, então
+  // não dá pra usá-la aqui — checamos as transações operacionais cruas do dia, para
+  // não ocultar (nem esconder a venda de) quem recebeu um lançamento mesmo de folga.
   const isBarberOffOrAbsent = (b: Barber) => {
     const prod = getBarberProduction(b.id);
-    return (
-      !!prod?.confirmed_presence &&
-      (prod?.presence_type === "day_off" || prod?.presence_type === "absence") &&
-      getBarberRevenue(b.id) === 0
+    if (!prod?.confirmed_presence) return false;
+    if (prod.presence_type !== "day_off" && prod.presence_type !== "absence") return false;
+    const hasSaleToday = managerTransactions.some(
+      (t) => t.barber_id === b.id && isOperationalRevenueTx(t),
     );
+    return !hasSaleToday;
   };
   const offBarbersCount = sortedBarbers.filter(isBarberOffOrAbsent).length;
   // Lista efetivamente exibida: oculta folga/falta quando o gestor liga a opção.
@@ -849,6 +853,14 @@ export default function LiveDashboard() {
 
   // Reset page when filter changes
   useEffect(() => { setCurrentPage(1); }, [selectedUnit]);
+
+  // Mantém a página dentro do total quando a lista visível encolhe (troca de dia,
+  // atualização de produção, ou ocultar folga/falta) — senão a tabela fica vazia
+  // e os controles de paginação somem sem como voltar.
+  useEffect(() => {
+    const tp = Math.max(1, Math.ceil(visibleBarbers.length / ITEMS_PER_PAGE));
+    setCurrentPage((p) => (p > tp ? tp : p));
+  }, [visibleBarbers.length, ITEMS_PER_PAGE]);
 
   const rankingData = filteredBarbers.map((b) => ({
     id: b.id,
