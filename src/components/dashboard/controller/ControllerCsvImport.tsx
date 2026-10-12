@@ -177,23 +177,34 @@ const parseBRNumber = (s: string): number => {
   return isNaN(n) ? 0 : n;
 };
 
-// Preço digitado à mão (cadastro de plano): aceita vírgula OU ponto como decimal.
-// O separador decimal é o último "," ou "." que aparece; o outro é milhar.
-// Ex.: "149,90" -> 149.9 · "149.90" -> 149.9 · "1.499,90" -> 1499.9 · "1,499.90" -> 1499.9
+// Preço digitado à mão (cadastro de plano), tolerante a vírgula E ponto:
+//  - Com os dois separadores, o ÚLTIMO é o decimal e o outro é milhar
+//    ("1.499,90" -> 1499.9 · "1,499.90" -> 1499.9).
+//  - Só vírgula: decimal se houver uma só ("149,90" -> 149.9); várias = milhar
+//    ("1,499,000" -> 1499000).
+//  - Só ponto: várias ocorrências = milhar ("1.499.000" -> 1499000); uma só é
+//    decimal quando tem 1-2 casas ("149.90" -> 149.9) e milhar quando tem
+//    exatamente 3 casas ("1.499" -> 1499), que é o padrão pt-BR.
 const parsePriceInput = (s: string): number => {
-  const t = (s || "").trim().replace(/[^\d.,]/g, "");
+  let t = (s || "").trim().replace(/[^\d.,]/g, "");
   if (!t) return 0;
-  const lastComma = t.lastIndexOf(",");
-  const lastDot = t.lastIndexOf(".");
-  let normalized: string;
-  if (lastComma > lastDot) {
-    normalized = t.replace(/\./g, "").replace(",", ".");
-  } else if (lastDot > lastComma) {
-    normalized = t.replace(/,/g, "");
-  } else {
-    normalized = t;
+  const hasComma = t.includes(",");
+  const hasDot = t.includes(".");
+  if (hasComma && hasDot) {
+    if (t.lastIndexOf(",") > t.lastIndexOf(".")) t = t.replace(/\./g, "").replace(",", ".");
+    else t = t.replace(/,/g, "");
+  } else if (hasComma) {
+    t = t.split(",").length > 2 ? t.replace(/,/g, "") : t.replace(",", ".");
+  } else if (hasDot) {
+    const parts = t.split(".");
+    if (parts.length > 2) {
+      t = parts.join(""); // vários pontos = separadores de milhar
+    } else if (parts[1] && parts[1].length === 3) {
+      t = parts[0] + parts[1]; // um ponto + 3 casas = milhar (ex.: 1.499)
+    }
+    // caso contrário (1-2 casas) mantém como decimal
   }
-  const n = Number(normalized);
+  const n = Number(t);
   return isNaN(n) ? 0 : n;
 };
 
