@@ -177,6 +177,26 @@ const parseBRNumber = (s: string): number => {
   return isNaN(n) ? 0 : n;
 };
 
+// Preço digitado à mão (cadastro de plano): aceita vírgula OU ponto como decimal.
+// O separador decimal é o último "," ou "." que aparece; o outro é milhar.
+// Ex.: "149,90" -> 149.9 · "149.90" -> 149.9 · "1.499,90" -> 1499.9 · "1,499.90" -> 1499.9
+const parsePriceInput = (s: string): number => {
+  const t = (s || "").trim().replace(/[^\d.,]/g, "");
+  if (!t) return 0;
+  const lastComma = t.lastIndexOf(",");
+  const lastDot = t.lastIndexOf(".");
+  let normalized: string;
+  if (lastComma > lastDot) {
+    normalized = t.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > lastComma) {
+    normalized = t.replace(/,/g, "");
+  } else {
+    normalized = t;
+  }
+  const n = Number(normalized);
+  return isNaN(n) ? 0 : n;
+};
+
 // "04/10/2026 - 04:02" ou "04/10/2026" -> "2026-10-04"
 const parseBRDateKey = (s: string): string | null => {
   const m = (s || "").match(/(\d{2})\/(\d{2})\/(\d{4})/);
@@ -278,7 +298,7 @@ export default function ControllerCsvImport({
   const createPlan = async () => {
     if (!planDialogRow) return;
     const name = planName.trim();
-    const price = parseBRNumber(planPrice);
+    const price = parsePriceInput(planPrice);
     if (!name) {
       toast.error("Informe o nome do plano.");
       return;
@@ -297,13 +317,19 @@ export default function ControllerCsvImport({
       if (error) throw error;
       const newId = data as string;
       const sourceText = planDialogRow.planText;
-      // Vincula todas as linhas "sem vínculo" do mesmo plano do CSV.
+      // Vincula o novo plano em TODA linha do mesmo plano do CSV que ainda está
+      // sem planId — inclusive as marcadas dup/ignored_status (caso o usuário
+      // force "importar mesmo assim", o lançamento não fica sem plano). Só vira
+      // "ok" quem estava "no_plan"; dup/ignored_status mantêm o status.
       setRows((prev) =>
-        prev.map((row) =>
-          row.status === "no_plan" && row.planText === sourceText
-            ? { ...row, planId: newId, status: "ok" as RowStatus }
-            : row,
-        ),
+        prev.map((row) => {
+          if (row.planText !== sourceText || row.planId) return row;
+          return {
+            ...row,
+            planId: newId,
+            status: row.status === "no_plan" ? ("ok" as RowStatus) : row.status,
+          };
+        }),
       );
       toast.success(`Plano "${name}" cadastrado e vinculado.`);
       setPlanDialogRow(null);
