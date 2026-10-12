@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, Calendar, FileText, Eye, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign } from "lucide-react";
+import { Plus, Radio, Loader2, Pencil, ChevronLeft, ChevronRight, ChevronDown, Calendar, FileText, Eye, EyeOff, UserCheck, CalendarOff, XCircle, EllipsisVertical, TrendingUp, Users, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -202,6 +202,44 @@ export default function LiveDashboard() {
 
   // Lançamentos da Controladoria no mês (card lateral fixo — independe do dia).
   const [controllerEntries, setControllerEntries] = useState<ControllerEntry[]>([]);
+
+  // Preferência: ocultar barbeiros em folga/falta (sem venda) para não ocupar a
+  // tela do gestor. Persistida por navegador.
+  const [hideOffBarbers, setHideOffBarbers] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ld_hideOffBarbers") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleHideOffBarbers = () => {
+    setHideOffBarbers((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("ld_hideOffBarbers", next ? "1" : "0");
+      } catch { /* ignore */ }
+      return next;
+    });
+    setCurrentPage(1);
+  };
+
+  // Cards da lateral colapsáveis (clique no título). Estado por navegador.
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("ld_collapsedCards") || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const toggleCard = (key: string) => {
+    setCollapsedCards((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("ld_collapsedCards", JSON.stringify(next));
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const fetchData = useCallback(async () => {
     if (!organizationId) {
@@ -789,13 +827,40 @@ export default function LiveDashboard() {
     return percentA - percentB;
   });
 
+  // Barbeiro em folga/falta confirmada e sem venda no dia → candidato a ocultar.
+  // Importante: getBarberRevenue zera a receita de quem está em folga/falta, então
+  // não dá pra usá-la aqui — checamos as transações operacionais cruas do dia, para
+  // não ocultar (nem esconder a venda de) quem recebeu um lançamento mesmo de folga.
+  const isBarberOffOrAbsent = (b: Barber) => {
+    const prod = getBarberProduction(b.id);
+    if (!prod?.confirmed_presence) return false;
+    if (prod.presence_type !== "day_off" && prod.presence_type !== "absence") return false;
+    const hasSaleToday = managerTransactions.some(
+      (t) => t.barber_id === b.id && isOperationalRevenueTx(t),
+    );
+    return !hasSaleToday;
+  };
+  const offBarbersCount = sortedBarbers.filter(isBarberOffOrAbsent).length;
+  // Lista efetivamente exibida: oculta folga/falta quando o gestor liga a opção.
+  const visibleBarbers = hideOffBarbers
+    ? sortedBarbers.filter((b) => !isBarberOffOrAbsent(b))
+    : sortedBarbers;
+
   // Pagination
   const ITEMS_PER_PAGE = 10;
-  const totalPages = Math.ceil(sortedBarbers.length / ITEMS_PER_PAGE);
-  const paginatedBarbers = sortedBarbers.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(visibleBarbers.length / ITEMS_PER_PAGE);
+  const paginatedBarbers = visibleBarbers.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   // Reset page when filter changes
   useEffect(() => { setCurrentPage(1); }, [selectedUnit]);
+
+  // Mantém a página dentro do total quando a lista visível encolhe (troca de dia,
+  // atualização de produção, ou ocultar folga/falta) — senão a tabela fica vazia
+  // e os controles de paginação somem sem como voltar.
+  useEffect(() => {
+    const tp = Math.max(1, Math.ceil(visibleBarbers.length / ITEMS_PER_PAGE));
+    setCurrentPage((p) => (p > tp ? tp : p));
+  }, [visibleBarbers.length, ITEMS_PER_PAGE]);
 
   const rankingData = filteredBarbers.map((b) => ({
     id: b.id,
@@ -1319,6 +1384,25 @@ export default function LiveDashboard() {
         {/* Barber Table */}
         <div className="flex-1 min-w-0">
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
+            {/* Barra de ações da lista: ocultar quem está de folga/falta sem venda */}
+            {(offBarbersCount > 0 || hideOffBarbers) && (
+              <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border/30 bg-muted/10">
+                <span className="text-[11px] text-muted-foreground">
+                  {hideOffBarbers
+                    ? `${offBarbersCount} em folga/falta ocultado${offBarbersCount === 1 ? "" : "s"}`
+                    : `${offBarbersCount} em folga/falta no dia`}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={toggleHideOffBarbers}
+                >
+                  {hideOffBarbers ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                  {hideOffBarbers ? "Mostrar todos" : "Ocultar folga/falta"}
+                </Button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <div className="min-w-[860px]">
               {/* Table Header */}
@@ -1690,7 +1774,7 @@ export default function LiveDashboard() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-border/30">
                 <p className="text-xs text-muted-foreground">
-                  {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, sortedBarbers.length)} de {sortedBarbers.length}
+                  {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, visibleBarbers.length)} de {visibleBarbers.length}
                 </p>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
@@ -1721,11 +1805,13 @@ export default function LiveDashboard() {
           <div className="lg:sticky lg:top-4 space-y-3">
             {/* Faturamento Card */}
             <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  💰 FATURAMENTO
+              <CardHeader className="pb-2 pt-4 px-4 cursor-pointer select-none" onClick={() => toggleCard("faturamento")}>
+                <CardTitle className="text-base flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">💰 FATURAMENTO</span>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsedCards.faturamento ? "-rotate-90" : ""}`} />
                 </CardTitle>
               </CardHeader>
+              {!collapsedCards.faturamento && (
               <CardContent className="px-3 pb-3 space-y-2">
                 {/* Hoje (Total) + Este Mês */}
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1839,16 +1925,19 @@ export default function LiveDashboard() {
                   </div>
                 </div>
               </CardContent>
+              )}
             </Card>
 
             {/* Controladoria — lançamentos do mês (independe do dia selecionado) */}
             <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  🎛️ CONTROLADORIA
+              <CardHeader className="pb-2 pt-4 px-4 cursor-pointer select-none" onClick={() => toggleCard("controladoria")}>
+                <CardTitle className="text-base flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">🎛️ CONTROLADORIA</span>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsedCards.controladoria ? "-rotate-90" : ""}`} />
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground -mt-1">Lançamentos do mês · {selectedDateObj.toLocaleDateString("pt-BR", { month: "long" })}</p>
               </CardHeader>
+              {!collapsedCards.controladoria && (
               <CardContent className="px-3 pb-3 space-y-2">
                 {!controllerSummary.hasAny ? (
                   <p className="text-[11px] text-muted-foreground py-2 text-center">
@@ -1904,16 +1993,19 @@ export default function LiveDashboard() {
                   </>
                 )}
               </CardContent>
+              )}
             </Card>
 
             {/* Meta Semanal por Unidade (resumo) — base = semana anterior */}
             {weeklyGoals.rows.length > 0 && (
               <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-                <CardHeader className="pb-2 pt-4 px-4">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    🎯 META SEMANAL
+                <CardHeader className="pb-2 pt-4 px-4 cursor-pointer select-none" onClick={() => toggleCard("metaSemanal")}>
+                  <CardTitle className="text-base flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">🎯 META SEMANAL</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsedCards.metaSemanal ? "-rotate-90" : ""}`} />
                   </CardTitle>
                 </CardHeader>
+                {!collapsedCards.metaSemanal && (
                 <CardContent className="px-3 pb-3 space-y-2">
                   {/* Rede (total) */}
                   <div className="rounded-lg border border-primary/30 bg-gradient-to-br from-primary/10 to-transparent p-2">
@@ -1955,24 +2047,29 @@ export default function LiveDashboard() {
                     })}
                   </div>
                 </CardContent>
+                )}
               </Card>
             )}
 
             {/* Ranking ASSINATURAS — prioridade máxima do negócio */}
             <Card className="overflow-hidden border-2 border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 backdrop-blur-sm shadow-[0_0_20px_hsl(38_92%_50%/0.15)]">
-              <CardHeader className="pb-2 pt-4 px-4">
+              <CardHeader className="pb-2 pt-4 px-4 cursor-pointer select-none" onClick={() => toggleCard("assinaturas")}>
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     👑 ASSINATURAS
                   </CardTitle>
-                  <Badge variant="outline" className="border-amber-500/60 text-amber-600 bg-amber-500/10 text-[9px] px-1.5 py-0">
-                    PRIORIDADE
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="outline" className="border-amber-500/60 text-amber-600 bg-amber-500/10 text-[9px] px-1.5 py-0">
+                      PRIORIDADE
+                    </Badge>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsedCards.assinaturas ? "-rotate-90" : ""}`} />
+                  </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground font-medium">
                   Hoje: <span className="text-amber-600 font-bold">{subscriptionTotalCount}</span> {subscriptionTotalCount === 1 ? "venda" : "vendas"} · {subscriptionTotalRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 </p>
               </CardHeader>
+              {!collapsedCards.assinaturas && (
               <CardContent className="px-3 pb-3">
                 {subscriptionRankingData.length === 0 ? (
                   <div className="text-center py-3 text-[11px] text-muted-foreground">
@@ -2016,16 +2113,19 @@ export default function LiveDashboard() {
                   </div>
                 )}
               </CardContent>
+              )}
             </Card>
 
             {/* Ranking Filiais */}
             {units.length > 1 && (
               <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-                <CardHeader className="pb-2 pt-4 px-4">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    🏢 RANKING FILIAIS
+                <CardHeader className="pb-2 pt-4 px-4 cursor-pointer select-none" onClick={() => toggleCard("rankingFiliais")}>
+                  <CardTitle className="text-base flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">🏢 RANKING FILIAIS</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsedCards.rankingFiliais ? "-rotate-90" : ""}`} />
                   </CardTitle>
                 </CardHeader>
+                {!collapsedCards.rankingFiliais && (
                 <CardContent className="px-3 pb-3">
                   <div className="space-y-0.5">
                     {unitRankingData.map((unit, index) => {
@@ -2058,19 +2158,23 @@ export default function LiveDashboard() {
                     })}
                   </div>
                 </CardContent>
+                )}
               </Card>
             )}
 
             {/* Ranking Barbeiros Top 3 */}
             <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  🏆 BARBEIROS
+              <CardHeader className="pb-2 pt-4 px-4 cursor-pointer select-none" onClick={() => toggleCard("rankingBarbeiros")}>
+                <CardTitle className="text-base flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">🏆 BARBEIROS</span>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsedCards.rankingBarbeiros ? "-rotate-90" : ""}`} />
                 </CardTitle>
               </CardHeader>
+              {!collapsedCards.rankingBarbeiros && (
               <CardContent className="px-3 pb-3">
                 <LiveTop3Ranking barbers={rankingData} />
               </CardContent>
+              )}
             </Card>
           </div>
         </div>
