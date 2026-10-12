@@ -177,6 +177,37 @@ const parseBRNumber = (s: string): number => {
   return isNaN(n) ? 0 : n;
 };
 
+// Preço digitado à mão (cadastro de plano), tolerante a vírgula E ponto:
+//  - Com os dois separadores, o ÚLTIMO é o decimal e o outro é milhar
+//    ("1.499,90" -> 1499.9 · "1,499.90" -> 1499.9).
+//  - Só vírgula: decimal se houver uma só ("149,90" -> 149.9); várias = milhar
+//    ("1,499,000" -> 1499000).
+//  - Só ponto: várias ocorrências = milhar ("1.499.000" -> 1499000); uma só é
+//    decimal quando tem 1-2 casas ("149.90" -> 149.9) e milhar quando tem
+//    exatamente 3 casas ("1.499" -> 1499), que é o padrão pt-BR.
+const parsePriceInput = (s: string): number => {
+  let t = (s || "").trim().replace(/[^\d.,]/g, "");
+  if (!t) return 0;
+  const hasComma = t.includes(",");
+  const hasDot = t.includes(".");
+  if (hasComma && hasDot) {
+    if (t.lastIndexOf(",") > t.lastIndexOf(".")) t = t.replace(/\./g, "").replace(",", ".");
+    else t = t.replace(/,/g, "");
+  } else if (hasComma) {
+    t = t.split(",").length > 2 ? t.replace(/,/g, "") : t.replace(",", ".");
+  } else if (hasDot) {
+    const parts = t.split(".");
+    if (parts.length > 2) {
+      t = parts.join(""); // vários pontos = separadores de milhar
+    } else if (parts[1] && parts[1].length === 3) {
+      t = parts[0] + parts[1]; // um ponto + 3 casas = milhar (ex.: 1.499)
+    }
+    // caso contrário (1-2 casas) mantém como decimal
+  }
+  const n = Number(t);
+  return isNaN(n) ? 0 : n;
+};
+
 // "04/10/2026 - 04:02" ou "04/10/2026" -> "2026-10-04"
 const parseBRDateKey = (s: string): string | null => {
   const m = (s || "").match(/(\d{2})\/(\d{2})\/(\d{4})/);
@@ -278,7 +309,7 @@ export default function ControllerCsvImport({
   const createPlan = async () => {
     if (!planDialogRow) return;
     const name = planName.trim();
-    const price = parseBRNumber(planPrice);
+    const price = parsePriceInput(planPrice);
     if (!name) {
       toast.error("Informe o nome do plano.");
       return;
@@ -297,13 +328,19 @@ export default function ControllerCsvImport({
       if (error) throw error;
       const newId = data as string;
       const sourceText = planDialogRow.planText;
-      // Vincula todas as linhas "sem vínculo" do mesmo plano do CSV.
+      // Vincula o novo plano em TODA linha do mesmo plano do CSV que ainda está
+      // sem planId — inclusive as marcadas dup/ignored_status (caso o usuário
+      // force "importar mesmo assim", o lançamento não fica sem plano). Só vira
+      // "ok" quem estava "no_plan"; dup/ignored_status mantêm o status.
       setRows((prev) =>
-        prev.map((row) =>
-          row.status === "no_plan" && row.planText === sourceText
-            ? { ...row, planId: newId, status: "ok" as RowStatus }
-            : row,
-        ),
+        prev.map((row) => {
+          if (row.planText !== sourceText || row.planId) return row;
+          return {
+            ...row,
+            planId: newId,
+            status: row.status === "no_plan" ? ("ok" as RowStatus) : row.status,
+          };
+        }),
       );
       toast.success(`Plano "${name}" cadastrado e vinculado.`);
       setPlanDialogRow(null);
