@@ -72,6 +72,12 @@ interface ParsedRow {
   dateKey: string; // yyyy-MM-dd do lançamento
   phone: string; // sanitizado
   planId: string | null;
+  // Por que a linha ficou sem vínculo de plano (quando planId == null):
+  //  - "missing": nenhum plano com esse nome no cadastro.
+  //  - "price_mismatch": existe plano com o mesmo nome, mas preço diferente.
+  planReason: "ok" | "missing" | "price_mismatch";
+  // Preço do plano de mesmo nome já cadastrado (só em price_mismatch), para o alerta.
+  planCatalogPrice?: number;
   // Unidade do cliente já resolvida: a cadastrada (subscription_unit_id) ou a
   // inferida do histórico de atendimentos. null = precisa definir manualmente.
   resolvedUnitId: string | null;
@@ -143,32 +149,44 @@ const planTokens = (name: string): Set<string> => {
 
 const isSubset = (a: Set<string>, b: Set<string>) => [...a].every((t) => b.has(t));
 
-// Casa o nome de plano do CSV com um plano cadastrado.
-function matchPlanByName<T extends { name: string }>(text: string, plans: T[]): T | null {
+const samePrice = (a: number, b: number) => Math.abs(a - b) < 0.01;
+
+// Resultado do casamento de plano: vinculado (ok), inexistente no cadastro
+// (missing) ou nome conhecido com preço divergente (price_mismatch).
+type PlanMatch =
+  | { plan: Plan; reason: "ok" }
+  | { plan: null; reason: "missing" }
+  | { plan: null; reason: "price_mismatch"; catalog: Plan };
+
+// Casa o plano do CSV com o cadastro exigindo MESMO NOME E MESMO PREÇO. O preço
+// faz parte da identidade do plano (o Cash Barb é o motor): dois planos de mesmo
+// nome e preços diferentes são planos distintos, e um nome conhecido com preço
+// divergente deve ser criado manualmente — nunca grudado no plano errado.
+function matchPlan(text: string, price: number, plans: Plan[]): PlanMatch {
   const k = planTokens(text);
-  if (k.size === 0) return null;
-  // 1) conjunto de palavras idêntico
-  const exact = plans.find((p) => {
+  if (k.size === 0) return { plan: null, reason: "missing" };
+  // Candidatos por NOME: primeiro o conjunto de palavras idêntico; se não houver,
+  // os de conjunto contido (um no outro) como fallback.
+  let candidates = plans.filter((p) => {
     const pk = planTokens(p.name);
     return pk.size === k.size && isSubset(k, pk);
   });
-  if (exact) return exact;
-  // 2) um conjunto contido no outro — escolhe o de maior sobreposição; empate = sem match
-  let best: { plan: T; shared: number } | null = null;
-  let tie = false;
-  for (const p of plans) {
-    const pk = planTokens(p.name);
-    if (isSubset(k, pk) || isSubset(pk, k)) {
-      const shared = [...k].filter((t) => pk.has(t)).length;
-      if (!best || shared > best.shared) {
-        best = { plan: p, shared };
-        tie = false;
-      } else if (shared === best.shared) {
-        tie = true;
-      }
-    }
+  if (candidates.length === 0) {
+    candidates = plans.filter((p) => {
+      const pk = planTokens(p.name);
+      return isSubset(k, pk) || isSubset(pk, k);
+    });
   }
-  return best && !tie ? best.plan : null;
+  if (candidates.length === 0) return { plan: null, reason: "missing" };
+  // Entre os de mesmo nome, exige o de MESMO PREÇO.
+  const exact = candidates.find((p) => samePrice(p.price, price));
+  if (exact) return { plan: exact, reason: "ok" };
+  // Nome conhecido, preço diferente → criar manualmente (mostra no alerta o preço
+  // do cadastro mais próximo, para o controlador entender a divergência).
+  const closest = candidates.reduce((a, b) =>
+    Math.abs(a.price - price) <= Math.abs(b.price - price) ? a : b,
+  );
+  return { plan: null, reason: "price_mismatch", catalog: closest };
 }
 
 const parseBRNumber = (s: string): number => {
@@ -328,13 +346,15 @@ export default function ControllerCsvImport({
       if (error) throw error;
       const newId = data as string;
       const sourceText = planDialogRow.planText;
-      // Vincula o novo plano em TODA linha do mesmo plano do CSV que ainda está
-      // sem planId — inclusive as marcadas dup/ignored_status (caso o usuário
-      // force "importar mesmo assim", o lançamento não fica sem plano). Só vira
-      // "ok" quem estava "no_plan"; dup/ignored_status mantêm o status.
+      // Vincula o novo plano apenas às linhas do MESMO nome E MESMO preço do
+      // plano criado (a identidade é nome+preço). Isso evita grudar no plano
+      // errado quando o CSV traz o mesmo nome em preços diferentes — todos sem
+      // match ainda. Inclui dup/ignored_status (caso o usuário force "importar
+      // mesmo assim", o lançamento não fica sem plano); só vira "ok" quem estava
+      // "no_plan", dup/ignored_status mantêm o status.
       setRows((prev) =>
         prev.map((row) => {
-          if (row.planText !== sourceText || row.planId) return row;
+          if (row.planText !== sourceText || row.planId || !samePrice(row.valor, price)) return row;
           return {
             ...row,
             planId: newId,
@@ -516,6 +536,40 @@ export default function ControllerCsvImport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, manualUnitByPhone, forcedImport]);
 
+  // Planos que precisam de cadastro manual, agrupados por (plano do CSV + motivo),
+  // para o alerta listar os clientes afetados. missing = não existe no cadastro;
+  // price_mismatch = existe com o mesmo nome mas preço diferente.
+  const planIssues = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        planText: string;
+        reason: "missing" | "price_mismatch";
+        csvPrice: number;
+        catalogPrice?: number;
+        clients: string[];
+      }
+    >();
+    for (const r of rows) {
+      if (r.status !== "no_plan" || r.planReason === "ok") continue;
+      const key = `${r.planText}|${r.planReason}|${r.valor.toFixed(2)}`;
+      const g = groups.get(key);
+      const who = `${r.clientName || "—"} (${formatPhone(r.phone)})`;
+      if (g) {
+        if (!g.clients.includes(who)) g.clients.push(who);
+      } else {
+        groups.set(key, {
+          planText: r.planText || "—",
+          reason: r.planReason,
+          csvPrice: r.valor,
+          catalogPrice: r.planCatalogPrice,
+          clients: [who],
+        });
+      }
+    }
+    return [...groups.values()];
+  }, [rows]);
+
   const reset = () => {
     setRows([]);
     setFileName("");
@@ -601,7 +655,10 @@ export default function ControllerCsvImport({
         const phone = sanitizePhone(c[idx.telefone] || "");
         if (!phone) continue;
         const planText = (c[idx.plano] || "").trim();
-        const matched = matchPlanByName(planText, plans);
+        const valor = parseBRNumber(c[idx.valor] || "0");
+        // Vínculo exige MESMO NOME E MESMO PREÇO; senão a linha fica sem plano
+        // (missing/price_mismatch) para cadastro manual.
+        const pm = matchPlan(planText, valor, plans);
         const dateKey =
           parseBRDateKey(c[idx.dataStatus] ?? "") ||
           parseBRDateKey(c[idx.venc] ?? "") ||
@@ -609,11 +666,13 @@ export default function ControllerCsvImport({
         parsed.push({
           clientName: (c[idx.nome] || "").trim(),
           planText,
-          valor: parseBRNumber(c[idx.valor] || "0"),
+          valor,
           statusText: (c[idx.status] || "").trim(),
           dateKey,
           phone,
-          planId: matched?.id ?? null,
+          planId: pm.plan?.id ?? null,
+          planReason: pm.reason,
+          planCatalogPrice: pm.reason === "price_mismatch" ? pm.catalog.price : undefined,
         });
       }
 
@@ -1095,11 +1154,31 @@ export default function ControllerCsvImport({
               </p>
             )}
 
-            {counts.noPlan > 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                {counts.noPlan} linha(s) com plano não encontrado no cadastro — clique em "Cadastrar plano" na linha para criar e vincular, ou importe sem vínculo (o valor é mantido).
-              </p>
+            {planIssues.length > 0 && (
+              <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {counts.noPlan} linha(s) com plano a cadastrar — confira os clientes abaixo e use "Cadastrar plano" na linha. Sem isso, entram sem vínculo (o valor é mantido).
+                </p>
+                <ul className="space-y-2">
+                  {planIssues.map((g, gi) => (
+                    <li key={gi} className="text-xs">
+                      <p className="font-medium text-foreground">
+                        {g.planText} · {brl(g.csvPrice)}
+                        <span className="ml-1 font-normal text-amber-700 dark:text-amber-300">
+                          {g.reason === "missing"
+                            ? "— não existe no cadastro"
+                            : `— preço diverge do cadastro (${brl(g.catalogPrice ?? 0)})`}
+                        </span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        {g.clients.length} cliente(s): {g.clients.slice(0, 6).join(", ")}
+                        {g.clients.length > 6 ? ` +${g.clients.length - 6}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             <div className="rounded-md border overflow-auto max-h-[60vh]">
@@ -1128,7 +1207,11 @@ export default function ControllerCsvImport({
                         {r.planText || "—"}
                         {r.status === "no_plan" && (
                           <>
-                            <span className="block text-[11px] text-amber-600 dark:text-amber-400">sem vínculo</span>
+                            <span className="block text-[11px] text-amber-600 dark:text-amber-400">
+                              {r.planReason === "price_mismatch"
+                                ? `preço diverge do cadastro (${brl(r.planCatalogPrice ?? 0)})`
+                                : "não existe no cadastro"}
+                            </span>
                             <Button
                               size="sm"
                               variant="outline"
