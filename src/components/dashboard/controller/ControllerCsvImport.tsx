@@ -346,13 +346,15 @@ export default function ControllerCsvImport({
       if (error) throw error;
       const newId = data as string;
       const sourceText = planDialogRow.planText;
-      // Vincula o novo plano em TODA linha do mesmo plano do CSV que ainda está
-      // sem planId — inclusive as marcadas dup/ignored_status (caso o usuário
-      // force "importar mesmo assim", o lançamento não fica sem plano). Só vira
-      // "ok" quem estava "no_plan"; dup/ignored_status mantêm o status.
+      // Vincula o novo plano apenas às linhas do MESMO nome E MESMO preço do
+      // plano criado (a identidade é nome+preço). Isso evita grudar no plano
+      // errado quando o CSV traz o mesmo nome em preços diferentes — todos sem
+      // match ainda. Inclui dup/ignored_status (caso o usuário force "importar
+      // mesmo assim", o lançamento não fica sem plano); só vira "ok" quem estava
+      // "no_plan", dup/ignored_status mantêm o status.
       setRows((prev) =>
         prev.map((row) => {
-          if (row.planText !== sourceText || row.planId) return row;
+          if (row.planText !== sourceText || row.planId || !samePrice(row.valor, price)) return row;
           return {
             ...row,
             planId: newId,
