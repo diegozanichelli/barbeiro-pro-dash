@@ -48,6 +48,7 @@ import {
   TIMEZONE,
 } from "@/lib/dateUtils";
 import { formatInTimeZone } from "date-fns-tz";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhone } from "@/lib/phoneUtils";
 
@@ -104,7 +105,9 @@ function lastMonths(n: number): { key: string; label: string }[] {
   for (let i = 0; i < n; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    out.push({ key, label: formatInTimeZone(d, TIMEZONE, "MMM/yyyy", { locale: ptBR }) });
+    // Rótulo direto do Date local (sem reaplicar fuso, que deslocaria o mês em
+    // navegadores a leste de Manaus e rotularia o mês errado).
+    out.push({ key, label: format(d, "MMM/yyyy", { locale: ptBR }) });
   }
   return out;
 }
@@ -161,6 +164,11 @@ export default function ControllerOverview({ organizationId }: Props) {
             )
             .eq("organization_id", organizationId)
             .eq("item_type", "subscription")
+            // Só a movimentação da CONTROLADORIA (mesmo escopo do Ao Vivo):
+            // origem controller/online/auto_recurring OU vinda de um lote de
+            // importação. Exclui vendas normais de assinatura da recepção/barbeiro/
+            // gestor, que o RLS do controlador também deixa ler mas não são dele.
+            .or("attribution_source.in.(controller,online,auto_recurring),import_batch_id.not.is.null")
             .gte("created_at", manausDayStart(monthStart))
             .lte("created_at", manausDayEnd(monthEnd))
             .order("created_at", { ascending: false }) as never,
