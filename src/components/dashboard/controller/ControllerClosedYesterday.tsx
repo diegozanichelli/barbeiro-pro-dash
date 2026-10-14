@@ -57,6 +57,7 @@ export default function ControllerClosedYesterday({ organizationId }: Props) {
   }, []);
   const days = useMemo(() => getControllerDefaultDays(), [todayKey]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const [txs, setTxs] = useState<SubTx[]>([]);
   const [planName, setPlanName] = useState<Map<string, string>>(new Map());
 
@@ -69,6 +70,7 @@ export default function ControllerClosedYesterday({ organizationId }: Props) {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setError(false);
       try {
         const plansRes = await supabase
           .from("subscription_plans")
@@ -99,6 +101,11 @@ export default function ControllerClosedYesterday({ organizationId }: Props) {
         setTxs(rows.filter((r) => originOf(r) !== "cancel"));
       } catch (err) {
         console.error("Erro ao carregar assinaturas do dia anterior:", err);
+        if (!cancelled) {
+          // Não apresenta dado obsoleto como se fosse do dia atual: limpa e marca erro.
+          setTxs([]);
+          setError(true);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -133,7 +140,7 @@ export default function ControllerClosedYesterday({ organizationId }: Props) {
             <CalendarCheck className="w-4 h-4 text-primary" />
             Assinaturas fechadas — dia anterior ({label})
           </span>
-          {!loading && (
+          {!loading && !error && (
             <span className="text-xs font-normal text-muted-foreground">
               {totals.count} · {brl(totals.rev)}
             </span>
@@ -145,6 +152,10 @@ export default function ControllerClosedYesterday({ organizationId }: Props) {
           <div className="py-8 flex justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
+        ) : error ? (
+          <p className="text-xs text-red-400 px-4 py-4">
+            Não foi possível carregar as assinaturas do dia anterior. Tente recarregar a página.
+          </p>
         ) : txs.length === 0 ? (
           <p className="text-xs text-muted-foreground px-4 py-4">
             Nenhuma assinatura fechada em {label}.
