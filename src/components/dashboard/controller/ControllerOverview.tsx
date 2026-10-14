@@ -51,6 +51,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhone } from "@/lib/phoneUtils";
+import ControllerClosedYesterday from "./ControllerClosedYesterday";
 
 interface Props {
   organizationId: string;
@@ -80,9 +81,12 @@ interface Batch {
 
 // Classificação de origem de um movimento (espelha o controllerOriginLabel do
 // Ao Vivo): cancelamento, renov. automática, nova adesão online, balcão.
-type Origin = "cancel" | "auto_recurring" | "online" | "reception" | "outro";
+export type Origin = "cancel" | "auto_recurring" | "online" | "reception" | "outro";
 
-function originOf(t: SubTx): Origin {
+export function originOf(t: {
+  subscription_action: string | null;
+  attribution_source: string | null;
+}): Origin {
   if (t.subscription_action === "cancel") return "cancel";
   if (t.attribution_source === "auto_recurring") return "auto_recurring";
   if (t.attribution_source === "online") return "online";
@@ -90,7 +94,7 @@ function originOf(t: SubTx): Origin {
   return "outro";
 }
 
-const ORIGIN_META: Record<Origin, { label: string; className: string; color: string }> = {
+export const ORIGIN_META: Record<Origin, { label: string; className: string; color: string }> = {
   reception: { label: "Balcão", className: "bg-amber-500/15 text-amber-500 border-amber-500/30", color: "#f59e0b" },
   online: { label: "Nova adesão online", className: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30", color: "#10b981" },
   auto_recurring: { label: "Renov. automática", className: "bg-blue-500/15 text-blue-400 border-blue-500/30", color: "#3b82f6" },
@@ -274,6 +278,9 @@ export default function ControllerOverview({ organizationId }: Props) {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Assinaturas fechadas no dia anterior — independe do mês selecionado. */}
+      <ControllerClosedYesterday organizationId={organizationId} />
 
       {loading ? (
         <Card>
