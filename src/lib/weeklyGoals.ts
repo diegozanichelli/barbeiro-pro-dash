@@ -66,6 +66,39 @@ export function getWeekRanges(now: Date = getManausDate()): WeekRanges {
   };
 }
 
+/** Uma opção de semana do mês para o seletor da meta semanal. */
+export interface MonthWeekOption {
+  index: number; // número da semana no mês (1..5)
+  startKey: string; // yyyy-MM-dd
+  endKey: string; // yyyy-MM-dd
+  refDate: string; // yyyy-MM-dd (início do bloco) para alimentar getWeekRanges
+  isCurrent: boolean;
+}
+
+/**
+ * Lista os blocos de semana do mês de `now`, do 1º até o bloco que contém hoje
+ * (não lista semanas futuras, que ainda não têm dado). Cada opção traz um
+ * `refDate` (início do bloco) que, passado a getWeekRanges, seleciona aquela
+ * semana como corrente e o bloco anterior como base.
+ */
+export function getMonthWeekOptions(now: Date = getManausDate()): MonthWeekOption[] {
+  const year = now.getFullYear();
+  const month0 = now.getMonth();
+  const curIdx = blockIndexOf(now.getDate());
+  const opts: MonthWeekOption[] = [];
+  for (let idx = 0; idx <= curIdx; idx++) {
+    const b = blockAt(year, month0, idx);
+    opts.push({
+      index: idx + 1,
+      startKey: toDateKey(b.start),
+      endKey: toDateKey(b.end),
+      refDate: toDateKey(b.start),
+      isCurrent: idx === curIdx,
+    });
+  }
+  return opts;
+}
+
 /** Meta = Base × (1 + growth%/100). */
 export function weeklyMeta(base: number, growthPct: number | null | undefined): number {
   return base * (1 + (Number(growthPct) || 0) / 100);
