@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
@@ -534,6 +534,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "controller_import_batches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_public"
             referencedColumns: ["id"]
           },
         ]
@@ -1249,6 +1256,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "sale_transactions_import_batch_id_fkey"
+            columns: ["import_batch_id"]
+            isOneToOne: false
+            referencedRelation: "controller_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sale_transactions_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -1689,6 +1703,10 @@ export type Database = {
         }[]
       }
       cleanup_old_client_names: { Args: never; Returns: undefined }
+      controller_create_subscription_plan: {
+        Args: { p_name: string; p_organization_id: string; p_price: number }
+        Returns: string
+      }
       create_sale_and_ensure_production: {
         Args: {
           p_barber_id?: string
