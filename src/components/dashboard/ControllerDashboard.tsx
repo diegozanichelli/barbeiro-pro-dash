@@ -4,10 +4,12 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { LogOut, Loader2, ClipboardList } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LogOut, Loader2, ClipboardList, LayoutDashboard, PlusCircle } from "lucide-react";
 import logo from "@/assets/performance-barber-logo-transparent.png";
 import { useOrganization } from "@/hooks/useOrganization";
 import ControllerEntryPanel from "./controller/ControllerEntryPanel";
+import ControllerOverview from "./controller/ControllerOverview";
 
 interface ControllerDashboardProps {
   user: User;
@@ -74,7 +76,22 @@ export default function ControllerDashboard({ user }: ControllerDashboardProps) 
             </CardContent>
           </Card>
         ) : organizationId ? (
-          <ControllerEntryPanel organizationId={organizationId} />
+          <Tabs defaultValue="painel" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="painel" className="gap-1.5">
+                <LayoutDashboard className="h-4 w-4" /> Painel
+              </TabsTrigger>
+              <TabsTrigger value="lancar" className="gap-1.5">
+                <PlusCircle className="h-4 w-4" /> Lançar
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="painel">
+              <ControllerOverview organizationId={organizationId} />
+            </TabsContent>
+            <TabsContent value="lancar">
+              <ControllerEntryPanel organizationId={organizationId} />
+            </TabsContent>
+          </Tabs>
         ) : (
           <Card className="bg-card border-border shadow-card-custom">
             <CardContent className="py-8 text-center space-y-2">
