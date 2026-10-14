@@ -335,7 +335,7 @@ export default function ControllerCsvImport({
     setCreatingPlan(true);
     try {
       // RPC ainda não refletida no types.ts gerado — cast para evitar erro de tipos.
-      const { data, error } = await (supabase.rpc as (
+      const { data, error } = await (supabase.rpc as unknown as (
         fn: string,
         args: Record<string, unknown>,
       ) => Promise<{ data: unknown; error: unknown }>)("controller_create_subscription_plan", {
