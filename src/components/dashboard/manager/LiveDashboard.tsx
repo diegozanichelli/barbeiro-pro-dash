@@ -137,10 +137,26 @@ interface Unit {
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
   // Seletor de semana da meta: blocos fixos do mês (1–7, 8–14, …). Default = atual.
-  const weekOptions = useMemo(() => getMonthWeekOptions(), []);
-  const [selectedWeekKey, setSelectedWeekKey] = useState<string>(
-    () => weekOptions[weekOptions.length - 1]?.refDate ?? "",
-  );
+  // `todayKey` atualiza na virada do dia (o painel fica aberto o dia todo no
+  // balcão), para recomputar os blocos e reetiquetar a semana "atual" sem
+  // precisar remontar a página.
+  const [todayKey, setTodayKey] = useState(() => getTodayString());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = getTodayString();
+      setTodayKey((prev) => (prev === k ? prev : k));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const weekOptions = useMemo(() => getMonthWeekOptions(), [todayKey]);
+  const currentWeekKey = weekOptions[weekOptions.length - 1]?.refDate ?? "";
+  // Semana escolhida manualmente; null = acompanhar a atual (default e após a
+  // virada de semana/mês). Se a escolha sair da lista (mês virou), volta à atual.
+  const [pickedWeekKey, setPickedWeekKey] = useState<string | null>(null);
+  const selectedWeekKey =
+    pickedWeekKey && weekOptions.some((w) => w.refDate === pickedWeekKey)
+      ? pickedWeekKey
+      : currentWeekKey;
   const weeklyGoals = useWeeklyUnitGoals(organizationId, selectedWeekKey || undefined);
   const refetchWeeklyGoals = weeklyGoals.refetch; // estável (useCallback no hook)
   const todayManausDate = getManausDate();
@@ -2015,7 +2031,7 @@ export default function LiveDashboard() {
                 <CardContent className="px-3 pb-3 space-y-2">
                   {/* Seletor de semana (blocos fixos do mês) */}
                   {weekOptions.length > 0 && (
-                    <Select value={selectedWeekKey} onValueChange={setSelectedWeekKey}>
+                    <Select value={selectedWeekKey} onValueChange={(v) => setPickedWeekKey(v === currentWeekKey ? null : v)}>
                       <SelectTrigger className="h-7 w-full text-[11px]">
                         <SelectValue />
                       </SelectTrigger>
