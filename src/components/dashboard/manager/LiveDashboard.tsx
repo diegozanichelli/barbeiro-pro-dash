@@ -27,6 +27,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { isOperationalRevenueTx, isSubscriptionRevenue, isCancellation, isOnlineAdhesion, isAutoRecurring } from "@/lib/metricsRules";
 import { useWeeklyUnitGoals } from "@/hooks/useWeeklyUnitGoals";
+import { getMonthWeekOptions } from "@/lib/weeklyGoals";
 import { brl } from "@/lib/currency";
 import {
   Dialog,
@@ -135,7 +136,28 @@ interface Unit {
 
 export default function LiveDashboard() {
   const { organizationId } = useOrganization();
-  const weeklyGoals = useWeeklyUnitGoals(organizationId);
+  // Seletor de semana da meta: blocos fixos do mês (1–7, 8–14, …). Default = atual.
+  // `todayKey` atualiza na virada do dia (o painel fica aberto o dia todo no
+  // balcão), para recomputar os blocos e reetiquetar a semana "atual" sem
+  // precisar remontar a página.
+  const [todayKey, setTodayKey] = useState(() => getTodayString());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = getTodayString();
+      setTodayKey((prev) => (prev === k ? prev : k));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const weekOptions = useMemo(() => getMonthWeekOptions(), [todayKey]);
+  const currentWeekKey = weekOptions[weekOptions.length - 1]?.refDate ?? "";
+  // Semana escolhida manualmente; null = acompanhar a atual (default e após a
+  // virada de semana/mês). Se a escolha sair da lista (mês virou), volta à atual.
+  const [pickedWeekKey, setPickedWeekKey] = useState<string | null>(null);
+  const selectedWeekKey =
+    pickedWeekKey && weekOptions.some((w) => w.refDate === pickedWeekKey)
+      ? pickedWeekKey
+      : currentWeekKey;
+  const weeklyGoals = useWeeklyUnitGoals(organizationId, selectedWeekKey || undefined);
   const refetchWeeklyGoals = weeklyGoals.refetch; // estável (useCallback no hook)
   const todayManausDate = getManausDate();
   const { holidayDates } = useOrganizationHolidays({
@@ -2007,6 +2029,25 @@ export default function LiveDashboard() {
                 </CardHeader>
                 {!collapsedCards.metaSemanal && (
                 <CardContent className="px-3 pb-3 space-y-2">
+                  {/* Seletor de semana (blocos fixos do mês) */}
+                  {weekOptions.length > 0 && (
+                    <Select value={selectedWeekKey} onValueChange={(v) => setPickedWeekKey(v === currentWeekKey ? null : v)}>
+                      <SelectTrigger className="h-7 w-full text-[11px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {weekOptions.map((w) => {
+                          const dm = (k: string) => k.slice(8, 10) + "/" + k.slice(5, 7);
+                          return (
+                            <SelectItem key={w.refDate} value={w.refDate} className="text-[11px]">
+                              Semana {w.index} · {dm(w.startKey)}–{dm(w.endKey)}
+                              {w.isCurrent ? " (atual)" : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {/* Rede (total) */}
                   <div className="rounded-lg border border-primary/30 bg-gradient-to-br from-primary/10 to-transparent p-2">
                     <div className="flex items-center justify-between mb-1">

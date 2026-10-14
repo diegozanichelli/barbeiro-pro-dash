@@ -32,16 +32,29 @@ export interface UseWeeklyUnitGoalsResult {
   refetch: () => void;
 }
 
+/** yyyy-MM-dd → Date local (só ano/mês/dia importam para getWeekRanges). */
+function keyToDate(key?: string): Date | undefined {
+  if (!key) return undefined;
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
 /**
- * Meta semanal por unidade (seg–dom): Base = semana anterior, Meta = Base × (1+%),
- * Realizado = semana corrente. Métrica = faturamento total da unidade
- * (assinaturas balcão/renovação/online + serviços + produtos), via sale_transactions.
+ * Meta semanal por unidade. A semana é um bloco fixo do mês (1–7, 8–14, 15–21,
+ * 22–28, 29–fim): Base = bloco anterior, Meta = Base × (1+%), Realizado = bloco
+ * selecionado. `refDateKey` (yyyy-MM-dd) escolhe qual semana ver; sem ele, usa a
+ * semana corrente. Métrica = faturamento total da unidade (assinaturas balcão/
+ * renovação/online + serviços + produtos), via sale_transactions.
  */
-export function useWeeklyUnitGoals(organizationId: string | undefined): UseWeeklyUnitGoalsResult {
+export function useWeeklyUnitGoals(
+  organizationId: string | undefined,
+  refDateKey?: string,
+): UseWeeklyUnitGoalsResult {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<WeeklyUnitGoalRow[]>([]);
   const [total, setTotal] = useState({ base: 0, meta: 0, realizado: 0, pct: 0 });
-  const [ranges, setRanges] = useState(() => getWeekRanges());
+  const [ranges, setRanges] = useState(() => getWeekRanges(keyToDate(refDateKey)));
   const [token, setToken] = useState(0);
 
   const refetch = useCallback(() => setToken((n) => n + 1), []);
@@ -51,7 +64,7 @@ export function useWeeklyUnitGoals(organizationId: string | undefined): UseWeekl
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const weeks = getWeekRanges();
+      const weeks = getWeekRanges(keyToDate(refDateKey));
       setRanges(weeks);
       try {
         const [unitsRes, barbersRes, growthRes] = await Promise.all([
@@ -128,7 +141,7 @@ export function useWeeklyUnitGoals(organizationId: string | undefined): UseWeekl
     return () => {
       cancelled = true;
     };
-  }, [organizationId, token]);
+  }, [organizationId, token, refDateKey]);
 
   return { loading, rows, total, weekLabel: ranges, refetch };
 }
