@@ -71,7 +71,8 @@ export default function WeeklyUnitGoalReport() {
             <div>
               <CardTitle>Meta Semanal por Unidade</CardTitle>
               <CardDescription>
-                Base = faturamento da semana anterior ({fmtDM(weekLabel.prevStart)}–{fmtDM(weekLabel.prevEnd)}).
+                Base = faturamento da semana anterior ({fmtDM(weekLabel.prevStart)}–{fmtDM(weekLabel.prevEnd)}),
+                ajustado pela média diária quando a semana tem menos de 7 dias (1ª e última do mês).
                 Meta = Base × (1 + crescimento). Realizado = semana corrente ({fmtDM(weekLabel.currentStart)}–
                 {fmtDM(weekLabel.currentEnd)}). Inclui assinaturas (balcão + renovações + online) + serviços + produtos.
               </CardDescription>

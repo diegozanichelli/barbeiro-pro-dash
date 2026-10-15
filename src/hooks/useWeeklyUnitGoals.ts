@@ -110,8 +110,21 @@ export function useWeeklyUnitGoals(
           }
         }
 
+        // Normaliza por nº de dias: os blocos do mês podem ser PARCIAIS (a 1ª
+        // semana tem como base o último bloco do mês anterior, às vezes 2–3 dias;
+        // a última semana do mês, 29–fim, também é curta). Sem normalizar, uma
+        // base de 2 dias geraria meta minúscula e % irreal (>300%) na 1ª semana,
+        // e a última semana ficaria baixa demais. Usamos a média diária do
+        // período anterior escalada para a quantidade de dias da semana atual.
+        const dayCount = (startKey: string, endKey: string) =>
+          Math.round((Date.parse(endKey) - Date.parse(startKey)) / 86_400_000) + 1;
+        const prevDays = dayCount(weeks.prevStart, weeks.prevEnd);
+        const curDays = dayCount(weeks.currentStart, weeks.currentEnd);
+
         const result: WeeklyUnitGoalRow[] = units.map((u: { id: string; name: string }) => {
-          const b = base.get(u.id) || 0;
+          const rawBase = base.get(u.id) || 0;
+          // Base equivalente aos dias da semana atual (média diária × dias atuais).
+          const b = prevDays > 0 ? (rawBase / prevDays) * curDays : 0;
           const growthPct = growthByUnit.get(u.id) || 0;
           const meta = weeklyMeta(b, growthPct);
           const realizado = real.get(u.id) || 0;
