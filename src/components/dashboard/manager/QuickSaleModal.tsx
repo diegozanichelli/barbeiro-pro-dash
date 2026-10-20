@@ -1020,7 +1020,11 @@ export default function QuickSaleModal({
         subscription_last_late_days: lateDays,
       };
       if (shouldFlag) cycleUpdate.subscription_payment_shift_flagged_at = new Date().toISOString();
-      if (policy === "follow_payment") cycleUpdate.subscription_due_policy = "keep";
+      // Consome a política one-shot: tanto um follow_payment aplicado quanto
+      // QUALQUER escolha explícita do diálogo (override) resetam o campo para
+      // "keep", evitando que um follow_payment pendente vaze para a próxima
+      // renovação (que pode nem ser atrasada e não mostrar o prompt).
+      if (policy === "follow_payment" || overridePolicy) cycleUpdate.subscription_due_policy = "keep";
       await (supabase.from("clients") as any)
         .update(cycleUpdate)
         .eq("organization_id", organizationId)
@@ -1077,7 +1081,18 @@ export default function QuickSaleModal({
       (subscriptionInCart.action === "renew" ||
         subscriptionInCart.action === "upgrade" ||
         subscriptionInCart.action === "downgrade");
-    if (!overridePolicy && isRenewalSub && cycle?.status === "vencido") {
+    // Espera o ciclo do cliente atual carregar: senão o prompt poderia ser pulado
+    // ou aberto com dados do cliente anterior (hook ainda resolvendo o telefone).
+    if (isRenewalSub && !overridePolicy && loadingCycle) {
+      toast.info("Carregando os dados da assinatura do cliente. Tente novamente em instantes.");
+      return;
+    }
+    // Atraso é avaliado na DATA DA VENDA (permite lançamento retroativo), não em
+    // "hoje": uma renovação datada antes/no vencimento não é pagamento atrasado.
+    const saleDateKey = format(selectedDate, "yyyy-MM-dd");
+    const dueKey = cycle?.dueDate ? formatDueDate(cycle.dueDate) : null;
+    const isLateOnSaleDate = !!dueKey && saleDateKey > dueKey;
+    if (!overridePolicy && isRenewalSub && isLateOnSaleDate) {
       setLatePolicyOpen(true);
       return;
     }
@@ -2326,9 +2341,9 @@ export default function QuickSaleModal({
               }}
             >
               <div>
-                <p className="font-semibold">Mudar vencimento para hoje ({format(selectedDate, "dd/MM")})</p>
+                <p className="font-semibold">Mudar vencimento para a data da venda ({format(selectedDate, "dd/MM")})</p>
                 <p className="text-xs font-normal opacity-80">
-                  O próximo ciclo passa a contar a partir de hoje.
+                  O próximo ciclo passa a contar a partir dessa data.
                 </p>
               </div>
             </Button>
