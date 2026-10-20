@@ -7,6 +7,14 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -205,6 +213,8 @@ export default function QuickSaleModal({
   
   // Wizard step
   const [step, setStep] = useState<1 | 2>(1);
+  // Diálogo "cliente vencido": muda vencimento p/ hoje ou mantém a data original.
+  const [latePolicyOpen, setLatePolicyOpen] = useState(false);
   
   // Cart state (individualized with tempId) — supports services, products and subscription plans
   const [cart, setCart] = useState<AnyCartItem[]>([]);
@@ -425,6 +435,7 @@ export default function QuickSaleModal({
 
   const resetForm = () => {
     setStep(1);
+    setLatePolicyOpen(false);
     setCart([]);
     setClientsCount(1);
     setManualValue("");
@@ -944,6 +955,7 @@ export default function QuickSaleModal({
    */
   const ensureSubscriptionAssigned = async (
     mobilePhoneSanitized: string,
+    overridePolicy?: DuePolicy,
   ): Promise<{ anchor: Date; nextDue: Date } | null> => {
     if (!subscriptionInCart) return null;
 
@@ -981,6 +993,8 @@ export default function QuickSaleModal({
         .eq("mobile_phone", mobilePhoneSanitized)
         .maybeSingle();
       if (cliRow?.subscription_due_policy === "follow_payment") policy = "follow_payment";
+      // Escolha feita no fechamento (cliente vencido) prevalece sobre o campo salvo.
+      if (overridePolicy) policy = overridePolicy;
       if (isRenewal) {
         currentDue = cliRow?.subscription_due_date
           ? parseISO(cliRow.subscription_due_date)
@@ -1006,7 +1020,11 @@ export default function QuickSaleModal({
         subscription_last_late_days: lateDays,
       };
       if (shouldFlag) cycleUpdate.subscription_payment_shift_flagged_at = new Date().toISOString();
-      if (policy === "follow_payment") cycleUpdate.subscription_due_policy = "keep";
+      // Consome a política one-shot: tanto um follow_payment aplicado quanto
+      // QUALQUER escolha explícita do diálogo (override) resetam o campo para
+      // "keep", evitando que um follow_payment pendente vaze para a próxima
+      // renovação (que pode nem ser atrasada e não mostrar o prompt).
+      if (policy === "follow_payment" || overridePolicy) cycleUpdate.subscription_due_policy = "keep";
       await (supabase.from("clients") as any)
         .update(cycleUpdate)
         .eq("organization_id", organizationId)
@@ -1031,7 +1049,7 @@ export default function QuickSaleModal({
   const canProceedStep1 =
     attributionResolved && isPhoneComplete && hasClientName && isClientVerified && !phoneError;
 
-  const handleCartCheckout = async () => {
+  const handleCartCheckout = async (overridePolicy?: DuePolicy) => {
     if (isSubmittingRef.current) return;
     if (!organizationId) {
       toast.error("Organização não identificada");
@@ -1052,6 +1070,30 @@ export default function QuickSaleModal({
     }
     if (cart.length === 0) {
       toast.error("Selecione pelo menos um item");
+      return;
+    }
+
+    // Renovação de cliente VENCIDO: antes de fechar, pergunta se o gestor quer
+    // mudar o vencimento para hoje (follow_payment) ou manter a data original
+    // (keep, pagamento atrasado). A escolha vira a política do ciclo nesta venda.
+    const isRenewalSub =
+      !!subscriptionInCart &&
+      (subscriptionInCart.action === "renew" ||
+        subscriptionInCart.action === "upgrade" ||
+        subscriptionInCart.action === "downgrade");
+    // Espera o ciclo do cliente atual carregar: senão o prompt poderia ser pulado
+    // ou aberto com dados do cliente anterior (hook ainda resolvendo o telefone).
+    if (isRenewalSub && !overridePolicy && loadingCycle) {
+      toast.info("Carregando os dados da assinatura do cliente. Tente novamente em instantes.");
+      return;
+    }
+    // Atraso é avaliado na DATA DA VENDA (permite lançamento retroativo), não em
+    // "hoje": uma renovação datada antes/no vencimento não é pagamento atrasado.
+    const saleDateKey = format(selectedDate, "yyyy-MM-dd");
+    const dueKey = cycle?.dueDate ? formatDueDate(cycle.dueDate) : null;
+    const isLateOnSaleDate = !!dueKey && saleDateKey > dueKey;
+    if (!overridePolicy && isRenewalSub && isLateOnSaleDate) {
+      setLatePolicyOpen(true);
       return;
     }
 
@@ -1147,7 +1189,7 @@ export default function QuickSaleModal({
       // de vencimento do cliente. Fazer isto antes do RPC adiantava a data mesmo
       // quando o save falhava — e a cada retentativa adiantava de novo (cliente
       // ganhava mês grátis na visualização).
-      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone);
+      const subCycleMeta = await ensureSubscriptionAssigned(registeredClient.mobilePhone, overridePolicy);
 
       // Grava o cycle_anchor/next_due no description da transação recém-criada,
       // para QUALQUER assinatura (não só a renovação do banner).
@@ -2270,11 +2312,65 @@ export default function QuickSaleModal({
   );
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden flex flex-col p-0">
-        {step === 1 ? renderStep1() : renderStep2()}
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden flex flex-col p-0">
+          {step === 1 ? renderStep1() : renderStep2()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cliente vencido numa renovação: escolher política do ciclo. */}
+      <AlertDialog open={latePolicyOpen} onOpenChange={setLatePolicyOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Assinatura vencida — como registrar?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cycle?.dueDateLabel
+                ? `A assinatura venceu em ${cycle.dueDateLabel}. `
+                : "A assinatura está vencida. "}
+              Você quer trocar a data de vencimento para hoje, ou manter a data original
+              (registrando como pagamento atrasado)?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2 pt-1">
+            <Button
+              className="w-full justify-start h-auto py-3 text-left"
+              onClick={() => {
+                setLatePolicyOpen(false);
+                void handleCartCheckout("follow_payment");
+              }}
+            >
+              <div>
+                <p className="font-semibold">Mudar vencimento para a data da venda ({format(selectedDate, "dd/MM")})</p>
+                <p className="text-xs font-normal opacity-80">
+                  O próximo ciclo passa a contar a partir dessa data.
+                </p>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 text-left"
+              onClick={() => {
+                setLatePolicyOpen(false);
+                void handleCartCheckout("keep");
+              }}
+            >
+              <div>
+                <p className="font-semibold">Manter a data original (pagamento atrasado)</p>
+                <p className="text-xs font-normal opacity-80">
+                  Mantém o dia do contrato; o próximo vencimento continua no mesmo dia.
+                </p>
+              </div>
+            </Button>
+          </div>
+          <AlertDialogFooter className="sm:justify-start">
+            <Button variant="ghost" size="sm" onClick={() => setLatePolicyOpen(false)}>
+              Cancelar
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
