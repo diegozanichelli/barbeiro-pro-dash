@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { FileUp, Loader2, CheckCircle2, AlertTriangle, X, Plus } from "lucide-react";
 import { brl } from "@/lib/currency";
+import { fetchAllRows } from "@/lib/supabasePagination";
 import { formatPhone, sanitizePhone } from "@/lib/phoneUtils";
 import { MANAUS_OFFSET } from "@/lib/dateUtils";
 import {
@@ -732,46 +733,55 @@ export default function ControllerCsvImport({
         });
       }
 
-      // Dedupe por telefone + dia: qualquer assinatura (não-cancelamento) já
-      // lançada para o cliente NO MESMO DIA da cobrança — seja re-importação do
-      // gateway OU lançamento da recepção/balcão (nova adesão ou renovação).
-      // Evita contar a mesma mensalidade duas vezes.
+      // Dedupe — evita contar a mesma mensalidade duas vezes. Duas regras:
+      //  1) mesmo telefone + MESMO DIA (qualquer valor/origem): re-import do gateway
+      //     ou lançamento da recepção/balcão no mesmo dia da cobrança.
+      //  2) mesmo telefone + MESMO MÊS + MESMO VALOR (origem diferente): ex.: a
+      //     recepção já lançou o pagamento de balcão no mês e o controller está
+      //     subindo de novo num dia diferente. É a duplicidade cross-dia que
+      //     escapava do (1) — o pagamento do balcão e o "Pago fora do sistema"
+      //     importado são a mesma cobrança, só em dias diferentes.
+      // Carrega as assinaturas do(s) MÊS(es) tocado(s) pelo CSV, por telefone.
       const dayKeys = Array.from(new Set(parsed.map((p) => p.dateKey).filter(Boolean)));
-      const existingByPhoneDay = new Map<
+      const existingByPhone = new Map<
         string,
-        { source: string | null; value: number }
+        Array<{ dayKey: string; source: string | null; value: number }>
       >();
       if (dayKeys.length > 0) {
-        const minDay = dayKeys.sort()[0];
-        const maxDay = dayKeys.sort()[dayKeys.length - 1];
-        const { data, error } = await supabase
-          .from("sale_transactions")
-          .select("mobile_phone, price_sold, created_at, subscription_action, attribution_source")
-          .eq("organization_id", organizationId)
-          .eq("item_type", "subscription")
-          .gte("created_at", `${minDay}T00:00:00${MANAUS_OFFSET}`)
-          .lte("created_at", `${maxDay}T23:59:59${MANAUS_OFFSET}`);
-        // Sem a checagem de duplicadas confiável, poderíamos reimportar em dobro. Aborta.
-        if (error) throw new Error("Falha ao checar lançamentos duplicados. Tente novamente.");
-        (data || []).forEach(
-          (t: {
-            mobile_phone: string | null;
-            price_sold: number;
-            created_at: string;
-            subscription_action: string | null;
-            attribution_source: string | null;
-          }) => {
-            if (t.subscription_action === "cancel") return; // cancelamento não é duplicata
-            const key = `${sanitizePhone(t.mobile_phone || "")}|${t.created_at.slice(0, 10)}`;
-            // Mantém o primeiro encontrado (origem/valor para exibir na prévia).
-            if (!existingByPhoneDay.has(key)) {
-              existingByPhoneDay.set(key, {
-                source: t.attribution_source,
-                value: Number(t.price_sold) || 0,
-              });
-            }
-          },
+        const sorted = [...dayKeys].sort();
+        const monthStart = `${sorted[0].slice(0, 7)}-01`;
+        const lastMonth = sorted[sorted.length - 1].slice(0, 7);
+        const [ly, lm] = lastMonth.split("-").map(Number);
+        const monthEnd = `${lastMonth}-${String(new Date(ly, lm, 0).getDate()).padStart(2, "0")}`;
+        // fetchAllRows propaga erro: sem checagem confiável poderíamos reimportar
+        // em dobro, então uma falha aqui aborta o import (tratada no catch externo).
+        const existing = await fetchAllRows<{
+          mobile_phone: string | null;
+          price_sold: number;
+          created_at: string;
+          subscription_action: string | null;
+          attribution_source: string | null;
+        }>(() =>
+          supabase
+            .from("sale_transactions")
+            .select("mobile_phone, price_sold, created_at, subscription_action, attribution_source")
+            .eq("organization_id", organizationId)
+            .eq("item_type", "subscription")
+            .gte("created_at", `${monthStart}T00:00:00${MANAUS_OFFSET}`)
+            .lte("created_at", `${monthEnd}T23:59:59${MANAUS_OFFSET}`) as never,
         );
+        existing.forEach((t) => {
+          if (t.subscription_action === "cancel") return; // cancelamento não é duplicata
+          const phone = sanitizePhone(t.mobile_phone || "");
+          if (!phone) return;
+          const arr = existingByPhone.get(phone) || [];
+          arr.push({
+            dayKey: t.created_at.slice(0, 10),
+            source: t.attribution_source,
+            value: Number(t.price_sold) || 0,
+          });
+          existingByPhone.set(phone, arr);
+        });
       }
 
       // Sugestão "nova adesão" só para a 1ª cobrança (mais antiga) de cada cliente
@@ -792,18 +802,36 @@ export default function ControllerCsvImport({
         const clientExists = existingUnitByPhone.has(p.phone);
         const resolvedUnitId =
           (existingUnitByPhone.get(p.phone) ?? null) || inferredByPhone.get(p.phone) || null;
-        const existingSub = p.dateKey ? existingByPhoneDay.get(`${p.phone}|${p.dateKey}`) : undefined;
+        const phoneExisting = existingByPhone.get(p.phone) || [];
+        // (1) mesmo dia — qualquer valor/origem.
+        const existingSameDay = p.dateKey
+          ? phoneExisting.find((e) => e.dayKey === p.dateKey)
+          : undefined;
+        // (2) mesmo mês + mesmo valor (origem diferente, outro dia).
+        const existingSameMonth =
+          !existingSameDay && p.dateKey
+            ? phoneExisting.find(
+                (e) =>
+                  e.dayKey.slice(0, 7) === p.dateKey.slice(0, 7) &&
+                  Math.abs(e.value - p.valor) <= 0.02,
+              )
+            : undefined;
         const { paid, payOrigin } = classifyStatus(p.statusText);
         let status: RowStatus;
         let dupInfo: string | undefined;
         if (!paid) {
           // Não pago (recusado, pendente, estornado, não capturado): fica desmarcado.
           status = "ignored_status";
-        } else if (existingSub) {
+        } else if (existingSameDay) {
           // Já existe assinatura desse cliente neste dia (recepção/balcão ou
           // re-importação do gateway) → possível duplicata, não importa por padrão.
           status = "dup";
-          dupInfo = `${dupSourceLabel(existingSub.source)} · ${brl(existingSub.value)}`;
+          dupInfo = `${dupSourceLabel(existingSameDay.source)} · ${brl(existingSameDay.value)}`;
+        } else if (existingSameMonth) {
+          // Mesmo valor já lançado no mês, em outro dia (ex.: balcão da recepção) →
+          // provável duplicidade cross-dia. Não importa por padrão.
+          status = "dup";
+          dupInfo = `${dupSourceLabel(existingSameMonth.source)} · ${brl(existingSameMonth.value)} em ${existingSameMonth.dayKey.slice(8, 10)}/${existingSameMonth.dayKey.slice(5, 7)} (mesmo mês)`;
         } else if (!p.planId) {
           status = "no_plan"; // ainda importa, mas sem vínculo de plano
         } else {
@@ -1085,8 +1113,9 @@ export default function ControllerCsvImport({
           Por cliente, o sistema cruza os dados: busca pelo telefone, cadastra se não existir e
           identifica a unidade pelos últimos atendimentos. Cada linha mostra a origem resultante —
           renovação automática, nova adesão online, novo no balcão ou renovou no balcão — conforme o
-          status e o tipo (Nova adesão/Renovação). Se a recepção já lançou a assinatura daquele cliente
-          no mesmo dia, a linha é marcada como possível duplicata e não é importada (também com
+          status e o tipo (Nova adesão/Renovação). Se já existe uma assinatura daquele cliente no mesmo
+          dia, OU um pagamento de mesmo valor no mesmo mês (ex.: a recepção já lançou no balcão em outro
+          dia), a linha é marcada como possível duplicata e não é importada (você ainda pode marcar
           "importar mesmo assim").
         </CardDescription>
       </CardHeader>
