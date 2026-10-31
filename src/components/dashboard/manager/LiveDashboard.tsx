@@ -1345,12 +1345,15 @@ export default function LiveDashboard() {
               </div>
               {(() => {
                 const displayPct = teamPacing ? teamPacing.actualPct : teamMonthlyGoal.pct;
+                const label = teamPacing ? "Comissão" : "Faturamento";
                 return (
                   <span
                     className={`text-sm font-bold cursor-help ${displayPct >= 80 ? "text-green-500" : displayPct >= 50 ? "text-amber-500" : "text-red-500"}`}
-                    title={`% de Comissão Real acumulada sobre a Meta de Comissão do mês (mesma base do marcador "Esperado para hoje").\n\nVendas: ${teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}\nMeta Vendas: ${teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
+                    title={teamPacing
+                      ? `Comissão: % da Comissão Real acumulada sobre a Meta de Comissão do mês (mesma base do marcador "Esperado para hoje"). Assinaturas não pagam comissão e produtos/alguns serviços pagam taxa menor, então esta % costuma ficar abaixo da % de Faturamento mostrada abaixo.`
+                      : `Faturamento: % do faturamento (serviços + produtos) sobre a Meta de Faturamento do mês.`}
                   >
-                    {displayPct.toFixed(0)}%
+                    {label} {displayPct.toFixed(0)}%
                   </span>
                 );
               })()}
@@ -1380,6 +1383,8 @@ export default function LiveDashboard() {
             </div>
             {teamPacing && (
               <div className="text-[10px] text-muted-foreground mb-1 flex flex-wrap gap-x-2">
+                <span className="font-semibold text-foreground/80">Comissão</span>
+                <span>·</span>
                 <span title="% da Meta de Comissão da equipe que JÁ DEVERIA ter sido atingida até hoje, com base nos dias úteis decorridos no mês." className="cursor-help">
                   Esperado para hoje: <span className="font-semibold text-foreground">{teamPacing.expectedPct.toFixed(1)}%</span>
                 </span>
@@ -1389,12 +1394,18 @@ export default function LiveDashboard() {
                 </span>
               </div>
             )}
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <div
+              className="flex items-center justify-between text-xs text-muted-foreground cursor-help"
+              title="Faturamento (serviços + produtos) acumulado no mês sobre a Meta de Faturamento. É uma métrica DIFERENTE da barra acima (que é de comissão) — por isso os percentuais não coincidem."
+            >
               <span>
-                Vendas: {teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                Faturamento: <span className="font-semibold text-foreground">{teamMonthlyGoal.totalEarned.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                {teamMonthlyGoal.totalTarget > 0 && (
+                  <span className="text-foreground/70"> · {((teamMonthlyGoal.totalEarned / teamMonthlyGoal.totalTarget) * 100).toFixed(0)}%</span>
+                )}
               </span>
               <span>
-                Meta Vendas: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                Meta: {teamMonthlyGoal.totalTarget.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
             </div>
           </CardContent>
