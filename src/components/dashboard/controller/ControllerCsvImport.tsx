@@ -869,9 +869,13 @@ export default function ControllerCsvImport({
       return;
     }
     setImporting(true);
-    // Hoisted para o catch: permite desfazer o lote (e suas transações) se o
-    // import falhar no meio, evitando lote "fantasma" vazio no histórico.
+    // Hoisted para o catch: se o import falhar ANTES de inserir qualquer
+    // transação (ex.: 1ª inserção rejeitada), removemos o lote recém-criado
+    // para não deixar um lote "fantasma" vazio no histórico. Se já houve
+    // inserção, NÃO mexemos aqui — o estado do cliente pode ter mudado e o
+    // fluxo "excluir lote" (deleteBatch, que reconstrói os clientes) é o certo.
     let batchId: string | null = null;
+    let anyTxInserted = false;
     try {
       // Registra o lote de importação (histórico + base para exclusão depois).
       const totalValue = toImport.reduce((a, r) => a + r.valor, 0);
@@ -975,6 +979,7 @@ export default function ControllerCsvImport({
         const { error } = await supabase.from("sale_transactions").insert(batch);
         if (error) throw error;
         inserted += batch.length;
+        anyTxInserted = true; // marca assim que QUALQUER chunk entra
       }
 
       // Cria o cliente se não existir e vincula/reativa o plano (por telefone único).
@@ -1095,18 +1100,19 @@ export default function ControllerCsvImport({
       onImported();
     } catch (err) {
       console.error("Erro ao importar CSV:", err);
-      // Desfaz o import parcial: remove as transações já inseridas sob este lote
-      // e o próprio lote. Assim um erro no meio não deixa lote vazio "fantasma"
-      // no histórico nem metade das cobranças registradas — o controlador
-      // reimporta do zero. (As transações têm created_by = controlador e
-      // attribution_source permitido, cobertos pela policy de DELETE do lote.)
-      if (batchId) {
-        try {
-          await supabase.from("sale_transactions").delete().eq("import_batch_id", batchId);
-          await supabase.from("controller_import_batches").delete().eq("id", batchId);
-        } catch (cleanupErr) {
-          console.error("Falha ao desfazer o lote de importação:", cleanupErr);
-        }
+      // Remove o lote SOMENTE se nenhuma transação entrou (caso do "fantasma"
+      // vazio — ex.: a 1ª inserção foi rejeitada). Com transações já inseridas
+      // não apagamos nada: o FK é ON DELETE SET NULL (apagar o lote órfãoizaria
+      // as transações, que ficariam irremovíveis pelo histórico) e, pior, o
+      // estado do cliente pode ter sido alterado nos passos seguintes. Nesse
+      // caso o controlador usa "excluir lote", que apaga as transações e
+      // reconstrói o ciclo dos clientes afetados.
+      if (batchId && !anyTxInserted) {
+        const { error: delErr } = await supabase
+          .from("controller_import_batches")
+          .delete()
+          .eq("id", batchId);
+        if (delErr) console.error("Falha ao remover o lote vazio:", delErr);
       }
       toast.error(err instanceof Error ? err.message : "Erro ao importar o CSV.");
     } finally {
