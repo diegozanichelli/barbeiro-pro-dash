@@ -72,6 +72,7 @@ interface WarPlanRequest {
   monthlyGoal: number;
   soldThisMonth: number;
   dailyTarget: number;
+  dailyTargetCommission?: number;
   todayRevenue: number;
   daysRemaining: number;
   clientsInAgenda: number;
